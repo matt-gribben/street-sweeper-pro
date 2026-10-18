@@ -1,0 +1,64 @@
+# CI (TECHNICAL_DESIGN §19). M0 shape: assets:verify, assets:lint and the uv/Python setup join the
+# checks job in M4 (SSP-117); the final shape is in TECHNICAL_DESIGN §19. Blender and image generation
+# never run in CI. `npm run ci` is the local-parity equivalent of both jobs.
+name: CI
+
+on:
+  # Every push to main, and every push to a PR branch (pull_request fires on open, push and reopen).
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: checks (typecheck, lint, unit, replay)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.21.0
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:replay
+
+  visual:
+    name: visual (Playwright visual + e2e)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.21.0
+          cache: npm
+      - run: npm ci
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-1.64.1
+      - run: npx playwright install chromium
+      - run: npm run test:visual
+      - run: npm run test:e2e
+      - name: Upload Playwright results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-results
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -239,6 +239,7 @@ All forge commands run as `uv run --project tools/forge python -m forge <cmd>`. 
 }
 ```
 
+- **M0 guard behaviour:** until their real implementations land, `render-sfx.ts`, `render-music.ts` (M5) and `compile-level.ts` (M1) are input-count guards (`tools/inputGuard.ts`): with zero sources they log `0 sources; nothing to render` and exit 0, and with any source present they exit 3 with `not implemented until M5`/`M1`; each accepts `--out <dir>`.
 - `gen:ai` defaults to `--tool codex`. A later `--tool cursor` on the command line overrides it, because the last flag wins.
 - `forge verify` runs `forge build --out build/tmp/verify/`, then runs the audio and level tools with their `--out` pointed at the same temp root. It byte-compares every file listed in `public/assets/asset-hashes.json` and `src/gen/assets.ts`, and exits non-zero with a per-file report. Audio comparison follows the WAV-hash rule in [AUDIO_DESIGN.md](AUDIO_DESIGN.md).
 - CI invokes `forge verify` (byte compare) or `forge verify --pixels` (decoded RGBA plus JSON/TS bytes) according to decision D-12 in [ROADMAP §8](ROADMAP.md#8-m0-spike-decision-log), recorded in the M0 spike (see §13.5).

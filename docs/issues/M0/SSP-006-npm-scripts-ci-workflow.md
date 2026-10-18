@@ -2,7 +2,7 @@
 id: SSP-006
 title: "Wire every npm script, playwright.config.ts and the GitHub Actions CI workflow"
 milestone: M0
-status: todo
+status: done
 type: chore
 estimate: M
 labels: [type:chore, area:build, area:tooling, area:test, size:M, vertical-slice]
@@ -69,13 +69,13 @@ ci.yml (M0 shape; the final M4+ shape is in TECHNICAL_DESIGN §19):
 
 ## Acceptance criteria
 
-- [ ] Every script named in TECHNICAL_DESIGN §20.1, ASSET_PIPELINE §5.2 and the README 'Commands' tables exists in package.json
-- [ ] With no sources present, `npm run audio` and `npm run levels` exit 0 and log '0 sources'; adding a dummy file under assets-src/levels/ makes `npm run levels` exit non-zero with 'not implemented until M1' (checked, then removed)
-- [ ] `npm run typecheck && npm run lint && npm test` exit 0
-- [ ] `npm run test:replay` exits 0 and logs the replay count (0)
-- [ ] `npx playwright test --list --project=gpu` and `--project=visual` both resolve; the gpu project config has no swiftshader flag and is not invoked by test:e2e or ci.yml
-- [ ] ci.yml has jobs `checks` (ubuntu-latest) and `visual` (macos-latest) with the steps listed, and parses as YAML (`ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml")'` if ruby is available, otherwise state the inspection in the PR)
-- [ ] No new dependencies in package.json
+- [x] Every script named in TECHNICAL_DESIGN §20.1, ASSET_PIPELINE §5.2 and the README 'Commands' tables exists in package.json
+- [x] With no sources present, `npm run audio` and `npm run levels` exit 0 and log '0 sources'; adding a dummy file under assets-src/levels/ makes `npm run levels` exit non-zero with 'not implemented until M1' (checked, then removed)
+- [x] `npm run typecheck && npm run lint && npm test` exit 0
+- [x] `npm run test:replay` exits 0 and logs the replay count (0)
+- [x] `npx playwright test --list --project=gpu` and `--project=visual` both resolve; the gpu project config has no swiftshader flag and is not invoked by test:e2e or ci.yml
+- [x] ci.yml has jobs `checks` (ubuntu-latest) and `visual` (macos-latest) with the steps listed, and parses as YAML (`ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml")'` if ruby is available, otherwise state the inspection in the PR)
+- [x] No new dependencies in package.json
 
 ## Verification
 

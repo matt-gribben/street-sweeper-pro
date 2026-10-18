@@ -1,7 +1,12 @@
-// Renderer skeleton (TECHNICAL_DESIGN §12.3, §12.7). M0 frame graph: world pass into the (W+2)×272 target,
-// then an integer-scale nearest blit of the inner W×270 window, shifted by the camera's sub-pixel remainder,
-// into the letterboxed canvas. The palette pass and MRT slot in between in SSP-016.
-// Nothing here allocates per frame: every three.js object is created up front.
+// Renderer (TECHNICAL_DESIGN §12.3, §12.7). M0 frame graph:
+//   1. world pass (perspective camera) into RT_world, (W+2)×272 MRT: attachment 0 unlit colour, attachment 1
+//      mask (R = shadow, G = light), 24-bit depth;
+//   2. palette pass into RT_final, (W+2)×272: RGB -> Kerbside-32 index via the 64³ OKLab LUT, night and
+//      shadow remaps, index -> palette RGB (palettePass.ts);
+//   3. integer-scale nearest blit of RT_final's inner W×270 window, shifted by the camera's sub-pixel
+//      remainder, into the letterboxed canvas.
+// The UI pass (M2) slots in between 1 and 2. Nothing here allocates per frame: every three.js object is created
+// up front.
 import {
   BufferAttribute,
   BufferGeometry,
@@ -17,7 +22,8 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { type CameraRig, createCameraRig, setCameraFrame } from './camera.ts';
-import { createPlaceholderGround } from './placeholderWorld.ts';
+import { createPalettePass, type PalettePass } from './palettePass.ts';
+import { createTestWorld } from './testWorld.ts';
 import {
   blitOffsetDevicePx,
   INTERNAL_HEIGHT_PX,
@@ -61,7 +67,11 @@ export class Renderer {
   readonly webgl: WebGLRenderer;
   readonly rig: CameraRig;
   private readonly world: Scene;
+  /** RT_world: MRT, textures[0] = colour, textures[1] = mask (§12.3). */
   private readonly worldTarget: WebGLRenderTarget;
+  /** RT_final: the palette-mapped frame the blit samples. */
+  private readonly finalTarget: WebGLRenderTarget;
+  private readonly palettePass: PalettePass;
   private readonly blitScene: Scene;
   private readonly blitCamera: OrthographicCamera;
   private readonly blitMaterial: ShaderMaterial;
@@ -87,13 +97,24 @@ export class Renderer {
 
     this.rig = createCameraRig(DEFAULT_INTERNAL_WIDTH_PX);
     this.world = new Scene();
-    this.world.add(createPlaceholderGround());
+    this.world.add(createTestWorld());
 
-    this.worldTarget = new WebGLRenderTarget(rtWidthPx(DEFAULT_INTERNAL_WIDTH_PX), RT_HEIGHT_PX, {
+    const rtWidth = rtWidthPx(DEFAULT_INTERNAL_WIDTH_PX);
+    // RGBA8 attachments (UnsignedByteType, RGBAFormat are the defaults) with no colour space conversion.
+    this.worldTarget = new WebGLRenderTarget(rtWidth, RT_HEIGHT_PX, {
+      count: 2,
       minFilter: NearestFilter,
       magFilter: NearestFilter,
       generateMipmaps: false,
       depthBuffer: true,
+      stencilBuffer: false,
+      samples: 0,
+    });
+    this.finalTarget = new WebGLRenderTarget(rtWidth, RT_HEIGHT_PX, {
+      minFilter: NearestFilter,
+      magFilter: NearestFilter,
+      generateMipmaps: false,
+      depthBuffer: false,
       stencilBuffer: false,
       samples: 0,
     });
@@ -104,6 +125,12 @@ export class Renderer {
       'position',
       new BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3),
     );
+    const [colourTexture, maskTexture] = this.worldTarget.textures;
+    if (colourTexture === undefined || maskTexture === undefined) {
+      throw new Error('RT_world must have two colour attachments');
+    }
+    this.palettePass = createPalettePass(colourTexture, maskTexture, triangle);
+
     this.blitOffset = new Vector2(0, 0);
     this.blitMaterial = new ShaderMaterial({
       glslVersion: GLSL3,
@@ -112,7 +139,7 @@ export class Renderer {
       depthTest: false,
       depthWrite: false,
       uniforms: {
-        uSource: { value: this.worldTarget.texture },
+        uSource: { value: this.finalTarget.texture },
         uScale: { value: 1 },
         uOffset: { value: this.blitOffset },
         uCanvasHeight: { value: INTERNAL_HEIGHT_PX },
@@ -131,6 +158,7 @@ export class Renderer {
     this.webgl.setSize(layout.canvasDeviceWidth, layout.canvasDeviceHeight, false);
     if (layout.internalWidth !== this.rig.internalWidth) {
       this.worldTarget.setSize(rtWidthPx(layout.internalWidth), RT_HEIGHT_PX);
+      this.finalTarget.setSize(rtWidthPx(layout.internalWidth), RT_HEIGHT_PX);
       setCameraFrame(this.rig, layout.internalWidth);
     }
     this.scale = layout.scale;
@@ -144,8 +172,11 @@ export class Renderer {
     const webgl = this.webgl;
     webgl.info.reset();
 
+    // Clearing RT_world clears both attachments: mask (0, 0) is unshadowed and unlit.
     webgl.setRenderTarget(this.worldTarget);
     webgl.render(this.world, this.rig.camera);
+
+    this.palettePass.render(webgl, this.finalTarget);
 
     this.blitOffset.set(
       blitOffsetDevicePx(this.rig.fractionX, this.scale),
@@ -158,6 +189,15 @@ export class Renderer {
   /** Draw calls in the last frame over all passes (budget ≤ 10, TECHNICAL_DESIGN §12.7). */
   get drawCalls(): number {
     return this.webgl.info.render.calls;
+  }
+
+  /** Night remap (outside the light mask) on or off. */
+  get night(): boolean {
+    return this.palettePass.night;
+  }
+
+  set night(on: boolean) {
+    this.palettePass.night = on;
   }
 
   /** Current integer upscale factor. */

@@ -2,7 +2,7 @@
 id: SSP-016
 title: "Implement the MRT world target and palette pass (64\u00b3 OKLab LUT, night/shadow remap)"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:render, area:test, size:M, vertical-slice]
@@ -58,12 +58,12 @@ Palette colours come only from kerbside32.json via `import palette from '../../a
 
 ## Acceptance criteria
 
-- [ ] Vitest: all 32 palette colours map to their own index through buildLut
-- [ ] Vitest: nearestIndex equals the forge fixture for all 4,096 samples (zero mismatches)
-- [ ] Vitest (fast-check): for random RGB and mask inputs the CPU reference only outputs Kerbside-32 colours; for an index i with mask R=1 and night on, output = palette[shadow[night[i]]]
-- [ ] `grep -rnE '#[0-9a-fA-F]{6}|0x[0-9a-fA-F]{6}' src/render` matches only the #0f0e12 letterbox in upscale.ts
-- [ ] `npm run dev` renders a test world through the pass with no console errors; renderer.info (autoReset=false) counts all passes
-- [ ] The PR states whether MRT + MaxEquation worked under SwiftShader
+- [x] Vitest: all 32 palette colours map to their own index through buildLut
+- [x] Vitest: nearestIndex equals the forge fixture for all 4,096 samples (zero mismatches)
+- [x] Vitest (fast-check): for random RGB and mask inputs the CPU reference only outputs Kerbside-32 colours; for an index i with mask R=1 and night on, output = palette[shadow[night[i]]]
+- [x] `grep -rnE '#[0-9a-fA-F]{6}|0x[0-9a-fA-F]{6}' src/render` matches only the #0f0e12 letterbox in upscale.ts
+- [x] `npm run dev` renders a test world through the pass with no console errors; renderer.info (autoReset=false) counts all passes
+- [x] The PR states whether MRT + MaxEquation worked under SwiftShader
 
 ## Verification
 

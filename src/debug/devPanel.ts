@@ -6,6 +6,8 @@
 export type DevPanelControls = {
   speedMps: number;
   zoomEnabled: boolean;
+  /** Night remap in the palette pass (the documented night toggle for scenes arrives in SSP-021). */
+  night: boolean;
 };
 
 const PANEL_ID = 'ssp-devPanel';
@@ -46,10 +48,26 @@ export function mountDevPanel(controls: DevPanelControls, readout: () => string)
   });
   zoomLabel.append(zoom, ' speed zoom (D-01)');
 
+  const nightLabel = document.createElement('label');
+  const night = document.createElement('input');
+  night.type = 'checkbox';
+  night.checked = controls.night;
+  night.addEventListener('change', () => {
+    controls.night = night.checked;
+  });
+  nightLabel.append(night, ' night remap');
+
   const status = document.createElement('pre');
   status.style.margin = '4px 0 0';
 
-  panel.append(speedLabel, document.createElement('br'), zoomLabel, status);
+  panel.append(
+    speedLabel,
+    document.createElement('br'),
+    zoomLabel,
+    document.createElement('br'),
+    nightLabel,
+    status,
+  );
   document.body.append(panel);
   showSpeed();
 

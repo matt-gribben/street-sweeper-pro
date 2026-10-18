@@ -7,7 +7,7 @@ import { pinCameraRig, updateCameraRig } from './render/camera.ts';
 import { Renderer } from './render/Renderer.ts';
 import { createSpikeActors, type SpikeActors } from './render/spikeActors.ts';
 import { createSpikeCity } from './render/spikeCity.ts';
-import { loadAtlas, type SpriteAtlas } from './render/spriteAtlas.ts';
+import { type AtlasName, loadAtlas, type SpriteAtlas } from './render/spriteAtlas.ts';
 import { createTestWorld } from './render/testWorld.ts';
 import { attachUpscaler } from './render/upscale.ts';
 import { LeanQuadrantsScene } from './scenes/LeanQuadrantsScene.ts';
@@ -28,13 +28,17 @@ const params = new URLSearchParams(search);
 const testParams = readTestParams(search);
 const testMode = testParams !== null;
 
+/** Loads one sprite atlas (spriteAtlas.ts loadAtlas). */
+type AtlasLoader = (name: AtlasName) => Promise<SpriteAtlas>;
+
 /**
- * What the loop draws: world-pass content, plus actors that need the actors atlas (null for none). A minimal
- * stand-in for the M1 SceneManager (SSP-043): nothing here outlives the page.
+ * What the loop draws: world-pass content, plus sprites that need atlases (null for none): `attachSprites`
+ * loads the atlases it needs through `load` and attaches them. A minimal stand-in for the M1 SceneManager
+ * (SSP-043): nothing here outlives the page.
  */
 type BootScene = {
   readonly world: Object3D;
-  readonly attachActors: ((atlas: SpriteAtlas) => void) | null;
+  readonly attachSprites: ((load: AtlasLoader) => Promise<void>) | null;
   update(frameCount: number, camYSimM: number): void;
 };
 
@@ -45,7 +49,10 @@ function leanQuadrants(): BootScene {
   const scene = new LeanQuadrantsScene();
   return {
     world: scene.world,
-    attachActors: (atlas) => scene.attachActors(atlas),
+    attachSprites: async (load) => {
+      const [actors, items] = await Promise.all([load('actors'), load('items')]);
+      scene.attachSprites(actors, items);
+    },
     update: (frameCount, camYSimM) => scene.update(frameCount, camYSimM),
   };
 }
@@ -56,9 +63,9 @@ function spikeCity(withActors: boolean): BootScene {
   let actors: SpikeActors | null = null;
   return {
     world,
-    attachActors: withActors
-      ? (atlas) => {
-          actors = createSpikeActors(atlas);
+    attachSprites: withActors
+      ? async (load) => {
+          actors = createSpikeActors(await load('actors'));
           world.add(actors.group);
         }
       : null,
@@ -67,7 +74,7 @@ function spikeCity(withActors: boolean): BootScene {
 }
 
 function staticWorld(world: Object3D): BootScene {
-  return { world, attachActors: null, update: () => {} };
+  return { world, attachSprites: null, update: () => {} };
 }
 
 // Scene choice. With `?test=1&scene=<id>` a minimal switch boots the named scene; an unknown ID throws. Without
@@ -155,12 +162,12 @@ const testHooks = installTestHooks(window, search, {
   },
 });
 
-// The actors atlas loads asynchronously; the world draws alone until it arrives. A bad atlas (a non-palette
+// The sprite atlases load asynchronously; the world draws alone until they arrive. A bad atlas (a non-palette
 // pixel, a stale FRAME table) rejects here and is reported loudly rather than drawn (and test mode never
 // reports ready). In test mode, once assets are in: advance `tick=<n>` ticks, render, then report ready.
-const attachActors = scene.attachActors;
+const attachSprites = scene.attachSprites;
 const assetsLoaded: Promise<void> =
-  attachActors === null ? Promise.resolve() : loadAtlas('actors').then(attachActors);
+  attachSprites === null ? Promise.resolve() : attachSprites((name) => loadAtlas(name));
 assetsLoaded.then(
   () => {
     if (testHooks === null) return;
@@ -168,7 +175,7 @@ assetsLoaded.then(
     testHooks.markReady();
   },
   (error: unknown) => {
-    console.error('Street Sweeper Pro: actors atlas failed to load', error);
+    console.error('Street Sweeper Pro: a sprite atlas failed to load', error);
   },
 );
 
@@ -180,7 +187,7 @@ if (import.meta.env.DEV && !testMode) {
         `H ${rig.height.value.toFixed(2)} m  W ${rig.internalWidth}  scale ${renderer.upscale}x`,
         `cam ${rig.snappedX.toFixed(4)}, ${rig.snappedZ.toFixed(4)} m  frac ${rig.fractionX.toFixed(3)}, ${rig.fractionY.toFixed(3)} px`,
         `draw calls ${renderer.drawCalls} (world + palette + blit)  night ${renderer.night ? 'on' : 'off'}`,
-        `actor frame ${Number.isNaN(pinnedFrame) ? renderFrame : pinnedFrame}${scene.attachActors === null ? ' (no actors)' : ''}`,
+        `actor frame ${Number.isNaN(pinnedFrame) ? renderFrame : pinnedFrame}${scene.attachSprites === null ? ' (no actors)' : ''}`,
       ].join('\n');
     });
   });

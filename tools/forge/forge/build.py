@@ -298,8 +298,14 @@ def _load_pivots(entry: AssetEntry, src: Path) -> dict[str, object]:
     return pivots
 
 
+#: Heading key of a single-heading render (``--headings 1``). The rig writes ``pivots_px`` by heading,
+#: so an undirected frame (``slice_<k>.png`` -> dir ``-``) of a sprite-stack prop falls back to it.
+SINGLE_HEADING = "h00"
+
+
 def _pivot(entry: AssetEntry, pivots: dict[str, object], d: str, stem: str) -> tuple[int, int]:
-    for key in (d, stem):
+    keys = (d, stem, SINGLE_HEADING) if d == "-" else (d, stem)
+    for key in keys:
         if key in pivots:
             p = pivots[key]
             if (

@@ -1,0 +1,9 @@
+{
+  "frames": {
+    "prop.lamp_post:slice:-:0": { "x": 0, "y": 0, "w": 32, "h": 32, "px": 16, "py": 16 },
+    "prop.lamp_post:slice:-:1": { "x": 33, "y": 0, "w": 32, "h": 32, "px": 16, "py": 16 },
+    "prop.lamp_post:slice:-:2": { "x": 66, "y": 0, "w": 32, "h": 32, "px": 16, "py": 16 },
+    "prop.lamp_post:slice:-:3": { "x": 99, "y": 0, "w": 32, "h": 32, "px": 16, "py": 16 }
+  },
+  "swaps": {}
+}

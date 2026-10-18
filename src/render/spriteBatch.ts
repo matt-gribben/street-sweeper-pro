@@ -6,7 +6,8 @@
 // discards transparent texels), so no transparency sorting is needed.
 //
 // Per-instance attributes, all in ONE interleaved Float32 buffer so a batch costs one `needsUpdate` per frame:
-//   offset (vec3)    render-space anchor: (sim x, height, sim y) metres; flat sprites use height 0;
+//   offset (vec3)    render-space anchor: (sim x, height, sim y) metres; flat sprites use height 0, sprite-stack
+//                    slices (spriteStack.ts) their real height, so the perspective camera leans them like walls;
 //   rotation         quarter turns clockwise (0..3), pixel-exact; vehicle headings come from the frame instead;
 //   frameRect (vec4) x, y, w, h in atlas pixels, from the generated FRAME table;
 //   pivot (vec2)     the frame's pivot in frame pixels (atlas JSON px/py): body centre or feet;
@@ -129,6 +130,7 @@ class InstanceBuffer {
     frame: FrameId,
     xM: number,
     yM: number,
+    heightM: number,
     layer: number,
     swap: number,
     flags: number,
@@ -140,7 +142,7 @@ class InstanceBuffer {
     const d = this.data;
     const o = this.count * INSTANCE_STRIDE;
     d[o + O_OFFSET] = xM;
-    d[o + O_OFFSET + 1] = 0;
+    d[o + O_OFFSET + 1] = heightM;
     d[o + O_OFFSET + 2] = yM;
     d[o + O_ROTATION] = quarterTurns & 3;
     d[o + O_RECT] = f.x;
@@ -333,7 +335,22 @@ export class SpriteBatch {
     const atlas = FRAME[frame].atlas;
     if (atlas !== this.atlas.name)
       throw new Error(`frame ${frame} is in atlas '${atlas}', not '${this.atlas.name}'`);
-    this.instances.push(frame, xM, yM, layer, swap, flags, quarterTurns, 0);
+    this.instances.push(frame, xM, yM, 0, layer, swap, flags, quarterTurns, 0);
+  }
+
+  /**
+   * Adds one sprite lying flat at `heightM` metres above the ground, its pivot over sim (xM, yM): a sprite-stack
+   * slice (spriteStack.ts). Unlike flat sprites it keeps its real height, so the perspective camera magnifies it
+   * by H / (H − height) and leans it away from the screen centre exactly like a roof at that height; its real
+   * depth also puts it in front of every flat layer once it is about 0.4 m up (the largest layer offset, fx at
+   * 81e-5 in NDC, equals about 0.39 m of height at H = 31.5 m).
+   */
+  addAtHeight(frame: FrameId, xM: number, yM: number, heightM: number, layer: DepthLayer): void {
+    const atlas = FRAME[frame].atlas;
+    if (atlas !== this.atlas.name)
+      throw new Error(`frame ${frame} is in atlas '${atlas}', not '${this.atlas.name}'`);
+    if (!(heightM >= 0)) throw new RangeError(`sprite height ${heightM} m must be >= 0`);
+    this.instances.push(frame, xM, yM, heightM, layer, 0, 0, 0, 0);
   }
 
   /** Ends the frame: sets the draw count and flags the instance buffer for upload (one needsUpdate). */
@@ -391,7 +408,18 @@ export class DropShadowBatch {
   add(frame: FrameId, xM: number, yM: number, flags = 0, quarterTurns = 0): void {
     const slot = this.atlasNames.indexOf(FRAME[frame].atlas);
     if (slot < 0) throw new Error(`drop shadows cannot sample atlas '${FRAME[frame].atlas}'`);
-    this.instances.push(frame, xM, yM, DepthLayer.DropShadow, 0, flags, quarterTurns, slot);
+    this.instances.push(frame, xM, yM, 0, DepthLayer.DropShadow, 0, flags, quarterTurns, slot);
+  }
+
+  /**
+   * Adds the drop shadow of a sprite drawn at `heightM` (SpriteBatch.addAtHeight): the silhouette offset +2, +2
+   * texels at the slice's own height, so it stays beside its slice as the camera leans the stack (ART_BIBLE §6.4).
+   */
+  addAtHeight(frame: FrameId, xM: number, yM: number, heightM: number): void {
+    const slot = this.atlasNames.indexOf(FRAME[frame].atlas);
+    if (slot < 0) throw new Error(`drop shadows cannot sample atlas '${FRAME[frame].atlas}'`);
+    if (!(heightM >= 0)) throw new RangeError(`sprite height ${heightM} m must be >= 0`);
+    this.instances.push(frame, xM, yM, heightM, DepthLayer.DropShadow, 0, 0, 0, slot);
   }
 
   end(): void {

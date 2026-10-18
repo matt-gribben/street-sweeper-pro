@@ -352,7 +352,7 @@ One sun for every technique: **north-west, azimuth 315°, elevation 50°**. Hand
 |---|---|
 | Actor drop shadow | The same sprite offset **+2, +2 px** (SE), written to the shadow mask. Never painted into the sprite. Not drawn for flying birds while airborne *(proposed)*; drawn for the cat on Bessie's roof. Bessie's brush overlay casts none: its discs run on the road (SSP-018). |
 | Building shadow | Polygon projected toward the SE, length 0.84 × height (tan 50°), written to the shadow mask. |
-| Sprite stacks | Each slice casts its own +2, +2 offset *(proposed: only the lowest and highest slices, to keep mask draws cheap; decided in M0)*. |
+| Sprite stacks | **Only the lowest and highest slices cast** the +2, +2 offset, each at its own height so it stays beside its slice as the stack leans (decided in SSP-020, pending owner review). Evidence: with all four lamp-post slices casting, the frame differs by only 37 px over four lamp posts (28 px at the frame edge), because the middle slices' fringes fall under the lantern and the plinth or are 1 px slivers on a 4 px post; ends-only reads the same and keeps mask instances at 2 per stack whatever the slice count. |
 | Result | Pixels under the mask are remapped through `shadow[32]`: shadows are always palette colours. |
 
 ---
@@ -492,7 +492,7 @@ See §7.2–7.3. Additional rules:
 |---|---|
 | Small grid props | Bollard (01 with 07 band), cone (17 with 07 bands), hydrant (18 with 06 cap), wheelie bin (22 or 01 lid, 26 recycling variant), A-board (07 with 03 lettering lines), litter bin (01 with 15 band), post box (18 with 00 slot), recycling box (26 with 22 lid). |
 | Blender props | Bench (13 slats, 01 frame), bus shelter (05 frame, 28 glass panels, 26 roof), phone box (18 with 25 glass), tree canopy (21/22/23 clumps; canopy overhangs pavements), market stall (striped 18/07 or 26/07 awning), skip (17 or 22 steel with 01 interior). |
-| Stacks | Lamp post 8 slices (01 post, 07 lamp head that writes the light mask at night); phone box, bollard, bins and trees 4–6 slices. Slice counts are `TBD (M0 spike)`. |
+| Stacks | Lamp post 8 slices (01 post, 07 lamp head that writes the light mask at night); phone box, bollard, bins and trees 4–6 slices. Slice counts are `TBD (M0 spike)`, to be locked in STYLE.md v1 (SSP-026). **SSP-020 finding (4-slice lamp post, 4.4 m):** slices sit at real heights, so slice k shifts r·h/(H − h) outward (r = distance from the screen centre). Beside the lean_quadrants blocks (r ≈ 7.6 m) the 4 slices overlap into one continuous post; 13.5 m out (near the side edge) the 6 px post breaks with a 3 px gap between the plinth and the lower post. A thin post stays continuous while consecutive slices shift less than its width, which needs about h·r·16 / ((H − h) · width px) slices: about 7 for a 6 px post at the 15 m frame edge, so **keep 8 slices for the lamp post** (and tall thin trunks); broad props (phone box 16 px wide, bins, bollards ≤ 1 m tall) stay continuous with 4. |
 
 ### 8.7 Stains and hazards (ground decals)
 
@@ -1101,7 +1101,7 @@ An asset passes only if every applicable item passes.
 | Character view angle and proportions | M0 (`ref.people_style` golden) | High three-quarter assumed (§4.4). |
 | Speed zoom on or off | `TBD (M0 spike)` | Art reviews always at 1:1 regardless. |
 | Shadow length multiplier for overcast and golden hour | `TBD (M0 spike)` | §9.3, §13. |
-| Sprite-stack slice counts per prop, and which slices cast shadows | `TBD (M0 spike)` | §6.4, §8.6. |
+| Sprite-stack slice counts per prop, and which slices cast shadows | `TBD (M0 spike)` (slice shadows decided in SSP-020) | Shadows: lowest and highest slices only (§6.4). Counts: SSP-020 recommends 8 for the lamp post, 4 for broad or short props (§8.6); SSP-026 locks them. |
 | Swap-slot allocation and key indices | M4 | Proposed in §5.6. |
 | Whether ramp lint ignores index 00 used as outline | M4 (forge lint) | Assumed in §5.4. |
 | Atlas trimming and padding | M4 (forge pack) | Proposed in §14.6. |

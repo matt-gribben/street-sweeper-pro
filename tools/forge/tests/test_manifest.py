@@ -39,7 +39,7 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     ids = [e.id for e in entries]
     assert ids == sorted(ids), "manifest entries must be sorted by id"
     assert unsorted_ids(entries) == []
-    assert ids == ["npc.old_woman", "veh.sweeper", "veh.sweeper_brush"]
+    assert ids == ["npc.old_woman", "prop.lamp_post", "veh.sweeper", "veh.sweeper_brush"]
     raw = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     assert raw["assets"][0] == {
         "id": "npc.old_woman",
@@ -54,8 +54,21 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "outline": False,
         "swaps": [],
     }
-    assert raw["assets"][1] == SWEEPER
-    assert raw["assets"][2] == {
+    assert raw["assets"][1] == {
+        "id": "prop.lamp_post",
+        "class": "prop",
+        "technique": "blender",
+        "source": "assets-src/rendered/prop.lamp_post",
+        "cell": [32, 32],
+        "states": ["slice"],
+        "dirs": "-",
+        "frames": {"slice": 4},
+        "atlas": "items",
+        "outline": True,
+        "swaps": [],
+    }
+    assert raw["assets"][2] == SWEEPER
+    assert raw["assets"][3] == {
         "id": "veh.sweeper_brush",
         "class": "veh",
         "technique": "blender",
@@ -68,7 +81,7 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "outline": True,
         "swaps": [],
     }
-    assert sum(len(e.frame_ids()) for e in entries) == 200
+    assert sum(len(e.frame_ids()) for e in entries) == 204
     for e in raw["assets"]:
         assert list(e) == list(FIELDS), "fields in the documented order"
         assert not e["id"].startswith(("concept.", "_probe")), "_probe and concept.* are never in the manifest"

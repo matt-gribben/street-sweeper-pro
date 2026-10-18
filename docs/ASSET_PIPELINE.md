@@ -913,7 +913,7 @@ Gotchas the wrapper encodes:
 | The agent may "helpfully" draw the image with Python/PIL | The prompt forbids it. The wrapper also rejects a candidate if `events.jsonl` shows a shell command that writes the PNG. |
 | No seed, no size control | `seed: null` in `meta.json`. Request the aspect ratio in words (2:1 or 1:1). Generate several candidates and choose. |
 | Transparent sprites | Request a transparent background. Ingest thresholds alpha at 128, because of the ~253 body alpha and the alpha=1 haze. Use magenta keys only for full-bleed art. |
-| Trademarks | The wrapper refuses to send a prompt that contains a denylisted trademark (see IP hygiene in [CLAUDE.md](../CLAUDE.md)) |
+| Trademarks | The wrapper refuses to send a prompt that contains a denylisted trademark from the shared list `tools/ipDenylist.json`, which `tests/unit/ipHygiene.test.ts` also reads (see IP hygiene in [CLAUDE.md](../CLAUDE.md)) |
 | Batching | About 60 s per image, so pack about 8 litter items into one 4×2 sheet |
 
 ### 8.3 Cursor: the exact command

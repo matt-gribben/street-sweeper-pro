@@ -2,8 +2,14 @@
   "mode": "sheet",
   "grid": [4, 2],
   "cells": [
-    "litter.drink_can", "litter.banana_skin", "litter.glass_bottle", "litter.newspaper",
-    "litter.crisp_packet", "litter.bin_bag", "litter.dog_mess", "litter.cigarette_butts"
+    "litter.drink_can",
+    "litter.banana_skin",
+    "litter.glass_bottle",
+    "litter.newspaper",
+    "litter.crisp_packet",
+    "litter.bin_bag",
+    "litter.dog_mess",
+    "litter.cigarette_butts"
   ],
   "frame": "idle:h00:0",
   "target_cell": [16, 16],

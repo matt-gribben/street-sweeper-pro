@@ -1,0 +1,129 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": ["**", "!!assets-src/_probe", "!!.claude"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 110,
+    "includes": [
+      "**",
+      "!src/gen/assets.ts",
+      "!public/assets",
+      "!assets-src/ai/**/meta.json",
+      "!assets-src/rendered/**/render.json"
+    ]
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "trailingCommas": "all",
+      "semicolons": "always"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended"
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["src/sim/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "three": "src/sim must stay pure: no rendering imports (CLAUDE.md hard rule 1).",
+                  "vite": "src/sim must stay pure: no build-tool or browser imports.",
+                  "vite/client": "src/sim must stay pure: no build-tool or browser imports."
+                },
+                "patterns": [
+                  {
+                    "group": ["three/**"],
+                    "message": "src/sim must stay pure: no three.js addons or submodules."
+                  },
+                  {
+                    "group": ["node:*"],
+                    "message": "src/sim must stay pure: no Node built-ins (the sim runs in the browser and in Node)."
+                  },
+                  {
+                    "group": [
+                      "**/render",
+                      "**/render/**",
+                      "**/audio",
+                      "**/audio/**",
+                      "**/ui",
+                      "**/ui/**",
+                      "**/input",
+                      "**/input/**",
+                      "**/app",
+                      "**/app/**",
+                      "**/scenes",
+                      "**/scenes/**",
+                      "**/debug",
+                      "**/debug/**"
+                    ],
+                    "message": "src/sim may import only src/sim/**, src/data/*.json and types from src/gen/assets.ts (TECHNICAL_DESIGN 2.1)."
+                  }
+                ]
+              }
+            },
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Date": "No wall-clock time in src/sim: use the tick counter.",
+                  "performance": "No wall-clock time in src/sim: use the tick counter.",
+                  "window": "No DOM in src/sim.",
+                  "document": "No DOM in src/sim.",
+                  "navigator": "No DOM in src/sim.",
+                  "localStorage": "No DOM in src/sim: persistence lives in src/app/save.ts.",
+                  "requestAnimationFrame": "No frame callbacks in src/sim: src/app/loop.ts drives the fixed tick.",
+                  "cancelAnimationFrame": "No frame callbacks in src/sim: src/app/loop.ts drives the fixed tick.",
+                  "setTimeout": "No timers in src/sim: count ticks instead.",
+                  "setInterval": "No timers in src/sim: count ticks instead.",
+                  "crypto": "No non-deterministic randomness in src/sim: use sfc32 from src/sim/rng.ts.",
+                  "globalThis": "No global escape hatches in src/sim (globalThis.Date, globalThis.Math.random)."
+                }
+              }
+            }
+          },
+          "nursery": {
+            "noJsRestrictedProperties": {
+              "level": "error",
+              "options": {
+                "entries": [
+                  {
+                    "object": "Math",
+                    "property": "random",
+                    "message": "No Math.random in src/sim: use sfc32 from src/sim/rng.ts."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

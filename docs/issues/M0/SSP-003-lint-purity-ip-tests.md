@@ -2,7 +2,7 @@
 id: SSP-003
 title: "Add biome.json sim-purity rules plus simPurity and ipHygiene unit tests"
 milestone: M0
-status: todo
+status: done
 type: test
 estimate: M
 labels: [type:test, area:tooling, area:test, size:M, vertical-slice]
@@ -62,13 +62,13 @@ Denylist (decided shape, location proposed in the PR): ONE shared JSON list that
 
 ## Acceptance criteria
 
-- [ ] `npx biome check .` exits 0 on the repo
-- [ ] Adding `import * as THREE from 'three'` or `Date.now()` to src/sim/constants.ts makes `npx biome check .` fail (checked, then reverted)
-- [ ] simPurity self-tests prove the scanner fails on `Math.random()`, `performance.now()`, `new Date()`, `import x from 'three'` and `import { a } from '../render/x.ts'`, and passes `import type { FrameId } from '../gen/assets.ts'`
-- [ ] simPurity fails when pointed at an empty directory
-- [ ] ipHygiene self-tests prove that 'gta' and 'Grand Theft Auto' (any case) fail, that 'agta' does not match as a whole word, and that a clean prompt passes
-- [ ] The denylist file is read by the test (no inline duplicate list) and is not inside a scanned path
-- [ ] `npx vitest run tests/unit` exits 0 on the clean repo
+- [x] `npx biome check .` exits 0 on the repo
+- [x] Adding `import * as THREE from 'three'` or `Date.now()` to src/sim/constants.ts makes `npx biome check .` fail (checked, then reverted)
+- [x] simPurity self-tests prove the scanner fails on `Math.random()`, `performance.now()`, `new Date()`, `import x from 'three'` and `import { a } from '../render/x.ts'`, and passes `import type { FrameId } from '../gen/assets.ts'`
+- [x] simPurity fails when pointed at an empty directory
+- [x] ipHygiene self-tests prove that 'gta' and 'Grand Theft Auto' (any case) fail, that 'agta' does not match as a whole word, and that a clean prompt passes
+- [x] The denylist file is read by the test (no inline duplicate list) and is not inside a scanned path
+- [x] `npx vitest run tests/unit` exits 0 on the clean repo
 
 ## Verification
 

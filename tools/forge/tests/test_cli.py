@@ -10,6 +10,8 @@ import pytest
 from forge.__main__ import EXIT_NOT_IMPLEMENTED, NOT_IMPLEMENTED_UNTIL, build_parser, main
 
 SUBCOMMANDS = ("build", "ingest", "blender", "gen-ai", "lint", "sheets", "verify")
+IMPLEMENTED = frozenset({"blender"})  # SSP-007; tested in test_blender.py (never runs real Blender)
+STUBBED = tuple(c for c in SUBCOMMANDS if c not in IMPLEMENTED)
 
 # Each subcommand invoked with every documented flag (ASSET_PIPELINE §5.3).
 FULL_INVOCATIONS: dict[str, list[str]] = {
@@ -58,7 +60,8 @@ def _run_module(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_every_documented_subcommand_has_a_stub_entry() -> None:
-    assert set(NOT_IMPLEMENTED_UNTIL) == set(SUBCOMMANDS)
+    assert set(NOT_IMPLEMENTED_UNTIL) == set(STUBBED)
+    assert not set(NOT_IMPLEMENTED_UNTIL) & IMPLEMENTED
     assert set(FULL_INVOCATIONS) == set(SUBCOMMANDS) == set(MINIMAL_INVOCATIONS)
 
 
@@ -69,7 +72,7 @@ def test_help_lists_every_subcommand() -> None:
         assert cmd in result.stdout
 
 
-@pytest.mark.parametrize("cmd", SUBCOMMANDS)
+@pytest.mark.parametrize("cmd", STUBBED)
 def test_stub_exits_non_zero_with_message_subprocess(cmd: str) -> None:
     result = _run_module(*MINIMAL_INVOCATIONS[cmd])
     assert result.returncode == EXIT_NOT_IMPLEMENTED
@@ -78,7 +81,7 @@ def test_stub_exits_non_zero_with_message_subprocess(cmd: str) -> None:
     assert result.stdout == ""
 
 
-@pytest.mark.parametrize("cmd", SUBCOMMANDS)
+@pytest.mark.parametrize("cmd", STUBBED)
 def test_stub_accepts_every_documented_flag(cmd: str, capsys: pytest.CaptureFixture[str]) -> None:
     status = main(FULL_INVOCATIONS[cmd])
     assert status == EXIT_NOT_IMPLEMENTED
@@ -100,7 +103,9 @@ def test_parsed_flags() -> None:
     a = parser.parse_args(FULL_INVOCATIONS["ingest"])
     assert (a.id, a.force, a.dry_run) == ("litter.sheet_01", True, True)
     a = parser.parse_args(FULL_INVOCATIONS["blender"])
-    assert (a.id, a.check) == ("all", True)
+    assert (a.id, a.check, a.blender_version) == ("all", True, False)
+    a = parser.parse_args(["blender", "--version"])
+    assert (a.id, a.check, a.blender_version) == (None, False, True)
     a = parser.parse_args(FULL_INVOCATIONS["lint"])
     assert (a.only, a.warn_as_error) == (["veh.sweeper"], True)
     a = parser.parse_args(FULL_INVOCATIONS["sheets"])
@@ -137,6 +142,9 @@ def test_verbose_off_by_default(capsys: pytest.CaptureFixture[str]) -> None:
         ["unknown"],
         ["ingest"],
         ["blender"],
+        ["blender", "--check"],
+        ["blender", "--version", "veh.sweeper"],
+        ["blender", "--version", "--check"],
         ["gen-ai"],
         ["gen-ai", "x", "--tool", "dalle"],
         ["gen-ai", "x", "--candidates", "0"],

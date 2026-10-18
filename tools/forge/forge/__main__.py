@@ -23,7 +23,6 @@ GENAI_TOOLS = ("codex", "cursor")
 NOT_IMPLEMENTED_UNTIL: dict[str, str] = {
     "build": "SSP-009",
     "ingest": "SSP-013",
-    "blender": "SSP-007",
     "gen-ai": "SSP-012",
     "lint": "SSP-011",
     "sheets": "SSP-011",
@@ -45,7 +44,19 @@ def _not_implemented(args: argparse.Namespace) -> int:
 
 
 def _describe(args: argparse.Namespace) -> dict[str, object]:
-    return {k: v for k, v in sorted(vars(args).items()) if k not in ("handler", "verbose")}
+    return {k: v for k, v in sorted(vars(args).items()) if k not in ("handler", "verbose", "usage_error")}
+
+
+def _blender(args: argparse.Namespace) -> int:
+    """``forge blender <id|all> [--check]`` or ``forge blender --version`` (SSP-007)."""
+    if args.blender_version:
+        if args.id is not None or args.check:
+            args.usage_error("--version takes no asset ID and no --check")
+    elif args.id is None:
+        args.usage_error("the following arguments are required: id|all")
+    from forge import blender  # deferred so other subcommands never import it
+
+    return blender.cli(args)
 
 
 def _positive_int(text: str) -> int:
@@ -104,9 +115,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true", help="overwrite an edited grid (discards the edits)")
     p.add_argument("--dry-run", action="store_true", help="write previews to build/tmp/ingest/<id>/ only")
 
-    p = add("blender", "Re-render Blender goldens (local only).")
-    p.add_argument("id", metavar="id|all", help="asset ID, or 'all'")
+    p = add("blender", "Re-render Blender goldens (local only).", _blender)
+    p.add_argument("id", metavar="id|all", nargs="?", help="asset ID, or 'all'")
     p.add_argument("--check", action="store_true", help="report pixel diffs against committed renders")
+    p.add_argument(
+        "--version",
+        dest="blender_version",
+        action="store_true",
+        help="print the Blender version (must be 5.2.2 LTS) and exit",
+    )
+    p.set_defaults(usage_error=p.error)
 
     p = add("gen-ai", "Generate AI golden candidates (local only, never CI).")
     p.add_argument("id", help="asset ID")

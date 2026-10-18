@@ -4,3 +4,4 @@ build/
 test-results/
 playwright-report/
 tools/forge/.venv/
+__pycache__/

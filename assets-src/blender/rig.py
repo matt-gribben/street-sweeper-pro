@@ -42,7 +42,11 @@ PALETTE = json.loads((REPO / "assets-src/palette/kerbside32.json").read_text(enc
 BLENDER_VERSION = "5.2.2 LTS"
 SUN_AZIMUTH_DEG = 315.0  # north-west, clockwise from north
 SUN_ELEVATION_DEG = 50.0
-T_BASE, T_LIT = 0.35, 0.85  # toon thresholds; a flat top scores sin(50 deg) = 0.766 -> base. Final values: SSP-008.
+# Toon thresholds, settled in SSP-008 from test renders. A flat top scores sin(50 deg) = 0.766
+# -> base. A 45 deg chamfer at heading offset t from the sun azimuth scores 0.542 + 0.455 cos t,
+# and at 32 headings t steps by 11.25 deg: 0.83 sits midway between t = 45 (0.863, lit) and
+# t = 56.25 (0.795, base); 0.33 midway between t = 112.5 (0.368, base) and t = 123.75 (0.289, dark).
+T_BASE, T_LIT = 0.33, 0.83
 PX_PER_M = 16
 CAMERA_DISTANCE_M = 50.0
 

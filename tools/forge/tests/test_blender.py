@@ -464,11 +464,17 @@ def _rig_constants() -> dict[str, object]:
 def test_blender_rig_constants() -> None:
     c = _rig_constants()
     assert c["SUN_AZIMUTH_DEG"] == 315.0 and c["SUN_ELEVATION_DEG"] == 50.0
-    assert c["T_BASE"] == 0.35 and c["T_LIT"] == 0.85
+    assert c["T_BASE"] == 0.33 and c["T_LIT"] == 0.83  # settled in SSP-008 (ASSET_PIPELINE §7.2)
     assert c["PX_PER_M"] == 16
     assert c["BLENDER_VERSION"] == blender.REQUIRED_VERSION
     # A flat top face scores sin(50 deg) = 0.766, between the thresholds -> base.
     assert c["T_BASE"] < math.sin(math.radians(50.0)) < c["T_LIT"]  # type: ignore[operator]
+    # 45 deg chamfers at the 32 headings' sun offsets (0, 11.25, ... deg) keep >= 0.03 from both thresholds.
+    el = math.radians(50.0)
+    for k in range(17):
+        t = math.radians(45.0 + 11.25 * (k - 4))
+        dot = math.sin(math.radians(45.0)) * (math.sin(el) + math.cos(el) * math.cos(t))
+        assert abs(dot - c["T_BASE"]) >= 0.03 and abs(dot - c["T_LIT"]) >= 0.03  # type: ignore[operator]
 
 
 def test_blender_rig_render_settings_present() -> None:

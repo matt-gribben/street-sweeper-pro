@@ -2,7 +2,7 @@
 id: SSP-008
 title: "Port the probe sweeper onto rig.py and commit Bessie body, dented and brush renders"
 milestone: M0
-status: todo
+status: done
 type: asset
 estimate: L
 labels: [type:asset, area:assets, size:L, vertical-slice]

@@ -2,7 +2,7 @@
 id: SSP-010
 title: "Add deterministic atlas packing, generated assets.ts, asset-hashes.json and forge verify"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:tooling, area:assets, size:L, vertical-slice]

@@ -25,7 +25,6 @@ NOT_IMPLEMENTED_UNTIL: dict[str, str] = {
     "gen-ai": "SSP-012",
     "lint": "SSP-011",
     "sheets": "SSP-011",
-    "verify": "SSP-010",
 }
 """Issue that delivers each subcommand. Remove an entry when its real handler lands."""
 
@@ -63,6 +62,13 @@ def _build(args: argparse.Namespace) -> int:
     from forge import build  # deferred so other subcommands never import it
 
     return build.cli(args)
+
+
+def _verify(args: argparse.Namespace) -> int:
+    """``forge verify [--pixels]`` (SSP-010)."""
+    from forge import verify  # deferred so other subcommands never import it
+
+    return verify.cli(args)
 
 
 def _positive_int(text: str) -> int:
@@ -116,7 +122,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--out",
         metavar="DIR",
-        help="output root; frames go to <out>/frames/<id>/ (default: build/.forge-cache/)",
+        help=(
+            "output root: frames go to <out>/frames/<id>/ (default: build/.forge-cache/) and the generated "
+            "outputs to <out>/public/assets/ and <out>/src/gen/ (default: the repo)"
+        ),
     )
     p.add_argument("--no-cache", action="store_true", help="neither read nor write build/.forge-cache/entries/")
 
@@ -156,7 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--atlas", choices=ATLASES, help="one atlas only")
     _add_only(p)
 
-    p = add("verify", "Rebuild to build/tmp/verify/ and compare with committed outputs.")
+    p = add("verify", "Rebuild to build/tmp/verify/ and compare with committed outputs.", _verify)
     p.add_argument("--pixels", action="store_true", help="compare decoded RGBA instead of PNG bytes")
 
     return parser

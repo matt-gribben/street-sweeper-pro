@@ -242,13 +242,16 @@ All forge commands run as `uv run --project tools/forge python -m forge <cmd>`. 
 - **M0 guard behaviour:** until their real implementations land, `render-sfx.ts`, `render-music.ts` (M5) and `compile-level.ts` (M1) are input-count guards (`tools/inputGuard.ts`): with zero sources they log `0 sources; nothing to render` and exit 0, and with any source present they exit 3 with `not implemented until M5`/`M1`; each accepts `--out <dir>`.
 - `gen:ai` defaults to `--tool codex`. A later `--tool cursor` on the command line overrides it, because the last flag wins.
 - `forge verify` runs `forge build --out build/tmp/verify/`, then runs the audio and level tools with their `--out` pointed at the same temp root. It byte-compares every file listed in `public/assets/asset-hashes.json` and `src/gen/assets.ts`, and exits non-zero with a per-file report. Audio comparison follows the WAV-hash rule in [AUDIO_DESIGN.md](AUDIO_DESIGN.md).
+  - The rebuild is always cold (`--no-cache`), into an emptied `build/tmp/verify/`. A guard tool that exits non-zero fails verify.
+  - The compared set is every file under `public/assets/` plus `src/gen/assets.ts`, on both sides, plus the keys of the committed `asset-hashes.json`. A path also fails when it is generated but not committed (**missing**), committed but not generated (**stale**), generated but not listed (**unlisted**), listed but not generated, or when its committed bytes do not match its listed SHA-256.
+  - With `--pixels`, a PNG whose bytes differ passes if its decoded RGBA is identical, and is reported as `pixels identical, bytes differ`. JSON and TS stay byte-compared, with one exception: the `asset-hashes.json` entries of exactly those PNGs may differ, because they hash encoder output.
 - CI invokes `forge verify` (byte compare) or `forge verify --pixels` (decoded RGBA plus JSON/TS bytes) according to decision D-12 in [ROADMAP §8](ROADMAP.md#8-m0-spike-decision-log), recorded in the M0 spike (see §13.5).
 
 ### 5.3 Forge subcommands (full reference)
 
 | Subcommand | Key flags | Notes |
 |---|---|---|
-| `build` | `[--only <id>…] [--out <dir>] [--no-cache]` | Pure. Cached by content hash in `build/.forge-cache/`. `--only` still repacks all atlases, so packing stays global and deterministic. |
+| `build` | `[--only <id>…] [--out <dir>] [--no-cache]` | Pure. Cached by content hash in `build/.forge-cache/`. `--only` still repacks all atlases, so packing stays global and deterministic (the other assets come from the cache, or are rebuilt). `--out <dir>` also receives the generated outputs, at their repo-relative paths (`<dir>/public/assets/…`, `<dir>/src/gen/assets.ts`), instead of the repo. |
 | `verify` | `[--pixels]` | `--pixels` decodes mismatching PNGs and compares RGBA pixels instead of PNG bytes (JSON and TS outputs are still byte-compared), reporting whether the pixels or only the encoded bytes differ (§13.5). It is CI's sanctioned mode only if D-12 records cross-platform encoder drift. |
 | `lint` | `[--only <id>…] [--warn-as-error]` | CI passes `--warn-as-error` except for the "re-render needed" warning, which blocks merge by review rule instead. |
 | `sheets` | `[--atlas world\|actors\|items\|ui\|fx] [--only <id>…]` | 4×, labelled, light `#c3c1c0` and dark `#24222a` backgrounds, palette strip, Bessie h00 for scale. |
@@ -1080,6 +1083,11 @@ Portraits use the same pixelize path: `crop` selects each expression from the 1:
 ### 9.3 Packing and outputs
 
 - **Packer:** deterministic maxrects. Inputs are sorted by area descending, then by frame id. There is no rotation and 1 px padding.
+  - Implementation (`tools/forge/forge/pack.py`, SSP-010): MaxRects with Best-Short-Side-Fit and integer maths only. Ties are broken by long-side leftover, then y, then x. The padding is 1 px between neighbours, so a frame may touch the atlas edge.
+  - Atlas size: the first power-of-two size (sides 16–2048), ordered by area, then longest side, then height, that holds every frame of that atlas.
+  - Until SSP-113 (M4), frames are packed untrimmed at their cell size, and `px`/`py` is the pivot within the cell.
+  - The atlas PNG is indexed, with the same PLTE/`tRNS` contract as the frame PNGs (§9.2).
+  - `public/assets/atlas/` belongs to the packer: any file there that the build did not produce is removed.
 - **Atlases:** 5 atlases of at most 2048×2048:
 
 | Atlas | Contents |
@@ -1116,7 +1124,7 @@ export type FrameId = keyof typeof FRAME;
 export type AssetId = "veh.sweeper" | "npc.old_woman" | "litter.crisp_packet" /* | … */;
 ```
 
-- **Hashes:** `public/assets/asset-hashes.json` maps every generated file to its SHA-256. `assets:verify` compares against it.
+- **Hashes:** `public/assets/asset-hashes.json` maps every generated file to its SHA-256. `assets:verify` compares against it. Keys are repo-relative paths, sorted, and include `src/gen/assets.ts` but not the hashes file itself.
 
 ### 9.4 `forge lint`
 

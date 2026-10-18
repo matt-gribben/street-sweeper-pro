@@ -160,7 +160,8 @@ try {
     if (message.type() === 'warning') consoleWarnings.push(message.text());
   });
   page.on('pageerror', (error) => consoleErrors.push(String(error)));
-  await page.goto(url);
+  // The SSP-016 test world is no longer the default world (SSP-017 made it the spike city); dev builds select it.
+  await page.goto(`${url}?world=palette_test`);
   await page.waitForTimeout(1500);
 
   // --- Frames through the palette pass -----------------------------------------------------------------

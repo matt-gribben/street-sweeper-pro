@@ -14,6 +14,7 @@ import {
   LinearSRGBColorSpace,
   Mesh,
   NearestFilter,
+  type Object3D,
   OrthographicCamera,
   Scene,
   ShaderMaterial,
@@ -23,7 +24,6 @@ import {
 } from 'three';
 import { type CameraRig, createCameraRig, setCameraFrame } from './camera.ts';
 import { createPalettePass, type PalettePass } from './palettePass.ts';
-import { createTestWorld } from './testWorld.ts';
 import {
   blitOffsetDevicePx,
   INTERNAL_HEIGHT_PX,
@@ -78,7 +78,11 @@ export class Renderer {
   private readonly blitOffset: Vector2;
   private scale = 1;
 
-  constructor(canvas: HTMLCanvasElement) {
+  /**
+   * `world` is everything drawn in the world pass (pass 1): the spike city in M0 (spikeCity.ts), or the SSP-016
+   * palette test world. Its draw calls come on top of the palette pass and the blit.
+   */
+  constructor(canvas: HTMLCanvasElement, world: Object3D) {
     // three 0.186 WebGLRenderer is WebGL2-only, which is what we want (not WebGPU).
     this.webgl = new WebGLRenderer({
       canvas,
@@ -97,7 +101,7 @@ export class Renderer {
 
     this.rig = createCameraRig(DEFAULT_INTERNAL_WIDTH_PX);
     this.world = new Scene();
-    this.world.add(createTestWorld());
+    this.world.add(world);
 
     const rtWidth = rtWidthPx(DEFAULT_INTERNAL_WIDTH_PX);
     // RGBA8 attachments (UnsignedByteType, RGBAFormat are the defaults) with no colour space conversion.

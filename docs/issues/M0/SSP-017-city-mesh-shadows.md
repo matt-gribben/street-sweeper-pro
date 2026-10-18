@@ -2,7 +2,7 @@
 id: SSP-017
 title: "Render merged 1/3/6-storey block meshes with facade ramps and SE shadow polygons"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:render, size:M, vertical-slice]
@@ -55,12 +55,12 @@ Spike layout input: a cell-grid description with 1-, 3- and 6-storey blocks (2.5
 
 ## Acceptance criteria
 
-- [ ] Unit tests: no wall between equal-height neighbours; walls emitted toward lower/open cells; N/W walls get _lit, E/S _dark, roofs _base
-- [ ] Unit test: a shadow polygon's far edge is offset 0.84 x h along the SE unit vector (+x, +y_sim)
-- [ ] City mesh + building shadows add exactly 2 draw calls (renderer.info.render.calls delta)
-- [ ] In the dev build a block in the top half of the screen shows its south face and one on the left shows its east face (screenshot under build/, opened with Read)
-- [ ] No hex literals in the new files; all colours come from palette indices
-- [ ] npm run typecheck, lint and test pass
+- [x] Unit tests: no wall between equal-height neighbours; walls emitted toward lower/open cells; N/W walls get _lit, E/S _dark, roofs _base
+- [x] Unit test: a shadow polygon's far edge is offset 0.84 x h along the SE unit vector (+x, +y_sim)
+- [x] City mesh + building shadows add exactly 2 draw calls (renderer.info.render.calls delta)
+- [x] In the dev build a block in the top half of the screen shows its south face and one on the left shows its east face (screenshot under build/, opened with Read)
+- [x] No hex literals in the new files; all colours come from palette indices
+- [x] npm run typecheck, lint and test pass
 
 ## Verification
 

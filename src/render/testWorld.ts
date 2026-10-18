@@ -1,5 +1,6 @@
-// M0 test world pass (SSP-016): exercises RT_world's two attachments and every branch of the palette pass
-// until the spike scene (SSP-017) replaces it. All colours are Kerbside-32 entries read from kerbside32.json
+// M0 test world pass (SSP-016): exercises RT_world's two attachments and every branch of the palette pass.
+// Since SSP-017 the dev build shows the spike city by default; this world is selected with
+// `?world=palette_test` in dev builds only (tools/spikes/swiftShaderPalettePass.ts). All colours are Kerbside-32 entries read from kerbside32.json
 // by name; the gradient blends four of them so the LUT also sees off-palette input and snaps it.
 //
 // Layout around the origin (metres; +x east, +z south, so north is up on screen), inside the first frame:

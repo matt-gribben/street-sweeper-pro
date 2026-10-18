@@ -1,5 +1,13 @@
 {
   "frames": {
+    "npc.old_woman:idle:e:0": { "x": 1164, "y": 812, "w": 24, "h": 24, "px": 12, "py": 12 },
+    "npc.old_woman:idle:n:0": { "x": 1164, "y": 837, "w": 24, "h": 24, "px": 12, "py": 12 },
+    "npc.old_woman:idle:ne:0": { "x": 1359, "y": 97, "w": 24, "h": 24, "px": 12, "py": 12 },
+    "npc.old_woman:idle:nw:0": { "x": 1359, "y": 122, "w": 24, "h": 24, "px": 12, "py": 12 },
+    "npc.old_woman:idle:s:0": { "x": 0, "y": 970, "w": 24, "h": 24, "px": 12, "py": 12 },
+    "npc.old_woman:idle:se:0": { "x": 0, "y": 995, "w": 24, "h": 24, "px": 12, "py": 12 },
+    "npc.old_woman:idle:sw:0": { "x": 25, "y": 970, "w": 24, "h": 24, "px": 12, "py": 12 },
+    "npc.old_woman:idle:w:0": { "x": 25, "y": 995, "w": 24, "h": 24, "px": 12, "py": 12 },
     "veh.sweeper:body:h00:0": { "x": 1067, "y": 873, "w": 64, "h": 64, "px": 32, "py": 32 },
     "veh.sweeper:body:h01:0": { "x": 1067, "y": 938, "w": 64, "h": 64, "px": 32, "py": 32 },
     "veh.sweeper:body:h02:0": { "x": 1132, "y": 873, "w": 64, "h": 64, "px": 32, "py": 32 },

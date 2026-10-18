@@ -39,10 +39,23 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     ids = [e.id for e in entries]
     assert ids == sorted(ids), "manifest entries must be sorted by id"
     assert unsorted_ids(entries) == []
-    assert ids == ["veh.sweeper", "veh.sweeper_brush"]
+    assert ids == ["npc.old_woman", "veh.sweeper", "veh.sweeper_brush"]
     raw = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-    assert raw["assets"][0] == SWEEPER
-    assert raw["assets"][1] == {
+    assert raw["assets"][0] == {
+        "id": "npc.old_woman",
+        "class": "npc",
+        "technique": "ai-ingest",
+        "source": "assets-src/sprites/npc/old_woman.sprite.txt",
+        "cell": [24, 24],
+        "states": ["idle"],
+        "dirs": ["s", "sw", "w", "nw", "n", "ne", "e", "se"],
+        "frames": {"idle": 1},
+        "atlas": "actors",
+        "outline": False,
+        "swaps": [],
+    }
+    assert raw["assets"][1] == SWEEPER
+    assert raw["assets"][2] == {
         "id": "veh.sweeper_brush",
         "class": "veh",
         "technique": "blender",
@@ -55,7 +68,7 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "outline": True,
         "swaps": [],
     }
-    assert sum(len(e.frame_ids()) for e in entries) == 192
+    assert sum(len(e.frame_ids()) for e in entries) == 200
     for e in raw["assets"]:
         assert list(e) == list(FIELDS), "fields in the documented order"
         assert not e["id"].startswith(("concept.", "_probe")), "_probe and concept.* are never in the manifest"

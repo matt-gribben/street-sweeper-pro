@@ -8,7 +8,7 @@ M0 imports these files to their final homes (see docs/ROADMAP.md, M0 "Probe impo
 |---|---|
 | `blender/sweeper_v2.py` | `assets-src/blender/vehicles/sweeper.py` (refactored onto `rig.py`) |
 | `tools/pixelize.py` | `tools/forge/forge/pixelize.py` |
-| `codex/old_woman_sheet.png` (+ `events.jsonl`, `last_message.txt`) | candidate `assets-src/ai/ref.people_style/golden.png` |
+| `codex/old_woman_sheet.png` (+ `events.jsonl`, `last_message.txt`) | candidate `assets-src/ai/ref.people_style/golden.png`; rejected in SSP-014 (ROADMAP §8 D-04) and replaced by a fresh `forge gen-ai` golden with complete provenance |
 | `codex4/rubbish_sheet.png` (+ `events.jsonl`, `last_message.txt`) | candidate `assets-src/ai/litter.sheet_01/golden.png` |
 | `reports/*.report.json` | evidence for ADR 0002 (pixel periods, native sizes) |
 | `view_mockscene.png` (+ `tools/mockscene.py`) | evidence only: Blender sweepers, Codex characters and litter composited on one fixed palette |

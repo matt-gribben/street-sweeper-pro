@@ -20,6 +20,7 @@ from forge.ingest import (
     IngestConfig,
     IngestError,
     binary_alpha,
+    build_grids,
     check_overwrite,
     cli,
     despeckle,
@@ -570,31 +571,66 @@ def test_mapped_empty_cell_is_an_error(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------------------------
-# The probe old-woman sheet (dry run only; committing the grid is SSP-014)
+# The accepted ref.people_style golden (SSP-014): dry run, and the committed hand-repaired grid
 
 
-def test_dry_run_on_ref_people_style(tmp_path: Path) -> None:
+def _copy_people_style(tmp_path: Path) -> Path:
     src = REPO_ROOT / "assets-src/ai/ref.people_style"
     dst = tmp_path / "assets-src/ai/ref.people_style"
     dst.mkdir(parents=True)
     for name in ("golden.png", "ingest.json"):
         shutil.copyfile(src / name, dst / name)
+    return src
+
+
+def test_dry_run_on_ref_people_style(tmp_path: Path) -> None:
+    src = _copy_people_style(tmp_path)
     before = tree(tmp_path / "assets-src")
     out = ingest("ref.people_style", tmp_path, dry_run=True)
     assert tree(tmp_path / "assets-src") == before
     assert out.preview_path.is_file()
     res = out.result
-    assert res.alpha_method == "border"
-    assert abs(res.period[0] - 9.22) < 0.2 and abs(res.period[1] - 9.38) < 0.2
+    assert res.alpha_method == "alpha", "the accepted golden has real alpha"
+    # The FFT detector picks a harmonic in x on this golden (ADR 0002 §5.1 would flag it), so
+    # ingest.json commits the period measured from colour run lengths (13-14 px on both axes).
+    assert res.period_source == "override" and res.period == (13.5, 13.5)
+    assert abs(res.period_detected[0] - res.period_detected[1]) > 0.1 * min(res.period_detected)
     assert len(res.cells) == 8, "all eight key poses are processed, mapped or not"
+    assert abs(res.factor - 0.9048) < 1e-4, "one sheet factor, 19 / 21"
     tallest = max(c.stepped_size[1] for c in res.cells)
     assert tallest == 19, "largest_item_px 19: the tallest elderly figure is 19 px"
     for c in res.cells:
         rows = np.flatnonzero((c.final != TRANSPARENT).any(axis=1))
-        assert rows[-1] <= 22 and c.stepped_size[0] <= 18
-    # the draft mapping parses as a people sheet: frames of one asset
+        assert rows[-1] == 22 and c.stepped_size[0] <= 18
     cfg = parse_config(json.loads((src / "ingest.json").read_text(encoding="utf-8")))
-    assert {c.asset_id for c in cfg.cells if c is not None} == {"npc.old_woman"}
+    assert [None if c is None else c.frame_id for c in cfg.cells] == [
+        "npc.old_woman:idle:s:0", None, None, None,
+        "npc.old_woman:idle:sw:0", "npc.old_woman:idle:w:0", "npc.old_woman:idle:nw:0", "npc.old_woman:idle:n:0",
+    ]
+
+
+def test_committed_old_woman_grid_is_hand_edited_and_protected(tmp_path: Path) -> None:
+    """The committed grid came from this golden (origin, shape) but was hand-repaired (D-13), so a
+    plain re-ingest must refuse to overwrite it (CLAUDE.md hard rule 9)."""
+    _copy_people_style(tmp_path)
+    committed = REPO_ROOT / "assets-src/sprites/npc/old_woman.sprite.txt"
+    grid = read_sprite(committed)
+    assert grid.origin == "ai/ref.people_style#cell=0,4,5,6,7"
+    assert grid.ingest_sha256 is not None
+    fresh = build_grids(ingest("ref.people_style", tmp_path, dry_run=True).result, "ref.people_style")["npc.old_woman"]
+    assert fresh.ingest_sha256 == grid.ingest_sha256, "ingest_sha256 records the frames as first ingested"
+    assert check_overwrite(committed) is not None, "the hand repairs make the grid count as edited"
+    repaired = {f: int((grid.frames[f] != fresh.frames[f]).sum()) for f in fresh.frames}
+    assert repaired == {"idle:s:0": 13, "idle:sw:0": 12, "idle:w:0": 7, "idle:nw:0": 6, "idle:n:0": 7}, (
+        "the per-frame repair counts recorded for D-13 (ROADMAP §8)"
+    )
+
+    target = tmp_path / "assets-src/sprites/npc/old_woman.sprite.txt"
+    target.parent.mkdir(parents=True)
+    shutil.copyfile(committed, target)
+    out = ingest("ref.people_style", tmp_path)
+    assert target in out.refused and not out.written
+    assert target.read_bytes() == committed.read_bytes()
 
 
 def test_parse_sprite_round_trip_of_ingested_text(litter_repo: Path) -> None:

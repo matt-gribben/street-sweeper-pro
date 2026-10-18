@@ -1,9 +1,9 @@
-"""Determinism and acceptance checks over a real build of the committed M0 assets (SSP-009, SSP-010).
+"""Determinism and acceptance checks over a real build of the committed M0 assets (SSP-009, SSP-010, SSP-014).
 
 Builds ``assets-src/manifest.json`` twice with the cache off, into two temp dirs, and checks
 that every output file has the same SHA-256 (frames, atlas PNG/JSON, ``src/gen/assets.ts``,
-``asset-hashes.json``); then inspects the built frames: 192 of them, 64x64 Bessie / 96x96
-brush, Kerbside-32 colours only with binary alpha, the outline rule, no metadata chunks, and
+``asset-hashes.json``); then inspects the built frames: 200 of them, 64x64 Bessie / 96x96
+brush / 24x24 npc.old_woman (8 idle directions, 3 of them mirrored), Kerbside-32 colours only with binary alpha, the outline rule, no metadata chunks, and
 a palette snap that changed 0 pixels; and the packed ``actors`` atlas.
 """
 
@@ -24,7 +24,8 @@ from forge.palette import REPO_ROOT, load_palette
 from forge.pngio import FORBIDDEN_METADATA_CHUNKS, decode_indexed_png, png_chunk_types
 
 PALETTE = load_palette()
-CELLS = {"veh.sweeper": (64, 64), "veh.sweeper_brush": (96, 96)}
+CELLS = {"npc.old_woman": (24, 24), "veh.sweeper": (64, 64), "veh.sweeper_brush": (96, 96)}
+FRAME_COUNT = 200
 
 
 def _hashes(root: Path) -> dict[str, str]:
@@ -51,16 +52,17 @@ def test_two_builds_are_byte_identical(builds: tuple[BuildResult, Path, Path]) -
     assert ha == hb
 
 
-def test_builds_all_192_frames(builds: tuple[BuildResult, Path, Path]) -> None:
+def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
     result, a, _ = builds
-    assert len(result.frames) == 192
+    assert len(result.frames) == FRAME_COUNT
     counts = {aid: sum(1 for f in result.frames if f.asset_id == aid) for aid in CELLS}
-    assert counts == {"veh.sweeper": 64, "veh.sweeper_brush": 128}
-    assert len(list((a / "frames").rglob("*.png"))) == 192
+    assert counts == {"npc.old_woman": 8, "veh.sweeper": 64, "veh.sweeper_brush": 128}
+    assert len(list((a / "frames").rglob("*.png"))) == FRAME_COUNT
     assert [f.frame_id for f in result.frames] == sorted(f.frame_id for f in result.frames)
     assert "veh.sweeper:body:h07:0" in {f.frame_id for f in result.frames}
     assert "veh.sweeper:dented:h07:0" in {f.frame_id for f in result.frames}
     assert "veh.sweeper_brush:brush:h07:2" in {f.frame_id for f in result.frames}
+    assert "npc.old_woman:idle:s:0" in {f.frame_id for f in result.frames}
 
 
 def test_frames_are_cell_sized_kerbside32_with_binary_alpha(builds: tuple[BuildResult, Path, Path]) -> None:
@@ -93,8 +95,9 @@ def test_no_opaque_non_ink_pixel_touches_transparency(builds: tuple[BuildResult,
 
 def test_palette_snap_changed_zero_pixels(builds: tuple[BuildResult, Path, Path]) -> None:
     result, _, _ = builds
-    assert {a.entry.id: a.snap_changed_px for a in result.assets} == {"veh.sweeper": 0, "veh.sweeper_brush": 0}
-    assert {a.entry.id: a.source_off_palette_px for a in result.assets} == {"veh.sweeper": 0, "veh.sweeper_brush": 0}
+    zero = {aid: 0 for aid in CELLS}
+    assert {a.entry.id: a.snap_changed_px for a in result.assets} == zero
+    assert {a.entry.id: a.source_off_palette_px for a in result.assets} == zero
     assert all(f.snap_changed_px == 0 for f in result.frames)
 
 
@@ -117,6 +120,19 @@ def test_pivots_come_from_render_json(builds: tuple[BuildResult, Path, Path]) ->
         assert f.atlas == "actors"
 
 
+def test_old_woman_mirrors_and_feet_on_the_pivot_row(builds: tuple[BuildResult, Path, Path]) -> None:
+    """SSP-014: SE/E/NE are left-right flips of SW/W/NW, and every figure fits 18x22 with its
+    feet (lowest opaque row) on row 22, row 23 clear (ART_BIBLE §7.2)."""
+    result, _, _ = builds
+    by_id = {f.frame_id: f.indices for f in result.frames if f.asset_id == "npc.old_woman"}
+    for dst, src in (("se", "sw"), ("e", "w"), ("ne", "nw")):
+        np.testing.assert_array_equal(by_id[f"npc.old_woman:idle:{dst}:0"], by_id[f"npc.old_woman:idle:{src}:0"][:, ::-1])
+    for fid, idx in by_id.items():
+        ys, xs = np.nonzero(idx != -1)
+        assert ys.max() == 22, fid
+        assert xs.max() - xs.min() + 1 <= 18 and ys.max() - ys.min() + 1 <= 22, fid
+
+
 def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[BuildResult, Path, Path]) -> None:
     _, a, b = builds
     outputs = [f"{ATLAS_DIR}/actors.png", f"{ATLAS_DIR}/actors.json", ASSETS_TS, HASHES_JSON]
@@ -130,7 +146,7 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
 def test_actors_atlas_holds_every_frame_at_its_rect(builds: tuple[BuildResult, Path, Path]) -> None:
     result, a, _ = builds
     (atlas,) = result.atlases
-    assert atlas.name == "actors" and len(atlas.frames) == 192
+    assert atlas.name == "actors" and len(atlas.frames) == FRAME_COUNT
     assert atlas.width <= 2048 and atlas.height <= 2048
     pixels = decode_indexed_png((a / ATLAS_DIR / "actors.png").read_bytes(), PALETTE)
     assert pixels.shape == (atlas.height, atlas.width)

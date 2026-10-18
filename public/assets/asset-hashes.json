@@ -1,5 +1,5 @@
 {
-  "public/assets/atlas/actors.json": "16d7c879da1d4f99cb31327a4c3050bd649f8ffe7451cf910d8d04243774d118",
-  "public/assets/atlas/actors.png": "af08bcea63f836d416695d21e2dbdcc522e57980d44e3d3f94eac331d4b12dfa",
-  "src/gen/assets.ts": "63423663401c5d79682bd1485fa226c64d71768759b49725a4619395a9252ddb"
+  "public/assets/atlas/actors.json": "35a8a89ece4276de17359c2e68fc3bba8fc20c2808550083bbb1d86486ac87e2",
+  "public/assets/atlas/actors.png": "34f3789ea4a88c43313f262afb7442260f630aeedc3fb5ebc149c753b506d6f1",
+  "src/gen/assets.ts": "53fa02f83535732ec22224ec0574db51b953742aba0b02564b7ea8f6d1476e1c"
 }

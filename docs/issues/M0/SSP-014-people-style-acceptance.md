@@ -2,7 +2,7 @@
 id: SSP-014
 title: "Accept ref.people_style and ingest the spike pedestrian grid (D-04, D-13)"
 milestone: M0
-status: todo
+status: done
 type: asset
 estimate: M
 labels: [type:asset, area:assets, size:M, vertical-slice]
@@ -61,11 +61,11 @@ Then run `npm run assets`, `assets:lint` and `assets:sheets -- --only npc.old_wo
 
 ## Acceptance criteria
 
-- [ ] assets-src/ai/ref.people_style/meta.json has accepted_index set, non-empty acceptance_notes covering the provenance trade-off, and golden_sha256 matching golden.png
-- [ ] old_woman.sprite.txt exists with origin: ai/ref.people_style#cell=<k> and ingest_sha256: headers; each figure fits ≤ 18x22 inside 24x24 with feet on row 22
-- [ ] The manifest entry's frames match the grid exactly; `npm run assets:lint` and `npm run assets:verify` pass
-- [ ] build/sheets/only_npc.old_woman.png was opened with Read, and the PR records what was checked
-- [ ] ROADMAP §8 D-04 and D-13 have a Decision, Evidence and Date; D-13 cites per-frame repaired-pixel counts
+- [x] assets-src/ai/ref.people_style/meta.json has accepted_index set, non-empty acceptance_notes covering the provenance trade-off, and golden_sha256 matching golden.png
+- [x] old_woman.sprite.txt exists with origin: ai/ref.people_style#cell=<k> and ingest_sha256: headers; each figure fits ≤ 18x22 inside 24x24 with feet on row 22
+- [x] The manifest entry's frames match the grid exactly; `npm run assets:lint` and `npm run assets:verify` pass
+- [x] build/sheets/only_npc.old_woman.png was opened with Read, and the PR records what was checked
+- [x] ROADMAP §8 D-04 and D-13 have a Decision, Evidence and Date; D-13 cites per-frame repaired-pixel counts
 
 ## Verification
 

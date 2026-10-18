@@ -23,6 +23,7 @@ import pytest
 from PIL import Image
 
 from forge.blender import script_sha256
+from forge.genai import prompt_sha256
 from forge.build import build
 from forge.lint import Finding, cli, lint, pixel_violations, retro_allowed
 from forge.palette import PALETTE_PATH, REPO_ROOT, load_palette
@@ -234,15 +235,21 @@ def test_clean_fixture_has_no_findings(repo: Path) -> None:
     assert run_cli(repo, "--warn-as-error") == 0
 
 
-def test_the_repo_lints_clean_including_both_retro_probe_folders() -> None:
+def test_the_repo_lints_clean_with_the_retro_probe_folder_and_the_accepted_people_style() -> None:
     report = lint(REPO_ROOT)
     assert report.errors == [], [f.line() for f in report.errors]
     assert report.warnings == [], [f.line() for f in report.warnings]
     assert {"ref.people_style", "litter.sheet_01"} <= set(report.ai_folders)
-    for name in ("ref.people_style", "litter.sheet_01"):
-        meta = json.loads((REPO_ROOT / "assets-src" / "ai" / name / "meta.json").read_text(encoding="utf-8"))
-        assert meta["prompt_sha256"] is None and meta["preamble_version"] is None, "the retro probe form"
-        assert retro_allowed(meta)
+    ai = REPO_ROOT / "assets-src" / "ai"
+    meta = json.loads((ai / "litter.sheet_01" / "meta.json").read_text(encoding="utf-8"))
+    assert meta["prompt_sha256"] is None and meta["preamble_version"] is None, "the retro probe form"
+    assert retro_allowed(meta)
+    # SSP-014 (D-04): ref.people_style is a fresh gen-ai golden with complete provenance (VS-5).
+    meta = json.loads((ai / "ref.people_style" / "meta.json").read_text(encoding="utf-8"))
+    assert meta["accepted_index"] is not None and meta["acceptance_notes"].strip()
+    assert meta["preamble_version"] == "v1" and meta["argv"][0] != "RECONSTRUCTED"
+    assert meta["prompt_sha256"] == prompt_sha256((ai / "ref.people_style" / "prompt.md").read_text(encoding="utf-8"))
+    assert meta["golden_sha256"] == hashlib.sha256((ai / "ref.people_style" / "golden.png").read_bytes()).hexdigest()
 
 
 # ---------------------------------------------------------------------------------------------

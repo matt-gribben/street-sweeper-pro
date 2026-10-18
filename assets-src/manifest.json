@@ -1,6 +1,19 @@
 {
   "assets": [
     {
+      "id": "npc.old_woman",
+      "class": "npc",
+      "technique": "ai-ingest",
+      "source": "assets-src/sprites/npc/old_woman.sprite.txt",
+      "cell": [24, 24],
+      "states": ["idle"],
+      "dirs": ["s", "sw", "w", "nw", "n", "ne", "e", "se"],
+      "frames": { "idle": 1 },
+      "atlas": "actors",
+      "outline": false,
+      "swaps": []
+    },
+    {
       "id": "veh.sweeper",
       "class": "veh",
       "technique": "blender",

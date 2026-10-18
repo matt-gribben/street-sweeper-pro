@@ -532,19 +532,19 @@ The `meta.json` schema is `{ id, tool, tool_version, model, date, argv, prompt_s
 }
 ```
 
-`ingest.json` for a people key-pose sheet. People sheets are **single-asset**: each cell names a full frame ID `<asset-id>:<state>:<dir>:<n>`, and all of them go into one grid. The draft for `ref.people_style` (the probe old-woman sheet; SSP-014 finalises the mapping):
+`ingest.json` for a people key-pose sheet. People sheets are **single-asset**: each cell names a full frame ID `<asset-id>:<state>:<dir>:<n>`, and all of them go into one grid. The committed one for `ref.people_style` (SSP-014: row 1 is Doris facing south in four key poses, of which only the idle is used so far; row 2 is her idle turned SW, W, NW and N; the detected period is an FFT harmonic on this golden, so the measured period is committed):
 
 ```json
 {
   "mode": "sheet",
   "grid": [4, 2],
   "cells": [
-    "npc.old_woman:idle:s:0", "npc.old_woman:walk:s:0", "npc.old_woman:walk:s:1", "npc.old_woman:walk:s:2",
-    null, null, null, null
+    "npc.old_woman:idle:s:0", null, null, null,
+    "npc.old_woman:idle:sw:0", "npc.old_woman:idle:w:0", "npc.old_woman:idle:nw:0", "npc.old_woman:idle:n:0"
   ],
   "target_cell": [24, 24],
   "largest_item_px": 19,
-  "period_override": null,
+  "period_override": 13.5,
   "baseline_row": 22
 }
 ```
@@ -1065,7 +1065,7 @@ Prompt-writing rules:
 - **Never use trademarks**, product names or real places. Describe: "plain brown pizza box, no printing".
 - **Keep relative scale on sheets**, because ingest uses one scale factor per sheet. Say "same pixel size, the largest item is about 14 pixels across".
 - **No text in images.** Shop-sign lettering is added afterwards from Kerbside font glyphs.
-- **People:** always attach `ref.people_style/golden.png` with `-i` and say "match the attached reference's proportions, outline and palette exactly".
+- **People:** always attach `ref.people_style/golden.png` with `-i` and say "match the attached reference's proportions, outline and palette exactly". The brief overrides the preamble's straight-down line with the high three-quarter view ([ART_BIBLE §4.4](ART_BIBLE.md#44-creatures-use-a-high-three-quarter-cheat)) and asks for very low resolution ("the whole sheet is only about 200 × 100 art pixels", a ~19–22 px figure, almost no dark lines inside the silhouette), so the ingest step-down stays near 0.8× or above (D-13). Ask for "a small frowning mouth line", not a "cross mouth" (Codex draws an X). See `assets-src/ai/ref.people_style/prompt.md`.
 - **Art (`ai-art`):** `ai-art` prompts override the preamble's scale: "the whole image is pixel art at roughly 540×270 art pixels, upscaled" for a 2:1 title golden (1774×887, so the pseudo-pixel period is about 3.3 px and the 480×270 centre crop fills the screen), or "each portrait is pixel art at roughly 64×64 art pixels, upscaled". State the safe area too: "keep all important content inside the central 480×270 art pixels".
 
 ---
@@ -1092,8 +1092,8 @@ Notes on each step:
 | Step | Detail |
 |---|---|
 | 2. Alpha | Use real alpha thresholded at 128. If the golden has no meaningful alpha, key out the median border colour (RGB distance > 110). |
-| 4. Period | Measured periods so far (x/y): Codex characters 9.22/9.38 px, rubbish 10.81/10.87 px (pinned by `tools/forge/tests/test_pixelize.py`). If detection picks a harmonic (e.g. 4.6 or 18.6 px), set `period_override` in `ingest.json`. Never pass it as a CLI flag, because the override must be committed. |
-| 5–6. Scale | Block mode (`forge/pixelize.py`): majority over opaque pixels (alpha ≥ 128); a block is opaque when at least half its pixels are. Ties go to the lower palette index; before palette mapping, colours are bucketed RGB555 and ties go to the lowest bucket key (R>>3, then G>>3, then B>>3). **One factor per sheet**, never per-cell height normalisation. Step 5 resamples every cell at the sheet's period; step 6 then reduces every cell by the same factor (block mode again, output size `round(size × factor)`), chosen from `largest_item_px` so the largest item = 14 px for litter, and **the tallest figure = 19 px (elderly) or 22 px (adults) for people** (§6.5; the probe old-woman sheet steps down by 19/33 ≈ 0.58×). Figures are then placed in `target_cell`: centred, or with the feet on `baseline_row` (22 for people). A figure that still does not fit is an error, never a per-cell rescale. |
+| 4. Period | Measured periods so far (x/y): Codex characters 9.22/9.38 px, rubbish 10.81/10.87 px (pinned by `tools/forge/tests/test_pixelize.py`). If detection picks a harmonic (e.g. 4.6 or 18.6 px), set `period_override` in `ingest.json`. The accepted `ref.people_style` golden is such a case: detected 14.30/12.10 px, while its colour runs are modal at 13–14 px on both axes, so it commits 13.5 (SSP-014). Never pass it as a CLI flag, because the override must be committed. |
+| 5–6. Scale | Block mode (`forge/pixelize.py`): majority over opaque pixels (alpha ≥ 128); a block is opaque when at least half its pixels are. Ties go to the lower palette index; before palette mapping, colours are bucketed RGB555 and ties go to the lowest bucket key (R>>3, then G>>3, then B>>3). **One factor per sheet**, never per-cell height normalisation. Step 5 resamples every cell at the sheet's period; step 6 then reduces every cell by the same factor (block mode again, output size `round(size × factor)`), chosen from `largest_item_px` so the largest item = 14 px for litter, and **the tallest figure = 19 px (elderly) or 22 px (adults) for people** (§6.5; the probe old-woman sheet stepped down by 19/33 ≈ 0.58×, the accepted `ref.people_style` golden by 19/21 ≈ 0.90×; D-13 accepts the step-down only when people sheets stay near 0.8× or above). Figures are then placed in `target_cell`: centred, or with the feet on `baseline_row` (22 for people). A figure that still does not fit is an error, never a per-cell rescale. |
 | 7. Palette | Nearest colour in OKLab, no dither |
 | 8. Despeckle | 3×3 majority on opaque pixels, reading the input only: an opaque pixel with no opaque 8-neighbour becomes transparent; a pixel whose index none of its 8-neighbours shares takes the most frequent neighbour index (ties to the lower index) only when that index holds a strict majority of its window (itself plus its opaque neighbours). Pixels in any 1 px line (outlines, two-pixel eyes) are never changed. |
 | 9. Alpha | Binary: every pixel is a Kerbside-32 index or transparent |
@@ -1325,7 +1325,7 @@ Reject a candidate if **any** of these is true:
 
 | Reject when | Typical cause |
 |---|---|
-| The camera is not straight down (side or 3/4 view, visible vehicle sides, bottle labels facing camera) | Prompt drift. Restate "directly above". |
+| The camera is not straight down (side or 3/4 view, visible vehicle sides, bottle labels facing camera). People are the exception: they must show the high three-quarter view of [ART_BIBLE §4.4](ART_BIBLE.md#44-creatures-use-a-high-three-quarter-cheat), so reject a person drawn straight down or side-on. | Prompt drift. Restate "directly above" (people: restate the high three-quarter view). |
 | A checkerboard is painted as the "transparent" background, or there is a coloured backdrop | The model faked transparency |
 | Text, a logo or brand-like marks appear | Restate "no text, no logos". Never accept and clean up. |
 | Items are touching or overlapping cell boundaries | Slicing will fail |

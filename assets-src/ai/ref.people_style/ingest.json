@@ -3,16 +3,16 @@
   "grid": [4, 2],
   "cells": [
     "npc.old_woman:idle:s:0",
-    "npc.old_woman:walk:s:0",
-    "npc.old_woman:walk:s:1",
-    "npc.old_woman:walk:s:2",
     null,
     null,
     null,
-    null
+    "npc.old_woman:idle:sw:0",
+    "npc.old_woman:idle:w:0",
+    "npc.old_woman:idle:nw:0",
+    "npc.old_woman:idle:n:0"
   ],
   "target_cell": [24, 24],
   "largest_item_px": 19,
-  "period_override": null,
+  "period_override": 13.5,
   "baseline_row": 22
 }

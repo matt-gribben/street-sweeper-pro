@@ -2,9 +2,9 @@
 
 > The visual rules of **Street Sweeper Pro**: what the game looks like, why, and how an AI author (Claude) produces and reviews every pixel of it.
 >
-> **Authority:** names, IDs, numbers, paths and the palette follow the canonical facts sheet (v1.0, 2026-10-18). Values marked *proposed* are this document's starting points and are locked (or changed) in the milestone noted. Values marked `TBD (M0 spike)` are decided by the M0 Foundations & Look Spike and then recorded in `assets-src/STYLE.md` (created in M0).
+> **Authority:** names, IDs, numbers, paths and the palette follow the canonical facts sheet (v1.0, 2026-10-18). Values marked *proposed* are this document's starting points and are locked (or changed) in the milestone noted. Values that were left open for the M0 Foundations & Look Spike have been decided and are recorded in [`assets-src/STYLE.md`](../assets-src/STYLE.md) v1 (2026-10-19, SSP-026). Items still open are listed in [§17](#17-open-items) with the milestone that decides them.
 >
-> **Relationship to `assets-src/STYLE.md`:** STYLE.md is the terse, operational copy of this bible that agents load while authoring assets. This document explains the reasoning and carries the examples. Both are edited in the same PR. If they ever disagree on a locked value, STYLE.md wins and this file is fixed in the next PR.
+> **Relationship to [`assets-src/STYLE.md`](../assets-src/STYLE.md) (v1, 2026-10-19):** STYLE.md is the terse, operational copy of this bible that agents load while authoring assets. This document explains the reasoning and carries the examples. Both are edited in the same PR. If they ever disagree on a locked value, STYLE.md wins and this file is fixed in the next PR.
 >
 > **Language:** British English throughout (colour, kerb, tyre, rubbish).
 
@@ -64,7 +64,7 @@ Muckleford is a **British seaside town seen from a council helicopter at teatime
 
 ### 3.1 Locked world scale
 
-These numbers are locked in M0 and every asset obeys them.
+These numbers are locked in M0 (signed off unchanged in [ROADMAP D-07](ROADMAP.md#8-m0-spike-decision-log), SSP-024; recorded in STYLE.md v1 §1) and every asset obeys them. Changing one after M0 needs an ADR.
 
 | Quantity | Value |
 |---|---|
@@ -91,7 +91,7 @@ Not everything is drawn at 16 px/m. Gameplay readability wins over realism for s
 
 ### 3.3 Internal resolution
 
-- **Base internal resolution 480×270.** Height is always 270. Width adapts in whole pixels: `W = clampEven(round(270 × aspect), 432, 640)`.
+- **Base internal resolution 480×270** (confirmed in M0, [ROADMAP D-03](ROADMAP.md#8-m0-spike-decision-log)). Height is always 270. Width adapts in whole pixels: `W = clampEven(round(270 × aspect), 432, 640)`.
 - Render target is **(W+2)×272** (1 px margin for the sub-pixel camera). Nearest filtering, no MSAA, no mipmaps.
 - Integer upscale only: 1080p fullscreen → 4× (windowed ≈ 3×, itch.io 960×540 embed 2×), 1440p → 5× (45 px bars), 4K → 8×. Letterbox colour `#0f0e12` (index 00 `ink`).
 - At H = 31.5 m the ground is **1 texel = 1 pixel** (to within 0.03%, under 0.11 px of drift at the frame edge; [TECHNICAL_DESIGN §12.2](TECHNICAL_DESIGN.md#122-camera-rendercamerats)): 30 m × 16.875 m visible, about 15 × 8.4 tiles.
@@ -128,7 +128,7 @@ Vehicles are rendered by Blender with an **orthographic camera looking straight 
 
 Humans and animals are drawn in a **high three-quarter view**, as if seen from about 60° above the horizon, from the south. We see the top of the head, the face (when facing S, SW or SE), a foreshortened torso, and feet. This is a deliberate convention, not geometry: the sprite's "up" is always screen-north, regardless of where the actor is on screen.
 
-Why: pillar 4 (Charming Chaos) needs faces: Doris's glare, the jogger's panic, the kid's "WAAAH!". A pure overhead person (a head-and-shoulders blob) cannot glare. The mismatch with pure-overhead vehicles is the same one generations of top-down games have shipped, and the **M0 spike scene** (Blender Bessie plus one Codex pedestrian in-engine) exists to confirm it reads. The approved `ref.people_style` golden locks the exact angle.
+Why: pillar 4 (Charming Chaos) needs faces: Doris's glare, the jogger's panic, the kid's "WAAAH!". A pure overhead person (a head-and-shoulders blob) cannot glare. The mismatch with pure-overhead vehicles is the same one generations of top-down games have shipped, and the **M0 spike scene** (Blender Bessie plus one Codex pedestrian in-engine) exists to confirm it reads. The `ref.people_style` golden locks the exact angle: `forge gen-ai` candidate `run_04`, accepted in SSP-014 ([ROADMAP D-04](ROADMAP.md#8-m0-spike-decision-log), pending owner review), SHA-256 `112e30d9…`. In-engine beside Bessie (SSP-018) the three-quarter figure reads as a person at a believable scale and does not clash with the overhead vehicle at 1×, so **the high three-quarter view is locked** (STYLE.md v1 §7).
 
 Rules that follow from the cheat:
 
@@ -372,13 +372,13 @@ One sun for every technique: **north-west, azimuth 315°, elevation 50°**. Hand
 - **No pillow shading** (darkening all edges equally), no soft gradients, no anti-aliasing against transparency (alpha is binary), no dithering on sprites. Ordered 4×4 Bayer dither is allowed **only** in `ai-art` (title, key art, portraits), fog and transitions.
 - **Mirror-safe creature shading:** SE, E and NE frames are horizontal mirrors of SW, W and NW, which would flip a NW highlight to the NE. Humans and animals therefore use **top-lit** shading: highlights on the top of the head, shoulders and back (centred), shade underneath and on the lower body, and no left/right-asymmetric highlights. The drop shadow, which the engine always offsets to the SE, carries the sun direction for them.
 - **Rotation-safe litter shading:** litter is rotated in 90° steps by code, so it uses the same top-lit approach: a centred highlight, never an edge highlight.
-- Vehicles and Blender props are exempt: Blender re-lights every heading under the fixed sun, so their highlights stay on the NW correctly.
+- Vehicles and Blender props are exempt: Blender re-lights every heading under the fixed sun, so their highlights stay on the NW correctly. The rig's toon thresholds are **dot(N, sun) < 0.33 dark, 0.33–0.83 base, ≥ 0.83 lit** (settled in SSP-008; owner [ASSET_PIPELINE §7.2](ASSET_PIPELINE.md#72-rig-rules-enforced-in-rigpy)), so a flat top (0.766) renders base.
 
 ### 6.3 The outline rule
 
 - **Every actor and prop** (vehicles, people, animals, litter, pickups, props, stack slices) has a **1 px `ink` (`#0f0e12`, index 00) outline, 4-connected, outside the silhouette**. `forge lint` fails any actor or prop with an opaque, non-ink pixel 4-adjacent to transparency.
 - Manifest entries carry `outline: true` for these classes. The build **completes** the outline: every transparent pixel 4-adjacent to a non-ink opaque pixel becomes ink. For a grid that already has a full ink border this is a no-op, so hand-drawn grids, ingested grids and Blender renders all end up identical in style.
-- **Visible body sizes in the size sheet include the outline.** A human figure of ≤ 18×22 px is at most 16×20 px of colour inside its ink.
+- **Visible body sizes in the size sheet include the outline.** A human figure of ≤ 18×22 px is at most 16×20 px of colour inside its ink. Vehicles are the exception: their visible body is the true-scale model, which must match the sim body (§3.2), and the forge outline adds 1 px on every side (Bessie 28×52 → 30×54 with outline, measured in [ROADMAP D-07](ROADMAP.md#8-m0-spike-decision-log); the 64 px cell already allows for it, §7.1).
 - **No selective outlining** (coloured outlines, "sel-out"). Interior lines between parts use the darker ramp step of the part, not ink, except for genuine gaps (between a tyre and the body, the slot of a drain).
 - **Not outlined:** ground tiles, roofs, facades, stains, hazards, grime, VFX particles. They are the world, not things on it. Shadows are masks, not sprites.
 - **Fonts:** the forge generates an outlined variant of each font (§12.5); UI text on the playfield always uses the outlined variant.
@@ -388,8 +388,8 @@ One sun for every technique: **north-west, azimuth 315°, elevation 50°**. Hand
 | Shadow | Rule |
 |---|---|
 | Actor drop shadow | The same sprite offset **+2, +2 px** (SE), written to the shadow mask. Never painted into the sprite. Not drawn for flying birds while airborne *(proposed)*; drawn for the cat on Bessie's roof. Bessie's brush overlay casts none: its discs run on the road (SSP-018). |
-| Building shadow | Polygon projected toward the SE, length 0.84 × height (tan 50°), written to the shadow mask. |
-| Sprite stacks | **Only the lowest and highest slices cast** the +2, +2 offset, each at its own height so it stays beside its slice as the stack leans (decided in SSP-020, pending owner review). Evidence: with all four lamp-post slices casting, the frame differs by only 37 px over four lamp posts (28 px at the frame edge), because the middle slices' fringes fall under the lantern and the plinth or are 1 px slivers on a 4 px post; ends-only reads the same and keeps mask instances at 2 per stack whatever the slice count. |
+| Building shadow | Polygon projected toward the SE, length 0.84 × height (1 / tan 50°, from the 50° sun elevation), written to the shadow mask. |
+| Sprite stacks | **Only the lowest and highest slices cast** the +2, +2 offset, each at its own height so it stays beside its slice as the stack leans (decided in SSP-020, pending owner review; locked in STYLE.md v1 §8). Evidence: with all four lamp-post slices casting, the frame differs by only 37 px over four lamp posts (28 px at the frame edge), because the middle slices' fringes fall under the lantern and the plinth or are 1 px slivers on a 4 px post; ends-only reads the same and keeps mask instances at 2 per stack whatever the slice count. |
 | Result | Pixels under the mask are remapped through `shadow[32]`: shadows are always palette colours. |
 
 ---
@@ -529,7 +529,7 @@ See §7.2–7.3. Additional rules:
 |---|---|
 | Small grid props | Bollard (01 with 07 band), cone (17 with 07 bands), hydrant (18 with 06 cap), wheelie bin (22 or 01 lid, 26 recycling variant), A-board (07 with 03 lettering lines), litter bin (01 with 15 band), post box (18 with 00 slot), recycling box (26 with 22 lid). |
 | Blender props | Bench (13 slats, 01 frame), bus shelter (05 frame, 28 glass panels, 26 roof), phone box (18 with 25 glass), tree canopy (21/22/23 clumps; canopy overhangs pavements), market stall (striped 18/07 or 26/07 awning), skip (17 or 22 steel with 01 interior). |
-| Stacks | Lamp post 8 slices (01 post, 07 lamp head that writes the light mask at night); phone box, bollard, bins and trees 4–6 slices. Slice counts are `TBD (M0 spike)`, to be locked in STYLE.md v1 (SSP-026). **SSP-020 finding (4-slice lamp post, 4.4 m):** slices sit at real heights, so slice k shifts r·h/(H − h) outward (r = distance from the screen centre). Beside the lean_quadrants blocks (r ≈ 7.6 m) the 4 slices overlap into one continuous post; 13.5 m out (near the side edge) the 6 px post breaks with a 3 px gap between the plinth and the lower post. A thin post stays continuous while consecutive slices shift less than its width, which needs about h·r·16 / ((H − h) · width px) slices: about 7 for a 6 px post at the 15 m frame edge, so **keep 8 slices for the lamp post** (and tall thin trunks); broad props (phone box 16 px wide, bins, bollards ≤ 1 m tall) stay continuous with 4. |
+| Stacks | Lamp post 8 slices (01 post, 07 lamp head that writes the light mask at night); broad or short props 4 slices. **Slice counts (locked in STYLE.md v1 §8, SSP-026):** compute D = 16·r·h/(H − h) px at r = 20 m (the edge of the widest, 640 px frame) for the prop's top height h; a prop whose D / (narrowest member's width in px) is ≤ 4 gets **4 slices**, otherwise **8**. That gives **8** for `prop.lamp_post`, `prop.tree`, `prop.market_stall` and `prop.bus_shelter`, and **4** for `prop.phone_box`, `prop.post_box`, `prop.bollard`, `prop.litter_bin`, `prop.wheelie_bin`, `prop.traffic_cone`, `prop.a_board` and `prop.roadworks_barrier` (nominal heights and widths in STYLE.md §8; apply the rule to the modelled geometry if it differs). The committed 4-slice lamp post is the M0 prototype; SSP-131 (M4) replaces it with 8 slices. **SSP-020 finding (4-slice lamp post, 4.4 m):** slices sit at real heights, so slice k shifts r·h/(H − h) outward (r = distance from the screen centre). Beside the lean_quadrants blocks (r ≈ 7.6 m) the 4 slices overlap into one continuous post; 13.5 m out (near the side edge) the 6 px post breaks with a 3 px gap between the plinth and the lower post. A thin post stays continuous while consecutive slices shift less than its width, which needs about h·r·16 / ((H − h) · width px) slices: about 7 for a 6 px post at the 15 m frame edge, so **keep 8 slices for the lamp post** (and tall thin trunks); broad props (phone box 16 px wide, bins, bollards ≤ 1 m tall) stay continuous with 4. |
 
 ### 8.7 Stains and hazards (ground decals)
 
@@ -585,7 +585,7 @@ Pillar 1 lives here. Each 32 px tile has an 8×8 grid of 4 px grime cells (see [
 
 - **Massing:** buildings are boxes merged from 2 m cells, 1–6 storeys (landmarks up to 8). Only walls facing lower or open cells exist.
 - **Roof edge:** every roof has a 1 px parapet or eave line: 06 or the roof's lit step on the NW edges, the roof's dark step on the SE edges. This edge is what separates a roof from the street below it at 1×.
-- **Shadows** fall SE (§6.4). On overcast districts the shadow length should reduce; the multiplier is `TBD (M0 spike)`.
+- **Shadows** fall SE (§6.4), length 0.84 × height. The per-district shadow-length multiplier was decided in M0 ([ROADMAP D-06](ROADMAP.md#8-m0-spike-decision-log), provisional): **×0.5** overcast (Gasworks Estate, 0.42 × h), **×1.5** dawn (Puddle Lane) and golden hour (The Promenade, 1.26 × h), **×1.0** everywhere else. Hard shadows stay hard (×0 would float the buildings). Confirmation is re-deferred to **M6**, when Gasworks (SSP-202/SSP-204) and the Promenade (SSP-209) first render, because it can only be judged on real districts; no issue yet builds the per-district value, so until one does every district renders ×1.0.
 
 ### 9.4 Facades
 
@@ -819,18 +819,18 @@ The `hud_specimen` visual-test scene renders every glyph of every font and varia
 
 | Condition | District | Look |
 |---|---|---|
-| Dawn → morning | Puddle Lane | Clear; warm and calm. Long SE shadows *(shadow length tuning `TBD (M0 spike)`)*. |
+| Dawn → morning | Puddle Lane | Clear; warm and calm. Long SE shadows (×1.5, D-06, provisional; §9.3). |
 | Late morning | High Street | Neutral, clear, busiest colour. |
-| Overcast + rain | Gasworks Estate | Reduced shadows (`TBD (M0 spike)`), many puddles, `fx.rain_ripple` across the ground, 28 glints on wet surfaces. No full-screen tint: the palette pass forbids blends. |
+| Overcast + rain | Gasworks Estate | Reduced shadows (×0.5, D-06, provisional; §9.3), many puddles, `fx.rain_ripple` across the ground, 28 glints on wet surfaces. No full-screen tint: the palette pass forbids blends. |
 | Afternoon, wind + leaf fall | Conker Hill | `fx.leaf_swirl`, leaf litter, wet-leaf hazards; foliage at its most saturated. |
-| Golden hour, gusts | The Promenade | Long shadows, warm sea glints (16 on 27). |
+| Golden hour, gusts | The Promenade | Long shadows (×1.5, D-06, provisional; §9.3), warm sea glints (16 on 27). |
 | **Night** | Kebab Mile | Night remap everywhere except the light mask. |
 | Morning, clear | Civic Quarter | Crisp, clean civic stone; the grime contrast must still read on 06/07. |
 
 **Night rules (Kebab Mile):**
 
 - The light mask (G channel) is written by street lamp pools, Bessie's headlights, vehicle headlights and tail lights, lit shop signs and a seeded subset of facade windows. Pixels in light keep day colours; the rest go through `night[32]`.
-- **Light pools are hard-edged pixel shapes** (stepped circles about 10 m across (radius ≈ 5 m, final value `TBD (M0 spike)`) under lamps, cones 8 m long for headlights), not gradients. Ordered dither on pool edges is allowed only if the M0 night tuning approves it as a "transition"; otherwise edges stay hard.
+- **Light pools are hard-edged pixel shapes** (stepped circles of **radius 5 m**, 10 m across, under lamps, decided in M0 by [ROADMAP D-05](ROADMAP.md#8-m0-spike-decision-log) and set as `LIGHT_POOL_RADIUS_M` in `src/render/lightPools.ts`; cones 8 m long for headlights), not gradients. The M0 night tuning did not approve dither on pool edges, so **edges stay hard**.
 - Lit windows show interior 16 lemon with an 11 curtain stripe, and stay lit through the night remap.
 - Bessie's beacon (17/16) always writes the light mask, so it pulses even in the dark.
 - The `night_kebab_mile` visual scene is the golden for this look.
@@ -1014,6 +1014,7 @@ mirror ne from nw
 
 - **Every prompt starts with the shared preamble** `assets-src/ai/_style_preamble.md` (versioned; the version is stamped into `prompt.md` and `meta.json`). It specifies: overhead view, chunky pixel art with characters about 20 pixels tall (head to feet), so the ingested figure fits the ≤ 18×22 body in its 24×24 cell; 1 px dark outline; light from the top-left; flat colours from the attached palette (the hex list is included); transparent background; no text unless asked; no logos or brands.
 - **Describe qualities, never games or brands.** "A cheerful elderly British woman in a purple coat and lilac headscarf pulling a red tartan shopping trolley" is fine. Any trademark, any "in the style of <game>", any real shop or council name is forbidden.
+- **Ingest quality (D-13, decided in M0):** the block-mode step-down is accepted only when a people sheet's one factor stays **at about 0.8× or above**, so people prompts ask for near-native resolution ("the whole sheet is only about 200 × 100 art pixels", a figure of about 19 px, almost no interior lines). Below about 0.65× faces and interior detail collapse into ink: revise the prompt rather than repair. The accepted golden ingested at 0.9048× with 4.2% of pixels repaired (STYLE.md v1 §7).
 - **Humans are always reference-locked** with `-i assets-src/ai/ref.people_style/golden.png`, and request a **key-pose sheet**: one row per authored direction (S, SW, W, NW, N), poses idle, walk contact, startle, fall, angry. Codex walk frames are not real animation (the probe's handbag swapped hands), so treat the sheet as pose and costume reference; the grid holds the animation.
 - **Litter sheets** are 4×2 grids of 8 items on a transparent background, 2:1 aspect, one item per cell, centred, with similar real-world scale across the sheet.
 - **Accepting a golden** (`npm run gen:ai -- <id> --candidates N`, then `--accept <n>`) is an art decision: open every candidate with Read, write the reason for the choice in `acceptance_notes`, and reject anything that breaks camera angle, light direction or the palette's mood. **Cursor outputs may never become sprite goldens.**
@@ -1133,12 +1134,12 @@ An asset passes only if every applicable item passes.
 
 | Item | Decided by | Notes |
 |---|---|---|
-| Exact `shadow[32]` and `night[32]` tables | `TBD (M0 spike)` | Intent in §5.7. |
-| Vehicle tilt (0° vs ≤ 8°) | M0, ROADMAP D-02 (SSP-024) | **0°** (§4.3). |
-| Character view angle and proportions | M0 (`ref.people_style` golden) | High three-quarter assumed (§4.4). |
-| Speed zoom on or off | M0, ROADMAP D-01 (SSP-024) | **On**; art reviews always at 1:1 regardless. |
-| Shadow length multiplier for overcast and golden hour | `TBD (M0 spike)` | §9.3, §13. |
-| Sprite-stack slice counts per prop, and which slices cast shadows | `TBD (M0 spike)` (slice shadows decided in SSP-020) | Shadows: lowest and highest slices only (§6.4). Counts: SSP-020 recommends 8 for the lamp post, 4 for broad or short props (§8.6); SSP-026 locks them. |
+| Exact `shadow[32]` and `night[32]` tables | M0, ROADMAP D-05/D-06 (SSP-021) | **Decided**: tables in `kerbside32.json`, mirrored in §5.7 and STYLE.md v1 §3. Light-pool radius 5 m, hard edges (§13). |
+| Vehicle tilt (0° vs ≤ 8°) | M0, ROADMAP D-02 (SSP-024) | **Decided: 0°** (§4.3). |
+| Character view angle and proportions | M0, ROADMAP D-04/D-13 (SSP-014) | **Decided**: high three-quarter, locked by the `ref.people_style` golden (§4.4); proportions as §7.2; ingest accepted at a sheet factor of about ≥ 0.8× (§14.5). |
+| Speed zoom on or off | M0, ROADMAP D-01 (SSP-024) | **Decided: on**; art reviews always at 1:1 regardless. Revisited with real driving in SSP-047 (M1). |
+| Shadow length multiplier for overcast and golden hour | M0, ROADMAP D-06 (SSP-021); confirmed in M6 | **Decided, provisional**: ×0.5 overcast, ×1.5 dawn and golden hour, ×1.0 otherwise (§9.3). Confirmation re-deferred to M6 (SSP-202/SSP-204, SSP-209), because only real districts can show it; the per-district value is not yet owned by any issue. |
+| Sprite-stack slice counts per prop, and which slices cast shadows | M0 (SSP-020 shadows, SSP-026 counts) | **Decided**: lowest and highest slices cast (§6.4); 4 or 8 slices by the lean rule, per prop in §8.6 and STYLE.md v1 §8. Oversize prop cells: M4 (SSP-131). |
 | Swap-slot allocation and key indices | M4 | Proposed in §5.6. |
 | Whether ramp lint ignores index 00 used as outline | M4 (forge lint) | Assumed in §5.4. |
 | Atlas trimming and padding | M4 (forge pack) | Proposed in §14.6. |

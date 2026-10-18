@@ -175,6 +175,7 @@ build/                              # git-ignored
 ├─ .forge-cache/                    # content-hash cache for forge build
 ├─ sheets/                          # contact sheets for review
 ├─ ai-candidates/<id>/run_NN/       # every generation attempt, rejected or not
+│                                   #   (plus <id>/review.png, §11.1)
 └─ tmp/                             # verify rebuilds, Blender --check renders
 ```
 
@@ -257,9 +258,9 @@ All forge commands run as `uv run --project tools/forge python -m forge <cmd>`. 
 | `sheets` | `[--atlas world\|actors\|items\|ui\|fx] [--only <id>…]` | 4×, labelled, light `#c3c1c0` and dark `#24222a` backgrounds, palette strip, Bessie h00 for scale. |
 | `ingest` | `<id> [--force] [--dry-run]` | Refuses to overwrite an edited grid without `--force`. `--dry-run` writes previews to `build/tmp/ingest/<id>/` only. |
 | `blender` | `<id\|all> [--check]`, `--version` | Local only. Wraps the exact Blender command (§7.1). `--version` prints the Blender version. |
-| `gen-ai` | `<id> [--tool codex\|cursor] [--candidates N] [--accept <n>] [--ref <path>]…` | Local only. `--ref` defaults to whatever `prompt.md` declares. |
+| `gen-ai` | `<id> [--tool codex\|cursor] [--candidates N \| --accept <n>] [--ref <path>]…` | Local only. `--ref` defaults to whatever `prompt.md` declares. `--candidates` (default 1) appends `run_NN/` dirs numbered on from the last one; each holds `<output>.png`, `events.jsonl`, `stderr.txt`, `last_message.txt`, `verify.json` (the §8.2 checks) and the draft `meta.json`. `--accept <n>` promotes `run_<n>` (numbered from 0, so `accepted_index` = the run number) and refuses a run that failed verification or whose `prompt.md` or references changed since. `SSP_CODEX_MODEL` overrides the pinned model, `SSP_CODEX` the binary path and `CODEX_HOME` the `~/.codex` folder searched for `generated_images/`. `--tool cursor` exits 3 (§8.3). |
 
-Until its implementing issue lands, a subcommand accepts its flags but exits 3 with `forge <cmd>: not implemented until SSP-xxx` on stderr (never 0). The mapping is `NOT_IMPLEMENTED_UNTIL` in `tools/forge/forge/__main__.py`.
+Until its implementing issue lands, a subcommand accepts its flags but exits 3 with `forge <cmd>: not implemented until SSP-xxx` on stderr (never 0). The mapping is `NOT_IMPLEMENTED_UNTIL` in `tools/forge/forge/__main__.py`. Since SSP-012 every subcommand has landed and the mapping is empty.
 
 ---
 

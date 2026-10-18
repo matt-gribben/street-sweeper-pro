@@ -2,7 +2,7 @@
 id: SSP-012
 title: "Implement forge gen-ai Codex wrapper with preamble v1 and a concept.spike_street smoke run"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:tooling, area:assets, size:L, vertical-slice]

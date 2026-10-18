@@ -1,8 +1,10 @@
 """``python -m forge``: the forge command line (ASSET_PIPELINE §5.3).
 
-Every subcommand and flag in the §5.3 reference is accepted now. A subcommand whose
-implementation has not landed yet exits with :data:`EXIT_NOT_IMPLEMENTED` and prints
-``forge <cmd>: not implemented until <issue key>`` to stderr. It never exits 0.
+Every subcommand and flag in the §5.3 reference is accepted, and since SSP-012 every
+subcommand has a real handler. A subcommand listed in :data:`NOT_IMPLEMENTED_UNTIL` (none now)
+would exit with :data:`EXIT_NOT_IMPLEMENTED` and print ``forge <cmd>: not implemented until
+<issue key>`` to stderr, never 0. ``gen-ai --tool cursor`` uses the same exit status for its
+"not implemented until needed" refusal (ASSET_PIPELINE §8.3).
 """
 
 from __future__ import annotations
@@ -20,10 +22,8 @@ EXIT_NOT_IMPLEMENTED = 3
 ATLASES = ("world", "actors", "items", "ui", "fx")
 GENAI_TOOLS = ("codex", "cursor")
 
-NOT_IMPLEMENTED_UNTIL: dict[str, str] = {
-    "gen-ai": "SSP-012",
-}
-"""Issue that delivers each subcommand. Remove an entry when its real handler lands."""
+NOT_IMPLEMENTED_UNTIL: dict[str, str] = {}
+"""Issue that delivers each subcommand. Remove an entry when its real handler lands (empty since SSP-012)."""
 
 log = logging.getLogger("forge")
 
@@ -89,6 +89,13 @@ def _sheets(args: argparse.Namespace) -> int:
     return sheets.cli(args)
 
 
+def _gen_ai(args: argparse.Namespace) -> int:
+    """``forge gen-ai <id> [--tool codex|cursor] [--candidates N | --accept <n>] [--ref PATH]...`` (SSP-012)."""
+    from forge import genai  # deferred so other subcommands never import it
+
+    return genai.cli(args)
+
+
 def _positive_int(text: str) -> int:
     try:
         value = int(text)
@@ -96,6 +103,16 @@ def _positive_int(text: str) -> int:
         raise argparse.ArgumentTypeError(f"expected an integer, got {text!r}") from None
     if value < 1:
         raise argparse.ArgumentTypeError(f"expected an integer >= 1, got {value}")
+    return value
+
+
+def _non_negative_int(text: str) -> int:
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {text!r}") from None
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"expected an integer >= 0, got {value}")
     return value
 
 
@@ -163,11 +180,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(usage_error=p.error)
 
-    p = add("gen-ai", "Generate AI golden candidates (local only, never CI).")
+    p = add("gen-ai", "Generate AI golden candidates (local only, never CI).", _gen_ai)
     p.add_argument("id", help="asset ID")
     p.add_argument("--tool", choices=GENAI_TOOLS, default="codex", help="image tool (default: codex)")
-    p.add_argument("--candidates", type=_positive_int, metavar="N", help="number of candidates")
-    p.add_argument("--accept", type=_positive_int, metavar="n", help="promote candidate n to golden.png")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--candidates", type=_positive_int, metavar="N", help="number of candidates (default 1)")
+    mode.add_argument(
+        "--accept",
+        type=_non_negative_int,
+        metavar="n",
+        help="promote candidate run_<n> (numbered from 0, as in build/ai-candidates/<id>/run_NN) to golden.png",
+    )
     p.add_argument(
         "--ref",
         action="append",

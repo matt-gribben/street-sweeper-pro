@@ -6,6 +6,10 @@
 // - `gpu`:    headed Chromium on the real GPU, NO SwiftShader flags, tests/e2e. Local only: never run by
 //             `npm run test:e2e`, `npm run ci` or .github/workflows/ci.yml, which all pass `--project=ci`.
 //
+// tests/e2e specs pick their project by tag: `@gpu` tests (real-GPU frame timing, perf.spec.ts) run only in
+// `gpu`, and every other e2e test runs only in `ci`, so a GPU timing check never runs on SwiftShader and the
+// SwiftShader checks are not repeated headed.
+//
 // The suite tests the shipping bundle: webServer builds with Vite and serves it with `vite preview`.
 import { defineConfig } from '@playwright/test';
 
@@ -14,6 +18,9 @@ export const PREVIEW_PORT = 4173;
 
 /** Chromium flags for deterministic CPU rasterisation (visual goldens and CI perf). */
 export const SWIFTSHADER_ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] as const;
+
+/** Tag of the e2e tests that need the real GPU (TECHNICAL_DESIGN §18.6): run by the `gpu` project only. */
+export const GPU_TAG = /@gpu/;
 
 /** 1920x1080 at DPR 1 gives the 480-wide base render target (W = 480, TECHNICAL_DESIGN §18.4). */
 export const VISUAL_VIEWPORT = { width: 1920, height: 1080 } as const;
@@ -57,6 +64,7 @@ export default defineConfig({
     {
       name: 'ci',
       testDir: 'tests/e2e',
+      grepInvert: GPU_TAG,
       use: {
         browserName: 'chromium',
         headless: true,
@@ -68,6 +76,7 @@ export default defineConfig({
     {
       name: 'gpu',
       testDir: 'tests/e2e',
+      grep: GPU_TAG,
       use: {
         browserName: 'chromium',
         headless: false,

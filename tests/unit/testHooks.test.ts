@@ -32,6 +32,7 @@ function fakeHost(): TestHookHost & { calls: string[] } {
       camera = { x, y, h, pinned: true };
     },
     camera: () => camera,
+    drawCalls: () => 6,
   };
 }
 
@@ -108,6 +109,15 @@ describe('installTestHooks with test=1', () => {
     expect(typeof api?.state).toBe('function');
     expect(typeof api?.readFrame).toBe('function');
     expect(typeof api?.setCamera).toBe('function');
+    expect(Object.keys(api ?? {}).sort()).toEqual([
+      'perf',
+      'perfReset',
+      'readFrame',
+      'ready',
+      'setCamera',
+      'state',
+      'step',
+    ]);
   });
 
   it('reports ready only after markReady()', () => {
@@ -166,6 +176,29 @@ describe('installTestHooks with test=1', () => {
     const frame = target.__ssp?.readFrame();
     expect(frame).toBeInstanceOf(Uint8Array);
     expect(Array.from(frame ?? [])).toEqual([7, 0, 0, 255, 7, 0, 0, 255]);
+  });
+
+  it('perf() reports the host draw calls and the frames recorded through recordFrame()', () => {
+    const target: TestHookTarget = {};
+    const hooks = installTestHooks(target, '?test=1', fakeHost());
+    expect(typeof target.__ssp?.perf).toBe('function');
+    expect(typeof target.__ssp?.perfReset).toBe('function');
+    expect(target.__ssp?.perf()).toEqual({ drawCalls: 6, frameMs: [], workMs: [], overflow: 0 });
+    hooks?.recordFrame(8.3, 0.1);
+    hooks?.recordFrame(8.4, 0.2);
+    const perf = target.__ssp?.perf();
+    expect(perf).toEqual({ drawCalls: 6, frameMs: [8.3, 8.4], workMs: [0.1, 0.2], overflow: 0 });
+    expect(JSON.parse(JSON.stringify(perf))).toEqual(perf);
+  });
+
+  it('perfReset() clears the recorded frames but not the draw-call reading', () => {
+    const target: TestHookTarget = {};
+    const host = fakeHost();
+    const hooks = installTestHooks(target, '?test=1', host);
+    hooks?.recordFrame(8.3, 0.1);
+    target.__ssp?.perfReset();
+    expect(target.__ssp?.perf()).toEqual({ drawCalls: 6, frameMs: [], workMs: [], overflow: 0 });
+    expect(host.calls).toEqual([]);
   });
 
   it('throws on malformed parameters instead of installing', () => {

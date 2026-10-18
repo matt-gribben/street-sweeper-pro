@@ -173,7 +173,7 @@ The panel's per-judge numeric scores are not preserved in the project record. Th
 - **A monthly release cadence that breaks APIs.** Mitigated by the exact pin `0.186.1`. Upgrades go through a PR with a full visual golden run.
 - **Colour management and filtering defaults are wrong for pixel art.** sRGB conversion, mipmaps, linear filtering and MSAA would all corrupt exact palette values. Every texture uses `NearestFilter` with no mipmaps, and the colour-space settings are locked in the M0 spike. The `zoo` visual golden (pixelmatch threshold 0) catches any drift, because a shifted source colour snaps to the wrong palette entry.
 - **Perspective artefacts.** Ground shimmer while the speed zoom is pulled out (H up to 37.8 m), and roof magnification up to 1.91× at 6 storeys. Both are accepted as part of the look. The M0 spike may disable zoom.
-- **Bundle size** is larger than PixiJS. The exact gzipped size of our production build is TBD (M0 spike). It is a one-off download and acceptable for an itch.io HTML5 game.
+- **Bundle size** is larger than PixiJS. The M0 production build's JS is 145,933 B gzipped (585,584 B raw; measured in SSP-023, [§4.4](#44-m0-spike-decisions-this-adr-depends-on)), and it grows with content. It is a one-off download and acceptable for an itch.io HTML5 game.
 
 ### 3.3 PixiJS 8.22.0 + custom 2.5D (close second)
 
@@ -269,7 +269,7 @@ The **M0 Foundations & Look Spike** must confirm the following and record the ou
 | Vehicle render tilt: 0° vs ≤ 8° | 0° | TBD (M0 spike) |
 | 480×270 base resolution holds up at 1080p / 1440p / 4K | Yes | TBD (M0 spike) |
 | Headless SwiftShader golden is byte-stable across runs | Yes | TBD (M0 spike) |
-| Production bundle size and p99 frame-time budget | — | TBD (M0 spike) |
+| Production bundle size and p99 frame-time budget | — | **Bundle** (M0, SSP-023): JS 585,584 B raw, **145,933 B gzip**; `dist/` total 653,365 B (648K). **p99 frame time ≤ 20.6 ms** on the dev Mac (baseline 10.3 ms × 2). [ROADMAP D-08](../ROADMAP.md#8-m0-spike-decision-log) |
 
 ---
 

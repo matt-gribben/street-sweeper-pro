@@ -185,7 +185,7 @@ All forge commands run as `uv run --project tools/forge python -m forge <cmd>`.
 | `npm test` | Vitest unit + property |
 | `npm run test:replay` | 3,600-tick replays, asserting final-state hash + invariants |
 | `npm run test:visual` (`:update` to approve) | Playwright, reading the internal frame, pixelmatch threshold 0 against `tests/visual/__goldens__/` |
-| `npm run test:e2e` | 60 s scripted smoke: no console errors, score > 0, hopper filled. Perf: p99 frame time budget calibrated in M0. |
+| `npm run test:e2e` | 60 s scripted smoke: no console errors, score > 0, hopper filled. Perf: ≤ 10 draw calls (the p99 frame-time budget, 20.6 ms, is checked locally by the `gpu` project). |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` / `npm run format` | Biome |
 | `npm run ci` | All of the above + `assets:verify` + `assets:lint` |

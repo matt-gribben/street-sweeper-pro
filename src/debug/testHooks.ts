@@ -14,13 +14,19 @@
 //   step(n)       advance n ticks, then render once;
 //   state()       a JSON-safe snapshot;
 //   readFrame()   the raw W×270 palette-mapped RGBA frame, row 0 at the top (Renderer.readFrame);
-//   setCamera()   pin the render camera at (x, y) sim metres and height h metres, springs off for good.
+//   setCamera()   pin the render camera at (x, y) sim metres and height h metres, springs off for good;
+//   perf()        draw calls of the last rendered frame (all passes) plus the frame timings recorded since
+//                 the last perfReset(): rAF timestamp deltas and frame-callback CPU time (perfCounters.ts);
+//   perfReset()   clears the recorded timings (start of a perf sampling window).
 //
 // M0 STUBS: there is no sim yet, so a "tick" is one render frame (the counter that drives the spike actors'
 // heading cycle and brush spin, at a fixed 1/60 s render step). step(n) advances that counter and renders
 // once, and state() returns only { tick, camera }. SSP-046 binds step() and state() to the World in M1:
 // step(n) then runs n fixed sim ticks and state() returns the full SimSnapshot (score, tidy, hopper, hp,
 // tick, positions).
+//
+// Timings are recorded by main.ts once `ready` is true, one sample per requestAnimationFrame callback; they are
+// read-only observations and never feed back into what is drawn. tests/e2e/perf.spec.ts reads them (SSP-023).
 //
 // Test mode also turns off what would make frames depend on timing (main.ts): the speed-zoom spring (and
 // look-ahead, from M1) unless a scene opts in, wall-clock frame times (a fixed 1/60 s render step instead) and
@@ -31,6 +37,8 @@ export const TEST_RENDER_STEP_S = 1 / 60;
 
 /** Largest `seed`: sfc32 seeds are unsigned 32-bit integers. */
 export const MAX_SEED = 0xffff_ffff;
+
+import { createPerfCounters, type PerfSamples } from './perfCounters.ts';
 
 /** Parsed `?test=1` parameters. */
 export type TestParams = {
@@ -60,6 +68,12 @@ export type TestState = {
   readonly camera: TestCamera;
 };
 
+/** What `__ssp.perf()` returns: JSON-safe, so it crosses `page.evaluate`. */
+export type TestPerf = PerfSamples & {
+  /** Draw calls of the last rendered frame over every pass (`renderer.info.render.calls`, §12.7). */
+  readonly drawCalls: number;
+};
+
 /** The `window.__ssp` object. */
 export type SspTestApi = {
   readonly ready: boolean;
@@ -67,6 +81,8 @@ export type SspTestApi = {
   state(): TestState;
   readFrame(): Uint8Array;
   setCamera(x: number, y: number, h: number): void;
+  perf(): TestPerf;
+  perfReset(): void;
 };
 
 /** What the hooks drive: implemented by main.ts over the renderer and its frame loop. */
@@ -82,6 +98,8 @@ export type TestHookHost = {
   /** Pins the camera at (x, y) sim metres and height h metres; the loop stops updating it. */
   pinCamera(x: number, y: number, h: number): void;
   camera(): TestCamera;
+  /** Draw calls of the last rendered frame, all passes (Renderer.drawCalls). */
+  drawCalls(): number;
 };
 
 /** An object that can carry `__ssp`: the browser's `window`, or a plain object in unit tests. */
@@ -93,6 +111,8 @@ export type TestHooks = {
   readonly api: SspTestApi;
   /** Call once assets are loaded and a complete frame has been rendered. */
   markReady(): void;
+  /** Records one frame's timings for perf(): rAF timestamp delta and frame-callback CPU time, in ms. */
+  recordFrame(frameMs: number, workMs: number): void;
 };
 
 declare global {
@@ -154,6 +174,7 @@ export function installTestHooks(
   if (params === null) return null;
 
   let ready = false;
+  const counters = createPerfCounters();
   const api: SspTestApi = {
     get ready(): boolean {
       return ready;
@@ -179,6 +200,12 @@ export function installTestHooks(
       host.pinCamera(x, y, h);
       host.render();
     },
+    perf(): TestPerf {
+      return { drawCalls: host.drawCalls(), ...counters.samples() };
+    },
+    perfReset(): void {
+      counters.reset();
+    },
   };
   target.__ssp = api;
   return {
@@ -186,6 +213,9 @@ export function installTestHooks(
     api,
     markReady(): void {
       ready = true;
+    },
+    recordFrame(frameMs: number, workMs: number): void {
+      counters.record(frameMs, workMs);
     },
   };
 }

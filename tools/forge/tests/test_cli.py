@@ -10,8 +10,8 @@ import pytest
 from forge.__main__ import EXIT_NOT_IMPLEMENTED, NOT_IMPLEMENTED_UNTIL, build_parser, main
 
 SUBCOMMANDS = ("build", "ingest", "blender", "gen-ai", "lint", "sheets", "verify")
-IMPLEMENTED = frozenset({"blender", "build", "verify"})  # SSP-007 (test_blender.py), SSP-009 (test_build.py),
-# SSP-010 (test_verify.py)
+IMPLEMENTED = frozenset({"blender", "build", "ingest", "verify"})  # SSP-007 (test_blender.py),
+# SSP-009 (test_build.py), SSP-010 (test_verify.py), SSP-013 (test_ingest.py)
 STUBBED = tuple(c for c in SUBCOMMANDS if c not in IMPLEMENTED)
 
 # Each subcommand invoked with every documented flag (ASSET_PIPELINE §5.3).

@@ -2,7 +2,7 @@
 id: SSP-013
 title: "Prototype forge ingest (steps 1-10) to turn an AI golden into an indexed sprite grid"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:tooling, area:assets, size:L, vertical-slice]

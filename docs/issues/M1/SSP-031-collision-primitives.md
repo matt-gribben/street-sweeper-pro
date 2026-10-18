@@ -2,7 +2,7 @@
 id: SSP-031
 title: "Implement OBB, SAT and sweep sub-step primitives in src/sim/collision"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:physics, area:test, size:M, vertical-slice]

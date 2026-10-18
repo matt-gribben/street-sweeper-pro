@@ -1,0 +1,30 @@
+{
+  "name": "street-sweeper-pro",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "vitest run --project unit --project property"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.19.2",
+    "@types/three": "0.186.0",
+    "fast-check": "4.10.2",
+    "pixelmatch": "8.0.0",
+    "pngjs": "7.0.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
+  }
+}

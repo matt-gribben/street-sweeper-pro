@@ -2,7 +2,7 @@
 id: SSP-002
 title: "Scaffold the Node/TypeScript/Vite repo with exact pins and verify TS 7.0.2 (D-10)"
 milestone: M0
-status: todo
+status: done
 type: chore
 estimate: M
 labels: [type:chore, area:build, area:tooling, size:M, vertical-slice]
@@ -67,17 +67,17 @@ D-10: if tsc, Vite, Vitest or Biome breaks on TS 7.0.2, pin typescript 6.0.3. Re
 
 ## Acceptance criteria
 
-- [ ] `npm ls --depth=0` lists exactly the 11 pinned packages at the pinned versions and nothing else
-- [ ] `grep -E '"[~^]' package.json` prints nothing
-- [ ] `npx tsc --noEmit` exits 0
-- [ ] `npx vite build` produces dist/ whose index.html references assets with relative ./ URLs
-- [ ] `npx vitest run` exits 0 with at least one real test (no --passWithNoTests)
-- [ ] `node tools/check-type-strip.ts` runs on plain Node 24.21.0 and prints values imported from src/sim/constants.ts
-- [ ] `npx biome --version` reports 2.5.15 and `npx biome check .` runs (formatting failures may be fixed in SSP-003)
-- [ ] .gitignore is byte-for-byte the six canonical lines, or the docs were updated first with a stated reason
-- [ ] ROADMAP §8 D-10 has a Decision (7.0.2 or 6.0.3), Evidence and Date
-- [ ] After `npx vite build`, the dist JS contains the package.json version string and the current short SHA (grep check)
-- [ ] `npx tsc --noEmit` passes with src/main.ts referencing both constants, and a Vitest test can read them
+- [x] `npm ls --depth=0` lists exactly the 11 pinned packages at the pinned versions and nothing else
+- [x] `grep -E '"[~^]' package.json` prints nothing
+- [x] `npx tsc --noEmit` exits 0
+- [x] `npx vite build` produces dist/ whose index.html references assets with relative ./ URLs
+- [x] `npx vitest run` exits 0 with at least one real test (no --passWithNoTests)
+- [x] `node tools/check-type-strip.ts` runs on plain Node 24.21.0 and prints values imported from src/sim/constants.ts
+- [x] `npx biome --version` reports 2.5.15 and `npx biome check .` runs (formatting failures may be fixed in SSP-003)
+- [x] .gitignore is byte-for-byte the six canonical lines, or the docs were updated first with a stated reason
+- [x] ROADMAP §8 D-10 has a Decision (7.0.2 or 6.0.3), Evidence and Date
+- [x] After `npx vite build`, the dist JS contains the package.json version string and the current short SHA (grep check)
+- [x] `npx tsc --noEmit` passes with src/main.ts referencing both constants, and a Vitest test can read them
 
 ## Verification
 

@@ -285,7 +285,7 @@ Each milestone has the same shape:
 - [x] `src/render/shadows.ts`: SE shadow polygons (length 0.84 × height) into the mask target.
 - [ ] `src/render/spriteBatch.ts`: one `InstancedMesh` per atlas, per-instance frame rects. Bessie drawn from the Blender build at all 32 headings, cycling. One ingested pedestrian.
 - [ ] Sprite-stack prototype with one lamp post (4 slices), to check that its lean matches the building lean (input to D-02).
-- [ ] `src/debug/testHooks.ts`: `?test=1&scene=<id>&freeze=1`, `window.__ssp.readFrame()` and `setCamera()`.
+- [x] `src/debug/testHooks.ts`: `?test=1&scene=<id>&freeze=1`, `window.__ssp.readFrame()` and `setCamera()`.
 - [ ] Visual specs and goldens for `lean_quadrants` and `scale_1440`.
 - [ ] `tests/e2e/perf.spec.ts` baseline on the dev Mac in the local `gpu` project (headed, real GPU). Record the p99 frame time and set the budget (D-08). The `ci` project asserts only draw calls and sim step time.
 

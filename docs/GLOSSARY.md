@@ -595,7 +595,7 @@ The camera's height above the ground: **31.5 m** with a 30° vertical FOV, givin
 The manifest field that says how an asset is built: `"grid"`, `"procedural"`, `"blender"`, `"ai-ingest"` or `"ai-art"`. Which technique each asset class uses, and why, is in [ASSET_PIPELINE.md](ASSET_PIPELINE.md).
 
 ### Test hooks
-Debug entry points active **only** with the `?test=1` URL parameter. Parameters are `&seed=<n>&scene=<id>&tick=<n>&freeze=1`. They expose `window.__ssp = { step(n), state(), readFrame(), setCamera(x,y,h) }`, where `readFrame()` returns the raw W×270 palette-mapped pixels. Playwright visual and e2e tests drive the game through them. Implemented in `src/debug/testHooks.ts`.
+Debug entry points active **only** with the `?test=1` URL parameter. Parameters are `&seed=<n>&scene=<id>&tick=<n>&freeze=1`. They expose `window.__ssp = { ready, step(n), state(), readFrame(), setCamera(x,y,h) }`, where `readFrame()` returns the raw W×270 palette-mapped pixels (row 0 at the top) and `ready` turns true once assets are loaded and the first frame is rendered. Playwright visual and e2e tests drive the game through them. Implemented in `src/debug/testHooks.ts`.
 
 ### Text-grid sprite
 A `*.sprite.txt` file: pixel art written as characters. It has a header (`id:`, `cell: WxH`, `palette: kerbside32`, a key map where by default `.` is transparent and `0`–`9`, `a`–`v` are indices 00–31), then one block per frame (`frame <state>:<dir>:<n>` followed by H rows of W characters), plus optional `mirror` lines. It is the source of truth for animals, small props, pickups, UI, facades, and for humans and litter after [ingest](#ingest). It is diffable and Claude can edit it directly.

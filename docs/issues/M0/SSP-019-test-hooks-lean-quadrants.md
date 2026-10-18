@@ -2,7 +2,7 @@
 id: SSP-019
 title: "Add ?test=1 hooks (readFrame, setCamera, freeze, stub step/state) and the lean_quadrants spike scene"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:render, area:test, area:tooling, size:M, vertical-slice]

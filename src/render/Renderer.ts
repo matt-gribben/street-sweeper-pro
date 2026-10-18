@@ -24,6 +24,7 @@ import {
 } from 'three';
 import { type CameraRig, createCameraRig, setCameraFrame } from './camera.ts';
 import { createPalettePass, type PalettePass } from './palettePass.ts';
+import { flipRgbaRows, RGBA_BYTES } from './readback.ts';
 import {
   blitOffsetDevicePx,
   INTERNAL_HEIGHT_PX,
@@ -188,6 +189,28 @@ export class Renderer {
     );
     webgl.setRenderTarget(null);
     webgl.render(this.blitScene, this.blitCamera);
+  }
+
+  /**
+   * The last rendered frame as raw palette-mapped RGBA: RT_final's inner W×270 window (render-target x 1..W,
+   * y 1..270, i.e. without the 1 px sub-pixel margin), row 0 at the TOP. Independent of the canvas size, the
+   * integer scale, the DPR and the blit's sub-pixel offset. Length W × 270 × 4. Test hook only
+   * (`__ssp.readFrame()`, TECHNICAL_DESIGN §18.5): it allocates and stalls the GPU, so never call it per frame.
+   */
+  readFrame(): Uint8Array {
+    const width = this.rig.internalWidth;
+    const raw = new Uint8Array(width * INTERNAL_HEIGHT_PX * RGBA_BYTES);
+    // readPixels coordinates are bottom-up; the margin is 1 px on every side, so the inner window starts at
+    // (1, 1) from either corner.
+    this.webgl.readRenderTargetPixels(
+      this.finalTarget,
+      RT_MARGIN_PX,
+      RT_MARGIN_PX,
+      width,
+      INTERNAL_HEIGHT_PX,
+      raw,
+    );
+    return flipRgbaRows(raw, width, INTERNAL_HEIGHT_PX);
   }
 
   /** Draw calls in the last frame over all passes (budget ≤ 10, TECHNICAL_DESIGN §12.7). */

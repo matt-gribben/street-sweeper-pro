@@ -189,6 +189,26 @@ export function updateCameraRig(
   placeCamera(rig);
 }
 
+/**
+ * Puts the camera at a fixed pose: focus (`focusX`, `focusZ`) in metres at height `heightM`, with the height
+ * spring at rest. Used by the `?test=1` hook `setCamera` (src/debug/testHooks.ts), whose caller then stops
+ * calling updateCameraRig so no spring moves the camera again. The height must lie in (CAMERA_NEAR_M,
+ * CAMERA_FAR_M] so the ground stays inside the frustum.
+ */
+export function pinCameraRig(rig: CameraRig, focusX: number, focusZ: number, heightM: number): void {
+  if (!Number.isFinite(focusX) || !Number.isFinite(focusZ)) {
+    throw new RangeError(`camera focus must be finite, got (${focusX}, ${focusZ})`);
+  }
+  if (!(heightM > CAMERA_NEAR_M && heightM <= CAMERA_FAR_M)) {
+    throw new RangeError(`camera height must be in (${CAMERA_NEAR_M}, ${CAMERA_FAR_M}] m, got ${heightM}`);
+  }
+  rig.focusX = focusX;
+  rig.focusZ = focusZ;
+  rig.height.value = heightM;
+  rig.height.velocity = 0;
+  placeCamera(rig);
+}
+
 function placeCamera(rig: CameraRig): void {
   rig.snappedX = snapToTexelM(rig.focusX);
   rig.snappedZ = snapToTexelM(rig.focusZ);

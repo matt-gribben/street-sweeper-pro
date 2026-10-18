@@ -31,7 +31,7 @@ Make audio part of the reproducibility proof. `forge verify` re-renders audio in
 - byte-compare the generated JSON indexes `public/assets/audio/sfx.json`, `music.json` and `amb.json` (whichever exist);
 - compare .ogg/.m4a only if D-11 recorded ffmpeg 9.0.2 as bit-exact across macOS arm64 and ubuntu-latest.
 
-**CI:** `assets:verify` runs in the ubuntu `checks` job (TECHNICAL_DESIGN §19). How ubuntu CI obtains ffmpeg 9.0.2 (static build vs skipping encode in verify mode) is **TBD (M0 spike)**. If M0 did not decide it, implement a verify mode that skips encoding (WAV + JSON compare only) and says so in its output; the WAVs and JSON need no ffmpeg.
+**CI:** `assets:verify` runs in the ubuntu `checks` job (TECHNICAL_DESIGN §19). M0 decided this (D-11, SSP-025; TECHNICAL_DESIGN §19, AUDIO_DESIGN §11.4): **WAV only**, and CI installs no ffmpeg. Implement the verify mode that skips encoding (WAV + JSON compare only) and says so in its output; the WAVs and JSON need no ffmpeg.
 
 **Entity references:** ENTITY_CATALOG §15 says a unit test asserts every `sfx` value in `src/data/entities.json` exists in `assets-src/audio/sfx/`. It may already exist from M2/M3; extend or create it.
 

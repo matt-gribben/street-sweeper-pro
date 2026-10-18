@@ -8,7 +8,7 @@ Read this file first in every session. It is short on purpose: it tells you **wh
 
 **Street Sweeper Pro** is a top-down pixel-art arcade driving game. You drive **Bessie**, a council road sweeper (a *Dustmaster 3000*), through a week of 240 s shifts in the British seaside town of **Muckleford**. You collect litter, paint grime clean and avoid cats, grannies, joggers and dogs. It is built with **three.js 0.186.1 + TypeScript 7.0.2 + Vite 8.3.4**: a perspective camera looks straight down into a 480×270 palette-mapped render target. **Every asset is authored by AI agents** (that means you) from sources committed to this repo, through a deterministic pipeline. There is no human artist or composer. Release target is web 1.0 on itch.io (milestone **M7**).
 
-**Repo status (2026-10-18):** the repo is empty. Everything below describes the planned layout. M0 (**Foundations & Look Spike**) creates it. Until a command exists, do not pretend it ran.
+**Repo status (2026-10-19):** M0 (**Foundations & Look Spike**) is complete, pending the lead's approval and the `m0` tag. The scaffold, the forge, every npm script in §4, the render spike and its visual goldens exist, and `npm run ci` is green on the dev Mac. There is no sim, game loop or audio yet (M1+). Some layout and commands below are still plans for later milestones (`npm run audio` and `npm run levels` are 0-source guards, there are no replays before M1, no zoo scene before M3, SSP-298). Until a command exists, do not pretend it ran.
 
 ---
 
@@ -61,7 +61,7 @@ Breaking one of these is a failed task, even if the tests pass.
 
 ## 4. Commands
 
-Planned in M0. All run from the repo root.
+All exist since M0 and run from the repo root.
 
 ### 4.1 Setup
 

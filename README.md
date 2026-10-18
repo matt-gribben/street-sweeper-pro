@@ -14,15 +14,17 @@ A top-down pixel-art arcade driving game about the most underappreciated job in 
 
 ---
 
-## Status: pre-alpha, documentation only
+## Status: pre-alpha, M0 complete (pending lead approval)
 
-**There is no code in this repository yet.** As of 2026-10-18 the repo holds only the design and technical documentation set listed [below](#documentation). The next step is milestone **M0, Foundations & Look Spike** (see [docs/ROADMAP.md](docs/ROADMAP.md)), which scaffolds the project with the pinned versions, imports the asset-probe artefacts and locks the look.
+Milestone **M0, Foundations & Look Spike**, is done (2026-10-19): the repo is scaffolded with the pinned versions, `npm run ci` is green on the dev Mac, the forge (`tools/forge/`) builds the Blender and grid assets deterministically, the Blender and Codex wrappers work, the Kerbside-32 palette with its `night` and `shadow` tables is locked in [assets-src/STYLE.md](assets-src/STYLE.md), and the spike scene below runs in-engine. The decisions it settled are in the [M0 decision log](docs/ROADMAP.md#8-m0-spike-decision-log). There is **no game yet**: no vehicle sim, no driving, no audio. The next milestone is **M1, Drivable Bessie** (see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
-Anything in this README that describes commands, directories or behaviour is the **plan**, not the current state, until M0 lands. Planned sections are marked as such.
+Sections below that describe commands, directories or behaviour that later milestones add are marked *(partly planned)*, with what works today stated next to them.
 
 ### Screenshot
 
-> *Placeholder.* No screenshots exist yet. The first in-engine image will be the M0 spike scene: 1-, 3- and 6-storey blocks around the Blender-rendered Bessie and one Codex-derived pedestrian, at 480×270 through the palette pass. When it exists it will live at `docs/img/m0-spike.png` and replace this note. Until then, [docs/ART_BIBLE.md](docs/ART_BIBLE.md) describes the target look.
+![The M0 spike scene: 1-, 3- and 6-storey blocks leaning outward from the screen centre, four Bessies, four pedestrians and four sprite-stack lamp posts](docs/img/m0-spike.png)
+
+The M0 spike scene (`/?test=1&seed=1&scene=lean_quadrants&freeze=1`): 1-, 3- and 6-storey blocks around the Blender-rendered Bessie (four copies, one per screen quadrant) and the Codex-derived pedestrian Doris, with sprite-stack lamp posts, SE building and drop shadows, at 480×270 through the palette pass. This is `window.__ssp.readFrame()` upscaled 4× with nearest-neighbour filtering (its 480×270 pixels are exactly those of the `lean_quadrants` visual golden). The placeholder facades and roofs are replaced in M4.
 
 ---
 
@@ -110,9 +112,9 @@ Full pipeline, exact tool invocations and their gotchas: [docs/ASSET_PIPELINE.md
 
 ---
 
-## Quick start *(planned; available once M0 scaffolding lands)*
+## Quick start
 
-> None of the commands below work yet. They are the contract M0 will implement.
+> These work today. `npm run dev` shows the M0 spike city: Bessie cycling her 32 headings beside the pedestrian, with an F1 speed slider that drives the speed zoom. There is nothing to drive until M1, and the asset zoo URL below arrives in M3 (SSP-298).
 
 ### Prerequisites
 
@@ -145,7 +147,8 @@ npm run assets:sheets          # contact sheets in build/sheets/ for review
 
 | URL | Shows |
 |---|---|
-| `/?test=1&scene=zoo` | The asset zoo: every sprite in-engine |
+| `/?test=1&scene=zoo` | The asset zoo: every sprite in-engine *(planned: a minimal zoo arrives in M3, SSP-298)* |
+| `/?test=1&scene=lean_quadrants&freeze=1` | The M0 spike scene (above). `scale_1440` and `scale_sheet` are the other test scenes. |
 | `/?test=1&seed=42&scene=<id>&tick=<n>&freeze=1` | A deterministic, frozen scene for tests and screenshots |
 
 Test hooks (`window.__ssp`) are active only with `?test=1`. Press **F1** in a dev build for the dev panel.
@@ -160,7 +163,9 @@ The canonical public build will be an HTML5 game on itch.io, pushed with butler 
 
 ---
 
-## Commands *(planned)*
+## Commands *(partly planned)*
+
+Every script below exists. `npm run audio` and `npm run levels` are input-count guards until M5 and M1 add their sources (they report "0 sources; nothing to render"), `npm run test:replay` has no recorded replays until M1, and `npm run test:e2e` runs only the perf draw-call check until the M2 smoke test exists.
 
 ### Assets and content
 
@@ -192,9 +197,9 @@ All forge commands run as `uv run --project tools/forge python -m forge <cmd>`.
 
 ---
 
-## Repository layout *(planned)*
+## Repository layout *(partly planned)*
 
-Condensed. The full tree, with every module, is in [docs/TECHNICAL_DESIGN.md](docs/TECHNICAL_DESIGN.md).
+Condensed, showing the full planned tree; M0 created the top level, `src/render`, `src/scenes`, `src/debug`, `src/gen`, `src/sim/constants.ts`, `tools/forge` and `tests/`. The full tree, with every module, is in [docs/TECHNICAL_DESIGN.md](docs/TECHNICAL_DESIGN.md).
 
 ```
 /

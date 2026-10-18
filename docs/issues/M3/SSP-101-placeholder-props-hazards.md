@@ -21,7 +21,7 @@ Give every M3 knockable, hazard, power-up and any static prop or tile the M3 lev
 ## Context
 
 From ENTITY_CATALOG §9, §10, §12 and ART_BIBLE §7.1/§8.5–8.7:
-- Props: 32×32 per slice, `flat` (1 frame) or `stack` (4–8 slices, frame IDs `prop.<id>:slice:-:<k>`). Atlas items. Slice counts are TBD (M0 spike): use whatever STYLE.md / the M0 decision log recorded.
+- Props: 32×32 per slice, `flat` (1 frame) or `stack` (4–8 slices, frame IDs `prop.<id>:slice:-:<k>`). Atlas items. Slice counts were decided in M0: use the per-prop counts in ART_BIBLE §8.6 / STYLE.md v1 §8 (the lean rule).
 - Knockables (grid, assets-src/sprites/prop/): wheelie_bin stack (22 or 01 lid), traffic_cone stack (17 with 07 bands), a_board stack (07 with 03 lines), shopping_trolley flat, recycling_box flat (26 with 22 lid).
 - Hazards: 32×32 ground decals, atlas world, procedural placeholder params (assets-src/procedural/...): haz.puddle, haz.oil_slick, haz.pothole, haz.broken_glass (2-frame glint), haz.wet_leaves. haz.speed_bump (from `=`) and haz.open_manhole (manhole tile variant) are ground-tile variants. Looks in ART_BIBLE §8.7.
 - Power-ups: M2 made placeholders only for the pwr.* Puddle Lane uses (flask_of_tea). Add the missing ones (bacon_butty, hi_vis, super_suction, wrench, water_can): 16×16 cell, 12×12 body, bob ×2, grid in assets-src/sprites/pickup/, atlas items, icons per ART_BIBLE §8.5.

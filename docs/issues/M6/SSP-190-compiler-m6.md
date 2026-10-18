@@ -36,7 +36,7 @@ Schema gaps:
 (2) The docs do not restrict 'inherit'. PROPOSED rule: 'inherit' is legal only for mode skip_run. Implement it and document it in §10.3.
 (3) The Depot Yard map has a set-dressing skip (`ss`) near the bays, which would trip L020 ('skip within 40 m of a depot bay'). Proposal: L020-L022 do not apply to skip_run. Document it.
 
-Light pool radius is `TBD (M0 spike)` in the docs; the design assumes about 5 m (LEVEL_DESIGN §13 Q2). Read the decided value from ROADMAP §8 or assets-src/STYLE.md if M0 recorded it, otherwise use 5 m and say so, and keep it in ONE shared constant used by both the compiler and src/render.
+Light pool radius was decided in M0 as 5 m (ROADMAP §8 D-05, LEVEL_DESIGN §13 Q2): it is `LIGHT_POOL_RADIUS_M` in `src/render/lightPools.ts`. Keep it in ONE shared constant used by both the compiler and src/render (move it somewhere both can import if needed; the compiler must not import three).
 
 Skip Run rules (LEVEL_DESIGN §11): par run 30-38 s; 4-8 gates; spacing 10-14 m; lateral offset 2-4 m from the centreline; 3-6 active bays per variant. The par report must print course time per variant. Event types to validate (LEVEL_DESIGN §4.3): rain, leaf_fall, school_out, gust, vehicle_stop, rival_cameo, kicking_out, crossing_patrol, parade, inspection, population_wave and bin_round, plus the existing ones. Output stays byte-deterministic (stable key order, no timestamps), and npm run assets:verify rebuilds levels in CI.
 

@@ -2,7 +2,7 @@
 id: SSP-027
 title: "Verify M0 exit criteria, complete the decision log and open the Close M0 PR"
 milestone: M0
-status: todo
+status: done
 type: release
 estimate: M
 labels: [type:release, area:release, area:docs, size:M]
@@ -65,17 +65,17 @@ The PR title is exactly `Close M0: Foundations & Look Spike`. It ticks each crit
 
 ## Acceptance criteria
 
-- [ ] `npm run ci` exits 0 on the dev Mac (log attached to the PR)
-- [ ] `npm ls --depth=0` output matches the TECHNICAL_DESIGN §1.1 pins exactly
-- [ ] `uv run --project tools/forge python -m forge blender --version` prints Blender 5.2.2 LTS
-- [ ] `npm run assets:blender -- veh.sweeper --check` reports 0 changed pixels
-- [ ] 10 consecutive `npx playwright test tests/visual --project=visual` runs pass with identical logged hashes
-- [ ] ROADMAP §8 has no `TBD (M0 spike)` Decision cell among D-01..D-13
-- [ ] `grep -rn 'TBD (M0 spike)' docs` returns only items re-deferred with a named milestone and reason (plus legend/definition lines)
-- [ ] docs/img/m0-spike.png exists, was opened with Read, and the README references it; the CLAUDE.md repo-status line is updated
-- [ ] The risk register shows re-scored values or 'unchanged at M0 close' notes
-- [ ] Every M0 checklist item in ROADMAP §4 is ticked or annotated with the issue that changed it
-- [ ] The PR is titled `Close M0: Foundations & Look Spike` and links evidence for each exit criterion
+- [x] `npm run ci` exits 0 on the dev Mac (log attached to the PR)
+- [x] `npm ls --depth=0` output matches the TECHNICAL_DESIGN §1.1 pins exactly
+- [x] `uv run --project tools/forge python -m forge blender --version` prints Blender 5.2.2 LTS
+- [x] `npm run assets:blender -- veh.sweeper --check` reports 0 changed pixels
+- [x] 10 consecutive `npx playwright test tests/visual --project=visual` runs pass with identical logged hashes
+- [x] ROADMAP §8 has no `TBD (M0 spike)` Decision cell among D-01..D-13
+- [x] `grep -rn 'TBD (M0 spike)' docs` returns only items re-deferred with a named milestone and reason (plus legend/definition lines)
+- [x] docs/img/m0-spike.png exists, was opened with Read, and the README references it; the CLAUDE.md repo-status line is updated
+- [x] The risk register shows re-scored values or 'unchanged at M0 close' notes
+- [x] Every M0 checklist item in ROADMAP §4 is ticked or annotated with the issue that changed it
+- [x] The PR is titled `Close M0: Foundations & Look Spike` and links evidence for each exit criterion
 
 ## Verification
 

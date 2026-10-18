@@ -2,7 +2,7 @@
 id: SSP-030
 title: "Implement Bessie's kinematic bicycle model in src/sim/vehicle.ts"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:physics, area:test, size:M, vertical-slice]
@@ -67,17 +67,17 @@ Hot path: zero allocations per tick, module-level scratch, fmath for every trig/
 
 ## Acceptance criteria
 
-- [ ] Full throttle with the brush down (k = 9.0, rollMult = 1) never exceeds 6.0 m/s over a 30 s run, and its end-of-tick speed after 10 s is ≥ 5.95 m/s
-- [ ] Full throttle in transit never exceeds 11.0 m/s and its end-of-tick speed after 20 s is ≥ 10.95 m/s
-- [ ] Brake-only deceleration is 6.0 m/s² (or the test documents the drag allowance explicitly)
-- [ ] Reverse engages only after brake is held for ≥ 15 ticks below 0.2 m/s, and reverse speed never exceeds 2.5 m/s
-- [ ] Turning circle (diameter, rear axle) is 7.1 m ± 0.2 at a held 0.1 m/s and 8.7 m ± 0.3 at a held 1.4 m/s
-- [ ] Hopper-hook values match the GDD §7.4 table at f = 0.5 (2.04 m/s², 5.7/10.45 m/s, 111°/s), f = 0.8 (1.82, 5.52/10.12, 106°/s) and f = 1.0 (1.68, 5.4/9.9, 102°/s), within 0.01 (steer rate within 1°/s)
-- [ ] With a centred input, steer returns at 180°/s; otherwise it moves at most steerRate·DT per tick
-- [ ] vLat decays by exp(−k·DT) per tick with no lateral input (checked at k = 9.0 and k = 1.2)
-- [ ] Coasting in REV, drag reduces |vLong| (never accelerates it) and never flips its sign
-- [ ] Running the same input sequence twice produces bit-identical state
-- [ ] Code review confirms no `new`, array or object literals, closures, or map/filter inside stepVehicle (the heap check arrives with SSP-038)
+- [x] Full throttle with the brush down (k = 9.0, rollMult = 1) never exceeds 6.0 m/s over a 30 s run, and its end-of-tick speed after 10 s is ≥ 5.95 m/s
+- [x] Full throttle in transit never exceeds 11.0 m/s and its end-of-tick speed after 20 s is ≥ 10.95 m/s
+- [x] Brake-only deceleration is 6.0 m/s² (or the test documents the drag allowance explicitly)
+- [x] Reverse engages only after brake is held for ≥ 15 ticks below 0.2 m/s, and reverse speed never exceeds 2.5 m/s
+- [x] Turning circle (diameter, rear axle) is 7.1 m ± 0.2 at a held 0.1 m/s and 8.7 m ± 0.3 at a held 1.4 m/s
+- [x] Hopper-hook values match the GDD §7.4 table at f = 0.5 (2.04 m/s², 5.7/10.45 m/s, 111°/s), f = 0.8 (1.82, 5.52/10.12, 106°/s) and f = 1.0 (1.68, 5.4/9.9, 102°/s), within 0.01 (steer rate within 1°/s)
+- [x] With a centred input, steer returns at 180°/s; otherwise it moves at most steerRate·DT per tick
+- [x] vLat decays by exp(−k·DT) per tick with no lateral input (checked at k = 9.0 and k = 1.2)
+- [x] Coasting in REV, drag reduces |vLong| (never accelerates it) and never flips its sign
+- [x] Running the same input sequence twice produces bit-identical state
+- [x] Code review confirms no `new`, array or object literals, closures, or map/filter inside stepVehicle (the heap check arrives with SSP-038)
 
 ## Verification
 

@@ -188,7 +188,7 @@ Rules that follow from the cheat:
 
 **Bessie's livery:** body 15 (shade 14), cab 07, stripe 26, brushes 18, beacon 17 (flashes to 16), windscreen 25/27, tyres 00/01.
 
-`palette.json` contains `colors[32]`, `ramps{}`, `night[32]` (index remap) and `shadow[32]` (index remap). The exact night and shadow tables are tuned in M0 and recorded in the file.
+`kerbside32.json` contains `colors[32]` (`{ name, hex }`, names without the glosses above: `ink`, `chalk`), `ramps{}` (snake_case ramp name → indices, in the order above), `night[32]` (index remap), `shadow[32]` (index remap) and `swaps{}` (empty until M4, §5.6). The exact night and shadow tables are tuned in M0 and recorded in the file.
 
 ### 5.2 Value reference
 
@@ -302,12 +302,14 @@ The renderer supports **up to 8 swap tables per atlas**; each instance picks one
 
 ### 5.7 Shadow and night remaps (intent)
 
-The exact `shadow[32]` and `night[32]` tables are tuned in M0 and recorded in `palette.json`. The **intent** the tuning must satisfy:
+The exact `shadow[32]` and `night[32]` tables are tuned in M0 and recorded in `kerbside32.json`. Until that tuning (SSP-021, D-05/D-06) the file holds **provisional** tables: identity, overlaid with the example targets below. The **intent** the tuning must satisfy:
 
 | Remap | Intent | Example targets (illustrative, not final) |
 |---|---|---|
 | `shadow` | Each colour drops about **two ramp steps** and cools slightly. Shadows must stay readable: details in shade survive. | 02→01, 05→03, 06→04, 07→05, 10→09, 15→14, 23→22, 27→26 |
 | `night` | Everything outside a light pool shifts toward navy/plum: warm colours to maroon and plum, neutrals down 2–3 steps, blues stay blue. Bessie must still be the brightest non-light object. | 02→01, 05→02, 07→04, 10→08, 15→14, 16→15, 23→21, 27→25 |
+
+**Ramp rule (mechanical form, enforced by forge pytest via `forge.palette.remap_violations`).** An entry `source → target` is legal when `target == source`; or `target` shares a ramp with `source` and is not lighter in OKLab L; or `target` is in a different ramp and is strictly darker in OKLab L (§5.2). This is how "within its own ramp, or to the next ramp down" is checked.
 
 Shadow is applied after night, so a shadowed pixel at night is darker still. Lit windows, headlights and street lamps write the light mask and are exempt from the night remap (§13).
 

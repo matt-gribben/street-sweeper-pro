@@ -22,8 +22,6 @@ GENAI_TOOLS = ("codex", "cursor")
 
 NOT_IMPLEMENTED_UNTIL: dict[str, str] = {
     "gen-ai": "SSP-012",
-    "lint": "SSP-011",
-    "sheets": "SSP-011",
 }
 """Issue that delivers each subcommand. Remove an entry when its real handler lands."""
 
@@ -75,6 +73,20 @@ def _ingest(args: argparse.Namespace) -> int:
     from forge import ingest  # deferred so other subcommands never import it
 
     return ingest.cli(args)
+
+
+def _lint(args: argparse.Namespace) -> int:
+    """``forge lint [--only <id>...] [--warn-as-error]`` (SSP-011, M0 rule subset)."""
+    from forge import lint  # deferred so other subcommands never import it
+
+    return lint.cli(args)
+
+
+def _sheets(args: argparse.Namespace) -> int:
+    """``forge sheets [--atlas <name>] [--only <id>...]`` (SSP-011)."""
+    from forge import sheets  # deferred so other subcommands never import it
+
+    return sheets.cli(args)
 
 
 def _positive_int(text: str) -> int:
@@ -163,11 +175,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="reference image (repeatable; default: what prompt.md declares)",
     )
 
-    p = add("lint", "Check palette, shape, outline, provenance and manifest rules.")
+    p = add("lint", "Check palette, shape, provenance, Blender and manifest rules.", _lint)
     _add_only(p)
     p.add_argument("--warn-as-error", action="store_true", help="treat warnings as errors")
 
-    p = add("sheets", "Write contact sheets to build/sheets/.")
+    p = add("sheets", "Write contact sheets to build/sheets/.", _sheets)
     p.add_argument("--atlas", choices=ATLASES, help="one atlas only")
     _add_only(p)
 

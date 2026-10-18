@@ -1174,6 +1174,15 @@ export type AssetId = "veh.sweeper" | "npc.old_woman" | "litter.crisp_packet" /*
 | Blender snap | The palette snap changed any pixel of a render |
 | Manifest | Entries are unsorted, IDs are duplicated, or a class prefix is unknown |
 
+**M0 subset (SSP-011, `tools/forge/forge/lint.py`).** Implemented now: Palette, Shape, Provenance (without the Cursor check), Blender drift, Blender snap and Manifest. Outline, Orphans, Seams, Ramps and Cursor provenance land in M4 (SSP-115). How each M0 rule reads the repo:
+
+- **Palette** checks the Blender renders pixel for pixel (the rig emits exact palette colours with binary alpha, §7.3) and every committed PNG under `public/assets/`. Built frames are index arrays, so they are range-checked only. AI goldens are raw tool output and are exempt.
+- **Shape** builds each entry in memory (`forge build`'s own validation: cell size, frame list, empty frames) and checks that the committed atlas JSON lists every manifest frame at the cell size.
+- **Provenance** checks every `assets-src/ai/<id>/` folder (folders starting with `_` are skipped): `meta.json` is present and valid with every §6.5 field, its `id` matches the folder and `seed` is null; `prompt.md` and `golden.png` are present; and `golden_sha256` matches the file. `prompt_sha256` and `preamble_version` may be `null` only when `acceptance_notes` contain the word "retro" (the retro-filled probe form). This is a generic rule, not a list of folder names. For `ai-ingest` entries, the grid's `origin:` folder must pass the same checks. M0 does not re-hash `prompt.md` against `prompt_sha256` (M4).
+- **Blender drift** is a warning. A missing script, `rig.py` or `render.json` is an error.
+- **Manifest** also rejects an entry whose `source` is inside `assets-src/_probe/`. Lint never reads `assets-src/_probe/`.
+- `--only <id>…` takes manifest IDs or AI folder IDs and restricts the per-asset and per-folder rules (the manifest-wide checks always run). Errors exit 1. Warnings exit 0, or 1 with `--warn-as-error`, which as implemented also escalates "re-render needed". Lint writes nothing.
+
 ### 9.5 `forge sheets`
 
 `build/sheets/<atlas>.png` shows every frame of the atlas:
@@ -1184,6 +1193,8 @@ export type AssetId = "veh.sweeper" | "npc.old_woman" | "litter.crisp_packet" /*
 - with **Bessie h00** beside each group for scale.
 
 `--only <id>` produces a focused sheet, `build/sheets/only_<id>.png`, which is the one to Read during iteration.
+
+**Implementation (SSP-011, `tools/forge/forge/sheets.py`).** Frames are built in memory from the sources, the same way `forge build` builds them, so a sheet never depends on the cache. Each tile is the full frame ID as its label, then the frame at 4× on light (palette 06) and again on dark (palette 01). Each panel is exactly the cell, so diagonal headings can be checked against its edge. A state with one frame per direction runs across the directions. An animated state gets one left-to-right run per direction, and runs wrap at about 6,400 px. Bessie `veh.sweeper:body:h00:0` is the first tile of every group. Every colour is read from `kerbside32.json` by index. Labels use Pillow's built-in bitmap font at 2×, so sheets hold palette colours only and are written as byte-stable indexed PNGs. `--atlas <name>` limits output to one atlas (an atlas with no entries writes nothing). `--only` writes one `only_<id>.png` per ID (a combined multi-ID sheet is SSP-116). Sheets of real atlases are large (actors: 6932×8788), and Read downsamples them. Check labels and edges on 1:1 crops (a throwaway Pillow crop into `build/tmp/`).
 
 ---
 

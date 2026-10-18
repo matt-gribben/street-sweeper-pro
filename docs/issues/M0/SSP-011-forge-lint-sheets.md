@@ -2,7 +2,7 @@
 id: SSP-011
 title: "Implement minimal forge lint and forge sheets for M0 asset review"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:tooling, area:assets, area:test, size:M, vertical-slice]
@@ -52,11 +52,11 @@ Labels need a tiny built-in pixel font: Pillow's default bitmap font is acceptab
 
 ## Acceptance criteria
 
-- [ ] `npm run assets:lint` exits 0 on the repo (including both retro probe folders)
-- [ ] pytest proves each rule: off-palette pixel → error, alpha 128 → error, unsorted manifest → error, golden hash mismatch → error, stale script_sha256 → warning (an error only with --warn-as-error)
-- [ ] `npm run assets:sheets` writes build/sheets/actors.png; `npm run assets:sheets -- --only veh.sweeper` writes build/sheets/only_veh.sweeper.png
-- [ ] The actors sheet was opened with Read, and the PR notes what was checked (labels legible, diagonals inside cell, outline present)
-- [ ] assets-src/_probe/ is never linted (pytest)
+- [x] `npm run assets:lint` exits 0 on the repo (including both retro probe folders)
+- [x] pytest proves each rule: off-palette pixel → error, alpha 128 → error, unsorted manifest → error, golden hash mismatch → error, stale script_sha256 → warning (an error only with --warn-as-error)
+- [x] `npm run assets:sheets` writes build/sheets/actors.png; `npm run assets:sheets -- --only veh.sweeper` writes build/sheets/only_veh.sweeper.png
+- [x] The actors sheet was opened with Read, and the PR notes what was checked (labels legible, diagonals inside cell, outline present)
+- [x] assets-src/_probe/ is never linted (pytest)
 
 ## Verification
 

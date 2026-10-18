@@ -1,6 +1,6 @@
 {
   "blender_version": "5.2.2 LTS",
-  "script_sha256": "0387c4be53d8a6712c3639d7eb24c348f692556ac62263dd3d7ae9a1ecdbf004",
+  "script_sha256": "0338ba90c58c02ec22730098fef34f4e336c64c7a367db07e39301d47be61883",
   "argv": [
     "--out",
     "assets-src/rendered/veh.sweeper",

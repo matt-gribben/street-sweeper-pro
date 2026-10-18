@@ -21,7 +21,6 @@ ATLASES = ("world", "actors", "items", "ui", "fx")
 GENAI_TOOLS = ("codex", "cursor")
 
 NOT_IMPLEMENTED_UNTIL: dict[str, str] = {
-    "build": "SSP-009",
     "ingest": "SSP-013",
     "gen-ai": "SSP-012",
     "lint": "SSP-011",
@@ -57,6 +56,13 @@ def _blender(args: argparse.Namespace) -> int:
     from forge import blender  # deferred so other subcommands never import it
 
     return blender.cli(args)
+
+
+def _build(args: argparse.Namespace) -> int:
+    """``forge build [--only <id>...] [--out <dir>] [--no-cache]`` (SSP-009)."""
+    from forge import build  # deferred so other subcommands never import it
+
+    return build.cli(args)
 
 
 def _positive_int(text: str) -> int:
@@ -105,10 +111,14 @@ def build_parser() -> argparse.ArgumentParser:
         p.set_defaults(handler=handler)
         return p
 
-    p = add("build", "Build public/assets/** and src/gen/assets.ts from assets-src/ (pure).")
+    p = add("build", "Build public/assets/** and src/gen/assets.ts from assets-src/ (pure).", _build)
     _add_only(p)
-    p.add_argument("--out", metavar="DIR", help="output root (default: the repo)")
-    p.add_argument("--no-cache", action="store_true", help="ignore build/.forge-cache/")
+    p.add_argument(
+        "--out",
+        metavar="DIR",
+        help="output root; frames go to <out>/frames/<id>/ (default: build/.forge-cache/)",
+    )
+    p.add_argument("--no-cache", action="store_true", help="neither read nor write build/.forge-cache/entries/")
 
     p = add("ingest", "AI golden -> indexed text grid (assets-src/sprites/).")
     p.add_argument("id", help="asset ID")

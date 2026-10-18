@@ -12,7 +12,8 @@ arrays, with no import-time side effects:
   only frequencies strictly between 1/16 and 1/3 (periods 3-16 px). Step 4.
 - :func:`alpha_bbox` / :func:`bbox_crop`: crop to the opaque bounding box. Step 3.
 - :func:`block_mode_keys` / :func:`block_mode_resize`: block-mode resample by majority over
-  opaque pixels. Step 5.
+  opaque pixels. Step 5. :func:`block_mode_keys_factor` is the vectorised exact-factor form
+  (Blender renders' 4x4 reduction, §9.2).
 
 Array conventions: images are ``(H, W, 3)`` RGB or ``(H, W, 4)`` RGBA ``uint8`` arrays.
 Inputs are never modified; every function returns new arrays.
@@ -36,6 +37,7 @@ __all__ = [
     "alpha_bbox",
     "bbox_crop",
     "block_mode_keys",
+    "block_mode_keys_factor",
     "block_mode_resize",
     "detect_period",
     "key_bg",
@@ -237,6 +239,39 @@ def block_mode_keys(
             # so a tie resolves to the lowest key.
             out_keys[y, x] = int(vals[np.argmax(counts)])
             out_opaque[y, x] = True
+    return out_keys, out_opaque
+
+
+def block_mode_keys_factor(
+    keys: IntArray, opaque: BoolArray, factor: int
+) -> tuple[npt.NDArray[np.int64], BoolArray]:
+    """:func:`block_mode_keys` for an exact integer reduction (``H`` and ``W`` divisible by ``factor``).
+
+    Vectorised, and identical in result to ``block_mode_keys(keys, opaque, W // factor,
+    H // factor)``: a cell is opaque when at least half of its ``factor²`` pixels are opaque,
+    its key is the most frequent key among the opaque pixels, and **ties go to the lowest key**.
+    Used for Blender renders (4x4 blocks, ASSET_PIPELINE §9.2), where the per-cell loop of
+    :func:`block_mode_keys` would cost seconds per asset.
+    """
+    if keys.ndim != 2 or opaque.shape != keys.shape:
+        raise ValueError("keys must be 2-D and opaque must have the same shape")
+    if factor < 1:
+        raise ValueError(f"factor must be >= 1, got {factor}")
+    h, w = keys.shape
+    if h % factor or w % factor:
+        raise ValueError(f"image {w}x{h} is not divisible by the factor {factor}")
+    oh, ow, n = h // factor, w // factor, factor * factor
+    vals = keys.astype(np.int64).reshape(oh, factor, ow, factor).transpose(0, 2, 1, 3).reshape(oh, ow, n)
+    ops = opaque.astype(np.bool_).reshape(oh, factor, ow, factor).transpose(0, 2, 1, 3).reshape(oh, ow, n)
+    out_opaque = ops.sum(axis=-1) * 2 >= n
+    # counts[..., k] = number of opaque pixels in the block whose key equals pixel k's key.
+    same = vals[..., :, None] == vals[..., None, :]
+    counts = (same & ops[..., None, :]).sum(axis=-1)
+    counts = np.where(ops, counts, -1)
+    best = counts.max(axis=-1, keepdims=True)
+    big = np.iinfo(np.int64).max
+    out_keys = np.where(counts == best, vals, big).min(axis=-1)
+    out_keys = np.where(out_opaque, out_keys, -1)
     return out_keys, out_opaque
 
 

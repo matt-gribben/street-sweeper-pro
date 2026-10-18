@@ -2,7 +2,7 @@
 id: SSP-009
 title: "Implement forge build for grid and blender techniques with outline and byte-stable PNGs"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:tooling, area:assets, area:test, size:L, vertical-slice]

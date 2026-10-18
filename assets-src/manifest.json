@@ -1,0 +1,30 @@
+{
+  "assets": [
+    {
+      "id": "veh.sweeper",
+      "class": "veh",
+      "technique": "blender",
+      "source": "assets-src/rendered/veh.sweeper",
+      "cell": [64, 64],
+      "states": ["body", "dented"],
+      "dirs": "h32",
+      "frames": { "body": 1, "dented": 1 },
+      "atlas": "actors",
+      "outline": true,
+      "swaps": []
+    },
+    {
+      "id": "veh.sweeper_brush",
+      "class": "veh",
+      "technique": "blender",
+      "source": "assets-src/rendered/veh.sweeper_brush",
+      "cell": [96, 96],
+      "states": ["brush"],
+      "dirs": "h32",
+      "frames": { "brush": 4 },
+      "atlas": "actors",
+      "outline": true,
+      "swaps": []
+    }
+  ]
+}

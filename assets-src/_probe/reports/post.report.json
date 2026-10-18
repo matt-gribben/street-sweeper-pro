@@ -1,0 +1,395 @@
+{
+ "old_woman_sheet_codex": {
+  "size": [
+   1774,
+   887
+  ],
+  "bg_rgb": [
+   250,
+   5,
+   249
+  ],
+  "period_x": 9.22,
+  "period_y": 9.38,
+  "native_cell_px": [
+   [
+    25,
+    33
+   ]
+  ]
+ },
+ "businessman_sheet_codex2": {
+  "size": [
+   1774,
+   887
+  ],
+  "bg_rgb": [
+   246,
+   7,
+   247
+  ],
+  "period_x": 9.22,
+  "period_y": 9.38,
+  "native_cell_px": [
+   [
+    25,
+    31
+   ]
+  ]
+ },
+ "old_woman_sheet_cursor": {
+  "size": [
+   1280,
+   720
+  ],
+  "bg_rgb": [
+   249,
+   3,
+   178
+  ],
+  "period_x": 4.01,
+  "period_y": 15.22,
+  "native_cell_px": [
+   [
+    14,
+    26
+   ]
+  ]
+ },
+ "palette": [
+  "#eed0a1",
+  "#edc094",
+  "#e9ba8f",
+  "#eeaf76",
+  "#bfac9f",
+  "#c99f7f",
+  "#c38354",
+  "#918f8e",
+  "#7f7a7c",
+  "#9c5d37",
+  "#7a5263",
+  "#803e74",
+  "#723e47",
+  "#59585c",
+  "#533f3d",
+  "#653640",
+  "#47353f",
+  "#712b78",
+  "#851233",
+  "#512c43",
+  "#4e184e",
+  "#3a2731",
+  "#371a30",
+  "#37123e",
+  "#37073b",
+  "#272832",
+  "#221e27",
+  "#281625",
+  "#1b161d",
+  "#260e24",
+  "#260423",
+  "#150b14"
+ ],
+ "sprites": {
+  "old_woman_sheet_codex_r0c0": {
+   "native": [
+    25,
+    33
+   ],
+   "target": [
+    18,
+    24
+   ]
+  },
+  "old_woman_sheet_codex_r0c1": {
+   "native": [
+    24,
+    31
+   ],
+   "target": [
+    19,
+    24
+   ]
+  },
+  "old_woman_sheet_codex_r0c2": {
+   "native": [
+    25,
+    33
+   ],
+   "target": [
+    19,
+    24
+   ]
+  },
+  "old_woman_sheet_codex_r0c3": {
+   "native": [
+    25,
+    34
+   ],
+   "target": [
+    18,
+    24
+   ]
+  },
+  "old_woman_sheet_codex_r1c0": {
+   "native": [
+    26,
+    30
+   ],
+   "target": [
+    21,
+    24
+   ]
+  },
+  "old_woman_sheet_codex_r1c1": {
+   "native": [
+    22,
+    28
+   ],
+   "target": [
+    18,
+    24
+   ]
+  },
+  "old_woman_sheet_codex_r1c2": {
+   "native": [
+    24,
+    29
+   ],
+   "target": [
+    20,
+    24
+   ]
+  },
+  "old_woman_sheet_codex_r1c3": {
+   "native": [
+    27,
+    29
+   ],
+   "target": [
+    22,
+    24
+   ]
+  },
+  "businessman_sheet_codex2_r0c0": {
+   "native": [
+    25,
+    31
+   ],
+   "target": [
+    19,
+    24
+   ]
+  },
+  "businessman_sheet_codex2_r0c1": {
+   "native": [
+    24,
+    29
+   ],
+   "target": [
+    20,
+    24
+   ]
+  },
+  "businessman_sheet_codex2_r0c2": {
+   "native": [
+    25,
+    31
+   ],
+   "target": [
+    19,
+    24
+   ]
+  },
+  "businessman_sheet_codex2_r0c3": {
+   "native": [
+    25,
+    32
+   ],
+   "target": [
+    19,
+    24
+   ]
+  },
+  "businessman_sheet_codex2_r1c0": {
+   "native": [
+    26,
+    29
+   ],
+   "target": [
+    21,
+    24
+   ]
+  },
+  "businessman_sheet_codex2_r1c1": {
+   "native": [
+    22,
+    28
+   ],
+   "target": [
+    19,
+    24
+   ]
+  },
+  "businessman_sheet_codex2_r1c2": {
+   "native": [
+    24,
+    29
+   ],
+   "target": [
+    20,
+    24
+   ]
+  },
+  "businessman_sheet_codex2_r1c3": {
+   "native": [
+    27,
+    29
+   ],
+   "target": [
+    22,
+    24
+   ]
+  },
+  "old_woman_sheet_cursor_r0c0": {
+   "native": [
+    14,
+    26
+   ],
+   "target": [
+    13,
+    24
+   ]
+  },
+  "old_woman_sheet_cursor_r0c1": {
+   "native": [
+    14,
+    26
+   ],
+   "target": [
+    13,
+    24
+   ]
+  },
+  "old_woman_sheet_cursor_r0c2": {
+   "native": [
+    14,
+    26
+   ],
+   "target": [
+    13,
+    24
+   ]
+  },
+  "old_woman_sheet_cursor_r0c3": {
+   "native": [
+    14,
+    26
+   ],
+   "target": [
+    13,
+    24
+   ]
+  },
+  "old_woman_sheet_cursor_r1c0": {
+   "native": [
+    12,
+    26
+   ],
+   "target": [
+    11,
+    24
+   ]
+  },
+  "old_woman_sheet_cursor_r1c1": {
+   "native": [
+    15,
+    26
+   ],
+   "target": [
+    13,
+    24
+   ]
+  },
+  "old_woman_sheet_cursor_r1c2": {
+   "native": [
+    15,
+    26
+   ],
+   "target": [
+    14,
+    24
+   ]
+  },
+  "old_woman_sheet_cursor_r1c3": {
+   "native": [
+    11,
+    26
+   ],
+   "target": [
+    10,
+    24
+   ]
+  },
+  "sweeper_r000_nearest": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r000_mode": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r045_nearest": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r045_mode": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r090_nearest": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r090_mode": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  }
+ }
+}

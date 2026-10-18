@@ -1,0 +1,1363 @@
+# Level Design
+
+> **Scope:** the seven districts of the Tidy Town Week plus the Depot Yard: what each one contains, how it is laid out, how dense it is, how it is authored as text, how things spawn, and how a shift unfolds second by second. For *why* the game plays the way it does, see [GDD.md](GDD.md). For *the stats of every entity named here*, see [ENTITY_CATALOG.md](ENTITY_CATALOG.md). For *how the compiled level is rendered and simulated*, see [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md).
+>
+> **Status:** v1.0, 2026-10-18. Numbers marked *(initial)* are starting values for M3/M6 playtest tuning. Their source of truth is the level JSON, not this document. Values that depend on an engine decision still to be made are marked `TBD (M0 spike)` or with the milestone that decides them.
+
+**Related docs:** [README](../README.md) · [CLAUDE.md](../CLAUDE.md) · [GDD](GDD.md) · [TECHNICAL_DESIGN](TECHNICAL_DESIGN.md) · [ASSET_PIPELINE](ASSET_PIPELINE.md) · [ART_BIBLE](ART_BIBLE.md) · [AUDIO_DESIGN](AUDIO_DESIGN.md) · [ENTITY_CATALOG](ENTITY_CATALOG.md) · [ROADMAP](ROADMAP.md) · [ADR 0001](adr/0001-tech-stack.md) · [ADR 0002](adr/0002-ai-authored-asset-pipeline.md) · [GLOSSARY](GLOSSARY.md)
+
+---
+
+## Contents
+
+1. [What this document owns](#1-what-this-document-owns)
+2. [Level design principles](#2-level-design-principles)
+3. [The week at a glance](#3-the-week-at-a-glance)
+4. [Shift structure](#4-shift-structure)
+5. [District specifications](#5-district-specifications)
+6. [Difficulty curve, targets and knobs](#6-difficulty-curve-targets-and-knobs)
+7. [Level building blocks](#7-level-building-blocks)
+8. [Map authoring format](#8-map-authoring-format)
+9. [Spawn rules](#9-spawn-rules)
+10. [The compile step](#10-the-compile-step)
+11. [Skip Run layout rules](#11-skip-run-layout-rules)
+12. [Level design checklist](#12-level-design-checklist)
+13. [Open questions](#13-open-questions)
+
+---
+
+## 1. What this document owns
+
+| This document owns | Lives in | Owned elsewhere |
+|---|---|---|
+| District list, order, themes, sizes, weather, time of day | `src/data/districts.json` (campaign order, unlock rules) + `assets-src/levels/<name>.level.json` | Star thresholds: [GDD §12.1](GDD.md#121-stars-per-district); economy: [GDD §12.2](GDD.md#122-currency--wages-and-tips) |
+| ASCII map and JSON legend format | `assets-src/levels/<name>.map.txt` + `<name>.level.json` | Compiled-level schema and loader: [TECHNICAL_DESIGN §15.2](TECHNICAL_DESIGN.md#152-compiled-schema-v1) |
+| Building columns (storeys, roof, wall style), frontages, pledges | `level.json` → `buildings`, `pledges` | Facade and roof art: [ART_BIBLE](ART_BIBLE.md), [ASSET_PIPELINE](ASSET_PIPELINE.md) |
+| Litter, grime, stain, hazard and power-up spawn tables | `level.json` → `litter`, `grime`, `stains`, `hazards`, `powerups` | Points, LU, penalties: [ENTITY_CATALOG](ENTITY_CATALOG.md) |
+| NPC and traffic schedules, caps, events | `level.json` → `npcs`, `traffic`, `events` | NPC behaviours: [ENTITY_CATALOG](ENTITY_CATALOG.md) |
+| Par times, target score bands, difficulty knobs | `level.json` → `par` | Assists: [GDD §17](GDD.md) |
+| Skip Run course layouts | `depot_yard.level.json` → `skipRun` | Skip Run payouts: [GDD §13.3](GDD.md) |
+| The level compiler's validation rules | `tools/levels/compile-level.ts` | Build commands: [README](../README.md) |
+
+**File naming.** District IDs are `district.<snake_name>`. As with sprite files, level files drop the class prefix: `district.puddle_lane` is authored as `assets-src/levels/puddle_lane.map.txt` + `puddle_lane.level.json` and compiled to `public/assets/levels/puddle_lane.json`.
+
+---
+
+## 2. Level design principles
+
+These follow from the [design pillars](GDD.md). Every district review checks them.
+
+1. **Grime is a route, not a carpet.** A 240 s shift at clean speed covers at most about 960 m of brush path ([GDD §8.3](GDD.md)). That is roughly a third of Puddle Lane's road and pavement area, and less in later districts. So grime is concentrated in **grime zones** (gutters, bin stores, bus stops, takeaway fronts, market pitches) at 55–90% local density, with light speckle elsewhere. A grimy street must *look* grimy at a glance, and a clean stripe must look like a reward (Pillar 1).
+2. **Perfect is impossible, 3★ is a plan.** Every district is validated so that 92% Tidy (3★) fits inside 240 s with 10–75 s of slack for a player who knows the map, while 100% does not fit (the compiler's 100% par estimate must exceed 260 s). This is what makes "Thorough vs. Fast" (Pillar 3) a real choice on every street ([GDD §8.3](GDD.md): "a perfect clean is impossible in one shift").
+3. **Long kerbs, honest corners.** Bessie has a ~7 m turning circle and loses 30% of her speed crossing a kerb (Pillar 2). Streets give her long straight kerb runs for Kerb Hugger and gutter grime. Tight spots are a deliberate puzzle, never an accident of layout.
+4. **Every hazard is readable before it matters.** Hazards and darting NPCs appear on screen with enough distance to react at the speed the player is likely to be doing there (see [§7.9 sight lines](#79-sight-lines-and-the-camera)). A mistake should make the player laugh and say "I saw that coming" (Pillar 4).
+5. **One new idea per day.** Each district introduces one new verb or hazard family, and everything before it stays in the mix ([GDD §14](GDD.md)).
+6. **Everything is text.** A district is an ASCII grid plus a JSON file that an AI author can write, diff and review in a PR. The compiler is deterministic and its output is committed (Pillar 5).
+
+---
+
+## 3. The week at a glance
+
+### 3.1 District table
+
+This is facts sheet §9.2, reproduced as the master reference for level authors.
+
+| # | Day | ID | Name | Theme | Heights | Time / weather | Map (tiles) | Signature NPCs and hazards |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Mon | `district.puddle_lane` | **Puddle Lane** | Old Town terraces (tutorial) | 2–3 storeys | Dawn → morning, clear | 64×48 | Shoppers, cats, Doris, puddles |
+| 2 | Tue | `district.high_street` | **Muckleford High Street** | Shops, market day | 3–5 | Late morning, clear | 80×60 | Buses, market traders, litterbugs, businessmen, A-boards |
+| 3 | Wed | `district.gasworks` | **Gasworks Estate** | Industrial units + tower blocks | 2–4, towers 6 | Overcast, **rain** (all roads grip 6.0, many puddles) | 96×72 | Bin lorries, potholes, oil, dust |
+| 4 | Thu | `district.conker_hill` | **Conker Hill** | Leafy suburbs, autumn | 2 | Afternoon, **wind + leaf fall** | 96×72 | Dog walkers, loose dogs, many cats, leaf piles, kids chalking |
+| 5 | Fri | `district.promenade` | **The Promenade** | Seafront, arcades, pier | 2–4 | Golden hour, **gusts** | 112×64 | Seagulls, chips, pigeons, ice cream van, joggers, Sid cameo |
+| 6 | Sat | `district.kebab_mile` | **Kebab Mile** | Town centre after the pubs | 3–5 | **Night** (night remap; street lamps and headlights lift the mask) | 96×80 | Revellers, taxis, police, pizza boxes |
+| 7 | Sun | `district.civic_quarter` | **Civic Quarter** | Town Hall, parks, inspection | 3–6, Town Hall tower 8 | Morning, clear | 128×96 | The Inspector, lollipop lady, every NPC type |
+| — | any | `district.depot_yard` | **The Depot Yard** | Skip Run bonus stage | 1–2 | Matches the preceding shift | 32×24 | Cones, bays |
+
+One tile is 2 m × 2 m (32×32 px at 16 px/m), so Puddle Lane is 128 × 96 m and the Civic Quarter is 256 × 192 m.
+
+### 3.2 Unlock order
+
+The next district needs **1★** on the previous one. **Sunday needs ≥ 12★ in total across Mon–Sat** (out of 18). The Depot Yard is offered after every completed shift (not after SACKED or TOWED). Free Sweep is available for any district already unlocked in the week.
+
+```mermaid
+flowchart LR
+  Mon["Mon<br/>Puddle Lane"] -->|1★| Tue["Tue<br/>High Street"]
+  Tue -->|1★| Wed["Wed<br/>Gasworks"]
+  Wed -->|1★| Thu["Thu<br/>Conker Hill"]
+  Thu -->|1★| Fri["Fri<br/>Promenade"]
+  Fri -->|1★| Sat["Sat<br/>Kebab Mile"]
+  Sat -->|"1★ on Sat AND ≥ 12★ Mon–Sat"| Sun["Sun<br/>Civic Quarter"]
+  Mon & Tue & Wed & Thu & Fri & Sat & Sun -.->|after a completed shift| Yard["Depot Yard<br/>Skip Run (45 s)"]
+```
+
+`districts.json` holds the order and the unlock rule for each card, so the Week Map, the save system and this table cannot drift:
+
+```json
+[
+  { "id": "district.puddle_lane",   "day": "mon", "level": "puddle_lane",   "unlock": { "always": true } },
+  { "id": "district.high_street",   "day": "tue", "level": "high_street",   "unlock": { "starsOn": "district.puddle_lane", "min": 1 } },
+  { "id": "district.gasworks",      "day": "wed", "level": "gasworks",      "unlock": { "starsOn": "district.high_street", "min": 1 } },
+  { "id": "district.conker_hill",   "day": "thu", "level": "conker_hill",   "unlock": { "starsOn": "district.gasworks", "min": 1 } },
+  { "id": "district.promenade",     "day": "fri", "level": "promenade",     "unlock": { "starsOn": "district.conker_hill", "min": 1 } },
+  { "id": "district.kebab_mile",    "day": "sat", "level": "kebab_mile",    "unlock": { "starsOn": "district.promenade", "min": 1 } },
+  { "id": "district.civic_quarter", "day": "sun", "level": "civic_quarter", "unlock": { "starsOn": "district.kebab_mile", "min": 1, "totalStarsMonSat": 12 } }
+]
+```
+
+### 3.3 What each day teaches
+
+| Day | New idea (the one new verb or hazard family) | Carried forward | First-play support |
+|---|---|---|---|
+| Mon | Brush, clean-pickup speed, hopper and depot dump, horn on cats, Doris, puddles, zebra | — | Big Pam's tutorial beats ([§4.4](#44-tutorial-beats-monday-only)) |
+| Tue | Traffic (buses, taxis, blocking), stains and the water spray, litterbugs ("Caught!"), litter that arrives mid-shift (market close) | Mon | Intro card hint: "Spray the gum, love. Hydrants are on the map." |
+| Wed | Low grip everywhere (rain), oil, potholes, covered-yard dust, bin lorries | Mon–Tue | Intro card hint on dust and spray |
+| Thu | Line obstacles (dog leads), a chaser (loose dog), "don't clean that yet" (chalk), leaf fall | Mon–Wed | — |
+| Fri | Litter that moves (gusts) or is stolen (seagulls, Sid), mess generators (ice cream van) | Mon–Thu | — |
+| Sat | Night: reading the street by lamplight; police witnesses | Mon–Fri | — |
+| Sun | The Inspector's route as a sweep-ahead puzzle; the lollipop lady; everything at once | All | Intro card shows the Inspector's route |
+
+---
+
+## 4. Shift structure
+
+### 4.1 Phases
+
+```mermaid
+stateDiagram-v2
+  [*] --> IntroCard: Week Map card chosen
+  IntroCard --> Rollout: Start (≈15 s card, skippable after first view)
+  Rollout --> Sweep: 3 s rollout from the depot, timer starts at 240
+  Sweep --> Sweep: dump at depot bay / skip, refill water
+  Sweep --> KnockOff: timer reaches 0
+  Sweep --> Sacked: complaints reach 5
+  Sweep --> Towed: Bessie's Dignity reaches 0 HP
+  KnockOff --> Tally: Bessie coasts to a stop
+  Sacked --> Tally: comic headline, retry
+  Towed --> Tally: 50% score, no stars
+  Tally --> SkipRun: optional (completed shifts only)
+  Tally --> Workshop
+  SkipRun --> Workshop
+  Workshop --> [*]: Week Map
+```
+
+- **Shift length: 240 s** in every campaign district (the compiler rejects any other `timer` for a campaign level). The Skip Run is 45 s. The **+60 s timer** assist raises the campaign timer to 300 s at runtime; levels are never authored for it.
+- **Rollout:** the shift starts with Bessie stationary on the depot apron at `@`, brush up, empty hopper, full water. The timer starts the moment the player first applies throttle or after 3 s, whichever comes first *(initial)*; on the first play of Puddle Lane only, it waits until the brush is first lowered ([GDD §16.1](GDD.md#161-principles)). The rollout is a level-design tool: the first 10–15 s of every district should show the player a short, clean, readable street before the first decision.
+- **Event clock:** every scheduled event is keyed to **elapsed** seconds (0 = timer start), not remaining time. With the +60 s assist, the player simply gets 60 s after the final scheduled beat.
+- **Late-shift pressure:** the music's `lead` stem enters when the timer drops below 60 s ([AUDIO_DESIGN](AUDIO_DESIGN.md)). Districts schedule their last big event at or before 200 s elapsed so it lands in that final minute.
+
+### 4.2 Shift objectives
+
+Every shift has the same objective structure. The intro card picks one of these as Big Pam's emphasis, but scoring never changes.
+
+| Objective | Rule | Where it is set |
+|---|---|---|
+| **Stars** (primary) | Tidy % ≥ 60 / 80 / 92 → 1★ / 2★ / 3★ | Fixed ([GDD §12.1](GDD.md#121-stars-per-district)) |
+| **Pledges** | £10 per pledge frontage at ≥ 90% | `level.json` → `pledges` (8–20) |
+| **Lost Property** | One per district, +250 pts and £25 | `level.json` → `collectibles.lostProperty` |
+| **Golden Crisp Packet** | One hidden per district, +500 pts | `level.json` → `collectibles.goldenCrisp` |
+| **Gleaming** | 3★ + 0 complaints + Lost Property returned | Fixed |
+| **Inspection** (Sunday only) | −100 per frontage below 90% that the Inspector passes | `level.json` → `events[type=inspection]` |
+
+### 4.3 Event catalogue
+
+Events are the level author's way to change a street during the shift. Each is a typed entry in `level.json` → `events`, run by `src/sim/shift.ts` on the fixed tick. Events only use canonical entity IDs: there are no event-only entities.
+
+| Type | What it does | Key params | Used in |
+|---|---|---|---|
+| `dawn` | Night remap at elapsed 0, dissolving to day with the 4×4 Bayer transition dither | `durationS` | Mon |
+| `tutorial_beat` | One-line Big Pam prompt on a sim trigger, first play only | `trigger`, `text` | Mon |
+| `market` | Stalls open; `npc.market_trader` at each `m` pitch; litter and shopper bias around pitches | `pitches` (default all `m`) | Tue |
+| `market_close` | Traders pack up; a litter pile builds around each pitch over `buildS` | `at`, `buildS`, `itemsPerPitch`, `table` | Tue |
+| `bin_round` | Wheelie bins put out at kerbs at shift start; `veh.bin_lorry` follows a route, stops at each bin, sometimes drops `litter.bin_bag` | `route` (anchors), `lorries`, `startAt`, `bagDropChance` | Wed (Thu, Sun light) |
+| `rain` | All road grip 6.0 for the whole shift; puddle table active; `amb.rain` | — | Wed |
+| `leaf_fall` | New `litter.leaf_pile` items appear under `prop.tree` canopies | `everyS`, `max` | Thu |
+| `school_out` | A population wave of kids from a school anchor (skaters, chalkers) | `at`, `anchor`, `mix`, `count` | Thu, Sun |
+| `gust` | `haz.wind_gust`: newspapers, packets and leaves drift 1.5 m/s for 4 s in a set direction | `at[]`, `dirDeg` | Fri |
+| `vehicle_stop` | A vehicle arrives on the lane graph and stops at an anchor for a fixed time (e.g. the ice cream van: 20 s, chimes, spawns kids, wrappers and lolly sticks) | `vehicle`, `anchor`, `at`, `stopS` | Fri, Sun |
+| `rival_cameo` | `veh.rival_sweeper` enters, sweeps a fixed route stealing litter, leaves | `at`, `untilS`, `route` | Fri |
+| `kicking_out` | The pubs shut: reveller population ramps up from the pub doors | `at`, `rampS`, `from`, `to`, `anchors` | Sat |
+| `crossing_patrol` | `npc.lollipop_lady` works a `site.school_crossing` during windows | `crossing`, `windows[]` | Sun |
+| `parade` | Closes a road section to traffic; a slow column of existing NPCs (shoppers in outfit swaps, kids, parents with pushchairs) walks it behind a `veh.police` escort, dropping litter behind it | `route`, `at`, `untilS`, `walkers`, `dropEveryS`, `table` | Sun |
+| `inspection` | `npc.inspector` walks a fixed anchor route marking frontages | `route`, `at`, `speed` (1.0 m/s) | Sun |
+| `population_wave` | Generic temporary change to an NPC cap or mix | `at`, `untilS`, `npc`, `delta` | Any |
+
+**Free Sweep** runs a district with no timer: one-off events (`market_close`, `kicking_out`, `inspection`, `parade`, `dawn`) are skipped, and recurring ones (`gust`, `vehicle_stop`, `bin_round`, `leaf_fall`, NPC schedules) loop on a 240 s cycle. **Daily Shift** (M9) modifiers are implemented as extra events and knob overrides on top of the level JSON ([§6.4](#64-difficulty-knobs)).
+
+### 4.4 Tutorial beats (Monday only)
+
+The beat script is [GDD §16.2](GDD.md#162-puddle-lane-first-play-script-proposed-m2m3); each beat is authored as a `tutorial_beat` event with the GDD trigger and text, copied exactly. Triggers are sim events (including the timer event `timer_remaining<=60` for the last beat), and a beat never repeats once learned. Only one prompt shows at a time ([GDD §17.2](GDD.md)). Beats show on the first play of Puddle Lane and again if the setting "Show tips" is on. Spraying and hydrants are taught on Tuesday, where the stains are (§3.3).
+
+### 4.5 Per-district event timelines
+
+Elapsed seconds. "Cont." means the event runs for the whole shift. All values *(initial)*.
+
+| Day | 0–60 s | 60–120 s | 120–180 s | 180–240 s |
+|---|---|---|---|---|
+| Mon | `dawn` (20 s). Postie starts his round at 10 s. | Doris leaves home (anchor `1`) at 70 s, heading for the zebra and the corner shop | Dog walker loop from Pump Green at 120 s | Quiet: the clean-up minute |
+| Tue | `market` (cont.). Buses every 45 s from 20 s. | Litterbug wave (+2) at 90 s | Lunchtime shopper wave (+8) from 120 to 180 s | **`market_close` at 180 s**: about 40 items build over 20 s |
+| Wed | `rain` (cont.). `bin_round` starts at 15 s (2 lorries). | Second lorry at 70 s | Skater wave from the tower blocks at 140 s | Bin lorries return to depot from 200 s |
+| Thu | `leaf_fall` every 4 s, max +40 (cont.) | **`school_out` at 75 s**: 4 chalkers, 3 skaters | Dog walkers peak (6) from 120 s | Leaf fall continues; chalk kids start leaving (60–90 s after arrival) |
+| Fri | Gust at 40 s. Ice cream van stops at 55 s. | Gust at 95 s. **Sid cameo 110–170 s.** | Gust at 150 s. Ice cream van stops at 165 s. | Gust at 205 s |
+| Sat | Night (cont.). Taxis queue at the rank; police patrol loop. | Second police car from 90 s | **`kicking_out` at 150 s**: revellers ramp 8 → 32 over 30 s | Peak chaos; pizza boxes and kebab wrappers everywhere |
+| Sun | `crossing_patrol` 20–80 s (Sunday School). Ice cream van at 45 s. | **`inspection` starts at 60 s** from the Town Hall steps | **`parade` 120–170 s** along Civic Way | Inspector finishes at about 230 s; `crossing_patrol` 200–240 s |
+
+---
+
+## 5. District specifications
+
+Each district below lists its layout, density, hazards and NPC mix. The numbers are the *(initial)* authored values; the comparison across the week is in [§6](#6-difficulty-curve-targets-and-knobs). Entity membership (which entity may appear in which district) is fixed by `entities.json` → `districts` and mirrored in [ENTITY_CATALOG](ENTITY_CATALOG.md). The compiler rejects a level that spawns anything outside that list. Every map contains a depot entrance at its edge with at least one `site.depot_bay` ([§7.7](#77-depot-skips-and-hydrants)).
+
+### 5.1 Mon: Puddle Lane (`district.puddle_lane`), tutorial
+
+**Theme.** Old Town terraces at dawn: red-brick 2-storey terraces, a 3-storey parade with a corner shop, slate roofs and chimneys, a small green with a pump, narrow two-way streets. Music `mus.puddle_lane` ("Milk Float Shuffle"), ambience `amb.town_morning`.
+
+**Layout (64×48).**
+
+- **Depot** on the south-west edge. The rollout heads north up **Mangle Street** (a straight 3-tile two-way road with long kerbs, the first thing the player sweeps).
+- **Puddle Lane** runs east–west across the middle: 3-tile carriageway, 1-tile pavements, parking bays on the south side, one zebra, speed bumps at both ends.
+- **Gutter Row** runs south from Puddle Lane to the back of the district: the skip lives in a 2-tile-wide drivable alley off it.
+- **Pump Green** (about 14×8 tiles): hedge-bounded grass with paved paths. The paths are drivable pavement and form a shortcut, but the grass costs drag ×2.5.
+- A ring of back streets (**Drain Close**, **Soapsud Terrace**) completes a figure-of-eight loop, so no route ever needs a three-point turn.
+- **Heights:** 2-storey terraces (`roof.slate`), a 3-storey parade on Puddle Lane. No street is flanked by more than 3 storeys.
+
+**Density and resources.**
+
+| Item | Value |
+|---|---|
+| Initial litter | 130 items, about 150 LU *(initial)* |
+| Litter table (weights) | crisp packet 30, cigarette butts 20, drink can 15, plastic bottle 15, newspaper 12, dog mess 8 |
+| Initial grime | 9,000 cells, about 15% of them gutter grime |
+| Stains | None at start. `stain.splat` can be created by the player. |
+| Hazards | 8 `haz.puddle` (kerb-side, near drains), 3 speed-bump rows (`=`) |
+| Skips / hydrants | 1 / 2 |
+| Power-ups | 1 (`pwr.flask_of_tea`) |
+| Frontages / pledges | 46 / 8 |
+| Lost Property | `collect.false_teeth`, on the Pump Green path beside the bench |
+| Golden Crisp | At the dead end of the Gutter Row alley, behind the skip |
+
+**NPC and traffic mix (peaks).**
+
+| Entity | Peak | Notes |
+|---|---|---|
+| `npc.shopper` | 9 | Concentrated on the Puddle Lane parade |
+| `npc.old_woman` (Doris) | 1 | Named spawn at anchor `1`, scripted walk to the zebra and the corner shop and back |
+| `npc.old_man_frame` | 1 | Crosses only at the zebra |
+| `npc.postie` | 1 | Frontage-to-frontage round from 10 s |
+| `npc.mum_pushchair` | 2 | |
+| `npc.dog_walker` | 1 | From 120 s, loops Pump Green. Teaches dog mess. |
+| `npc.cat` | 4 | 2 on garden walls (`w`), 2 on parked car roofs |
+| Moving traffic | 6 | `veh.hatchback` 55, `veh.saloon` 30, `veh.van_white` 15; plus 1 `veh.mobility_scooter` on pavements |
+| Parked | 14 | Bays on Puddle Lane and Drain Close, 60% filled |
+
+**Design notes.** Every street is a loop. The first 30 m of Mangle Street is dense gutter grime with a straight kerb, so the first 15 s teach both the brush and Kerb Hugger. The skip is placed so that the player's first hopper warning (around 80–100 s) happens within 150 m of it.
+
+### 5.2 Tue: Muckleford High Street (`district.high_street`)
+
+**Theme.** A market-day high street: 3–5 storey shopfronts with signs, a pedestrianised cobbled **Market Square**, a bus interchange, pound shops, a bakery and a chippy. Music `mus.high_street` ("Window Shopping"), ambience `amb.town_morning`.
+
+**Layout (80×60).**
+
+- **High Street** is the spine: a 4-tile carriageway (two lanes plus a painted bus box at each stop), 2-tile pavements with A-boards, litter bins and planters. Two zebras and two bus stops.
+- **Market Square** (about 20×14 tiles of cobbles `:`) hangs off the middle of the High Street. 12 market stall pitches (`m`) are laid out in two rows with 3-tile drivable aisles. Bessie fits, but the aisles are full of shoppers.
+- **Station Road** forms a one-way loop (`>`/`<`) behind the shops, with service yards, wheelie bins and the two skips. Using it is the fast way round.
+- **Ginnels** (2-tile drivable alleys) link the High Street to Station Road every 25–35 m.
+- **Depot** on the north edge, off Station Road.
+- **Heights:** 3 storeys on the side streets, 4–5 on the High Street. The High Street is 8 tiles facade to facade ([§7.9](#79-sight-lines-and-the-camera)).
+
+**Density and resources.**
+
+| Item | Value |
+|---|---|
+| Initial litter | 200 items, about 230 LU including dynamic litter |
+| Litter table | crisp packet 20, cigarette butts 18, drink can 12, plastic bottle 10, chip wrapper 10, newspaper 8, banana skin 8, glass bottle 6, pizza box 4, bin bag 4 |
+| Dynamic litter | About 60 items: market close (about 40), litterbugs, seagull-free chip drops |
+| Initial grime | 11,000 cells. Dense around bus stops, the chippy and market pitches. |
+| Stains | 30 `stain.gum` (bus stops, bench fronts), 6 `stain.milkshake` |
+| Hazards | `haz.broken_glass` only from flung glass bottles |
+| Skips / hydrants | 2 / 4 |
+| Power-ups | 2 (pool: flask of tea, super suction, water can) |
+| Frontages / pledges | 64 / 12 |
+| Lost Property | `collect.lost_wallet`, between two stalls in Market Square |
+| Golden Crisp | In the bus box at the far bus stop. Reachable only when no bus is stopped there. |
+
+**NPC and traffic mix (peaks).**
+
+| Entity | Peak | Notes |
+|---|---|---|
+| `npc.shopper` | 18 (26 during the 120–180 s wave) | |
+| `npc.market_trader` | 12 | One per pitch, static |
+| `npc.businessman` | 5 | Crosses without looking at 2 m |
+| `npc.litterbug` | 3 (+2 at 90 s) | |
+| `npc.old_woman` / `npc.old_man_frame` | 1 / 1 | |
+| `npc.pigeon` | 2 flocks of 6–10 | Gather at chip wrappers in the square |
+| Moving traffic | 12 | `veh.bus` 2 (every 45 s), `veh.taxi` 2, `veh.bicycle` 2, cars 6 (`veh.hatchback`, `veh.saloon`, `veh.van_white`) |
+| Parked | 14 | Loading bays on Station Road |
+
+**Design notes.** The market is the shift's main dilemma: sweep the aisles early (light litter, lots of shoppers) or save time for the 180 s closing pile (a 40-item jackpot that arrives just as the lead stem kicks in). Buses stop for 5 s at bus stops. Following a bus down the High Street is safe but slow, and overtaking means crossing into oncoming traffic.
+
+### 5.3 Wed: Gasworks Estate (`district.gasworks`)
+
+**Theme.** Industrial units, a disused gasholder, a canal and two 6-storey tower blocks (Kestrel House and Heron House) in steady rain. Music `mus.gasworks` ("Drizzle Dub"), ambience `amb.rain`.
+
+**Layout (96×72).**
+
+- **Gasholder Road** loops the estate: a 4-tile road with wide gutters, potholes and kerbside puddles.
+- **Units 1–12** sit on **Coke Street**, a dead-end service road with a turning head of 5×5 tiles and covered loading yards (`%`, dusty) under corrugated canopies.
+- **The towers** stand on a podium of pavement and grass, with bin stores at their bases that are the district's densest grime zones.
+- **The canal** (`~`) splits the map, with two bridges. They are pinch points with no pavement.
+- **Roadworks** on Gasholder Road: 2 `haz.open_manhole` ringed by `prop.roadworks_barrier`, telegraphed by cones 20 m before.
+- **Depot** on the east edge.
+- **Heights:** 2–4 storey units, towers 6. The towers stand at least 8 tiles back from any road edge.
+
+**Density and resources.**
+
+| Item | Value |
+|---|---|
+| Initial litter | 210 items, about 260 LU |
+| Litter table | crisp packet 20, drink can 18, cigarette butts 15, plastic bottle 12, newspaper 10, glass bottle 10, bin bag 15 |
+| Initial grime | 12,000 cells (dense gutters, bin stores, loading yards) |
+| Stains | 10 `stain.oil`, each on the same tile as a `haz.oil_slick` |
+| Hazards | 30 `haz.puddle`, 18 `haz.pothole`, 10 `haz.oil_slick`, 2 `haz.open_manhole`; road grip 6.0 everywhere (rain) |
+| Dust | `%` tiles under canopies stay dry and dusty. Brush down without spray → dust cloud. |
+| Skips / hydrants | 2 / 4 |
+| Power-ups | 2 (pool: wrench, water can, super suction) |
+| Frontages / pledges | 34 / 10 (units and tower entrances have wide frontages) |
+| Lost Property | `collect.hard_hat`, inside the Coke Street turning head |
+| Golden Crisp | Under the second canal bridge on the towpath (a 2-tile pavement strip, reached via a dropped kerb) |
+
+**NPC and traffic mix (peaks).**
+
+| Entity | Peak | Notes |
+|---|---|---|
+| `npc.shopper` | 8 | |
+| `npc.kid_skateboard` | 3 (+3 at 140 s) | Ollies off the tower podium kerbs |
+| `npc.litterbug` | 3 | |
+| `npc.dog_loose` | 2 | Patrol the tower podium |
+| Moving traffic | 10 | `veh.bin_lorry` 2 (`bin_round`), `veh.van_white` 3, cars 5 |
+| Parked | 16 | White vans half on pavements outside the units |
+| Knockables | 40 `prop.wheelie_bin` put out at kerbs (bin day), 4 `prop.shopping_trolley` |
+
+**Design notes.** Water is the resource here: oil and dust both need spray, and the tank holds 100 units (16.7 s of spray). Hydrants are placed so that a sensible route passes one every 60–90 s. The bin lorries move at 4 m/s, slower than Bessie's clean-pickup speed, and drop 50-point bags, so following one is a valid strategy but it blocks the gutter.
+
+### 5.4 Thu: Conker Hill (`district.conker_hill`)
+
+**Theme.** Leafy 1930s suburbs in autumn: 2-storey semis with front gardens, horse chestnut avenues, cul-de-sacs, a primary school and **The Rec** (a park). Music `mus.conker_hill` ("Conker Crunch"), ambience `amb.wind_leaves`.
+
+**Layout (96×72).**
+
+- **Horse Chestnut Avenue** and **Acorn Crescent** are tree-lined 3-tile roads with grass verges between pavement and kerb. Trees overhang the pavements.
+- **Four cul-de-sacs** (Laburnum Close and friends), each 8–12 tiles long with a 5×5-tile turning head.
+- **The Rec** (about 24×16 tiles): grass, a path loop and the dog walkers' home turf.
+- **School Lane** runs past the primary school (the `school_out` anchor) with speed bumps.
+- **Depot** on the west edge, at the bottom of the hill.
+- **Heights:** 2 storeys throughout, so sight lines are easy. The challenge comes from actors, not the camera.
+
+**Density and resources.**
+
+| Item | Value |
+|---|---|
+| Initial litter | 220 items, about 320 LU including leaf fall |
+| Litter table | leaf pile 30, crisp packet 18, drink can 12, plastic bottle 10, cigarette butts 10, newspaper 8, dog mess 12 |
+| Dynamic litter | Leaf fall up to +40 piles; dog mess every 40–60 s per dog walker |
+| Initial grime | 11,000 cells |
+| Stains | `stain.chalk_art`, drawn by up to 4 `npc.kid_chalk` from 75 s |
+| Hazards | Speed bumps on School Lane, 8 `haz.pothole`, `haz.wet_leaves` created by the player |
+| Skips / hydrants | 2 / 3 |
+| Power-ups | 2 (pool: hi-vis, flask of tea, wrench) |
+| Frontages / pledges | 72 / 16 (the most pledges so far: proud suburbanites) |
+| Lost Property | `collect.cat_collar`, at the foot of a garden wall in Laburnum Close |
+| Golden Crisp | In the middle of the densest leaf pile cluster in The Rec |
+
+**NPC and traffic mix (peaks).**
+
+| Entity | Peak | Notes |
+|---|---|---|
+| `npc.cat` | 10 | Walls, car roofs, mid-road grooming spots |
+| `npc.dog_walker` | 6 | Leads up to 5 m: line obstacles |
+| `npc.dog_loose` | 3 | Chasers within 12 m |
+| `npc.kid_chalk` / `npc.kid_skateboard` | 4 / 3 | From `school_out` at 75 s |
+| `npc.jogger` | 4 | Gutter runners |
+| `npc.shopper`, `npc.mum_pushchair`, `npc.postie`, `npc.old_woman` | 6, 3, 2, 1 | |
+| Moving traffic | 7 | Cars 5, `veh.van_white` 1, `veh.bin_lorry` 1 (light `bin_round`) |
+| Parked | 20 | Driveways (`d`) and kerbside |
+| Knockables | 24 `prop.recycling_box` and 12 `prop.wheelie_bin` |
+
+**Design notes.** Leaf piles are cheap (5 pts) but heavy (2 LU), so a player who hoovers every pile fills the hopper fast. That pressure is intended. The chalk is the "don't clean that yet" lesson: chalk spots sit on pledge frontages, so waiting for the kid to leave (60–90 s) is worth it.
+
+### 5.5 Fri: The Promenade (`district.promenade`)
+
+**Theme.** The seafront at golden hour: Marine Parade, amusement arcades, chip shops, a bandstand, beach huts and **the Pier** (a landmark roof). Music `mus.promenade` ("Seagull Surf"), ambience `amb.seafront`.
+
+**Layout (112×64).** The widest map: long and shallow, built for transit.
+
+- **Marine Parade** runs the full 112-tile width: a 4-tile road with a 3-tile promenade pavement on the sea side, behind sea-wall railings (`r`). The beach (`_`) is out of bounds.
+- **The Pier** juts south from the centre: a 4-tile-wide pavement deck (drivable, no traffic), 30 tiles long, with a turning space at the end. It is the classic risk-reward detour: lots of chips and seagulls, and a long dead end.
+- **Arcade row** sits on the land side of the Parade (2–4 storeys, bright shopfronts and signs), with a back lane (**Winkle Street**) and the skips.
+- **Depot** on the west edge; a second dump option is one skip at the far east end.
+
+**Density and resources.**
+
+| Item | Value |
+|---|---|
+| Initial litter | 240 items, about 300 LU |
+| Litter table | chip wrapper 22, newspaper 18, crisp packet 15, drink can 12, plastic bottle 10, cigarette butts 8, banana skin 5, lolly stick 10 |
+| Dynamic litter | About 50: seagull thefts (chip wrappers), ice cream van stops (lolly sticks, wrappers) |
+| Initial grime | 11,500 cells, spread along the whole Parade so that transit matters |
+| Stains | 12 `stain.milkshake` |
+| Hazards | `haz.wind_gust` at 40, 95, 150 and 205 s, blowing onshore (from the south) |
+| Skips / hydrants | 2 / 4 |
+| Power-ups | 3 (pool: bacon butty, super suction, flask of tea, water can) |
+| Frontages / pledges | 52 / 12 |
+| Lost Property | `collect.bucket_and_spade`, at the pier end |
+| Golden Crisp | Behind the bandstand, in a 1-tile-wide, 2-tile-deep gap between the railings and the bandstand base. Bessie's 1.75 m body just fits. |
+
+**NPC and traffic mix (peaks).**
+
+| Entity | Peak | Notes |
+|---|---|---|
+| `npc.seagull` | 10 | Steal chips and snatch litter just ahead of the brush |
+| `npc.pigeon` | 3 flocks of 6–10 | |
+| `npc.shopper` | 14 | |
+| `npc.jogger` | 5 | On the promenade pavement |
+| `npc.kid_skateboard` | 4 (+ice cream kids) | |
+| Moving traffic | 10 | `veh.bus` 2, `veh.ice_cream_van` 1 (two stops), `veh.mobility_scooter` 2, cars 4, `veh.rival_sweeper` 1 (110–170 s) |
+| Parked | 12 | |
+
+**Design notes.** Gusts blow litter *toward* the arcade kerbs, so a player who saves the land-side gutter for after a gust is rewarded. Sid's cameo route runs the eastern half of the Parade; getting there first is the race.
+
+### 5.6 Sat: Kebab Mile (`district.kebab_mile`)
+
+**Theme.** The town centre at night: pubs (The Mucky Duck, The Dog & Dustpan), kebab shops, a nightclub and a taxi rank. The night remap is on for the whole shift. Music `mus.kebab_mile` ("Kebab O'Clock"), ambience `amb.night_town`.
+
+**Layout (96×80).**
+
+- **Bridge Street** is the main drag: a 4-tile road with 2-tile pavements, the taxi rank (a long `p` run reserved for `veh.taxi`) and the pub doors (the `kicking_out` anchors).
+- **The Shambles** is a grid of narrow 3-tile streets with alleys behind the takeaways: the densest litter zone in the game.
+- **Lamp spacing:** one `prop.lamp_post` every 5–6 tiles (10–12 m) on main streets, so the light pools overlap. Back alleys are deliberately dark.
+- **Depot** on the north edge.
+- **Heights:** 3–5 storeys. Bridge Street is 8 tiles facade to facade.
+
+**Density and resources.**
+
+| Item | Value |
+|---|---|
+| Initial litter | 250 items, about 340 LU including dynamic litter |
+| Litter table | kebab wrapper 18, pizza box 12, chip wrapper 12, glass bottle 12, drink can 12, cigarette butts 12, crisp packet 10, plastic bottle 6, bin bag 6 |
+| Dynamic litter | About 80, from revellers (pizza boxes, kebab wrappers), mostly after 150 s |
+| Initial grime | 13,000 cells |
+| Stains | 30 `stain.gum` |
+| Hazards | `haz.broken_glass` from flung glass bottles (12% of the table: drive carefully) |
+| Skips / hydrants | 2 / 3 |
+| Power-ups | 2 (pool: wrench, hi-vis, flask of tea) |
+| Frontages / pledges | 58 / 14 |
+| Lost Property | `collect.lost_shoe`, in the taxi rank |
+| Golden Crisp | In the darkest alley behind the nightclub, outside every lamp pool. You find it with the headlights. |
+
+**NPC and traffic mix (peaks).**
+
+| Entity | Peak | Notes |
+|---|---|---|
+| `npc.reveller` | 8 → 32 after `kicking_out` (150–180 s) | Weave, sing, drop pizza boxes and kebab wrappers |
+| `npc.cat` | 5 | Bins and car roofs |
+| Moving traffic | 16 | `veh.taxi` 6, `veh.police` 2 (patrol loop), `veh.bicycle` 3 (takeaway couriers), cars 5 |
+| Parked | 12 | |
+| Knockables | 16 `prop.wheelie_bin`, 4 `prop.shopping_trolley` |
+
+**Design notes.** The night rule is that every `haz.*` placement and every litter hotspot must sit inside a lamp pool or be flagged `darkOk` (the compiler checks this, [§10.3](#103-validation-rules)). Darkness hides the Golden Crisp, never a penalty. The light pool radius is a render constant, `TBD (M0 spike)`; this document assumes about 5 m. The police double the cost of mistakes nearby (+1 complaint for anything witnessed within 15 m), so their patrol loop avoids the densest litter streets and gives the player a choice of where to be careless.
+
+### 5.7 Sun: Civic Quarter (`district.civic_quarter`), finale
+
+**Theme.** A pompous Civic Quarter on inspection morning: the Town Hall with its 8-storey clock tower, Civic Square, the library and museum, Jubilee Park, St Swithun's chapel with a Sunday School crossing, and terraces and shops round the edges. Music `mus.civic_quarter` ("Clipboard March"), ambience `amb.town_morning`.
+
+**Layout (128×96).** The biggest map, a sampler of the whole town.
+
+- **Civic Way** is a 4-tile boulevard from the depot (south edge) to the Town Hall steps. It is the parade route.
+- **Civic Square** is a cobbled plaza with planters, bollards and benches in front of the Town Hall.
+- **Jubilee Park** (about 30×20 tiles) has paths, a pond (`~`), trees and dog walkers.
+- **Chapel Street** has the `site.school_crossing` and its `npc.lollipop_lady`.
+- **Edge quarters** quote earlier days: a terrace row (Mon), a shopping street with a bus stop (Tue), a roadworks patch (Wed), an avenue of trees (Thu), and a takeaway corner (Sat).
+- **The Inspector's route** (about 170 m of pavement, about 28 frontages) starts at the Town Hall at 60 s and walks clockwise round the square, down Civic Way and through the terraces at 1.0 m/s. It ends about 230 s (170 s of walking).
+- **Heights:** 3–6 storeys, with the Town Hall tower at 8 (`roof.town_hall`, a landmark). Civic Way is 10 tiles facade to facade.
+
+**Density and resources.**
+
+| Item | Value |
+|---|---|
+| Initial litter | 300 items, about 360 LU |
+| Litter table | Every Sunday-member litter type, weighted toward crisp packets, cans and cigarette butts |
+| Dynamic litter | About 40 (parade, ice cream van, dog walkers) |
+| Initial grime | 14,500 cells |
+| Stains | 30 in total (gum, milkshake, oil, chalk) |
+| Hazards | 10 puddles, 6 potholes, 2 oil slicks, 1 open manhole (roadworks), speed bumps on Chapel Street |
+| Skips / hydrants | 3 / 6 |
+| Power-ups | 3 (full pool) |
+| Frontages / pledges | 84 / 20 |
+| Lost Property | `collect.mayors_chain`, in Jubilee Park by the pond |
+| Golden Crisp | On the Town Hall steps. Reachable only while the Inspector is away from the square (after about 90 s). |
+
+**NPC and traffic mix (peaks).** Every NPC type in the catalog appears at least once, at lower counts than its signature day: about 72 NPCs and 28 vehicles (12 moving + 16 parked) at peak, including the Inspector, the lollipop lady and the parade column.
+
+**Design notes.** The Sunday puzzle is to **sweep ahead of the Inspector**. His route is shown on the intro card and the shift map. The 28 frontages on it are worth 2,800 points of potential deductions, which outweighs any single street's litter, and his pass rate is half of the Sunday Inspection Score ([GDD §12.8](GDD.md#128-the-week-finale)). The parade (120–170 s) closes Civic Way to traffic and leaves a trail of litter behind it, sitting right across the second half of his route.
+
+### 5.8 The Depot Yard (`district.depot_yard`)
+
+The Skip Run stage. It is 32×24 tiles, has no traffic, NPCs, litter or grime, and inherits the weather and time of day of the shift that preceded it (rain grip on Wednesday, the night remap on Saturday). Layout rules and a complete map are in [§11](#11-skip-run-layout-rules) and [§8.6](#86-worked-example-2-the-depot-yard-complete).
+
+---
+
+## 6. Difficulty curve, targets and knobs
+
+### 6.1 Per-district numbers
+
+All values *(initial)*, tuned in M6 and recorded in each `level.json`.
+
+| | Mon | Tue | Wed | Thu | Fri | Sat | Sun |
+|---|---|---|---|---|---|---|---|
+| Map (tiles) | 64×48 | 80×60 | 96×72 | 96×72 | 112×64 | 96×80 | 128×96 |
+| Initial litter items | 130 | 200 | 210 | 220 | 240 | 250 | 300 |
+| Expected dynamic litter | 20 | 60 | 30 | 30 | 50 | 80 | 40 |
+| Total LU (approx.) | 150 | 230 | 260 | 320 | 300 | 340 | 360 |
+| Initial grime cells | 9,000 | 11,000 | 12,000 | 11,000 | 11,500 | 13,000 | 14,500 |
+| Stains at start | 0 | 36 | 10 | 0 (chalk is dynamic) | 12 | 30 | 30 |
+| Skips / hydrants | 1 / 2 | 2 / 4 | 2 / 4 | 2 / 3 | 2 / 4 | 2 / 3 | 3 / 6 |
+| Power-ups | 1 | 2 | 2 | 2 | 3 | 2 | 3 |
+| Frontages / pledges | 46 / 8 | 64 / 12 | 34 / 10 | 72 / 16 | 52 / 12 | 58 / 14 | 84 / 20 |
+| Peak NPCs (budget 80) | 22 | 51 | 22 | 42 | 57 | 37 | 72 |
+| Peak vehicles, moving + parked (budget 30) | 6 + 14 | 12 + 14 | 10 + 16 | 7 + 20 | 10 + 12 | 16 + 12 | 12 + 16 |
+
+All of these stay far below the 2,000-item litter budget. Litter count is limited by **hopper pressure** and **par time**, not by performance.
+
+### 6.2 Par times (the target times)
+
+Every district has a **par route**, estimated by the compiler and confirmed by a recorded human replay in M6. The par time is how long a map-aware player needs to reach each star tier. The shift is always 240 s, so **240 − 3★ par = slack**, which is the real difficulty dial.
+
+**Assumed loadout.** Par for each district assumes the upgrades that a 1★–2★ player can afford by that day (about £300 after Monday, rising to about £2,500 by Sunday), in the purchase order of [GDD §12.3](GDD.md#123-progression-curve-target):
+
+| Day | Assumed loadout (cumulative) | Brush width | Hopper | Transit avg. |
+|---|---|---|---|---|
+| Mon | Stock | 2.6 m | 100 LU | 8.5 m/s |
+| Tue | `upg.hopper` L1 | 2.6 m | 140 LU | 8.5 m/s |
+| Wed | (no change; saving) | 2.6 m | 140 LU | 8.5 m/s |
+| Thu | + `upg.gutter_brooms` L1 | 2.9 m | 140 LU | 8.5 m/s |
+| Fri | + `upg.engine` L1 | 2.9 m | 140 LU | 9.35 m/s |
+| Sat | + `upg.suction` L1 | 2.9 m | 140 LU | 9.35 m/s |
+| Sun | + `upg.hopper` L2 | 2.9 m | 180 LU | 9.35 m/s |
+
+**Par formula** (implemented in `tools/levels/compile-level.ts`):
+
+```
+T_par = 1.10 × ( D_brush / 3.6  +  D_transit / v_transit  +  10 × dumps )
+```
+
+- `D_brush`: brush-down path (m) of the greedy cover route that reaches the target Tidy %. The average sweeping speed is 3.6 m/s, or 3.4 m/s in rain.
+- `D_transit`: brush-up distance (m) between grime zones, to dump sites and back.
+- `dumps = ceil(0.92 × LU / hopper) − 1`. The last load does not need dumping before knock-off.
+- `10 s` per dump covers approach, the 1.0 s hold and the drain. Detour distance is already in `D_transit`.
+- `× 1.10` is NPC and traffic slack.
+
+| | Mon | Tue | Wed | Thu | Fri | Sat | Sun |
+|---|---|---|---|---|---|---|---|
+| `D_brush` (m, for 92%) | 400 | 440 | 430 | 420 | 440 | 450 | 470 |
+| `D_transit` (m) | 250 | 300 | 450 | 480 | 600 | 560 | 640 |
+| Dumps | 1 | 1 | 1 | 2 | 1 | 2 | 1 |
+| Grime density along the par route | 54% | 60% | 67% | 56% | 56% | 62% | 66% |
+| **1★ par (60%)** | 80 s | 89 s | 105 s | 110 s | 115 s | 120 s | 125 s |
+| **2★ par (80%)** | 125 s | 150 s | 160 s | 165 s | 170 s | 175 s | 180 s |
+| **3★ par (92%)** | **165 s** | **184 s** | **208 s** | **213 s** | **216 s** | **225 s** | **230 s** |
+| Slack at 3★ | 75 s | 56 s | 32 s | 27 s | 24 s | 15 s | 10 s |
+| 100% par (must be > 260 s) | 280 s | 289 s | 310 s | 320 s | 330 s | 335 s | 350 s |
+
+"Grime density along the par route" is `grime cells ÷ (D_brush × width/0.25 m × 4 cells/m)`. It is the share of swept cells that were actually grimy, and it checks principle 1: if it drops below 50%, the grime is too spread out to read as a route.
+
+```mermaid
+xychart-beta
+  title "Par time per star tier (s); the shift is 240 s"
+  x-axis [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+  y-axis "Seconds" 0 --> 240
+  line [80, 89, 105, 110, 115, 120, 125]
+  line [125, 150, 160, 165, 170, 175, 180]
+  line [165, 184, 208, 213, 216, 225, 230]
+```
+
+*Lines from bottom to top: 1★, 2★, 3★ par.* The 1★ line stays at or below half the shift, so [GDD §14](GDD.md) rule 2 (1★ on first attempt for a player with 1★ on the previous day) holds. The 3★ line closes to within 10 s of the timer by Sunday.
+
+### 6.3 Target score bands
+
+These are tuning references for balancing and replay bots. Stars stay Tidy %-based, but the 3★ column is shown to players as **Pam's Target** on the intro card and the Mercury ([GDD §12.1](GDD.md#121-stars-per-district)). The rough model is: grime points ≈ cells cleaned × 1.15 (gutter grime pays 2 pts), plus litter points × the average combo multiplier for that district (×2.0 on Mon rising to ×2.8 on Sun), plus style bonuses and collectibles.
+
+| District | 1★ run | 2★ run | 3★ run |
+|---|---|---|---|
+| Mon | ≈ 7,500 | ≈ 10,500 | ≈ 14,000 |
+| Tue | ≈ 11,000 | ≈ 15,500 | ≈ 20,000 |
+| Wed | ≈ 12,000 | ≈ 17,000 | ≈ 22,000 |
+| Thu | ≈ 11,000 | ≈ 15,500 | ≈ 20,000 |
+| Fri | ≈ 12,500 | ≈ 17,500 | ≈ 23,000 |
+| Sat | ≈ 15,500 | ≈ 22,000 | ≈ 28,500 |
+| Sun | ≈ 16,500 | ≈ 23,000 | ≈ 30,000 (before Inspector deductions) |
+
+If an M6 playtest scores more than 25% outside a band, either the density or the combo opportunities are off, and the district goes back for a pass.
+
+### 6.4 Difficulty knobs
+
+Every knob is a field in `level.json`. Daily Shift (M9) modifiers are expressed as overrides of these same knobs. For example, *Bin Strike* is `litter.initial × 1.5`, *Gale* adds `gust` events, and *Doris Day* sets `npcs.named[npc.old_woman].count = 3` ([GDD §13.4](GDD.md)).
+
+| Knob | JSON path | Range | Effect | Mon → Sun trend |
+|---|---|---|---|---|
+| Litter count | `litter.initial` | 80–400 | Hopper pressure, score ceiling | 130 → 300 |
+| Litter mix | `litter.table` | weights | Bulky items (pizza box 3 LU, bin bag 8 LU, leaf pile 2 LU) raise LU per item | Light → bulky |
+| Grime cells | `grime.cells` | 6,000–16,000 | Par time, score | 9,000 → 14,500 |
+| Grime spread | `grime.zones[].density`, `grime.speckle` | 0–1 | Transit share (how far apart the dirty bits are) | Clustered → spread |
+| Gutter share | `grime.gutterShare` | 0.05–0.30 | Rewards Kerb Hugger | 0.15 → 0.20 |
+| Dump distance | skip `s` placement, depot location | — | Cost of each hopper load | Near → far |
+| Hydrant spacing | `h` placement | 60–150 m on route | Water management | Generous → tight |
+| NPC caps and mix | `npcs.population[]`, `npcs.mix` | ≤ 80 total | Interruptions, penalty risk | 22 → 72 |
+| Traffic density | `traffic.densityPerKm` | 0–12 per lane-km | Blocking, rear-end risk | 4 → 8 |
+| Hazard counts | `hazards.place[]` | — | Grip, HP, spills | Few → many |
+| Weather | `weather` | `clear`, `rain`, `wind`, `gusts` | Grip, moving litter | Clear → mixed |
+| Event timing | `events[].at` | 0–240 s | When the jackpots and the chaos arrive | — |
+| Power-up count | `powerups.count` | **1–3** | Recovery and tempo | 1 → 3 |
+
+**Knobs that are not per-level.** These are global tuning in `src/data/tuning.json` or `entities.json` and must not be overridden in a level: vehicle handling, brush geometry, points and penalties, cat dart chance (40%), star thresholds and the 240 s timer. A district is made harder by *what is placed*, never by changing the rules.
+
+---
+
+## 7. Level building blocks
+
+All dimensions are in tiles (1 tile = 2 m). Bessie's body is 1.75 × 3.25 m, her brushes sweep 2.6 m, and she has a ~7 m turning circle.
+
+### 7.1 Roads
+
+| Block | Width (tiles) | Lanes / flow | Markings (auto) | Use |
+|---|---|---|---|---|
+| **Residential street** | 3 | Two-way, drive on the left | Centre dashes, double yellows except at bays | Mon, Thu |
+| **Main road** | 4 | Two-way, two lanes | Centre line, bus box at `b`, give-way at side roads | Tue–Sun spines |
+| **Boulevard** | 5–6 | Two-way, with a central hatched strip | Hatching, bus boxes | Sun (Civic Way) |
+| **One-way street** | 2–3 | `>` `<` `^` `v` arrows set the flow | Arrows painted every 20 m | Tue (Station Road), Sat |
+| **Service road / cul-de-sac** | 3 | Two-way, dead end | None | Needs a turning head ([§7.4](#74-junctions-and-turning-space)) |
+| **Cobbled street / precinct** | 3+ | No traffic (pedestrianised) | None | Tue (Market Square), Sun (Civic Square) |
+| **Bridge** | 3–4 | Two-way, no pavement | Centre line | Wed (canal) |
+
+- **UK rule:** traffic drives on the **left**. On an east–west road with north up, eastbound traffic uses the northern lane. Bus stops and taxi ranks go on the left-hand kerb of the traffic they serve.
+- Roads narrower than 3 tiles are one-way or have no traffic. The compiler rejects a two-way lane graph on a 2-tile road.
+- Markings (centre lines, double yellows, give-way lines, zebra stripes, bus boxes) are **generated** by the compiler from the road geometry and drawn by the procedural tile set ([ASSET_PIPELINE](ASSET_PIPELINE.md)). Authors never paint them by hand.
+
+### 7.2 Pavements and kerbs
+
+| Block | Width | Notes |
+|---|---|---|
+| **Standard pavement** | 1 tile | Terraces, side streets |
+| **Wide pavement** | 2–3 tiles | High streets and the promenade; room for A-boards, bins, benches and shoppers side by side |
+| **Grass verge** | 1 tile of `,` between pavement and kerb | Conker Hill: drag ×2.5, so the gutter is reached from the road |
+| **Dropped kerb** (`d`) | A pavement tile with no kerb edge to the adjacent road | Driveways, depot gates, alley mouths. Crossing it costs **no** kerb penalty. |
+
+- Pavements are drivable everywhere (grip 8.0), but crossing a raised kerb costs 30% speed and a jolt. Dropped kerbs are how a level invites Bessie onto a pavement on purpose.
+- The **47-tile kerb blob autotile** is computed by the compiler from road/non-road adjacency. Authors only place ground characters.
+- **Gutter grime** forms in a 0.5 m band (2 grime cells) on the road side of every raised kerb. Long, straight, unobstructed kerb runs (≥ 15 tiles) are the Kerb Hugger showcase; every district needs at least three.
+
+### 7.3 Alleys and ginnels
+
+| Width | Status | Rule |
+|---|---|---|
+| **2+ tiles** | Drivable alley | Part of the route area. Bessie (1.75 m) fits with 1.1 m of clearance each side of the brushes' sweep line. Must not be a dead end longer than 6 tiles without a turning head. |
+| **1 tile** | Footway (pedestrians only) | The compiler marks it non-drivable and excludes it from the route area. The mouth must carry a bollard `!` or be bounded by buildings, so Bessie cannot wedge herself in. |
+
+Alleys are where Golden Crisps and Lost Property like to hide: off-route, but a short brush-up detour away.
+
+### 7.4 Junctions and turning space
+
+| Block | Footprint | Rule |
+|---|---|---|
+| **T-junction** | Road meets road | Give-way line on the minor arm (auto) |
+| **Crossroads** | 4 arms | Give-way on the two minor arms (`level.json` → `junctions` overrides which arms are major) |
+| **Mini-roundabout** | 3×3 to 4×4 tiles of road with a painted centre | Traffic circulates clockwise. Bessie may drive over the paint. |
+| **Turning head** | At least **5×5 tiles** (10 × 10 m) of road or apron at a dead end | Bessie's ~7 m turning circle needs 10 m to U-turn without reversing |
+| **Hammerhead** | 3 tiles deep × 7 tiles wide | Allowed, but needs a three-point turn (reverse max 2.5 m/s), so use it only where the delay is the point |
+
+Junction approaches keep **3 tiles** of kerb clear of parking bays on each arm, so the traffic AI and Bessie both have sight lines.
+
+### 7.5 Crossings and stops
+
+| Block | Map chars | Rule |
+|---|---|---|
+| **Zebra** (`site.zebra`) | `z`, 1–2 tiles deep across the full carriageway | Belisha beacons are generated. Must stop if occupied. At least 3 tiles from the nearest junction mouth, so a car turning in can stop for it. |
+| **School crossing** (`site.school_crossing`) | `k` | Sunday only. Zig-zag markings generated. Needs an anchor for the lollipop lady on each kerb. |
+| **Bus stop** (`site.bus_stop`) | `b`, 3–4 tiles along the kerb (a bus is 7.25 m) | Pair with a `u` bus shelter on the pavement behind it |
+| **Parking bays** | `p` along the kerb, runs of 2–8 | Parked-car spawn candidates; `traffic.parkedFill` sets occupancy |
+| **Taxi rank** | `p` run listed in `traffic.taxiRank` | Saturday |
+
+### 7.6 Parks, markets and squares
+
+- **Parks** are hedge (`e`) or railing (`r`) bounded grass (`,`) with pavement paths (`.`) at least 2 tiles wide. Paths are drivable shortcuts. Grass is drivable but slow (grip 5.0, drag ×2.5). Trees (`t`) and benches (`n`) are solid.
+- **Markets** are cobbled precincts (`:`) with stall pitches (`m`). Each pitch is a 2×1-tile `prop.market_stall` footprint plus one tile in front for its `npc.market_trader`. Aisles between stall rows are at least **3 tiles**. Pitches are the `market_close` litter anchors.
+- **Squares** are cobbled or paved plazas with planters (`g`), bollards (`!`) and benches. Bollards at precinct entrances are spaced 2 tiles apart, centre to centre, which is enough for Bessie's body but tight for her brushes: a deliberate precision moment.
+
+### 7.7 Depot, skips and hydrants
+
+| Block | Rule |
+|---|---|
+| **Depot** (`site.depot`) | A rectangle at the map edge (`level.json` → `depot.rect`) containing the `@` start, at least 2 `site.depot_bay` (`$`, 2×3 tiles each) and a building with `roof.depot`. Depot bays dump (with tipping fee) and fully refill water. |
+| **Skip** (`site.skip`, `s`) | 2×1 tiles, beside a drivable tile Bessie can stop on parallel to it. At least 40 m (path distance) from any depot bay. Every route tile within **200 m** path distance of a dump site. |
+| **Hydrant** (`prop.hydrant`, `h`) | On a pavement tile next to a kerb or dropped kerb, so Bessie can stop adjacent. Every route tile within **150 m** path distance of a hydrant or depot bay. More are needed in water-hungry districts (Wed, Sun). |
+
+### 7.8 Ramps and level changes
+
+The sim is a flat 2D plane: there are no jumps, slopes or bridges with underpasses in 1.0. "Ramps" in Muckleford are:
+
+- **Dropped kerbs** (`d`): the kerb-free way onto a pavement, apron or driveway.
+- **Speed bumps** (`=`, `haz.speed_bump`): above 6 m/s the jolt spills 3 LU. Place them on residential streets and on approaches to zebras and schools.
+- **Visual-only height:** the pier deck, bridges and Civic Square steps are drawn by ground tiles and facades. They have no height in the sim.
+
+Real ramps (multi-storey car parks, jumps) would need a height field in the sim and are out of scope until after 1.0.
+
+### 7.9 Sight lines and the camera
+
+At sweeping speed the camera shows **30 m × 16.875 m** (about 15 × 8.4 tiles) with up to 3.0 m of look-ahead. That gives about **11.4 m** of view ahead when driving up or down the screen and **18 m** when driving across it. At transit speed with speed zoom (H = 37.8 m), the vertical view ahead is about **13.1 m**.
+
+| Situation | Stopping distance (0.6 s reaction + 6.0 m/s² braking) | Visible ahead (N–S travel) | Rule |
+|---|---|---|---|
+| Sweeping, 4.0 m/s | 3.7 m | 11.4 m | Cat darts (triggered 6–10 m away) and zebras are always fair |
+| Brush-down top speed, 6.0 m/s | 6.6 m | 11.4 m | Fair for anything visible |
+| Transit, 11.0 m/s | 16.7 m | 13.1 m | **Not fair.** Any hard obstacle on a transit road (open manhole, roadworks, a parked van across the lane) must be telegraphed with cones or barriers at least **20 m** before it, or placed on an east–west street. |
+
+If M0 disables speed zoom, the transit view shrinks to 11.4 m and the telegraph distance rises to 24 m (`TBD (M0 spike)`, recorded in [ROADMAP](ROADMAP.md)).
+
+**Building lean.** A roof edge at height *h* and screen offset *d* from the camera axis projects to *d × H / (H − h)*. At H = 31.5 m a 6-storey (15 m) roof overhangs about 0.9 m of ground per metre of offset, so tall blocks near the screen edge hide the street behind them. Rules:
+
+- Streets flanked by **≥ 4 storeys** are at least **6 tiles** facade to facade. Streets flanked by **6 storeys** are at least **8 tiles**.
+- Never put a litter hotspot, hazard or pledge frontage in a canyon narrower than this. Narrow canyons between tall blocks are allowed only as **secret** spaces (Golden Crisp hiding places).
+- The 8-storey Town Hall tower stands at least 10 tiles from any road it overlooks.
+
+### 7.10 Frontages
+
+A frontage is the scoring segment in front of one house or shop.
+
+- Generated for every building edge that faces pavement or a precinct, when the building's `use` is `house`, `shop`, `pub`, `takeaway`, `civic` or `unit`.
+- A facade run is split into segments of `frontageWidth` tiles: house 3, shop 4, pub or takeaway 5, unit 6, civic 8 *(initial)*. A leftover of less than half a width merges into the last segment; otherwise it becomes its own frontage.
+- **Frontage zone** = the pavement tiles in front of the segment (up to 3 tiles deep) plus the first road tile beyond the kerb (the gutter). Its clean % uses the Tidy % formula restricted to the zone.
+- **Frontage ID** = `fr_<x>_<y>`, from the north-west-most pavement tile of its zone. IDs are stable as long as the building edge does not move, which is what lets `pledges` and the Inspector's route refer to them.
+- **Pledges** (8–20 per district) are listed by frontage ID. Spread them so that no single street holds more than a third of the district's pledges, and put at least two where they compete with something else (a market pitch, a chalk spot, the Inspector's route).
+
+---
+
+## 8. Map authoring format
+
+### 8.1 Files
+
+```
+assets-src/levels/
+├─ puddle_lane.map.txt      # the ASCII grid: one character per 2 m tile
+├─ puddle_lane.level.json   # legend overrides, buildings, spawns, schedules, events, par
+├─ high_street.map.txt
+├─ high_street.level.json
+└─ …                        # one pair per district, plus depot_yard
+```
+
+`npm run levels` (`node tools/levels/compile-level.ts`) compiles every pair to `public/assets/levels/<name>.json` ([§10](#10-the-compile-step)).
+
+### 8.2 `map.txt` rules
+
+1. Plain UTF-8 text, **ASCII characters only**, LF line endings, no trailing whitespace, and a final newline.
+2. **Exactly `size[1]` rows of exactly `size[0]` characters.** No comments, no blank lines, no tabs. Row 0 is the **north** edge and column 0 is the **west** edge. Tile `(x, y)` is column x of row y.
+3. One character = one 2×2 m tile. A character fixes the tile's **ground** and optionally one **prop**, **site**, **hazard** or **anchor** on it.
+4. **Uppercase letters `A`–`Z` are buildings**, defined per level in `level.json` → `buildings`. Orthogonally adjacent cells with the same letter merge into one building. Adjacent different letters are separate buildings sharing a party wall.
+5. **Digits `0`–`9` are anchors**, named in `level.json` → `anchors`, used by schedules, events and routes. An anchor's ground is inherited ([rule 7](#83-default-legend)).
+6. `@` is the player start (exactly one, inside `depot.rect`). Bessie faces `start.heading` (h00 = north).
+7. The map does not encode markings, autotiles, lanes or collision. The compiler derives all of them.
+
+### 8.3 Default legend
+
+The compiler's built-in legend (`DEFAULT_LEGEND` in `tools/levels/compile-level.ts`). A level may add characters or override entries in `level.json` → `legend`, but it may not redefine `A`–`Z`, `0`–`9` or `@`.
+
+**Ground.**
+
+| Char | Ground | Drivable | Route area | Notes |
+|---|---|---|---|---|
+| `#` | Road (asphalt) | yes | yes | Two-way. Lane graph inferred from width. |
+| `>` `<` `^` `v` | Road, one-way | yes | yes | Flow direction east / west / north / south |
+| `.` | Pavement (slabs) | yes | yes | Kerb edge against road unless `d` |
+| `:` | Cobbles (precinct) | yes | yes | Asphalt grip; no traffic |
+| `;` | Alley (setts) | if ≥ 2 wide | if drivable | Footway when 1 wide ([§7.3](#73-alleys-and-ginnels)) |
+| `,` | Grass | yes | no | Grip 5.0, drag ×2.5 |
+| `%` | Yard / gravel | yes | yes | Pavement grip; **dusty** |
+| `+` | Concrete apron | yes | no | Asphalt grip; no lanes, no grime (depot yards) |
+| `~` | Water | no (solid edge) | no | Canal, pond, sea |
+| `_` | Sand | no (solid edge) | no | Beach, out of bounds |
+| (space) | Void | no | no | Outside the playable area |
+
+**Road features** (ground = road).
+
+| Char | Feature |
+|---|---|
+| `z` | `site.zebra` |
+| `k` | `site.school_crossing` |
+| `b` | `site.bus_stop` (road-edge tile) |
+| `p` | Parking bay (road-edge tile) |
+| `=` | `haz.speed_bump` |
+
+**Props and sites.** Ground is **inherited**: the most common ground among the tile's four orthogonal neighbours that are plain ground characters, ties going to pavement.
+
+| Char | Entity | Char | Entity |
+|---|---|---|---|
+| `d` | Dropped kerb (ground = pavement, no kerb edge) | `u` | `prop.bus_shelter` |
+| `l` | `prop.lamp_post` | `f` | `prop.phone_box` |
+| `h` | `prop.hydrant` | `q` | `prop.post_box` |
+| `n` | `prop.bench` | `!` | `prop.bollard` |
+| `t` | `prop.tree` | `g` | `prop.planter` |
+| `i` | `prop.litter_bin` | `m` | `prop.market_stall` pitch |
+| `w` | Low wall (solid, cats perch on it) | `s` | `site.skip` |
+| `e` | Hedge (solid) | `$` | `site.depot_bay` |
+| `r` | Railing (solid, thin) | `@` | Player start |
+
+Knockables (wheelie bins, cones, A-boards, trolleys, recycling boxes), litter, stains, most hazards and parked cars are **not** map characters: they come from spawn tables and placement lists in `level.json`, so they can vary by seed and event.
+
+### 8.4 `level.json` schema
+
+The schema is expressed as TypeScript types (type-only, so it is compatible with `erasableSyntaxOnly`). They live in `tools/levels/schema.ts`, and the runtime loader reuses them. Coordinates are tile coordinates `[x, y]`; fractional values are allowed for positions inside a tile (0.5 = tile centre).
+
+```ts
+type Day = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+type XY = [number, number];
+type Weights = Record<string, number>;          // canonical ID → weight
+
+interface LevelFile {
+  schema: 1;
+  id: `district.${string}`;
+  name: string;                                  // British English, as shown in game
+  day: Day | "any";
+  mode: "shift" | "skip_run";
+  map: string;                                   // "puddle_lane.map.txt"
+  size: [number, number];                        // tiles, must match the map
+  timer: number;                                 // 240 for shifts, 45 for the Skip Run
+  seed: number;                                  // campaign seed (uint32)
+  timeOfDay: "dawn" | "morning" | "late_morning" | "afternoon" | "golden_hour" | "night" | "inherit";
+  weather: "clear" | "rain" | "wind" | "gusts" | "inherit";
+  music?: `mus.${string}`;
+  ambience?: `amb.${string}`;
+  start: { heading: number };                    // 0..31, h00 = north
+  depot: { rect: [number, number, number, number] };   // x, y, w, h
+  legend?: Record<string, LegendEntry>;          // additions / overrides
+  buildings: Record<string, Building>;           // keys "A".."Z"
+  anchors?: Record<string, string>;              // "1" → "doris_home"
+  junctions?: { at: XY; major: ("n" | "e" | "s" | "w")[] }[];
+  frontageWidth?: Partial<Record<Building["use"], number>>;
+  pledges: string[];                             // frontage IDs "fr_x_y", 8..20 (shifts)
+  litter: LitterSpec;
+  grime: GrimeSpec;
+  stains?: { count: number; table: Weights; near?: string[] };
+  hazards?: { place?: { id: `haz.${string}`; at: XY }[]; random?: { id: `haz.${string}`; count: number; rule: string }[] };
+  knockables?: { id: `prop.${string}`; at: XY }[];
+  powerups?: { count: 1 | 2 | 3; table: Weights; at?: XY[] };
+  collectibles?: { lostProperty: { id: `collect.${string}`; at: XY }; goldenCrisp: { at: XY } };
+  npcs?: NpcSpec;
+  traffic?: TrafficSpec | { none: true };
+  events?: EventSpec[];
+  skipRun?: SkipRunSpec;                         // depot_yard only
+  par?: { loadout: string[]; star1: number; star2: number; star3: number; perfectMin: number };
+}
+
+interface LegendEntry { ground?: string; prop?: string; site?: string; haz?: string; solid?: boolean; darkOk?: boolean }
+
+interface Building {
+  storeys: number;                               // 1..6; up to 8 only with landmark: true
+  roof: `roof.${string}`;                        // roof.slate | roof.felt | roof.gravel | roof.corrugated | landmark roofs
+  wall: `facade.${string}`;                      // facade module set
+  use: "house" | "shop" | "pub" | "takeaway" | "civic" | "unit" | "depot" | "none";
+  landmark?: boolean;
+  roofkit?: string[];                            // roof furniture kinds, laid out by a seeded forge script
+  frontageWidth?: number;                        // overrides the per-use default
+}
+
+interface LitterSpec {
+  initial: number;
+  table: Weights;                                // litter.* → weight
+  gutterBias: number;                            // 0..1 share placed within 1 tile of a kerb
+  minSpacingM: number;                           // default 0.5
+  hotspots?: { near: string; radius: number; mult: number }[];   // "prop.litter_bin", "use:takeaway", anchor names…
+}
+
+interface GrimeSpec {
+  cells: number;                                 // exact initial grime cell count
+  gutterShare: number;                           // share of cells in the kerb gutter band
+  zones: { rect?: [number, number, number, number]; near?: string; radius?: number; density: number }[];
+  speckle: number;                               // background density 0..0.1
+}
+
+interface NpcSpec {
+  population: { from: number; to: number; target: number }[];   // elapsed seconds
+  mix: Weights;                                  // npc.* → weight for ambient spawns
+  caps?: Record<string, number>;                 // per-ID hard caps
+  named?: { id: `npc.${string}`; anchor: string; spawnAt: number; route: string[]; loop?: boolean; count?: number }[];
+  perches?: { id: "npc.cat"; count: number; on: ("walls" | "carRoofs" | "road")[] };
+  flocks?: { id: "npc.pigeon" | "npc.seagull"; count: number; size: [number, number]; near: string }[];
+}
+
+interface TrafficSpec {
+  densityPerKm: number;                          // moving vehicles per lane-km
+  mix: Weights;                                  // veh.* → weight
+  parkedFill: number;                            // 0..1 of parking bays occupied
+  parkedMix: Weights;                            // veh.*_parked → weight
+  taxiRank?: XY[];
+  busRoute?: string[];                           // anchors, in order
+  busEveryS?: number;
+}
+
+interface EventSpec { type: string; at?: number | number[]; untilS?: number; trigger?: string; [param: string]: unknown }
+
+interface SkipRunSpec {
+  bays: Record<string, XY>;                      // "b1".."b6" → NW tile of each bay
+  variants: Partial<Record<Day, { gates: { at: XY; pass: "left" | "right" }[]; cones: XY[]; bays: string[] }>>;
+}
+```
+
+All IDs in a level must be canonical IDs from `entities.json` (or `mus.*`/`amb.*` from [AUDIO_DESIGN](AUDIO_DESIGN.md), and `roof.*`/`facade.*` from the asset manifest). The compiler checks every reference ([§10.3](#103-validation-rules)).
+
+### 8.5 Worked example 1: a Puddle Lane excerpt
+
+The north-west 40×20 tiles of `puddle_lane.map.txt` (columns 0–39, rows 0–19):
+
+```
+AAAAAAAAAAAA;;BBBBBBBBBBBBBBBBBBBBBBBBBB
+AAAAAAAAAAAA;;BBBBBBBBBBBBBBBBBBBBBBBBBB
+AAAAAAAAAAAA;;BBBBBBBBBBBBBBBBBBBBBBBBBB
+..l.1.i...l.dd..l.....q...l.....i...l.h.
+########=########zz#####################
+########=########zz#####################
+########=########zz#########pppppp######
+..l.......l...i..2....###h...n...l......
+CCCCCCCCCCCCCCCCDDDDD3###.eeeeee..eeeeee
+CCCCCCCCCCCCCCCCDDDDD.###.e,t,,,..,,,t,e
+CCCCCCCCCCCCCCCCDDDDDl###.e,,,,,..,n,,,e
+CCCCCCCCCCCCCCCCDDDDD.zzz.e,,......,,,,e
+CCCCCCCCCCCCCCCCDDDDD.zzz.e,,......,,,,e
+;;;;;;;;;;;;;;;;;;;;!.###.e,t,,,..,,,t,e
+EEEEEEEEEEEEEEEEEEEEE.###le,,,,,..,,,,,e
+EEEEEEEEEEEEEEEEEEEEE.###.eeeeeeeeeeeeee
+EEEEEEEEEEEEEEEEEEEEE.###.FFFFFFFFFFFFFF
+EEEEEEEEEEEEEEEEEEEEE.###.FFFFFFFFFFFFFF
+EEEEEEEEEEEEEEEEEEEEE.###.FFFFFFFFFFFFFF
+EEEEEEEEEEEEEEEEEEEEEl###.FFFFFFFFFFFFFF
+```
+
+Reading it:
+
+- **Rows 4–6: Puddle Lane**, a 3-tile two-way road. A speed bump crosses it at x = 8 and a 2-tile zebra at x = 17–18. Parking bays run along the south kerb at x = 28–33 (westbound side), 3 tiles clear of the Gutter Row junction.
+- **Row 3: north pavement.** Lamp posts every 8 tiles (16 m), two litter bins (hotspots), a post box and a hydrant at x = 38. Anchor `1` at x = 4 is Doris's front door. The `dd` at x = 12–13 is a dropped kerb where the 2-tile drivable alley (rows 0–2) meets the street.
+- **Row 7: south pavement.** Anchor `2` at x = 17 is the zebra's south kerb. The gap at x = 22–24 is the mouth of **Gutter Row**, a 3-tile road running south.
+- **Rows 8–12:** terrace `C` and the corner shop `D` front onto row 7. `D` also fronts Gutter Row's west pavement (x = 21), where anchor `3` at (21, 8) is the shop door. A second zebra crosses Gutter Row at rows 11–12.
+- **Row 13:** a **1-tile footway** behind the terraces, closed to Bessie by a bollard at x = 20 ([§7.3](#73-alleys-and-ginnels)).
+- **Pump Green** (x = 26–39, rows 8–15): a hedge-bounded park entered at x = 32–33 from row 7, with a paved path cross, four trees and a bench. The hydrant at (25, 7) is on the corner pavement where Bessie can stop beside it.
+- **Building `F`** (3-storey flats) faces Gutter Row's east pavement.
+
+The matching parts of `puddle_lane.level.json` (an excerpt: the real file also defines the rest of the map's buildings, anchors and pledges):
+
+```json
+{
+  "schema": 1,
+  "id": "district.puddle_lane",
+  "name": "Puddle Lane",
+  "day": "mon",
+  "mode": "shift",
+  "map": "puddle_lane.map.txt",
+  "size": [64, 48],
+  "timer": 240,
+  "seed": 1001,
+  "timeOfDay": "dawn",
+  "weather": "clear",
+  "music": "mus.puddle_lane",
+  "ambience": "amb.town_morning",
+  "start": { "heading": 0 },
+  "depot": { "rect": [0, 38, 14, 10] },
+  "buildings": {
+    "A": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick", "use": "house", "roofkit": ["chimney"] },
+    "B": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick_bay", "use": "house", "roofkit": ["chimney"] },
+    "C": { "storeys": 3, "roof": "roof.slate", "wall": "facade.parade_brick", "use": "house", "roofkit": ["chimney", "vent"] },
+    "D": { "storeys": 3, "roof": "roof.felt", "wall": "facade.corner_shop", "use": "shop", "frontageWidth": 5 },
+    "E": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick", "use": "house" },
+    "F": { "storeys": 3, "roof": "roof.felt", "wall": "facade.flats_render", "use": "house", "frontageWidth": 4, "roofkit": ["water_tank", "vent"] }
+  },
+  "anchors": { "1": "doris_home", "2": "zebra_puddle_s", "3": "corner_shop_door" },
+  "pledges": ["fr_3_3", "fr_20_3", "fr_16_7", "fr_25_16"],
+  "litter": {
+    "initial": 130,
+    "table": {
+      "litter.crisp_packet": 30, "litter.cigarette_butts": 20, "litter.drink_can": 15,
+      "litter.plastic_bottle": 15, "litter.newspaper": 12, "litter.dog_mess": 8
+    },
+    "gutterBias": 0.6,
+    "minSpacingM": 0.5,
+    "hotspots": [
+      { "near": "prop.litter_bin", "radius": 3, "mult": 2.0 },
+      { "near": "use:shop", "radius": 4, "mult": 2.5 },
+      { "near": "prop.bench", "radius": 2, "mult": 1.5 }
+    ]
+  },
+  "grime": {
+    "cells": 9000,
+    "gutterShare": 0.15,
+    "zones": [
+      { "rect": [2, 20, 3, 18], "density": 0.85 },
+      { "near": "prop.litter_bin", "radius": 2, "density": 0.75 },
+      { "near": "use:shop", "radius": 3, "density": 0.7 }
+    ],
+    "speckle": 0.03
+  },
+  "hazards": {
+    "random": [{ "id": "haz.puddle", "count": 8, "rule": "kerbside_low_points" }]
+  },
+  "knockables": [
+    { "id": "prop.recycling_box", "at": [5.5, 3.2] },
+    { "id": "prop.wheelie_bin", "at": [21.3, 9.5] }
+  ],
+  "powerups": { "count": 1, "table": { "pwr.flask_of_tea": 1 }, "at": [[30.5, 11.5]] },
+  "collectibles": {
+    "lostProperty": { "id": "collect.false_teeth", "at": [34.5, 11.5] },
+    "goldenCrisp": { "at": [44.5, 30.5] }
+  },
+  "npcs": {
+    "population": [
+      { "from": 0, "to": 60, "target": 12 },
+      { "from": 60, "to": 180, "target": 18 },
+      { "from": 180, "to": 240, "target": 14 }
+    ],
+    "mix": { "npc.shopper": 70, "npc.mum_pushchair": 15, "npc.old_man_frame": 5, "npc.postie": 10 },
+    "caps": { "npc.shopper": 9, "npc.mum_pushchair": 2, "npc.old_man_frame": 1, "npc.postie": 1 },
+    "named": [
+      { "id": "npc.old_woman", "anchor": "1", "spawnAt": 70, "route": ["1", "2", "3", "2", "1"] },
+      { "id": "npc.dog_walker", "anchor": "4", "spawnAt": 120, "route": ["4", "5", "6", "7"], "loop": true }
+    ],
+    "perches": { "id": "npc.cat", "count": 4, "on": ["walls", "carRoofs"] }
+  },
+  "traffic": {
+    "densityPerKm": 4,
+    "mix": { "veh.hatchback": 55, "veh.saloon": 30, "veh.van_white": 15 },
+    "parkedFill": 0.6,
+    "parkedMix": { "veh.hatchback_parked": 50, "veh.saloon_parked": 35, "veh.van_white_parked": 15 }
+  },
+  "events": [
+    { "type": "dawn", "at": 0, "durationS": 20 },
+    { "type": "tutorial_beat", "trigger": "shift_start", "text": "Morning, rookie. That's Bessie. Be gentle with her. W to go, A/D to steer." },
+    { "type": "tutorial_beat", "trigger": "hopper80", "text": "She's getting full. Back to the depot, the arrow'll show you." }
+  ],
+  "par": { "loadout": [], "star1": 80, "star2": 125, "star3": 165, "perfectMin": 260 }
+}
+```
+
+The mobility scooter, the postie's round, the dog walker's anchors `4`–`7`, the skip, the Golden Crisp and the depot sit in parts of the map outside this excerpt.
+
+### 8.6 Worked example 2: the Depot Yard (complete)
+
+`assets-src/levels/depot_yard.map.txt` (32×24, complete):
+
+```
+wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+wPPPPPPPPPPPPPPPPPPQQQQQQQQ++++w
+wPPPPPPPPPPPPPPPPPPQQQQQQQQ++++w
+wPPPPPPPPPPPPPPPPPPQQQQQQQQ++++w
+wPPPPPPPPPPPPPPPPPPQQQQQQQQ++ssw
+w++++++++++++++++++++++++++++++w
+w+$$+$$+$$+$$+$$+$$++++++++h+++w
+w+$$+$$+$$+$$+$$+$$++++++++++++w
+w+$$+$$+$$+$$+$$+$$++++++++++++w
+w++++++++++++++++++++++++++++++w
+w++++++++++++++++++++++++++++++w
+wl++++++++++++++++++++++++++++lw
+w++++++++++++++++++++++++++++++w
+w++++++++++++++++++++++++++++++w
+w++++++++++++++++++++++++++++++w
+w++++++++++++++++++++++++++++++w
+wl++++++++++++++++++++++++++++lw
+w++++++++++++++++++++++++++++++w
+w++++++++++++++++++++++++++++++w
+w+++++++++++++@++++++++++++++++w
+w++++++++++++++++++++++++++++++w
+wwwwwwwwwwwww++++++wwwwwwwwwwwww
+l............dddddd............l
+################################
+```
+
+- `P` is the depot shed (2 storeys, landmark `roof.depot`) and `Q` is the workshop (1 storey).
+- Six dump bays `b1`–`b6` (2×3 tiles each, `$`) sit along the shed apron, separated by single concrete columns so they do not merge. Bays are reversed into from the south.
+- The slalom area is rows 9–20: 30 × 12 tiles (60 × 24 m) of open concrete. Cones and gates come from the day's variant, not the map.
+- One skip (`ss`) and one hydrant are set dressing, so the yard reads as a real depot.
+- The 6-tile gate on row 21 opens onto a pavement with dropped kerbs and the depot road (row 23, decorative, no traffic).
+
+`assets-src/levels/depot_yard.level.json` (complete except that six of the seven day variants are omitted for brevity):
+
+```json
+{
+  "schema": 1,
+  "id": "district.depot_yard",
+  "name": "The Depot Yard",
+  "day": "any",
+  "mode": "skip_run",
+  "map": "depot_yard.map.txt",
+  "size": [32, 24],
+  "timer": 45,
+  "seed": 7001,
+  "timeOfDay": "inherit",
+  "weather": "inherit",
+  "start": { "heading": 0 },
+  "depot": { "rect": [0, 0, 32, 22] },
+  "buildings": {
+    "P": { "storeys": 2, "roof": "roof.depot", "wall": "facade.depot_shed", "use": "depot", "landmark": true },
+    "Q": { "storeys": 1, "roof": "roof.corrugated", "wall": "facade.workshop", "use": "depot", "roofkit": ["vent"] }
+  },
+  "pledges": [],
+  "litter": { "initial": 0, "table": {}, "gutterBias": 0, "minSpacingM": 0.5 },
+  "grime": { "cells": 0, "gutterShare": 0, "zones": [], "speckle": 0 },
+  "traffic": { "none": true },
+  "skipRun": {
+    "bays": { "b1": [2, 6], "b2": [5, 6], "b3": [8, 6], "b4": [11, 6], "b5": [14, 6], "b6": [17, 6] },
+    "variants": {
+      "mon": {
+        "gates": [
+          { "at": [8, 16], "pass": "left" },
+          { "at": [14, 14], "pass": "right" },
+          { "at": [20, 16], "pass": "left" },
+          { "at": [26, 14], "pass": "right" }
+        ],
+        "cones": [[8, 16], [14, 14], [20, 16], [26, 14], [28.5, 10.5], [28.5, 12.5]],
+        "bays": ["b4", "b5", "b6"]
+      }
+    }
+  }
+}
+```
+
+The yard has no `music` field: which track plays during the Skip Run is decided in [AUDIO_DESIGN](AUDIO_DESIGN.md).
+
+---
+
+## 9. Spawn rules
+
+All spawning is a pure function of `(seed, compiled level, elapsed ticks, sim state)`, using the sim's `sfc32` from `src/sim/rng.ts`. Each spawner gets its **own stream**, derived as `sfc32(seed ^ hash32(streamName))` with stream names `litter`, `grime`, `stains`, `hazards`, `npc`, `traffic`, `events` ([TECHNICAL_DESIGN §7.3](TECHNICAL_DESIGN.md#73-randomness) adds the non-spawn streams `brush` and `weather`). Adding a cat therefore never reshuffles the litter.
+
+**Seeds by mode.**
+
+| Mode | Seed |
+|---|---|
+| Tidy Town Week | `level.json` → `seed`. The layout is the same on every attempt, so routes can be learned and personal bests are fair. |
+| Free Sweep | Same as campaign (practice on the real layout) |
+| Daily Shift (M9) | UTC date `YYYYMMDD` |
+| Replays and tests | `?seed=<n>`, recorded in the replay file |
+
+### 9.1 Litter
+
+1. **Candidate cells:** every route-area tile that is not solid, split into 4×4 sub-cells (0.5 m).
+2. **Base weight by placement:** road gutter (within 1 tile of a kerb) 3.0, pavement 1.5, alley 2.0, precinct 1.5, road centre 0.4, yard 1.0. `gutterBias` rescales the gutter weight so that the requested share lands there.
+3. **Hotspots** multiply the weight within their radius (e.g. litter bins ×2, takeaway or shop frontages ×2.5–3, bus stops ×2, benches ×1.5, market pitches ×3).
+4. **Sampling:** weighted sampling without replacement, in a fixed iteration order (row-major sub-cell index), with `minSpacingM` (default 0.5 m) between items and at most 6 items per tile.
+5. **Type:** drawn from `litter.table`, filtered by constraints: `leaf_pile` only under or within 4 m of a `prop.tree`; `bin_bag` only within 2 tiles of a kerb; `dog_mess` only on pavements and grass.
+6. **Rotation:** one of the 4 code-generated rotations, from the same stream.
+7. **Dynamic litter** (NPC drops, events, burst bin bags, spills) uses the same tables and the `events` or `npc` stream. Every dynamic item counts toward "litter spawned" in Tidy %, and the live total is capped at the 2,000-item budget (the compiler checks `initial + expected dynamic ≤ 1,000` so there is always headroom).
+
+### 9.2 Grime
+
+1. Score every route-area grime cell (4 px = 0.25 m): `score = zoneDensity(cell) + gutterBonus(cell) + speckle × valueNoise(cell)`. Here `valueNoise` is a hand-written lattice value noise seeded from the `grime` stream (no simplex-noise dependency).
+2. Sort cells by `(score desc, index asc)` and take exactly `grime.cells` of them, with gutter-band cells topped up to `gutterShare`. The result is an exact, deterministic count, so Tidy % denominators are identical on every attempt.
+3. Grime never spawns under solid props, on grass, on aprons (`+`) or in footways.
+
+### 9.3 Stains and hazards
+
+- **Stains** are placed from `stains.table` near their `near` anchors (gum near bus stops and benches, milkshake near takeaways), on pavement or road, at least 2 m apart.
+- **`haz.oil_slick` and `stain.oil`** are always placed together on one tile.
+- **Random hazards** use named rules: `kerbside_low_points` (puddles beside drains and kerbs), `carriageway` (potholes in the wheel tracks of a lane, never on zebras), `near_parking` (oil within 2 tiles of bays or unit yards).
+- **Fixed hazards** (`hazards.place`) are used for roadworks: an `haz.open_manhole` is always ringed by `prop.roadworks_barrier` knockables and preceded by cones per [§7.9](#79-sight-lines-and-the-camera).
+- No hazard within 3 tiles of `@`, on a `site.zebra`, inside a depot bay or on the tile next to a hydrant.
+
+### 9.4 NPCs
+
+- **Spawn points:** map-edge pavement tiles (portals), building doors (frontage centres), and anchors.
+- **Never spawn on screen.** A spawn must be outside the current view plus a 4 m margin. Despawn happens off screen beyond 40 m from Bessie, except named NPCs, who persist.
+- **Population control:** every 1.0 s the spawner compares the live count against the current `population` target and spawns or retires at most 2 ambient NPCs, choosing types by `mix` and respecting `caps`.
+- **Named NPCs** (Doris, dog walkers on loops, the Inspector) spawn at their anchor at `spawnAt` and follow their `route` on the pavement nav graph.
+- **Perches:** cats are placed on `w` walls, parked car roofs or (rarely) a mid-road grooming spot. The cat dart rule (40% when Bessie is 6–10 m away) is global, so authors control cat pressure only by count and placement.
+- **Flocks:** pigeons and seagulls spawn as flocks of the stated size near their anchor (chip shops, benches). Flocks count toward the 80-NPC budget one bird at a time.
+
+### 9.5 Traffic
+
+- Moving vehicles enter at map-edge lane portals and follow the lane graph, driving on the left. `densityPerKm` is per lane-kilometre of the compiled lane graph.
+- Parked cars fill `p` bays to `parkedFill`. White vans parked half on the pavement are placed only on `p` bays next to a 2+ tile pavement.
+- Buses follow `busRoute` and stop 5 s at each `site.bus_stop`. Taxis use the rank.
+- **Budget:** moving + parked ≤ 30 at any time. The compiler reports the peak.
+
+### 9.6 Power-ups and collectibles
+
+- **Power-ups:** `powerups.count` (**1–3**) on pavement tiles, drawn from `powerups.table`, or placed at fixed `at` positions. Placed power-ups are part of the route puzzle ([GDD §12.7](GDD.md)). At least one sits off the par route, as a temptation.
+- **Lost Property:** a plausible but off-route spot (park, turning head, taxi rank), hinted at on the intro card. Reachable with a brush-up detour of 10–20 s from the par route.
+- **Golden Crisp:** genuinely tricky (behind a parked van, down an alley, at the pier end, in a dark alley). Collectibles are picked up by body overlap, so the rules are: reachable by Bessie's body without leaving the drivable area, never inside a footway, never in a place that needs a penalty to reach, and the detour costs at least 15 s from the par route.
+
+---
+
+## 10. The compile step
+
+### 10.1 Pipeline
+
+```mermaid
+flowchart LR
+  M["&lt;name&gt;.map.txt"] --> P[Parse + validate grid]
+  J["&lt;name&gt;.level.json"] --> V[Validate schema + IDs]
+  E["src/data/entities.json"] --> V
+  P --> G[Resolve ground, inherit,<br/>buildings, sites, anchors]
+  V --> G
+  G --> A[Autotile: 47-tile kerb blob,<br/>markings, zebras, bus boxes]
+  G --> C[Collision grid + OBBs]
+  G --> L[Lane graph + pavement nav graph]
+  G --> F[Frontages + pledge resolution]
+  G --> W[Spawn weight fields:<br/>litter, grime, hazards]
+  A & C & L & F & W --> R[Budget + par report]
+  R --> O["public/assets/levels/&lt;name&gt;.json"]
+```
+
+`npm run levels` runs `node tools/levels/compile-level.ts` directly on Node 24 (type stripping, no tsx). `npm run assets` includes it, so `npm run assets:verify` rebuilds every level into a temporary directory and byte-compares it with the committed output in CI.
+
+### 10.2 Output
+
+`public/assets/levels/<name>.json` is byte-deterministic (stable key order, no timestamps). Its schema (v1, base64 `Uint8` grid layers) is specified in [TECHNICAL_DESIGN §15.2](TECHNICAL_DESIGN.md#152-compiled-schema-v1). The compiler also prints the par report (§10.4).
+
+### 10.3 Validation rules
+
+Errors fail `npm run levels` (and so CI). Warnings print but do not fail. Messages use the form `puddle_lane.map.txt:8:23 L013 road tile not connected to the lane graph`, where 8 and 23 are the 1-based row and column.
+
+| Code | Severity | Rule |
+|---|---|---|
+| L001 | error | Map is not exactly `size` (rows × columns), or contains non-ASCII characters, tabs or trailing whitespace |
+| L002 | error | Unknown character (not in the default legend, `level.json` → `legend`, `buildings` or `anchors`) |
+| L003 | error | Not exactly one `@`, or `@` outside `depot.rect` |
+| L004 | error | Building storeys outside 1–6 (1–8 with `landmark: true`), or unknown `roof.*`/`facade.*` ID |
+| L005 | error | An ID that is not canonical, or an entity whose `entities.json` → `districts` list excludes this district |
+| L006 | error | Campaign `timer` ≠ 240, or Skip Run `timer` ≠ 45 |
+| L007 | error | The spawn list contains an entity whose `entities.json` → `milestone` is later than the milestone that delivers this district (Mon–Tue: M3; Wed–Sun and the Depot Yard: M6) |
+| L010 | error | Drivable area not a single connected region reachable from `@` |
+| L011 | error | Two-way traffic on a road narrower than 3 tiles; a one-way arrow pointing against its neighbours |
+| L012 | error | Lane graph not strongly connected (a car could get stuck) |
+| L013 | error | Isolated road tile |
+| L014 | error | Dead end longer than 6 tiles without a 5×5 turning head |
+| L015 | error | 1-tile alley mouth that Bessie can enter (no bollard and not bounded by buildings) |
+| L020 | error | Fewer than 2 depot bays; skip within 40 m of a depot bay; a route tile more than 200 m from a dump site |
+| L021 | error | A route tile more than 150 m from a hydrant or depot bay |
+| L022 | error | A skip or hydrant with no stopping tile beside it |
+| L030 | error | Pledges not between 8 and 20 (shifts), or a pledge ID that is not a generated frontage |
+| L031 | warning | More than a third of the pledges on one street |
+| L040 | error | Power-up count outside 1–3 (shifts) |
+| L041 | error | Shift level: Lost Property or Golden Crisp missing, unreachable by Bessie's body, or in a footway |
+| L050 | error | Peak NPCs > 80, peak vehicles > 30, or `litter.initial` + expected dynamic litter > 1,000 |
+| L051 | error | `grime.cells` exceeds the available route-area grime cells |
+| L060 | error | 3★ par estimate > `par.star3` × 1.10, or > 230 s |
+| L061 | error | 100% par estimate < `par.perfectMin` (perfect must stay impossible) |
+| L062 | warning | 1★ par estimate > 125 s; grime density along the par route < 50% |
+| L070 | error | Hard hazard on a transit road without telegraph cones at least 20 m before it |
+| L071 | error | Hazard, hotspot or pledge in a street narrower than the building-lean rule ([§7.9](#79-sight-lines-and-the-camera)) |
+| L072 | error | Night level: a hazard or litter hotspot outside every lamp pool and not `darkOk` |
+| L080 | error | Event referencing an unknown anchor, or a route that leaves the nav or lane graph |
+| L081 | warning | Last scheduled event later than 200 s elapsed |
+
+### 10.4 Par report
+
+Every compile prints a one-screen report per level, which the author pastes into the PR description:
+
+```
+district.puddle_lane  64x48  seed 1001
+  route area      1,248 tiles   grime 9,000 cells (gutter 15.0%)   litter 130 (+20 dyn) ≈ 152 LU
+  dumps: depot 2 bays, skips 1   hydrants 2   max dump dist 168 m   max water dist 131 m
+  peak NPC 22/80   peak vehicles 20/30
+  par (stock):  1★ 78 s   2★ 122 s   3★ 163 s (target 165)   100% 281 s (min 260)
+  grime density along par route 54%
+  warnings: none
+```
+
+The par estimate is a greedy cover on the nav grid, not an optimal solver. It catches broken levels; the M6 human replay confirms the numbers.
+
+---
+
+## 11. Skip Run layout rules
+
+The Skip Run is a 45 s bonus in `district.depot_yard`. Part 1 is a cone slalom; part 2 is reverse-parking into dump bays. A **clean bay** pays £5 and a **clean run** pays £50 ([GDD §13.3](GDD.md)).
+
+| Rule | Value |
+|---|---|
+| Course length | Slalom + parking must be completable in **30–38 s** by a clean par run, leaving 7–15 s of slack |
+| Slalom gates | **4–8** gates, each a cone with a required pass side. Spacing **10–14 m** (5–7 tiles) along the course; Bessie's ~7 m turning circle makes 10 m the tightest fair spacing at 4–5 m/s. |
+| Lateral offset | Alternate gates offset **2–4 m** from the course centreline |
+| Bays | **3–6** active bays per variant, chosen from `b1`–`b6`. A bay is 2×3 tiles (4 × 6 m) for a 1.75 × 3.25 m body. |
+| Clean bay *(proposed in GDD, M6)* | Entered in reverse, body fully inside the bay, no contact with its lines or cones, stopped < 0.5 m/s |
+| Clean run | Every gate passed on the correct side, every active bay clean, no cones touched |
+| Weather | Inherited from the preceding shift: rain grip 6.0 after Wednesday, the night remap after Saturday (with lamp posts `l` lifting the light mask) |
+| Daily variety | One variant per weekday, getting harder from Monday to Sunday |
+
+| Variant | Gates | Active bays | Gate spacing | Notes |
+|---|---|---|---|---|
+| mon | 4 | 3 (b4–b6, nearest the slalom exit) | 12 m | Wide, gentle |
+| tue | 5 | 3 | 12 m | |
+| wed | 5 | 4 | 12 m | Rain grip: braking points move |
+| thu | 6 | 4 | 11 m | |
+| fri | 6 | 5 | 11 m | Bays spread to both ends of the apron |
+| sat | 7 | 5 | 10 m | Night: gates sit inside lamp pools |
+| sun | 8 | 6 | 10 m | Every bay; tightest course |
+
+Variants are authored in `depot_yard.level.json` → `skipRun.variants` and validated by L080 (gates on concrete) and the par report (course time).
+
+---
+
+## 12. Level design checklist
+
+Run this before opening a PR that adds or changes a level. Paste the par report ([§10.4](#104-par-report)) into the PR.
+
+**Format and compile**
+
+- [ ] `npm run levels` passes with no errors. All warnings are either fixed or explained in the PR.
+- [ ] `npm run assets:verify` passes (the committed compiled JSON matches).
+- [ ] Map is exactly `size`, ASCII only, one `@` inside the depot.
+- [ ] Every ID is canonical and allowed in this district (`entities.json` → `districts`).
+
+**Layout**
+
+- [ ] Every street is part of a loop, or its dead end has a 5×5 turning head.
+- [ ] At least three straight kerb runs of 15+ tiles for Kerb Hugger.
+- [ ] Zebras are at least 3 tiles from junction mouths. Junction approaches have 3 tiles clear of parking bays.
+- [ ] Drivable alleys are 2+ tiles wide; 1-tile footways are bollarded.
+- [ ] Building-lean rule met: ≥ 4 storeys → ≥ 6 tiles facade to facade; 6 storeys → ≥ 8 tiles.
+- [ ] Building heights match the district table (§3.1). Landmarks use landmark roofs.
+- [ ] The first 10–15 s from `@` are a short, readable, dirty street with no hazards.
+
+**Density and fairness**
+
+- [ ] 3★ par ≤ `par.star3` and within the curve in [§6.2](#62-par-times-the-target-times); 100% par > 260 s; 1★ par ≤ 125 s.
+- [ ] Grime density along the par route ≥ 50% (grime reads as a route).
+- [ ] Hopper pressure is 1.5–2.5 loads at the assumed loadout, and the first hopper warning happens within reach of a dump site.
+- [ ] Every route tile is within 200 m of a dump and 150 m of water.
+- [ ] Hard hazards on transit roads are telegraphed 20 m ahead. Nothing nasty within 3 tiles of `@`.
+- [ ] Night levels: every hazard and hotspot is lit or flagged `darkOk`.
+- [ ] Budgets: peak NPCs ≤ 80, vehicles ≤ 30, litter well under 2,000.
+
+**Content**
+
+- [ ] 8–20 pledges, spread across streets, at least two in contested spots.
+- [ ] 1–3 power-ups, at least one off the par route.
+- [ ] Lost Property placed off-route (10–20 s detour) and hinted at on the intro card.
+- [ ] Golden Crisp genuinely tricky, reachable without a penalty, detour ≥ 15 s.
+- [ ] The day's one new idea is introduced in a safe spot before it appears under pressure.
+- [ ] The last big event is at or before 200 s.
+- [ ] Music and ambience IDs match the district (§5), and there are no trademarks in names, signs or text.
+
+**Play**
+
+- [ ] Played start to finish at 1★, 2★ and 3★ pace. A 3★ replay is committed under `tests/replay/replays/` (`npm run test:replay` passes).
+- [ ] Score lands inside the [§6.3](#63-target-score-bands) band (±25%).
+- [ ] Free Sweep loads and loops the schedule without errors.
+- [ ] A screenshot of the full map (`?test=1&scene=<district>&freeze=1`) has been reviewed with the Read tool for readability: grime zones visible, no hidden hazards, roofs not covering gameplay.
+
+---
+
+## 13. Open questions
+
+| # | Question | Default until resolved | Resolve in |
+|---|---|---|---|
+| 1 | Is speed zoom kept? It changes transit sight lines and the telegraph distance (20 m vs 24 m). | 20 m with zoom; 24 m if zoom is cut | M0 |
+| 2 | Night light pool radius for lamps and headlights | Design assumes ≈ 5 m | M0 |
+| 3 | Does the timer start on first throttle or after a fixed 3 s rollout? | Whichever comes first; on the first play of Puddle Lane, on the first brush-lower ([GDD §16.1](GDD.md#161-principles)) | M2 |
+| 4 | Frontage widths by use (house 3, shop 4, pub/takeaway 5, unit 6, civic 8) and the zone depth (3 tiles + gutter) | As listed | M2 |
+| 5 | Is Mon's `dawn` transition (Bayer dither from the night remap) affordable and readable, or is Mon simply "morning"? | Keep the dissolve, 20 s | M6 |
+| 6 | Par formula constants (3.6 m/s average sweep, 10 s per dump, ×1.10 slack) against real human replays | As listed | M6 |
+| 7 | All density, count and par values marked *(initial)* | As listed | M3 (Mon–Tue), M6 (all) |
+| 8 | Do Daily Shift modifiers need extra validation (e.g. *Bin Strike* breaking the hopper-pressure rule)? | Modifiers skip L060–L062 | M9 |

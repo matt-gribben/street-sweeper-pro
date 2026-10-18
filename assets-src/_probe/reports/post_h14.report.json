@@ -1,0 +1,236 @@
+{
+ "old_woman_sheet_codex": {
+  "size": [
+   1774,
+   887
+  ],
+  "bg_rgb": [
+   250,
+   5,
+   249
+  ],
+  "period_x": 9.22,
+  "period_y": 9.38,
+  "native_cell_px": [
+   [
+    25,
+    33
+   ]
+  ]
+ },
+ "businessman_sheet_codex2": {
+  "size": [
+   1774,
+   887
+  ],
+  "bg_rgb": [
+   246,
+   7,
+   247
+  ],
+  "period_x": 9.22,
+  "period_y": 9.38,
+  "native_cell_px": [
+   [
+    25,
+    31
+   ]
+  ]
+ },
+ "palette": [
+  "#be4a2f",
+  "#d77643",
+  "#ead4aa",
+  "#e4a672",
+  "#b86f50",
+  "#733e39",
+  "#3e2731",
+  "#a22633",
+  "#e43b44",
+  "#f77622",
+  "#feae34",
+  "#fee761",
+  "#63c74d",
+  "#3e8948",
+  "#265c42",
+  "#193c3e",
+  "#124e89",
+  "#0099db",
+  "#2ce8f5",
+  "#ffffff",
+  "#c0cbdc",
+  "#8b9bb4",
+  "#5a6988",
+  "#3a4466",
+  "#262b44",
+  "#181425",
+  "#ff0044",
+  "#68386c",
+  "#b55088",
+  "#f6757a",
+  "#e8b796",
+  "#c28569"
+ ],
+ "sprites": {
+  "old_woman_sheet_codex_r0c0": {
+   "native": [
+    25,
+    33
+   ],
+   "target": [
+    11,
+    14
+   ]
+  },
+  "old_woman_sheet_codex_r0c1": {
+   "native": [
+    24,
+    31
+   ],
+   "target": [
+    11,
+    14
+   ]
+  },
+  "old_woman_sheet_codex_r0c2": {
+   "native": [
+    25,
+    33
+   ],
+   "target": [
+    11,
+    14
+   ]
+  },
+  "old_woman_sheet_codex_r0c3": {
+   "native": [
+    25,
+    34
+   ],
+   "target": [
+    10,
+    14
+   ]
+  },
+  "old_woman_sheet_codex_r1c0": {
+   "native": [
+    26,
+    30
+   ],
+   "target": [
+    12,
+    14
+   ]
+  },
+  "old_woman_sheet_codex_r1c1": {
+   "native": [
+    22,
+    28
+   ],
+   "target": [
+    11,
+    14
+   ]
+  },
+  "old_woman_sheet_codex_r1c2": {
+   "native": [
+    24,
+    29
+   ],
+   "target": [
+    12,
+    14
+   ]
+  },
+  "old_woman_sheet_codex_r1c3": {
+   "native": [
+    27,
+    29
+   ],
+   "target": [
+    13,
+    14
+   ]
+  },
+  "businessman_sheet_codex2_r0c0": {
+   "native": [
+    25,
+    31
+   ],
+   "target": [
+    11,
+    14
+   ]
+  },
+  "businessman_sheet_codex2_r0c1": {
+   "native": [
+    24,
+    29
+   ],
+   "target": [
+    12,
+    14
+   ]
+  },
+  "businessman_sheet_codex2_r0c2": {
+   "native": [
+    25,
+    31
+   ],
+   "target": [
+    11,
+    14
+   ]
+  },
+  "businessman_sheet_codex2_r0c3": {
+   "native": [
+    25,
+    32
+   ],
+   "target": [
+    11,
+    14
+   ]
+  },
+  "businessman_sheet_codex2_r1c0": {
+   "native": [
+    26,
+    29
+   ],
+   "target": [
+    12,
+    14
+   ]
+  },
+  "businessman_sheet_codex2_r1c1": {
+   "native": [
+    22,
+    28
+   ],
+   "target": [
+    11,
+    14
+   ]
+  },
+  "businessman_sheet_codex2_r1c2": {
+   "native": [
+    24,
+    29
+   ],
+   "target": [
+    12,
+    14
+   ]
+  },
+  "businessman_sheet_codex2_r1c3": {
+   "native": [
+    27,
+    29
+   ],
+   "target": [
+    13,
+    14
+   ]
+  }
+ }
+}

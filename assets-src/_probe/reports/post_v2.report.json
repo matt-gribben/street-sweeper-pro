@@ -1,0 +1,198 @@
+{
+ "palette": [
+  "#be4a2f",
+  "#d77643",
+  "#ead4aa",
+  "#e4a672",
+  "#b86f50",
+  "#733e39",
+  "#3e2731",
+  "#a22633",
+  "#e43b44",
+  "#f77622",
+  "#feae34",
+  "#fee761",
+  "#63c74d",
+  "#3e8948",
+  "#265c42",
+  "#193c3e",
+  "#124e89",
+  "#0099db",
+  "#2ce8f5",
+  "#ffffff",
+  "#c0cbdc",
+  "#8b9bb4",
+  "#5a6988",
+  "#3a4466",
+  "#262b44",
+  "#181425",
+  "#ff0044",
+  "#68386c",
+  "#b55088",
+  "#f6757a",
+  "#e8b796",
+  "#c28569"
+ ],
+ "sprites": {
+  "sweeper_r000_nearest": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r000_mode": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r045_nearest": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r045_mode": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r090_nearest": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r090_mode": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r135_nearest": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r135_mode": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r180_nearest": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r180_mode": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r225_nearest": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r225_mode": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r270_nearest": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r270_mode": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r315_nearest": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  },
+  "sweeper_r315_mode": {
+   "native": [
+    48,
+    48
+   ],
+   "target": [
+    48,
+    48
+   ]
+  }
+ }
+}

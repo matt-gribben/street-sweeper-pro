@@ -10,7 +10,21 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "test": "vitest run --project unit --project property"
+    "test": "vitest run --project unit --project property",
+    "test:replay": "vitest run --project replay",
+    "test:visual": "playwright test --project=visual",
+    "test:visual:update": "playwright test --project=visual --update-snapshots=all",
+    "test:e2e": "playwright test --project=ci",
+    "assets": "uv run --project tools/forge python -m forge build && npm run audio && npm run levels",
+    "assets:verify": "uv run --project tools/forge python -m forge verify",
+    "assets:lint": "uv run --project tools/forge python -m forge lint",
+    "assets:sheets": "uv run --project tools/forge python -m forge sheets",
+    "assets:ingest": "uv run --project tools/forge python -m forge ingest",
+    "assets:blender": "uv run --project tools/forge python -m forge blender",
+    "gen:ai": "uv run --project tools/forge python -m forge gen-ai --tool codex",
+    "audio": "node tools/audio/render-sfx.ts && node tools/audio/render-music.ts",
+    "levels": "node tools/levels/compile-level.ts",
+    "ci": "npm run typecheck && npm run lint && npm test && npm run test:replay && npm run assets:verify && npm run assets:lint && npm run test:visual && npm run test:e2e"
   },
   "dependencies": {
     "three": "0.186.1"

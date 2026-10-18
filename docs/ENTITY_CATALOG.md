@@ -440,7 +440,7 @@ The blocking timer resets when the path clears. Each continuous block of more th
 
 ## 9. Props and obstacles (`prop.*`)
 
-**Common spec:** cell **32×32 per slice**, `flat` (1 frame) or `stack` (4–8 horizontal slices, leaned by the perspective camera). Atlas: `items`. Collision shape = the opaque bounding box of the lowest slice, as an OBB. Exact slice counts are TBD (M0 spike).
+**Common spec:** cell **32×32 per slice**, `flat` (1 frame) or `stack` (4 or 8 horizontal slices, leaned by the perspective camera). Atlas: `items`. Collision shape = the opaque bounding box of the lowest slice, as an OBB. Slice counts were locked in M0 ([`assets-src/STYLE.md`](../assets-src/STYLE.md) v1 §8, [ART_BIBLE §8.6](ART_BIBLE.md#86-props)) and appear in the Render column as `stack (n)`: 8 for tall props with thin members, 4 for broad or short ones. Only the lowest and highest slices cast drop shadows.
 
 ### 9.1 Knockable props
 
@@ -448,9 +448,9 @@ Custom impulse bodies (`src/sim/bodies.ts`). They do not slow Bessie meaningfull
 
 | ID | Name | Mass | Penalty | Spills | Technique | Render | SFX | Districts |
 |---|---|---|---|---|---|---|---|---|
-| `prop.wheelie_bin` | Wheelie bin | 30 kg | −50 | 4 items | grid (`assets-src/sprites/prop/`) | stack | `bin_knock` | All except Yard |
-| `prop.traffic_cone` | Traffic cone | 2 kg | none | — | grid | stack | `cone_knock` | Wed, Sun, **Yard** (Skip Run slalom) |
-| `prop.a_board` | A-board | TBD (M3 tuning) | −25 | — | grid | stack | `cone_knock` | **Tue**, Fri, Sun |
+| `prop.wheelie_bin` | Wheelie bin | 30 kg | −50 | 4 items | grid (`assets-src/sprites/prop/`) | stack (4) | `bin_knock` | All except Yard |
+| `prop.traffic_cone` | Traffic cone | 2 kg | none | — | grid | stack (4) | `cone_knock` | Wed, Sun, **Yard** (Skip Run slalom) |
+| `prop.a_board` | A-board | TBD (M3 tuning) | −25 | — | grid | stack (4) | `cone_knock` | **Tue**, Fri, Sun |
 | `prop.shopping_trolley` | Shopping trolley | TBD (M3 tuning) | none | — | grid *(proposed)* | flat | `bin_knock` | Tue, Wed, Sat |
 | `prop.recycling_box` | Recycling box | TBD (M3 tuning) | −25 | 2 items | grid *(proposed)* | flat | `bin_knock` | Mon, Thu, Sun |
 
@@ -462,18 +462,18 @@ Solid. Hitting them uses the standard impact-damage rule ([§3.2](#32-collision-
 
 | ID | Name | Technique | Render | Notes | Districts |
 |---|---|---|---|---|---|
-| `prop.lamp_post` | Lamp post | blender | stack | Lifts the light mask at night (Sat, and the Depot Yard after Saturday's shift). M0 spike asset (SSP-020): 4 slices, `prop.lamp_post:slice:-:0`–`3`, in the `items` atlas; the slice count is revisited in SSP-026 (ART_BIBLE §8.6). | All |
-| `prop.bollard` | Bollard | grid | stack | Small and easy to clip with the gutter brush. | All except Yard |
+| `prop.lamp_post` | Lamp post | blender | stack (8) | Lifts the light mask at night (Sat, and the Depot Yard after Saturday's shift). M0 spike asset (SSP-020): a 4-slice prototype, `prop.lamp_post:slice:-:0`–`3`, in the `items` atlas; SSP-131 (M4) replaces it with the locked 8 slices (`:0`–`7`). | All |
+| `prop.bollard` | Bollard | grid | stack (4) | Small and easy to clip with the gutter brush. | All except Yard |
 | `prop.bench` | Bench | blender | flat | | Mon, Tue, Fri, Sun |
-| `prop.bus_shelter` | Bus shelter | blender | stack | Paired with `site.bus_stop`. | Tue, Fri, Sun |
-| `prop.phone_box` | Phone box | blender | stack | | Mon, Tue, Sun |
-| `prop.post_box` | Post box | grid *(proposed)* | stack | `postbox_red` (18). | Mon, Tue, Thu, Sun |
+| `prop.bus_shelter` | Bus shelter | blender | stack (8) | Paired with `site.bus_stop`. | Tue, Fri, Sun |
+| `prop.phone_box` | Phone box | blender | stack (4) | | Mon, Tue, Sun |
+| `prop.post_box` | Post box | grid *(proposed)* | stack (4) | `postbox_red` (18). | Mon, Tue, Thu, Sun |
 | `prop.hydrant` | Hydrant | grid | flat | **Water refill: stop adjacent, 25 units/s.** | All |
-| `prop.tree` | Tree | blender (canopy) | stack | Canopy overhangs pavements. | Mon, **Thu**, Sun |
+| `prop.tree` | Tree | blender (canopy) | stack (8) | Canopy overhangs pavements. | Mon, **Thu**, Sun |
 | `prop.planter` | Planter | blender *(proposed)* | flat | | Tue, Sun |
-| `prop.market_stall` | Market stall | blender | stack | Manned by `npc.market_trader`. | **Tue**, Sun |
-| `prop.litter_bin` | Litter bin | grid *(proposed)* | stack | Static (bolted down), unlike the wheelie bin. | All except Yard |
-| `prop.roadworks_barrier` | Roadworks barrier | grid *(proposed)* | stack | Rings `haz.open_manhole`. | Wed, Sun |
+| `prop.market_stall` | Market stall | blender | stack (8) | Manned by `npc.market_trader`. | **Tue**, Sun |
+| `prop.litter_bin` | Litter bin | grid *(proposed)* | stack (4) | Static (bolted down), unlike the wheelie bin. | All except Yard |
+| `prop.roadworks_barrier` | Roadworks barrier | grid *(proposed)* | stack (4) | Rings `haz.open_manhole`. | Wed, Sun |
 
 ---
 
@@ -656,5 +656,5 @@ Each item is resolved in the milestone named, then this section and the tables a
 | 7 | How many `litter.spilled_shopping` do other carrying NPCs (shopper, postie) drop when hit? Only Doris (6) is specified. | 0 for everyone except Doris | M3 |
 | 8 | `stain.splat`: "Cleaning it removes −20 grime" is ambiguous (refund of the −20 penalty, or just removal of the grime). | No refund; cleaning clears the grime cells only | M2 |
 | 9 | Thursday's weather is "wind + leaf fall" but `haz.wind_gust` is listed as a Friday event. Does Thursday get gusts too? | No: Thursday wind only drives leaf fall | M6 |
-| 10 | Missing values: Doris's post-horn speed (0.4 m/s proposed), handbag whack interval (1.0 s) and give-up distance (8 m), lollipop crossing duration (6 s), stain spray time (1.0 / 1.5 / 2.0 s), knockable masses for A-board/trolley/recycling box, prop slice counts, animation frame rates. | Gameplay values: TBD (M2/M3/M6 tuning) with the proposed defaults above. Slice counts: TBD (M0 spike). Frame rates: [ART_BIBLE §10.2](ART_BIBLE.md#102-timing-table). | M0–M6 |
+| 10 | Missing values: Doris's post-horn speed (0.4 m/s proposed), handbag whack interval (1.0 s) and give-up distance (8 m), lollipop crossing duration (6 s), stain spray time (1.0 / 1.5 / 2.0 s), knockable masses for A-board/trolley/recycling box, prop slice counts, animation frame rates. | Gameplay values: TBD (M2/M3/M6 tuning) with the proposed defaults above. Slice counts: decided in M0 (§9, [ART_BIBLE §8.6](ART_BIBLE.md#86-props)). Frame rates: [ART_BIBLE §10.2](ART_BIBLE.md#102-timing-table). | M0–M6 |
 | 11 | SFX gaps with no ID in the canonical list: banana spin-out, Lead Tangle, seagull snatch, handbag whack, pothole/speed-bump spill. Currently mapped to the nearest existing ID or silent. | Reuse existing IDs | M5 ([AUDIO_DESIGN](AUDIO_DESIGN.md)) |

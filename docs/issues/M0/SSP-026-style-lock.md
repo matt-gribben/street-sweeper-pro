@@ -2,7 +2,7 @@
 id: SSP-026
 title: "Write assets-src/STYLE.md v1 locking scale, palette and people style; mirror ART_BIBLE"
 milestone: M0
-status: todo
+status: done
 type: docs
 estimate: M
 labels: [type:docs, area:docs, area:assets, size:M, vertical-slice]

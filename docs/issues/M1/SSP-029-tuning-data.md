@@ -2,7 +2,7 @@
 id: SSP-029
 title: "Create tuning.json vehicle.sweeper block and typed src/sim/tuning.ts"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: S
 labels: [type:feature, area:sim, area:gameplay, area:docs, size:S, vertical-slice]
@@ -64,12 +64,12 @@ OPEN (flag in the PR summary, do not decide silently):
 
 ## Acceptance criteria
 
-- [ ] Every value in GDD §7.1, the §7.3 grip table and the §7.4 full-hopper multipliers appears in tuning.json with the same number (a unit test asserts each)
-- [ ] Only tuning.ts imports src/data/tuning.json from src/sim (checked by the purity scan or a grep test)
-- [ ] The type guards reject a fixture with a missing key and one with a string where a number is expected
-- [ ] The JSON loads both under Node type stripping (`node -e` import or a tools smoke script) and in Vitest
-- [ ] `loadTuning` returns a new object each call, so callers can pass an edited copy
-- [ ] The provisional wheel-geometry values are listed in the PR summary as needing lead confirmation
+- [x] Every value in GDD §7.1, the §7.3 grip table and the §7.4 full-hopper multipliers appears in tuning.json with the same number (a unit test asserts each)
+- [x] Only tuning.ts imports src/data/tuning.json from src/sim (checked by the purity scan or a grep test)
+- [x] The type guards reject a fixture with a missing key and one with a string where a number is expected
+- [x] The JSON loads both under Node type stripping (`node -e` import or a tools smoke script) and in Vitest
+- [x] `loadTuning` returns a new object each call, so callers can pass an edited copy
+- [x] The provisional wheel-geometry values are listed in the PR summary as needing lead confirmation
 
 ## Verification
 

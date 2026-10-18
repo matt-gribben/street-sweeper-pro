@@ -1,8 +1,9 @@
 // Sim purity scanner (CLAUDE.md hard rule 1, TECHNICAL_DESIGN §18.1 and §21.3).
 // Biome catches restricted imports and globals; this scanner is the second net. It also sees
 // `Math.random` (a member access Biome's global rule cannot see) and enforces the §2.1 import table:
-// src/sim may import only src/sim/**, src/data/** and, type-only, src/gen/assets.ts. It also keeps the
-// engine-dependent transcendentals (Math.sin/cos/tan/atan2/exp/sqrt/hypot) inside src/sim/fmath.ts (§7.4).
+// src/sim may import only src/sim/**, src/data/** (from src/sim/tuning.ts only) and, type-only,
+// src/gen/assets.ts. It also keeps the engine-dependent transcendentals (Math.sin/cos/tan/atan2/exp/sqrt/
+// hypot) inside src/sim/fmath.ts (§7.4).
 // Kept pure (strings in, violations out) so tests/unit/simPurity.test.ts can self-test it on fixtures.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, posix, relative, sep } from 'node:path';
@@ -13,6 +14,7 @@ export type PurityRule =
   | 'three-import'
   | 'package-import'
   | 'outside-sim-import'
+  | 'data-import-outside-tuning'
   | 'gen-value-import'
   | 'dynamic-import'
   | 'require'
@@ -46,6 +48,10 @@ const RAW_TRANSCENDENTAL_RE = new RegExp(
 
 /** Path prefixes (repo-relative) that src/sim may import from (TECHNICAL_DESIGN §2.1). */
 export const ALLOWED_IMPORT_PREFIXES = ['src/sim/', 'src/data/'] as const;
+
+/** src/data/ is reachable from src/sim only through this file (TECHNICAL_DESIGN §2.1, SSP-029). */
+export const DATA_PREFIX = 'src/data/';
+export const DATA_GATEWAY_FILE = 'src/sim/tuning.ts';
 
 /** The one file outside those prefixes that src/sim may import, and only with `import type`. */
 export const TYPE_ONLY_IMPORT = 'src/gen/assets.ts';
@@ -246,6 +252,12 @@ function classifySpecifier(
     };
   }
   const resolved = posix.normalize(posix.join(posix.dirname(file), specifier));
+  if (resolved.startsWith(DATA_PREFIX) && file !== DATA_GATEWAY_FILE) {
+    return {
+      rule: 'data-import-outside-tuning',
+      detail: `imports '${specifier}': src/sim reads ${DATA_PREFIX} only through ${DATA_GATEWAY_FILE} (take a Tuning parameter instead)`,
+    };
+  }
   if (ALLOWED_IMPORT_PREFIXES.some((prefix) => resolved.startsWith(prefix))) return null;
   if (resolved === TYPE_ONLY_IMPORT) {
     return typeOnly

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   blankComments,
+  DATA_GATEWAY_FILE,
   FMATH_FILE,
   FMATH_FUNCTIONS,
   type PurityRule,
@@ -116,7 +117,6 @@ describe('simPurity scanner self-tests (in-memory fixtures)', () => {
     ['a type-only re-export from src/gen/assets.ts', "export type { FrameId } from '../gen/assets.ts';"],
     ['a sibling sim module', "import { sfc32 } from './rng.ts';"],
     ['a nested sim module', "import { sat } from './collision/sat.ts';"],
-    ['tuning JSON from src/data', "import tuning from '../data/tuning.json' with { type: 'json' };"],
     ['identifiers that merely contain the words', 'const updatedAt = 0; const performanceScore = 1;'],
     [
       'exact Math functions and look-alike names',
@@ -169,6 +169,20 @@ describe('simPurity scanner self-tests (in-memory fixtures)', () => {
     expect(rulesFor("import { a } from '../render/x.ts';", 'src/sim/npc/steering.ts')).toEqual([]);
     expect(rulesFor("import { a } from '../../render/x.ts';", 'src/sim/npc/steering.ts')).toEqual([
       'outside-sim-import',
+    ]);
+  });
+
+  it('lets only src/sim/tuning.ts import src/data/ (TECHNICAL_DESIGN §2.1)', () => {
+    const source = "import tuningJson from '../data/tuning.json' with { type: 'json' };";
+    expect(rulesFor(source, DATA_GATEWAY_FILE)).toEqual([]);
+    expect(rulesFor(source, 'src/sim/vehicle.ts')).toEqual(['data-import-outside-tuning']);
+    expect(rulesFor(source)).toEqual(['data-import-outside-tuning']);
+    expect(
+      rulesFor("import e from '../../data/entities.json' with { type: 'json' };", 'src/sim/npc/steering.ts'),
+    ).toEqual(['data-import-outside-tuning']);
+    // Type-only imports of the JSON count too: other sim files take their numbers through the Tuning type.
+    expect(rulesFor("import type t from '../data/tuning.json';", 'src/sim/world.ts')).toEqual([
+      'data-import-outside-tuning',
     ]);
   });
 
@@ -244,6 +258,7 @@ describe('simPurity: src/sim in this repo', () => {
         FMATH_FILE,
         'src/sim/inputFrame.ts',
         'src/sim/rng.ts',
+        DATA_GATEWAY_FILE,
       ]),
     );
     expect(scan.violations).toEqual([]);

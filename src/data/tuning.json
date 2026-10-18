@@ -1,0 +1,75 @@
+{
+  "vehicle": {
+    "sweeper": {
+      "body": {
+        "widthM": 1.75,
+        "lengthM": 3.25,
+        "wheelbaseM": 2.4,
+        "wheelTrackM": 1.75,
+        "frontAxleOffsetM": 1.2,
+        "rearAxleOffsetM": -1.2
+      },
+      "mass": {
+        "emptyKg": 4200,
+        "fullHopperExtraKg": 1500
+      },
+      "drive": {
+        "accelMps2": 2.4,
+        "brakeMps2": 6.0,
+        "topSpeedBrushDownMps": 6.0,
+        "topSpeedTransitMps": 11.0
+      },
+      "reverse": {
+        "maxSpeedMps": 2.5,
+        "accelMps2": 1.5,
+        "engageBelowMps": 0.2,
+        "engageHoldS": 0.25
+      },
+      "fullHopper": {
+        "accelMul": 0.7,
+        "topSpeedMul": 0.9,
+        "steerRateMul": 0.85
+      },
+      "steering": {
+        "maxSteerDeg": 34,
+        "steerFalloffMps": 8,
+        "steerRateDegPerS": 120,
+        "returnRateDegPerS": 180
+      },
+      "drag": {
+        "rollingMps2": 0.3,
+        "quadraticPerM": 0.012,
+        "grassRollingMul": 2.5
+      },
+      "lateralGripPerS": {
+        "asphalt": 9.0,
+        "pavement": 8.0,
+        "grass": 5.0,
+        "wet": 4.0,
+        "wetLeaves": 3.0,
+        "oil": 1.2,
+        "rainAsphalt": 6.0
+      },
+      "kerb": {
+        "speedKeepMul": 0.7
+      },
+      "collision": {
+        "restitution": 0.2,
+        "damageHpPerMps": 4,
+        "damageThresholdMps": 2
+      },
+      "health": {
+        "maxHp": 100,
+        "dentedBelowHp": 40
+      },
+      "brush": {
+        "raiseLowerS": 0.5,
+        "spinUpS": 0.6,
+        "collectMinRpm": 0.8,
+        "cleanPickupMaxMps": 4.0,
+        "flingCertainMps": 6.0
+      },
+      "provisional": ["body.wheelTrackM", "body.frontAxleOffsetM", "body.rearAxleOffsetM"]
+    }
+  }
+}

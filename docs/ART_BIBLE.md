@@ -94,7 +94,7 @@ Not everything is drawn at 16 px/m. Gameplay readability wins over realism for s
 - **Base internal resolution 480×270.** Height is always 270. Width adapts in whole pixels: `W = clampEven(round(270 × aspect), 432, 640)`.
 - Render target is **(W+2)×272** (1 px margin for the sub-pixel camera). Nearest filtering, no MSAA, no mipmaps.
 - Integer upscale only: 1080p fullscreen → 4× (windowed ≈ 3×, itch.io 960×540 embed 2×), 1440p → 5× (45 px bars), 4K → 8×. Letterbox colour `#0f0e12` (index 00 `ink`).
-- At H = 31.5 m the ground is exactly **1 texel = 1 pixel**: 30 m × 16.875 m visible, about 15 × 8.4 tiles.
+- At H = 31.5 m the ground is **1 texel = 1 pixel** (to within 0.03%, under 0.11 px of drift at the frame edge; [TECHNICAL_DESIGN §12.2](TECHNICAL_DESIGN.md#122-camera-rendercamerats)): 30 m × 16.875 m visible, about 15 × 8.4 tiles.
 
 **Art consequence:** an asset is judged at **1×, in the 480×270 frame**, because that is the only scale a player ever sees it at (upscaling is pure nearest-neighbour). The 4× contact sheets are for inspecting pixels, not for judging readability. See [§15](#15-self-review-contact-sheets-and-the-quality-checklist).
 

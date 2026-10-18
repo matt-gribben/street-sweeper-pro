@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import pkg from '../../package.json' with { type: 'json' };
-import { DT_S, MAX_STEPS_PER_FRAME, SIM_HZ } from '../../src/sim/constants.ts';
+import { DT_S, MAX_STEPS_PER_FRAME, PX_PER_M, SIM_HZ } from '../../src/sim/constants.ts';
 
 describe('sim constants', () => {
   it('runs the sim at a fixed 60 Hz', () => {
@@ -14,6 +14,10 @@ describe('sim constants', () => {
 
   it('caps the sim at 5 steps per rendered frame', () => {
     expect(MAX_STEPS_PER_FRAME).toBe(5);
+  });
+
+  it('converts at 16 internal pixels per metre', () => {
+    expect(PX_PER_M).toBe(16);
   });
 });
 

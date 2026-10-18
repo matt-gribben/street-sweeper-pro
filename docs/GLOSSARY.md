@@ -585,7 +585,7 @@ The technique that gives a smooth-scrolling camera without breaking the pixel gr
 A 2.6 m wide rectangle from y = +1.6 to +2.8 m in front of Bessie. Items inside it are pulled toward the [inlet](#inlet) at 3.0 m/s × RPM × the suction multiplier. `upg.suction` and `pwr.super_suction` enlarge it.
 
 ### Sweep height (H)
-The camera's height above the ground: **31.5 m** with a 30° vertical FOV, giving exactly 1 texel = 1 px at 270 px tall (16.875 m visible vertically, 30 m horizontally at W = 480, about 15 × 8.4 tiles). It rises to 37.8 m under [speed zoom](#speed-zoom).
+The camera's height above the ground: **31.5 m** with a 30° vertical FOV, giving 1 texel = 1 px at 270 px tall (to within 0.03%; see TECHNICAL_DESIGN §12.2) (16.875 m visible vertically, 30 m horizontally at W = 480, about 15 × 8.4 tiles). It rises to 37.8 m under [speed zoom](#speed-zoom).
 
 ---
 

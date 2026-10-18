@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import pkg from '../../package.json' with { type: 'json' };
-import { DT_S, MAX_STEPS_PER_FRAME, PX_PER_M, SIM_HZ } from '../../src/sim/constants.ts';
+import {
+  DT_S,
+  GRIME_CELL_M,
+  MAX_STEPS_PER_FRAME,
+  PX_PER_M,
+  SHIFT_S,
+  SHIFT_TICKS,
+  SIM_HZ,
+  TILE_M,
+} from '../../src/sim/constants.ts';
 
 describe('sim constants', () => {
   it('runs the sim at a fixed 60 Hz', () => {
@@ -18,6 +27,19 @@ describe('sim constants', () => {
 
   it('converts at 16 internal pixels per metre', () => {
     expect(PX_PER_M).toBe(16);
+  });
+
+  it('uses 2 m map tiles (32 px) and 0.25 m grime cells (4 px)', () => {
+    expect(TILE_M).toBe(2);
+    expect(TILE_M * PX_PER_M).toBe(32);
+    expect(GRIME_CELL_M).toBe(0.25);
+    expect(GRIME_CELL_M * PX_PER_M).toBe(4);
+  });
+
+  it('runs a 240 s shift as an integer 14,400 ticks', () => {
+    expect(SHIFT_S).toBe(240);
+    expect(SHIFT_TICKS).toBe(14_400);
+    expect(Number.isInteger(SHIFT_TICKS)).toBe(true);
   });
 });
 

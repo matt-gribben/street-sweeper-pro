@@ -1,13 +1,21 @@
 // Sim purity scan (CLAUDE.md hard rule 1, TECHNICAL_DESIGN §18.1). Scans every .ts file under src/sim/
 // and fails on three/DOM/package imports, imports from outside src/sim and src/data (except
-// `import type` from src/gen/assets.ts), and on Math.random, Date or performance. The scanner itself is
+// `import type` from src/gen/assets.ts), on Math.random, Date or performance, and on direct calls to
+// Math.sin/cos/tan/atan2/exp/sqrt/hypot anywhere but src/sim/fmath.ts (§7.4). The scanner itself is
 // self-tested on fixture strings below, so a broken scanner cannot make the real scan pass.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { blankComments, type PurityRule, scanSimSource, scanSimTree } from './simPurityScan.ts';
+import {
+  blankComments,
+  FMATH_FILE,
+  FMATH_FUNCTIONS,
+  type PurityRule,
+  scanSimSource,
+  scanSimTree,
+} from './simPurityScan.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const FIXTURE_FILE = 'src/sim/fixture.ts';
@@ -110,7 +118,11 @@ describe('simPurity scanner self-tests (in-memory fixtures)', () => {
     ['a nested sim module', "import { sat } from './collision/sat.ts';"],
     ['tuning JSON from src/data', "import tuning from '../data/tuning.json' with { type: 'json' };"],
     ['identifiers that merely contain the words', 'const updatedAt = 0; const performanceScore = 1;'],
-    ['Math functions other than random', 'const y = Math.sin(1) + Math.randomish;'],
+    [
+      'exact Math functions and look-alike names',
+      'const y = Math.floor(1.5) + Math.abs(-1) + Math.randomish + Math.sinh2 + Math.expo + mySin(1);',
+    ],
+    ['fmath calls', "import { sin, sqrt } from './fmath.ts'; const y = sin(1) + sqrt(2);"],
     [
       'the words in comments',
       '// no Date, performance or Math.random here\n/* nor three */ export const A = 1;',
@@ -118,6 +130,35 @@ describe('simPurity scanner self-tests (in-memory fixtures)', () => {
     ['a division that looks like a regex start', 'const half = total / 2; const q = (a) / b / c;'],
   ])('passes %s', (_name, source) => {
     expect(scanSimSource(FIXTURE_FILE, source)).toEqual([]);
+  });
+
+  it.each([
+    ['Math.sin()', 'const y = Math.sin(1);'],
+    ['Math.cos()', 'const y = Math.cos(1);'],
+    ['Math.tan()', 'const y = Math.tan(1);'],
+    ['Math.atan2()', 'const y = Math.atan2(1, 2);'],
+    ['Math.exp()', 'const y = Math.exp(1);'],
+    ['Math.sqrt()', 'const y = Math.sqrt(2);'],
+    ['Math.hypot()', 'const y = Math.hypot(3, 4);'],
+    ['Math.sqrt passed by reference', 'const root = Math.sqrt;'],
+    ['whitespace around the dot', 'const y = Math . exp(1);'],
+    ['bracket access', "const y = Math['atan2'](1, 2);"],
+  ])('flags %s outside fmath.ts', (_name, source) => {
+    expect(rulesFor(source)).toEqual(['raw-transcendental']);
+    expect(rulesFor(source, 'src/sim/npc/steering.ts')).toEqual(['raw-transcendental']);
+  });
+
+  it('lets src/sim/fmath.ts, and only that file, call the transcendentals on Math', () => {
+    const source = 'export function sin(x: number): number {\n  return Math.sin(x);\n}\n';
+    expect(rulesFor(source, FMATH_FILE)).toEqual([]);
+    expect(rulesFor(source, 'src/sim/fmath2.ts')).toEqual(['raw-transcendental']);
+    expect(rulesFor(source, 'src/sim/npc/fmath.ts')).toEqual(['raw-transcendental']);
+    // The exemption covers only the transcendentals: fmath.ts is still held to every other rule.
+    expect(rulesFor('const r = Math.random();', FMATH_FILE)).toEqual(['forbidden-token']);
+  });
+
+  it('covers exactly the fmath functions named in TECHNICAL_DESIGN §7.4 plus tan', () => {
+    expect([...FMATH_FUNCTIONS]).toEqual(['sin', 'cos', 'tan', 'atan2', 'exp', 'sqrt', 'hypot']);
   });
 
   it('resolves imports relative to nested files', () => {
@@ -180,12 +221,31 @@ describe('simPurity tree scan guards', () => {
       expect.objectContaining({ file: 'src/sim/npc/bad.ts', line: 1, rule: 'forbidden-token' }),
     ]);
   });
+
+  it('flags raw transcendentals on disk everywhere except src/sim/fmath.ts', () => {
+    const root = makeTemp();
+    mkdirSync(join(root, 'src', 'sim'), { recursive: true });
+    writeFileSync(join(root, 'src', 'sim', 'fmath.ts'), 'export const s = (x: number) => Math.sin(x);\n');
+    writeFileSync(join(root, 'src', 'sim', 'vehicle.ts'), 'export const t = (x: number) => Math.tan(x);\n');
+    const scan = scanSimTree(root);
+    expect(scan.violations).toEqual([
+      expect.objectContaining({ file: 'src/sim/vehicle.ts', line: 1, rule: 'raw-transcendental' }),
+    ]);
+  });
 });
 
 describe('simPurity: src/sim in this repo', () => {
-  it('scans at least src/sim/constants.ts and finds no violations', () => {
+  it('scans the sim foundation files and finds no violations', () => {
     const scan = scanSimTree(REPO_ROOT);
-    expect(scan.files).toContain('src/sim/constants.ts');
+    expect(scan.files).toEqual(
+      expect.arrayContaining([
+        'src/sim/constants.ts',
+        'src/sim/coords.ts',
+        FMATH_FILE,
+        'src/sim/inputFrame.ts',
+        'src/sim/rng.ts',
+      ]),
+    );
     expect(scan.violations).toEqual([]);
   });
 });

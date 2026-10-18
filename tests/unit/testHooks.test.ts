@@ -1,0 +1,176 @@
+// Test hooks (SSP-019; TECHNICAL_DESIGN §18.5): `?test=1` parameter parsing, the inert installer without the
+// flag, and the M0 stub behaviour of window.__ssp over a fake host (no WebGL needed).
+import { describe, expect, it } from 'vitest';
+import {
+  installTestHooks,
+  MAX_SEED,
+  readTestParams,
+  TEST_RENDER_STEP_S,
+  type TestCamera,
+  type TestHookHost,
+  type TestHookTarget,
+} from '../../src/debug/testHooks.ts';
+
+/** A host that records calls: a tick counter, a camera and a 2x1 "frame" holding the tick. */
+function fakeHost(): TestHookHost & { calls: string[] } {
+  let tick = 0;
+  let camera: TestCamera = { x: 0, y: 0, h: 31.5, pinned: false };
+  const calls: string[] = [];
+  return {
+    calls,
+    tick: () => tick,
+    advance: (n) => {
+      calls.push(`advance ${n}`);
+      tick += n;
+    },
+    render: () => {
+      calls.push('render');
+    },
+    readFrame: () => new Uint8Array([tick, 0, 0, 255, tick, 0, 0, 255]),
+    pinCamera: (x, y, h) => {
+      calls.push(`pin ${x} ${y} ${h}`);
+      camera = { x, y, h, pinned: true };
+    },
+    camera: () => camera,
+  };
+}
+
+describe('readTestParams', () => {
+  it('returns null unless test=1 is present', () => {
+    expect(readTestParams('')).toBeNull();
+    expect(readTestParams('?scene=lean_quadrants&freeze=1')).toBeNull();
+    expect(readTestParams('?test=0&scene=lean_quadrants')).toBeNull();
+    expect(readTestParams('?test=true')).toBeNull();
+    expect(readTestParams('?test=')).toBeNull();
+  });
+
+  it('defaults every optional parameter', () => {
+    expect(readTestParams('?test=1')).toEqual({ seed: null, scene: null, tick: 0, freeze: false });
+  });
+
+  it('parses seed, scene, tick and freeze', () => {
+    expect(readTestParams('?test=1&seed=1&scene=lean_quadrants&tick=120&freeze=1')).toEqual({
+      seed: 1,
+      scene: 'lean_quadrants',
+      tick: 120,
+      freeze: true,
+    });
+    expect(readTestParams('test=1&freeze=0&scene=scale_1440')).toMatchObject({
+      scene: 'scale_1440',
+      freeze: false,
+    });
+    expect(readTestParams(`?test=1&seed=${MAX_SEED}`)?.seed).toBe(0xffff_ffff);
+    expect(readTestParams('?test=1&scene=district.puddle_lane')?.scene).toBe('district.puddle_lane');
+  });
+
+  it.each([
+    ['a negative seed', '?test=1&seed=-1'],
+    ['a fractional seed', '?test=1&seed=1.5'],
+    ['a seed above 2^32 - 1', `?test=1&seed=${MAX_SEED + 1}`],
+    ['an empty seed', '?test=1&seed='],
+    ['a hex tick', '?test=1&tick=0x10'],
+    ['a negative tick', '?test=1&tick=-3'],
+    ['freeze=yes', '?test=1&freeze=yes'],
+    ['a scene with a slash', '?test=1&scene=../zoo'],
+    ['an upper-case scene', '?test=1&scene=Zoo'],
+    ['an empty scene', '?test=1&scene='],
+  ])('throws on %s', (_label, search) => {
+    expect(() => readTestParams(search)).toThrow(/\?test=1/);
+  });
+
+  it('uses a fixed 1/60 s render step', () => {
+    expect(TEST_RENDER_STEP_S).toBe(1 / 60);
+  });
+});
+
+describe('installTestHooks without test=1', () => {
+  it.each(['', '?scene=lean_quadrants&freeze=1', '?test=0&scene=lean_quadrants'])(
+    'does nothing for %j: window.__ssp stays undefined',
+    (search) => {
+      const target: TestHookTarget = {};
+      const host = fakeHost();
+      expect(installTestHooks(target, search, host)).toBeNull();
+      expect(target.__ssp).toBeUndefined();
+      expect('__ssp' in target).toBe(false);
+      expect(host.calls).toEqual([]);
+    },
+  );
+});
+
+describe('installTestHooks with test=1', () => {
+  it('installs window.__ssp with the documented members and returns the parsed params', () => {
+    const target: TestHookTarget = {};
+    const hooks = installTestHooks(target, '?test=1&scene=lean_quadrants&freeze=1', fakeHost());
+    expect(hooks?.params).toEqual({ seed: null, scene: 'lean_quadrants', tick: 0, freeze: true });
+    expect(target.__ssp).toBe(hooks?.api);
+    const api = target.__ssp;
+    expect(typeof api?.step).toBe('function');
+    expect(typeof api?.state).toBe('function');
+    expect(typeof api?.readFrame).toBe('function');
+    expect(typeof api?.setCamera).toBe('function');
+  });
+
+  it('reports ready only after markReady()', () => {
+    const target: TestHookTarget = {};
+    const hooks = installTestHooks(target, '?test=1', fakeHost());
+    expect(target.__ssp?.ready).toBe(false);
+    hooks?.markReady();
+    expect(target.__ssp?.ready).toBe(true);
+  });
+
+  it('step(n) advances n ticks then renders once; state() returns { tick, camera }', () => {
+    const target: TestHookTarget = {};
+    const host = fakeHost();
+    installTestHooks(target, '?test=1&freeze=1', host);
+    expect(target.__ssp?.state()).toEqual({
+      tick: 0,
+      camera: { x: 0, y: 0, h: 31.5, pinned: false },
+    });
+    target.__ssp?.step(120);
+    expect(host.calls).toEqual(['advance 120', 'render']);
+    expect(target.__ssp?.state().tick).toBe(120);
+    target.__ssp?.step(0);
+    expect(host.calls).toEqual(['advance 120', 'render', 'advance 0', 'render']);
+    expect(Object.keys(target.__ssp?.state() ?? {}).sort()).toEqual(['camera', 'tick']);
+  });
+
+  it('state() is JSON-safe', () => {
+    const target: TestHookTarget = {};
+    installTestHooks(target, '?test=1', fakeHost());
+    const state = target.__ssp?.state();
+    expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+  });
+
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('step(%s) throws and does nothing', (n) => {
+    const target: TestHookTarget = {};
+    const host = fakeHost();
+    installTestHooks(target, '?test=1', host);
+    expect(() => target.__ssp?.step(n)).toThrow(RangeError);
+    expect(host.calls).toEqual([]);
+  });
+
+  it('setCamera(x, y, h) pins the camera, then renders so readFrame() sees it', () => {
+    const target: TestHookTarget = {};
+    const host = fakeHost();
+    installTestHooks(target, '?test=1', host);
+    target.__ssp?.setCamera(5, -3, 31.5);
+    expect(host.calls).toEqual(['pin 5 -3 31.5', 'render']);
+    expect(target.__ssp?.state().camera).toEqual({ x: 5, y: -3, h: 31.5, pinned: true });
+  });
+
+  it('readFrame() returns the host frame', () => {
+    const target: TestHookTarget = {};
+    const host = fakeHost();
+    installTestHooks(target, '?test=1', host);
+    target.__ssp?.step(7);
+    const frame = target.__ssp?.readFrame();
+    expect(frame).toBeInstanceOf(Uint8Array);
+    expect(Array.from(frame ?? [])).toEqual([7, 0, 0, 255, 7, 0, 0, 255]);
+  });
+
+  it('throws on malformed parameters instead of installing', () => {
+    const target: TestHookTarget = {};
+    expect(() => installTestHooks(target, '?test=1&tick=soon', fakeHost())).toThrow(/tick=soon/);
+    expect(target.__ssp).toBeUndefined();
+  });
+});

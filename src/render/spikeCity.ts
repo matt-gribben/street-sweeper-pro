@@ -1,6 +1,7 @@
 // M0 spike city (SSP-017): the 1-, 3- and 6-storey blocks (2.5 / 7.5 / 15 m) as a cell grid around the origin,
-// rendered as the city mesh plus its building shadows: exactly two draw calls. SSP-019 composes these blocks at
-// four screen offsets in the lean_quadrants scene; this layout is the dev-build default until then.
+// rendered as the city mesh plus its building shadows: exactly two draw calls. The lean_quadrants test scene
+// (src/scenes/LeanQuadrantsScene.ts, SSP-019) mirrors the trio into all four screen quadrants; this layout stays
+// the default world (no `?test=1&scene=`).
 //
 // With the camera over the origin (30 m × 16.9 m visible at W = 480, north up):
 //   - 6 storeys, top-left (x −8..−2, y −4..−2): shows its south and east faces;

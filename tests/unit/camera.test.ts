@@ -7,6 +7,7 @@ import {
   type CameraRig,
   createCameraRig,
   groundPxPerMetre,
+  pinCameraRig,
   roofMagnification,
   type SpringState,
   SWEEP_HEIGHT_M,
@@ -239,5 +240,42 @@ describe('speed zoom', () => {
     updateCameraRig(rig, 0, 0, 11, 1 / 60);
     expect(rig.height.value).toBe(SWEEP_HEIGHT_M);
     expect(rig.height.velocity).toBe(0);
+  });
+});
+
+describe('pinCameraRig (the ?test=1 setCamera hook, SSP-019)', () => {
+  it('places the camera at the pose with the spring at rest, snapped to the texel grid', () => {
+    const rig = createCameraRig(480);
+    for (let i = 0; i < 30; i++) updateCameraRig(rig, 0, 0, 11, 1 / 60);
+    expect(rig.height.velocity).not.toBe(0);
+    pinCameraRig(rig, 5.03, -3, ZOOM_OUT_HEIGHT_M);
+    expect(rig.focusX).toBe(5.03);
+    expect(rig.focusZ).toBe(-3);
+    expect(rig.height.value).toBe(ZOOM_OUT_HEIGHT_M);
+    expect(rig.height.velocity).toBe(0);
+    expect(rig.snappedX).toBe(5);
+    expect(rig.camera.position.toArray()).toEqual([5, ZOOM_OUT_HEIGHT_M, -3]);
+    expect(rig.fractionX).toBeCloseTo(0.48, 10);
+  });
+
+  it('moves the ground by exactly 16 px per metre at the sweep height', () => {
+    const rig = createCameraRig(480);
+    const before = toTargetPx(rig, 7.25, 0, -6.5);
+    pinCameraRig(rig, 5, -3, SWEEP_HEIGHT_M);
+    const after = toTargetPx(rig, 7.25, 0, -6.5);
+    expect(after.x - before.x).toBeCloseTo(-80, 1);
+    expect(after.y - before.y).toBeCloseTo(48, 1);
+  });
+
+  it.each([
+    ['a height at the near plane', 0, 0, CAMERA_NEAR_M],
+    ['a height beyond the far plane', 0, 0, CAMERA_FAR_M + 0.1],
+    ['a NaN height', 0, 0, Number.NaN],
+    ['an infinite focus', Number.POSITIVE_INFINITY, 0, SWEEP_HEIGHT_M],
+    ['a NaN focus', 0, Number.NaN, SWEEP_HEIGHT_M],
+  ])('rejects %s', (_label, x, z, h) => {
+    const rig = createCameraRig(480);
+    expect(() => pinCameraRig(rig, x, z, h)).toThrow(RangeError);
+    expect(rig.camera.position.toArray()).toEqual([0, SWEEP_HEIGHT_M, 0]);
   });
 });

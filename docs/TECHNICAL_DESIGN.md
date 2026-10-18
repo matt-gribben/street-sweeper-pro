@@ -1084,14 +1084,17 @@ Active **only with `?test=1`** (`src/debug/testHooks.ts`; present but inert in r
 
 ```ts
 window.__ssp = {
+  ready: boolean,                     // true once assets are loaded and the first frame is rendered
   step(n: number): void,              // advance n ticks synchronously, then render once
   state(): SimSnapshot,               // JSON-safe summary: score, tidy, hopper, hp, tick, positions
-  readFrame(): Uint8Array,            // raw (W)×270 palette-mapped RGBA pixels
+  readFrame(): Uint8Array,            // raw (W)×270 palette-mapped RGBA pixels, row 0 at the top
   setCamera(x: number, y: number, h: number): void, // pin the render camera (springs off)
 };
 ```
 
 Test mode also disables audio output, the speed-zoom spring and look-ahead (unless a scene enables them) and uses a fixed 1/60 render step, so screenshots are reproducible.
+
+**As built in M0 (SSP-019).** Without `test=1` the installer touches nothing and `window.__ssp` is undefined (unit-tested). Malformed parameters throw at boot rather than defaulting: `seed` is an unsigned 32-bit integer, `tick` a non-negative integer, `freeze` is `0` or `1`, and an unknown `scene` ID throws. Scenes: `lean_quadrants` (`src/scenes/LeanQuadrantsScene.ts`: the 1/3/6-storey trio mirrored into all four screen quadrants, with a Bessie and a pedestrian in each) and `scale_1440` (the same scene, viewed in a 2560×1440 page); without `scene` the spike city boots. `main.ts` dispatches with a minimal switch until the SceneManager (SSP-043). There is no sim yet, so **`step(n)` and `state()` are stubs**: a tick is one render frame of the counter that drives the actors (heading cycle, brush spin), `step(n)` advances it and renders once, and `state()` returns only `{ tick, camera: { x, y, h, pinned } }`. SSP-046 binds both to the World in M1. `tick=<n>` calls `step(n)` after load, before `ready`; the counter also holds until `ready`, so the first ready frame never depends on load time. `readFrame()` reads RT_final's inner window (x 1..W, y 1..270) with `readRenderTargetPixels` and flips the bottom-up rows. Test mode does not mount the dev panel. `node tools/spikes/leanQuadrantsFrame.ts` checks all of this against the shipping bundle (`vite build` + `vite preview`).
 
 ### 18.6 E2E
 

@@ -262,7 +262,7 @@ All keys are remappable and stored in `ssp.settings.v1`. Rumble on impacts plays
 
 ## 7. Vehicle handling
 
-Bessie is the game. Handling values live in `src/data/tuning.json` → `vehicle.sweeper`. Sim units are metres and seconds. The implementation (kinematic bicycle model, OBB/SAT collision, fixed 60 Hz tick) is specified in [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md).
+Bessie is the game. Handling values live in `src/data/tuning.json` → `vehicle.sweeper`, which is their source of truth (since SSP-029). The numbers in §7.1, §7.3 and §7.4 are **mirrored from that file**: change the JSON first, then this section in the same commit (`tests/unit/tuning.test.ts` checks the §7.3 and §7.4 tables against it). Sim units are metres and seconds; the JSON stores angles in degrees and `src/sim/tuning.ts` converts them to radians at load. The implementation (kinematic bicycle model, OBB/SAT collision, fixed 60 Hz tick) is specified in [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md).
 
 ### 7.1 Handling sheet
 

@@ -28,3 +28,9 @@ export const SHIFT_S = 240;
  * integer `ticksRemaining`, never a float. The +60 s timer assist is applied at runtime on top of this.
  */
 export const SHIFT_TICKS = SHIFT_S * SIM_HZ;
+
+/**
+ * Unit conversion: radians per degree. tuning.json stores angles in degrees for readability; src/sim/tuning.ts
+ * converts them once, at load, because the sim works in radians (CLAUDE.md §5.1).
+ */
+export const DEG_TO_RAD = Math.PI / 180;

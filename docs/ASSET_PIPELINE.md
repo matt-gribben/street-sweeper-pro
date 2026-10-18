@@ -255,6 +255,8 @@ All forge commands run as `uv run --project tools/forge python -m forge <cmd>`. 
 | `blender` | `<id\|all> [--check]` | Local only. Wraps the exact Blender command (§7.1). |
 | `gen-ai` | `<id> [--tool codex\|cursor] [--candidates N] [--accept <n>] [--ref <path>]…` | Local only. `--ref` defaults to whatever `prompt.md` declares. |
 
+Until its implementing issue lands, a subcommand accepts its flags but exits 3 with `forge <cmd>: not implemented until SSP-xxx` on stderr (never 0). The mapping is `NOT_IMPLEMENTED_UNTIL` in `tools/forge/forge/__main__.py`.
+
 ---
 
 ## 6. Source formats
@@ -1034,8 +1036,8 @@ Notes on each step:
 | Step | Detail |
 |---|---|
 | 2. Alpha | Use real alpha thresholded at 128. If the golden has no meaningful alpha, key out the median border colour (RGB distance > 110). |
-| 4. Period | Measured periods so far: Codex characters 9.22/9.38 px, rubbish 10.8 px. If detection picks a harmonic (e.g. 4.6 or 18.6 px), set `period_override` in `ingest.json`. Never pass it as a CLI flag, because the override must be committed. |
-| 5–6. Scale | **One factor per sheet**, never per-cell height normalisation. For litter, the factor is chosen so the largest item = `largest_item_px` (14). |
+| 4. Period | Measured periods so far (x/y): Codex characters 9.22/9.38 px, rubbish 10.81/10.87 px (pinned by `tools/forge/tests/test_pixelize.py`). If detection picks a harmonic (e.g. 4.6 or 18.6 px), set `period_override` in `ingest.json`. Never pass it as a CLI flag, because the override must be committed. |
+| 5–6. Scale | Block mode (`forge/pixelize.py`): majority over opaque pixels (alpha ≥ 128); a block is opaque when at least half its pixels are. Ties go to the lower palette index; before palette mapping, colours are bucketed RGB555 and ties go to the lowest bucket key (R>>3, then G>>3, then B>>3). **One factor per sheet**, never per-cell height normalisation. For litter, the factor is chosen so the largest item = `largest_item_px` (14). |
 | 7. Palette | Nearest colour in OKLab, no dither |
 | 10. Output | Writes `origin:` and `ingest_sha256:` headers (§6.2). After this, **the grid is the source of truth**. |
 

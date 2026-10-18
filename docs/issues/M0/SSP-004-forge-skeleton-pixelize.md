@@ -2,7 +2,7 @@
 id: SSP-004
 title: "Create the forge Python package (uv, CLI skeleton) and import pixelize.py with tests"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:tooling, area:assets, area:test, size:M, vertical-slice]
@@ -66,12 +66,12 @@ Assert each axis separately against these exact values with a stated tolerance (
 
 ## Acceptance criteria
 
-- [ ] `uv sync --project tools/forge` builds the venv from the committed uv.lock with numpy 2.5.4, Pillow 13.0.0 and pytest 9.1.1
-- [ ] `uv run --project tools/forge python -m forge --help` lists build, ingest, blender, gen-ai, lint, sheets, verify
-- [ ] Every unimplemented subcommand exits non-zero and prints 'not implemented until ...'
-- [ ] pytest asserts period (x, y) = (9.22, 9.38) on old_woman_sheet.png and (10.81, 10.87) on rubbish_sheet.png within the stated tolerance
-- [ ] `python -c 'import forge.pixelize'` has no side effects: no argv read, no file written, no output
-- [ ] pyproject.toml declares only numpy and Pillow as runtime dependencies (pytest in dev)
+- [x] `uv sync --project tools/forge` builds the venv from the committed uv.lock with numpy 2.5.4, Pillow 13.0.0 and pytest 9.1.1
+- [x] `uv run --project tools/forge python -m forge --help` lists build, ingest, blender, gen-ai, lint, sheets, verify
+- [x] Every unimplemented subcommand exits non-zero and prints 'not implemented until ...'
+- [x] pytest asserts period (x, y) = (9.22, 9.38) on old_woman_sheet.png and (10.81, 10.87) on rubbish_sheet.png within the stated tolerance
+- [x] `python -c 'import forge.pixelize'` has no side effects: no argv read, no file written, no output
+- [x] pyproject.toml declares only numpy and Pillow as runtime dependencies (pytest in dev)
 
 ## Verification
 

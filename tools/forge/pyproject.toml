@@ -1,0 +1,27 @@
+[project]
+name = "ssp-forge"
+version = "0.1.0"
+description = "Street Sweeper Pro deterministic asset forge (python -m forge)"
+requires-python = "==3.13.*"
+# Runtime dependencies are numpy + Pillow ONLY (CLAUDE.md §5.2, ADR 0002).
+dependencies = [
+    "numpy==2.5.4",
+    "pillow==13.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+]
+
+[build-system]
+# Build-time only (installs the forge package into tools/forge/.venv); not a runtime dependency.
+requires = ["uv_build==0.12.23"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "forge"
+module-root = ""
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

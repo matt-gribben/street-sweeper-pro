@@ -14,7 +14,8 @@
 // Textures are code-defined placeholders built from Kerbside-32 indices (CLAUDE.md hard rule 3: no colour value
 // is spelled here): a brick module with a stone string course and one bold window per storey, a slate roof with
 // a 1 px parapet line (06 kerb on the NW edges, the roof's dark step 01 tar on the SE edges), and flat 02
-// asphalt / 05 slab ground. Real facades are M4, procedural facades and ground tiles M1: this is deliberately
+// asphalt / 05 slab ground, plus flat 06 kerb and 22 grass swatches (SSP-021: the shadow and night tuning needs
+// building and drop shadows over every ground tile type). Real facades are M4, procedural facades and ground tiles M1: this is deliberately
 // not a facade system. The full cell merge from compiled levels replaces this file's input in SSP-045.
 import {
   BufferAttribute,
@@ -48,7 +49,7 @@ export const TILE_PX = CELL_M * PX_PER_M;
 export const GROUND_SKIRT_M = 512;
 
 /** Ground type of a cell without a building (placeholder ground, M0). */
-export const GroundType = { Asphalt: 0, Slab: 1 } as const;
+export const GroundType = { Asphalt: 0, Slab: 1, Kerb: 2, Grass: 3 } as const;
 export type GroundType = (typeof GroundType)[keyof typeof GroundType];
 
 /** Outward direction of a surface. Walls are N/E/S/W; roofs and ground face Up. */
@@ -67,10 +68,12 @@ export const AtlasTile = {
   RoofSlate: 3,
   GroundAsphalt: 4,
   GroundSlab: 5,
+  GroundKerb: 6,
+  GroundGrass: 7,
 } as const;
 export type AtlasTile = (typeof AtlasTile)[keyof typeof AtlasTile];
 
-const ATLAS_TILE_COUNT = 6;
+const ATLAS_TILE_COUNT = 8;
 export const ATLAS_WIDTH_PX = ATLAS_TILE_COUNT * TILE_PX;
 export const ATLAS_HEIGHT_PX = FACADE_MODULE_H_PX;
 
@@ -131,9 +134,14 @@ export type CityGeometryData = {
   readonly faces: Uint8Array;
 };
 
-/** ASCII cell codes for {@link parseCityGrid}: `.` asphalt, `:` slab pavement, `1`–`8` a building of that many storeys. */
+/**
+ * ASCII cell codes for {@link parseCityGrid}: `.` asphalt, `:` slab pavement, `k` kerb stone, `,` grass (as in
+ * LEVEL_DESIGN maps), `1`–`8` a building of that many storeys.
+ */
 export const CITY_CELL_ASPHALT = '.';
 export const CITY_CELL_SLAB = ':';
+export const CITY_CELL_KERB = 'k';
+export const CITY_CELL_GRASS = ',';
 const MAX_STOREYS = 8;
 
 /** Parses an ASCII cell grid (one character per 2 m cell, row 0 north) placed with its NW corner at the origin. */
@@ -153,6 +161,10 @@ export function parseCityGrid(lines: readonly string[], originXM: number, origin
         ground[i] = GroundType.Asphalt;
       } else if (ch === CITY_CELL_SLAB) {
         ground[i] = GroundType.Slab;
+      } else if (ch === CITY_CELL_KERB) {
+        ground[i] = GroundType.Kerb;
+      } else if (ch === CITY_CELL_GRASS) {
+        ground[i] = GroundType.Grass;
       } else if (ch >= '1' && ch <= String(MAX_STOREYS)) {
         storeys[i] = Number(ch);
         ground[i] = GroundType.Slab;
@@ -408,6 +420,20 @@ function wallCorners(wall: CityWall): [Vertex, Vertex, Vertex, Vertex] {
   ];
 }
 
+/** Atlas tile of an open cell's ground type. */
+export function groundTile(type: number): AtlasTile {
+  switch (type) {
+    case GroundType.Slab:
+      return AtlasTile.GroundSlab;
+    case GroundType.Kerb:
+      return AtlasTile.GroundKerb;
+    case GroundType.Grass:
+      return AtlasTile.GroundGrass;
+    default:
+      return AtlasTile.GroundAsphalt;
+  }
+}
+
 /** Builds the city's geometry buffers: ground (grid plus skirt), walls and roofs. Pure: no WebGL. */
 export function buildCityGeometryData(grid: CityGrid, skirtM: number = GROUND_SKIRT_M): CityGeometryData {
   const writer = new CityGeometryWriter();
@@ -432,7 +458,7 @@ export function buildCityGeometryData(grid: CityGrid, skirtM: number = GROUND_SK
       ) {
         end++;
       }
-      const tile = type === GroundType.Slab ? AtlasTile.GroundSlab : AtlasTile.GroundAsphalt;
+      const tile = groundTile(type);
       writer.groundRect(ox + c * CELL_M, oy + r * CELL_M, ox + end * CELL_M, oy + (r + 1) * CELL_M, tile);
       c = end;
     }
@@ -500,7 +526,7 @@ export const ROOF_COLOURS = {
 const ROOF_COURSE_SPACING_PX = 4;
 
 /** Flat placeholder ground (procedural tiles are M1). */
-export const GROUND_COLOURS = { asphalt: 'asphalt', slab: 'slab' } as const;
+export const GROUND_COLOURS = { asphalt: 'asphalt', slab: 'slab', kerb: 'kerb', grass: 'grass' } as const;
 
 // Module layout (32×40): a 2 px string course at the floor line of every storey, and one bold window per module
 // (ART_BIBLE §9.4: glass block ≥ 8×12 px, light frame, 1 px sill) so storeys read through foreshortening.
@@ -572,6 +598,16 @@ export function buildCityAtlasIndices(palette: Kerbside32 = KERBSIDE32): Uint8Ar
   put(
     AtlasTile.GroundSlab,
     new Uint8Array(TILE_PX * TILE_PX).fill(paletteIndex(GROUND_COLOURS.slab, palette)),
+    TILE_PX,
+  );
+  put(
+    AtlasTile.GroundKerb,
+    new Uint8Array(TILE_PX * TILE_PX).fill(paletteIndex(GROUND_COLOURS.kerb, palette)),
+    TILE_PX,
+  );
+  put(
+    AtlasTile.GroundGrass,
+    new Uint8Array(TILE_PX * TILE_PX).fill(paletteIndex(GROUND_COLOURS.grass, palette)),
     TILE_PX,
   );
   return atlas;

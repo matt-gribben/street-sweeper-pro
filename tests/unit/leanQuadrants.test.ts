@@ -1,13 +1,16 @@
 // lean_quadrants (SSP-019): the 1/3/6-storey trio in every screen quadrant, fully on screen at W = 480 with
 // the camera over the origin, plus Bessie and the pedestrian placed clear of every wall and roof, the SSP-020
-// sprite-stack lamp posts beside the blocks, and the scene's actors driven only by the render-frame counter.
+// sprite-stack lamp posts beside the blocks, the SSP-021 ground swatches and night light pools, and the scene's
+// actors driven only by the render-frame counter.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { type InstancedMesh, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { createCameraRig, roofMagnification, SWEEP_HEIGHT_M } from '../../src/render/camera.ts';
-import { type CityBox, mergeBoxes, parseCityGrid } from '../../src/render/cityMesh.ts';
+import { CELL_M, type CityBox, GroundType, mergeBoxes, parseCityGrid } from '../../src/render/cityMesh.ts';
 import { HEADING_COUNT } from '../../src/render/headings.ts';
+import { lightPoolAnchorPx } from '../../src/render/lightPools.ts';
+import { buildShadowPolygons } from '../../src/render/shadows.ts';
 import { FRAMES_PER_HEADING } from '../../src/render/spikeActors.ts';
 import { type AtlasName, loadAtlas, type RgbaImage, type SpriteAtlas } from '../../src/render/spriteAtlas.ts';
 import { LAMP_POST_STACK } from '../../src/render/spriteStack.ts';
@@ -88,12 +91,81 @@ async function loadSprites(name: AtlasName): Promise<SpriteAtlas> {
 }
 
 describe('lean_quadrants layout', () => {
-  it('is a 17 x 9 cell grid centred on the origin and mirror-symmetric about both screen axes', () => {
+  it('is a 17 x 9 cell grid centred on the origin, its blocks mirror-symmetric about both screen axes', () => {
     expect(grid.cols).toBe(17);
     expect(grid.rows).toBe(9);
     expect(LEAN_QUADRANTS_ORIGIN_M).toEqual([-17, -9]);
-    expect([...LEAN_QUADRANTS_ROWS].reverse()).toEqual(LEAN_QUADRANTS_ROWS);
-    for (const row of LEAN_QUADRANTS_ROWS) expect([...row].reverse().join('')).toBe(row);
+    // Buildings (and which cells are open) mirror exactly; only the ground swatches differ by quadrant.
+    const blocks = LEAN_QUADRANTS_ROWS.map((row) => row.replace(/[^1-8]/g, '.'));
+    expect([...blocks].reverse()).toEqual(blocks);
+    for (const row of blocks) expect([...row].reverse().join('')).toBe(row);
+    // The east half (north-east and south-east) is the SSP-019 layout, itself mirrored north-south.
+    const east = LEAN_QUADRANTS_ROWS.map((row) => row.slice(8));
+    expect([...east].reverse()).toEqual(east);
+  });
+
+  it('lays shadow-test ground swatches (SSP-021): 02/05 in the east, 06 kerb north-west, 22 grass south-west', () => {
+    const typesIn = (q: string): number[] => {
+      const out = new Set<number>();
+      for (let r = 0; r < grid.rows; r++)
+        for (let c = 0; c < grid.cols; c++) {
+          const i = r * grid.cols + c;
+          if ((grid.storeys[i] ?? 0) > 0) continue;
+          const x = grid.originXM + (c + 0.5) * CELL_M;
+          const y = grid.originYM + (r + 0.5) * CELL_M;
+          if (x !== 1 && y !== 0 && x !== -1 && quadrantOf(x, y) === q) out.add(grid.ground[i] ?? -1);
+        }
+      return [...out].sort();
+    };
+    expect(typesIn('ne')).toEqual([GroundType.Asphalt, GroundType.Slab]);
+    expect(typesIn('se')).toEqual([GroundType.Asphalt, GroundType.Slab]);
+    expect(typesIn('nw')).toEqual([GroundType.Asphalt, GroundType.Kerb]);
+    expect(typesIn('sw')).toEqual([GroundType.Asphalt, GroundType.Grass]);
+    // Each pedestrian stands (and casts its drop shadow) on its quadrant's pavement swatch.
+    const under = (x: number, y: number): number => {
+      const c = Math.floor((x - grid.originXM) / CELL_M);
+      const r = Math.floor((y - grid.originYM) / CELL_M);
+      return grid.ground[r * grid.cols + c] ?? -1;
+    };
+    const pavement = { ne: GroundType.Slab, se: GroundType.Slab, nw: GroundType.Kerb, sw: GroundType.Grass };
+    for (const q of LEAN_QUADRANTS) expect(under(...q.pedestrianM)).toBe(pavement[q.name]);
+  });
+
+  it('casts building shadows over open ground of every swatch type on screen', () => {
+    const polygons = buildShadowPolygons(boxes);
+    const inside = (outline: readonly number[], x: number, y: number): boolean => {
+      // Convex, counter-clockwise on screen (north up): every edge has the point on its left (y grows south).
+      const n = outline.length / 2;
+      for (let k = 0; k < n; k++) {
+        const ax = outline[2 * k] ?? 0;
+        const ay = outline[2 * k + 1] ?? 0;
+        const bx = outline[2 * ((k + 1) % n)] ?? 0;
+        const by = outline[2 * ((k + 1) % n) + 1] ?? 0;
+        if ((bx - ax) * (y - ay) - (by - ay) * (x - ax) > 0) return false;
+      }
+      return true;
+    };
+    const halfHeightM = SWEEP_HEIGHT_M * Math.tan((15 * Math.PI) / 180);
+    const halfWidthM = (halfHeightM * W) / INTERNAL_HEIGHT_PX;
+    const shaded = new Map<number, number>();
+    for (let r = 0; r < grid.rows; r++)
+      for (let c = 0; c < grid.cols; c++) {
+        const i = r * grid.cols + c;
+        if ((grid.storeys[i] ?? 0) > 0) continue;
+        for (let sy = 0.125; sy < CELL_M; sy += 0.25)
+          for (let sx = 0.125; sx < CELL_M; sx += 0.25) {
+            const x = grid.originXM + c * CELL_M + sx;
+            const y = grid.originYM + r * CELL_M + sy;
+            if (Math.abs(x) > halfWidthM || Math.abs(y) > halfHeightM) continue;
+            if (boxes.some((b) => distanceToRect(x, y, coverRectM(b)) === 0)) continue;
+            if (polygons.some((p) => inside(p.outline, x, y))) {
+              const g = grid.ground[i] ?? -1;
+              shaded.set(g, (shaded.get(g) ?? 0) + 1);
+            }
+          }
+      }
+    // At least 2 m² (32 samples of 0.25 × 0.25 m, about 500 px) of shaded open ground per type.
+    for (const type of Object.values(GroundType)) expect(shaded.get(type) ?? 0).toBeGreaterThan(32);
   });
 
   it('holds one 1-, one 3- and one 6-storey block in each of the four quadrants', () => {
@@ -252,7 +324,7 @@ describe('lean_quadrants lamp posts (SSP-020)', () => {
 describe('LeanQuadrantsScene', () => {
   it('builds the city mesh and building shadows, then 12 actors, 16 lamp slices and 16 drop shadows per frame', async () => {
     const scene = new LeanQuadrantsScene();
-    expect(scene.world.children.map((c) => c.renderOrder)).toEqual([0, 1]);
+    expect(scene.world.children.map((c) => c.renderOrder)).toEqual([0, 1, 5]);
     scene.update(0, 0); // before the atlases: draws nothing and does not throw
     scene.attachSprites(await loadSprites('actors'), await loadSprites('items'));
     scene.update(0, 0);
@@ -293,6 +365,26 @@ describe('LeanQuadrantsScene', () => {
     expect(rects()).not.toEqual(first);
     scene.update(123, 0);
     expect(rects()).toEqual(first);
+  });
+
+  it('hangs one light pool under each lamp post, drawn last and only at night (SSP-021)', () => {
+    const scene = new LeanQuadrantsScene();
+    const pools = scene.lightPools;
+    expect(scene.world.children).toContain(pools);
+    expect(pools.renderOrder).toBe(5);
+    expect(pools.visible).toBe(false);
+    scene.setNight(true);
+    expect(pools.visible).toBe(true);
+    scene.setNight(false);
+    expect(pools.visible).toBe(false);
+    const anchors = pools.geometry.getAttribute('aAnchorPx');
+    expect(anchors.count).toBe(LEAN_QUADRANTS.length * 6);
+    LEAN_QUADRANTS.forEach((q, i) => {
+      expect([anchors.getX(i * 6), anchors.getY(i * 6)]).toEqual([
+        lightPoolAnchorPx(q.lampPostM[0]),
+        lightPoolAnchorPx(q.lampPostM[1]),
+      ]);
+    });
   });
 
   it('refuses a second set of atlases', async () => {

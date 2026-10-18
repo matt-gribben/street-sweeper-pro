@@ -26,6 +26,7 @@ import {
   faceNormal,
   GROUND_COLOURS,
   GroundType,
+  groundTile,
   mergeBoxes,
   parseCityGrid,
   ROOF_COLOURS,
@@ -73,6 +74,36 @@ describe('parseCityGrid', () => {
       GroundType.Asphalt,
       GroundType.Asphalt,
     ]);
+  });
+
+  it('reads the kerb and grass swatch cells (SSP-021) and maps every ground type to its own flat tile', () => {
+    const g = parseCityGrid(['.:k,'], 0, 0);
+    expect(Array.from(g.ground)).toEqual([
+      GroundType.Asphalt,
+      GroundType.Slab,
+      GroundType.Kerb,
+      GroundType.Grass,
+    ]);
+    const data = buildCityGeometryData(g, 0);
+    // One ground quad per cell (the types differ), in order, each on its type's tile.
+    expect(data.vertexCount).toBe(24);
+    expect([0, 6, 12, 18].map((v) => data.tiles[v])).toEqual([
+      AtlasTile.GroundAsphalt,
+      AtlasTile.GroundSlab,
+      AtlasTile.GroundKerb,
+      AtlasTile.GroundGrass,
+    ]);
+    expect([0, 6, 12, 18].map((v) => groundTile(g.ground[v / 6] ?? -1))).toEqual([
+      AtlasTile.GroundAsphalt,
+      AtlasTile.GroundSlab,
+      AtlasTile.GroundKerb,
+      AtlasTile.GroundGrass,
+    ]);
+    const atlas = buildCityAtlasIndices();
+    const tileIndex = (tile: AtlasTile): number => atlas[tile * TILE_PX] ?? -1;
+    expect(tileIndex(AtlasTile.GroundKerb)).toBe(paletteIndex('kerb'));
+    expect(tileIndex(AtlasTile.GroundGrass)).toBe(paletteIndex('grass'));
+    expect(ATLAS_WIDTH_PX).toBe(8 * TILE_PX);
   });
 
   it('rejects ragged rows and unknown cells', () => {

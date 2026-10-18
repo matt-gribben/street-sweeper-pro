@@ -40,6 +40,8 @@ type BootScene = {
   readonly world: Object3D;
   readonly attachSprites: ((load: AtlasLoader) => Promise<void>) | null;
   update(frameCount: number, camYSimM: number): void;
+  /** Night on or off: the scene shows or hides its light pools (the renderer owns the night remap). */
+  setNight(on: boolean): void;
 };
 
 /** Scenes `?test=1&scene=<id>` can boot. `scale_1440` is lean_quadrants viewed in a 2560×1440 page (SSP-022). */
@@ -54,6 +56,7 @@ function leanQuadrants(): BootScene {
       scene.attachSprites(actors, items);
     },
     update: (frameCount, camYSimM) => scene.update(frameCount, camYSimM),
+    setNight: (on) => scene.setNight(on),
   };
 }
 
@@ -70,11 +73,12 @@ function spikeCity(withActors: boolean): BootScene {
         }
       : null,
     update: (frameCount, camYSimM) => actors?.update(frameCount, camYSimM),
+    setNight: () => {},
   };
 }
 
 function staticWorld(world: Object3D): BootScene {
-  return { world, attachSprites: null, update: () => {} };
+  return { world, attachSprites: null, update: () => {}, setNight: () => {} };
 }
 
 // Scene choice. With `?test=1&scene=<id>` a minimal switch boots the named scene; an unknown ID throws. Without
@@ -110,9 +114,14 @@ attachUpscaler(canvas, (layout) => renderer.resize(layout));
 
 /**
  * Stand-in for Bessie's speed until M1: driven by the dev panel slider, 0 in release builds. Test mode pins
- * speed 0 and turns the speed-zoom spring off, so test frames never depend on timing.
+ * speed 0 and turns the speed-zoom spring off, so test frames never depend on timing. `night` starts from the
+ * `night=1` test parameter (SSP-021); the dev panel toggles it outside test mode.
  */
-const drive = { speedMps: 0, zoomEnabled: testMode ? false : renderer.rig.zoomEnabled, night: false };
+const drive = {
+  speedMps: 0,
+  zoomEnabled: testMode ? false : renderer.rig.zoomEnabled,
+  night: testParams?.night ?? false,
+};
 
 /**
  * Render-frame counter driving the actors (heading cycle, brush spin): one step per rendered frame, never
@@ -138,6 +147,7 @@ function updateCamera(dtS: number): void {
 /** Draws one complete frame from the current counter and camera. */
 function draw(): void {
   renderer.night = drive.night;
+  scene.setNight(drive.night);
   scene.update(Number.isNaN(pinnedFrame) ? renderFrame : pinnedFrame, renderer.rig.snappedZ);
   renderer.render();
 }

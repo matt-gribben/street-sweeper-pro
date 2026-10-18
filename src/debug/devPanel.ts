@@ -6,7 +6,7 @@
 export type DevPanelControls = {
   speedMps: number;
   zoomEnabled: boolean;
-  /** Night remap in the palette pass (the documented night toggle for scenes arrives in SSP-021). */
+  /** Night remap in the palette pass (test mode uses the `night=1` parameter instead, SSP-021). */
   night: boolean;
 };
 

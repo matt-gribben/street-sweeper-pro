@@ -46,16 +46,24 @@ describe('readTestParams', () => {
   });
 
   it('defaults every optional parameter', () => {
-    expect(readTestParams('?test=1')).toEqual({ seed: null, scene: null, tick: 0, freeze: false });
+    expect(readTestParams('?test=1')).toEqual({
+      seed: null,
+      scene: null,
+      tick: 0,
+      freeze: false,
+      night: false,
+    });
   });
 
-  it('parses seed, scene, tick and freeze', () => {
-    expect(readTestParams('?test=1&seed=1&scene=lean_quadrants&tick=120&freeze=1')).toEqual({
+  it('parses seed, scene, tick, freeze and night', () => {
+    expect(readTestParams('?test=1&seed=1&scene=lean_quadrants&tick=120&freeze=1&night=1')).toEqual({
       seed: 1,
       scene: 'lean_quadrants',
       tick: 120,
       freeze: true,
+      night: true,
     });
+    expect(readTestParams('?test=1&night=0')?.night).toBe(false);
     expect(readTestParams('test=1&freeze=0&scene=scale_1440')).toMatchObject({
       scene: 'scale_1440',
       freeze: false,
@@ -72,6 +80,8 @@ describe('readTestParams', () => {
     ['a hex tick', '?test=1&tick=0x10'],
     ['a negative tick', '?test=1&tick=-3'],
     ['freeze=yes', '?test=1&freeze=yes'],
+    ['night=true', '?test=1&night=true'],
+    ['an empty night', '?test=1&night='],
     ['a scene with a slash', '?test=1&scene=../zoo'],
     ['an upper-case scene', '?test=1&scene=Zoo'],
     ['an empty scene', '?test=1&scene='],
@@ -102,7 +112,13 @@ describe('installTestHooks with test=1', () => {
   it('installs window.__ssp with the documented members and returns the parsed params', () => {
     const target: TestHookTarget = {};
     const hooks = installTestHooks(target, '?test=1&scene=lean_quadrants&freeze=1', fakeHost());
-    expect(hooks?.params).toEqual({ seed: null, scene: 'lean_quadrants', tick: 0, freeze: true });
+    expect(hooks?.params).toEqual({
+      seed: null,
+      scene: 'lean_quadrants',
+      tick: 0,
+      freeze: true,
+      night: false,
+    });
     expect(target.__ssp).toBe(hooks?.api);
     const api = target.__ssp;
     expect(typeof api?.step).toBe('function');

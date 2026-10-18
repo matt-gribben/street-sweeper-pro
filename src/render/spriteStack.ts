@@ -13,7 +13,7 @@
 // is the only stack. Slice counts per prop and which slices cast drop shadows are recorded in ROADMAP §8
 // (D-02 input) and ART_BIBLE §6.4 / §8.6.
 import type { AssetId, FrameId } from '../gen/assets.ts';
-import type { DropShadowBatch, SpriteBatch } from './spriteBatch.ts';
+import { type DropShadowBatch, type SpriteBatch, SpriteFlag } from './spriteBatch.ts';
 import { DepthLayer } from './worldMaterial.ts';
 
 /** One slice of a stack. */
@@ -27,8 +27,8 @@ export type StackSlice = {
   /** Whether this slice casts the +2, +2 drop shadow at its own height (ART_BIBLE §6.4). */
   readonly castsShadow: boolean;
   /**
-   * Hook for SSP-021: this slice is the lamp head that writes the light mask at night (ART_BIBLE §8.6). Nothing
-   * reads it yet; light cookies and night lighting arrive with SSP-021.
+   * This slice is the lamp head that writes the light mask (ART_BIBLE §8.6, §13): it is drawn with
+   * `SpriteFlag.Lit`, so the night remap never darkens it (SSP-021).
    */
   readonly lightsAtNight: boolean;
 };
@@ -73,8 +73,9 @@ export function stackShadowCount(stack: SpriteStack): number {
 }
 
 /**
- * Adds every slice of `stack` standing at sim (xM, yM) to `sprites` (the items batch), bottom slice first, and
- * the drop shadows of its shadow-casting slices to `shadows` (pass null to skip shadows). Allocates nothing.
+ * Adds every slice of `stack` standing at sim (xM, yM) to `sprites` (the items batch), bottom slice first (a
+ * `lightsAtNight` slice flagged `Lit`), and the drop shadows of its shadow-casting slices to `shadows` (pass null
+ * to skip shadows). Allocates nothing.
  */
 export function addSpriteStack(
   stack: SpriteStack,
@@ -87,7 +88,14 @@ export function addSpriteStack(
   for (let i = 0; i < slices.length; i++) {
     const slice = slices[i];
     if (slice === undefined) continue;
-    sprites.addAtHeight(slice.frame, xM, yM, slice.heightM, STACK_LAYER);
+    sprites.addAtHeight(
+      slice.frame,
+      xM,
+      yM,
+      slice.heightM,
+      STACK_LAYER,
+      slice.lightsAtNight ? SpriteFlag.Lit : 0,
+    );
     if (shadows !== null && slice.castsShadow) shadows.addAtHeight(slice.frame, xM, yM, slice.heightM);
   }
 }

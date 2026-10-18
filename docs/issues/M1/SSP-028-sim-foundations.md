@@ -2,7 +2,7 @@
 id: SSP-028
 title: "Add sim foundations: sfc32 RNG, fmath wrapper, constants, InputFrame type"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: S
 labels: [type:feature, area:sim, area:test, size:S, vertical-slice]
@@ -70,12 +70,12 @@ Hard rules: no `Math.random`, `Date` or `performance` in `src/sim`. Imports carr
 
 ## Acceptance criteria
 
-- [ ] sfc32 reproduces at least 8 consecutive outputs for at least 2 seeds from the reference implementation (vectors and source cited in the test)
-- [ ] Two streams created from the same seed with different names produce different sequences, and creating an extra stream does not change the sequence of an existing one
-- [ ] Unit test: heading 0 gives forward (0, −1); heading π/2 gives vehicle frame index 8 (h08); heading −0.01 rad gives h00; the 8 actor directions map as specified in TECHNICAL_DESIGN §4
-- [ ] A test fails if any src/sim file other than fmath.ts calls Math.sin/cos/tan/atan2/exp/sqrt/hypot (verified by temporarily adding such a call)
-- [ ] tests/unit/simPurity.test.ts and the Biome src/sim override still pass, with no suppressions
-- [ ] The hash32 choice is recorded in TECHNICAL_DESIGN §7.3 and the fmath tan addition in §2/§7.4
+- [x] sfc32 reproduces at least 8 consecutive outputs for at least 2 seeds from the reference implementation (vectors and source cited in the test)
+- [x] Two streams created from the same seed with different names produce different sequences, and creating an extra stream does not change the sequence of an existing one
+- [x] Unit test: heading 0 gives forward (0, −1); heading π/2 gives vehicle frame index 8 (h08); heading −0.01 rad gives h00; the 8 actor directions map as specified in TECHNICAL_DESIGN §4
+- [x] A test fails if any src/sim file other than fmath.ts calls Math.sin/cos/tan/atan2/exp/sqrt/hypot (verified by temporarily adding such a call)
+- [x] tests/unit/simPurity.test.ts and the Biome src/sim override still pass, with no suppressions
+- [x] The hash32 choice is recorded in TECHNICAL_DESIGN §7.3 and the fmath tan addition in §2/§7.4
 
 ## Verification
 

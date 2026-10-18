@@ -1,13 +1,15 @@
 // Sim purity scanner (CLAUDE.md hard rule 1, TECHNICAL_DESIGN §18.1 and §21.3).
 // Biome catches restricted imports and globals; this scanner is the second net. It also sees
 // `Math.random` (a member access Biome's global rule cannot see) and enforces the §2.1 import table:
-// src/sim may import only src/sim/**, src/data/** and, type-only, src/gen/assets.ts.
+// src/sim may import only src/sim/**, src/data/** and, type-only, src/gen/assets.ts. It also keeps the
+// engine-dependent transcendentals (Math.sin/cos/tan/atan2/exp/sqrt/hypot) inside src/sim/fmath.ts (§7.4).
 // Kept pure (strings in, violations out) so tests/unit/simPurity.test.ts can self-test it on fixtures.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, posix, relative, sep } from 'node:path';
 
 export type PurityRule =
   | 'forbidden-token'
+  | 'raw-transcendental'
   | 'three-import'
   | 'package-import'
   | 'outside-sim-import'
@@ -27,6 +29,20 @@ export type PurityViolation = {
 
 /** The regex named in TECHNICAL_DESIGN §18.1. Applied to code with comments blanked out. */
 export const FORBIDDEN_TOKEN_SOURCE = String.raw`\bMath\.random\b|\bDate\b|\bperformance\b`;
+
+/** The Math functions that src/sim may call only through src/sim/fmath.ts (TECHNICAL_DESIGN §2, §7.4). */
+export const FMATH_FUNCTIONS = ['sin', 'cos', 'tan', 'atan2', 'exp', 'sqrt', 'hypot'] as const;
+
+/** The one src/sim file allowed to touch the FMATH_FUNCTIONS on Math directly. */
+export const FMATH_FILE = 'src/sim/fmath.ts';
+
+// `Math.sin`, `Math . sin` or `Math['sin']`, called or passed by reference. Applied to code with comments
+// blanked out, like the forbidden-token regex.
+const FMATH_NAMES = FMATH_FUNCTIONS.join('|');
+const RAW_TRANSCENDENTAL_RE = new RegExp(
+  String.raw`\bMath\s*(?:\.\s*(${FMATH_NAMES})\b|\[\s*(['"\`])(${FMATH_NAMES})\2\s*\])`,
+  'g',
+);
 
 /** Path prefixes (repo-relative) that src/sim may import from (TECHNICAL_DESIGN §2.1). */
 export const ALLOWED_IMPORT_PREFIXES = ['src/sim/', 'src/data/'] as const;
@@ -258,6 +274,12 @@ export function scanSimSource(file: string, source: string): PurityViolation[] {
 
   for (const m of code.matchAll(new RegExp(FORBIDDEN_TOKEN_SOURCE, 'g'))) {
     add(m.index, 'forbidden-token', `uses '${m[0]}' (no Math.random or wall-clock time in src/sim)`);
+  }
+  if (file !== FMATH_FILE) {
+    for (const m of code.matchAll(RAW_TRANSCENDENTAL_RE)) {
+      const name = m[1] ?? m[3] ?? '';
+      add(m.index, 'raw-transcendental', `uses Math.${name} directly (call ${name} from ${FMATH_FILE})`);
+    }
   }
   for (const m of code.matchAll(STATIC_IMPORT_RE)) {
     const typeOnly = m[2] !== undefined;

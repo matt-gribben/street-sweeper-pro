@@ -2,7 +2,7 @@
 id: SSP-022
 title: "Add lean_quadrants and scale_1440 visual specs and goldens; prove 10-run stability (D-09)"
 milestone: M0
-status: todo
+status: done
 type: test
 estimate: M
 labels: [type:test, area:test, area:render, size:M, vertical-slice]

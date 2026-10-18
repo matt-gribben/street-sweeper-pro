@@ -112,11 +112,14 @@ def test_pngs_have_no_metadata_chunks(builds: tuple[BuildResult, Path, Path]) ->
             assert set(im.info) == {"transparency"}, png.name
 
 
-def test_pivots_come_from_render_json(builds: tuple[BuildResult, Path, Path]) -> None:
+def test_pivots_body_centre_for_vehicles_and_feet_for_people(builds: tuple[BuildResult, Path, Path]) -> None:
+    """Vehicles take the cell centre from render.json; the pedestrian grid pivots on its feet,
+    row 22 of the 24x24 cell (ART_BIBLE §4.4, §7.2; SSP-018)."""
     result, _, _ = builds
     for f in result.frames:
         w, h = CELLS[f.asset_id]
-        assert f.pivot == (w // 2, h // 2)
+        expected = (12, 22) if f.asset_id == "npc.old_woman" else (w // 2, h // 2)
+        assert f.pivot == expected, f.frame_id
         assert f.atlas == "actors"
 
 

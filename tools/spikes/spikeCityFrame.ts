@@ -4,7 +4,8 @@
 // 1. Starts the Vite dev server and opens it in headless Chromium with the visual-test flags
 //    (--use-angle=swiftshader --enable-unsafe-swiftshader) at 1920x1080 (W = 480, 4x), camera over the origin.
 // 2. Draw calls (renderer.info.render.calls over the whole frame, read from the dev panel): `?world=empty` gives
-//    the baseline (palette pass + blit); the spike city must add exactly 2 (city mesh + building shadows).
+//    the baseline (palette pass + blit); the spike city must add exactly 2 (city mesh + building shadows). The
+//    page uses `?actors=0` so the SSP-018 spike actors (tools/spikes/spriteBatchFrame.ts) stay out of the frame.
 // 3. The frame: every canvas pixel is a Kerbside-32 colour; the 6-storey block in the top half shows its south
 //    face, the 1-storey block on the left its east face (both `_dark` facade colours), the 3-storey block on the
 //    right its west face (`_lit`), and the asphalt south-east of the 6-storey block is shadowed (shadow[02]).
@@ -170,7 +171,7 @@ try {
   await page.goto(`${url}?world=empty`);
   await page.waitForTimeout(1500);
   const empty = await drawCalls(page);
-  await page.goto(url);
+  await page.goto(`${url}?actors=0`);
   await page.waitForTimeout(1500);
   const city = await drawCalls(page);
   report.drawCalls = { empty: empty.calls, spikeCity: city.calls, delta: city.calls - empty.calls };

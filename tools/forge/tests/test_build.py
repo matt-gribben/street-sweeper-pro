@@ -18,6 +18,7 @@ from forge.build import (
     BuildError,
     asset_cache_key,
     build,
+    grid_pivot,
     parse_render_name,
     reduce_render,
 )
@@ -356,7 +357,22 @@ def test_grid_build_renders_mirrors_and_outlines(tmp_path: Path) -> None:
     assert sw0.tolist()[1] == [TRANSPARENT, 0, 15, 15, 0, TRANSPARENT]
     assert sw0.tolist()[0] == [TRANSPARENT, TRANSPARENT, 0, 0, TRANSPARENT, TRANSPARENT]
     assert all(not outline_gaps(f.indices).any() for f in result.frames)
-    assert {f.pivot for f in result.frames} == {(3, 2)}
+    # npc grids pivot on the feet: x = w // 2, row h - 2 with the last row clear (SSP-018).
+    assert {f.pivot for f in result.frames} == {(3, 3)}
+
+
+@pytest.mark.parametrize(
+    ("asset_class", "cell", "pivot"),
+    [("npc", (24, 24), (12, 22)), ("npc", (16, 16), (8, 14)), ("litter", (16, 16), (8, 8)), ("prop", (32, 32), (16, 16))],
+)
+def test_grid_pivot_is_feet_for_creatures_and_centre_otherwise(
+    asset_class: str, cell: tuple[int, int], pivot: tuple[int, int]
+) -> None:
+    entry = entry_from_data(
+        grid_entry(id=f"{asset_class}.toy", source=f"assets-src/sprites/{asset_class}/toy.sprite.txt", cell=list(cell))
+        | {"class": asset_class}
+    )
+    assert grid_pivot(entry) == pivot
 
 
 def test_grid_with_full_ink_border_is_unchanged_by_the_outline(tmp_path: Path) -> None:

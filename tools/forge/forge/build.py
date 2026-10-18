@@ -25,8 +25,10 @@ was off-palette. Their number is counted per frame (``snap_changed_px``) and exp
 ``forge lint`` (§9.4 "Blender snap"); on the committed renders it is expected to be 0.
 
 Outputs: ``<out>/frames/<asset-id>/<frame-id>.png`` (indexed PNGs via :mod:`forge.pngio`)
-plus ``<out>/frames/<asset-id>/asset.json`` (frame list, pivots, snap counts), and the
-in-memory :class:`BuildResult` that packing (SSP-010) consumes. ``<out>`` defaults to
+plus ``<out>/frames/<asset-id>/asset.json`` (frame list, pivots, snap counts). The frames of
+every manifest entry are then packed (:mod:`forge.pack`) and the generated outputs
+(:mod:`forge.outputs`: atlases, ``src/gen/assets.ts``, ``asset-hashes.json``) are written under
+the repo root, or under ``--out`` when it is given. ``<out>`` defaults to
 ``build/.forge-cache/``. A content-hash cache lives in ``build/.forge-cache/entries/``;
 ``--no-cache`` neither reads nor writes it.
 """
@@ -51,6 +53,8 @@ from PIL import Image
 
 from forge.manifest import AssetEntry, ManifestError, load_manifest
 from forge.outline import add_outline, outline_gaps
+from forge.outputs import generated_files, write_outputs
+from forge.pack import Atlas, PackError, pack_atlases
 from forge.palette import PALETTE_PATH, PALETTE_SIZE, REPO_ROOT, TRANSPARENT, Palette, load_palette, nearest_indices
 from forge.pixelize import ALPHA_THRESHOLD, block_mode_keys_factor
 from forge.pngio import PngError, decode_indexed_png, encode_indexed_png, write_bytes_if_changed
@@ -150,6 +154,14 @@ class BuildResult:
 
     assets: list[AssetBuild] = field(default_factory=list)
     frames_dir: Path | None = None
+    atlases: list[Atlas] = field(default_factory=list)
+    """Every packed atlas (all manifest entries, even with ``only``), in ATLASES order."""
+    outputs: dict[str, bytes] = field(default_factory=dict)
+    """The generated outputs (atlases, ``src/gen/assets.ts``, hashes) by root-relative path."""
+    publish_root: Path | None = None
+    """Where :attr:`outputs` were written (the repo root, or ``out_root``)."""
+    changed_outputs: list[str] = field(default_factory=list)
+    """The output paths whose bytes changed on disk during this build."""
 
     @property
     def frames(self) -> list[Frame]:
@@ -546,15 +558,23 @@ def build(
     use_cache: bool = True,
     cache_dir: Path | None = None,
     palette_path: Path | None = None,
+    publish: bool = True,
 ) -> BuildResult:
-    """Build every manifest entry (or ``only`` those IDs) and write ``<out_root>/frames/``.
+    """Build every manifest entry (or ``only`` those IDs), write ``<out_root>/frames/``, then pack.
 
     ``out_root`` defaults to ``cache_dir``, which defaults to ``<repo_root>/build/.forge-cache``.
     Assets are processed in sorted id order; with ``use_cache=False`` the cache is neither read
     nor written.
+
+    With ``publish`` (the default) every atlas is packed from the frames of **every** manifest
+    entry (``only`` restricts which assets are reported and whose frame folders are written;
+    the others come from the cache when possible, else are rebuilt, so packing stays global
+    and deterministic, ASSET_PIPELINE §5.3) and the generated outputs (:mod:`forge.outputs`)
+    are written under the publish root: ``out_root`` when it is given, else ``repo_root``.
     """
     manifest_path = manifest_path or repo_root / "assets-src" / "manifest.json"
     cache_dir = cache_dir or repo_root / "build" / ".forge-cache"
+    publish_root = out_root if out_root is not None else repo_root
     out_root = out_root or cache_dir
     palette_path = palette_path or repo_root / "assets-src" / "palette" / "kerbside32.json"
     try:
@@ -573,7 +593,9 @@ def build(
 
     frames_dir = out_root / "frames"
     result = BuildResult(frames_dir=frames_dir)
-    for entry in selected:
+    selected_ids = {e.id for e in selected}
+    pack_frames: list[Frame] = []
+    for entry in entries if publish else selected:
         cached = None
         key = ""
         entry_root = cache_dir / "entries" / entry.id
@@ -590,14 +612,25 @@ def build(
             files = _asset_files(ab, palette)
             if use_cache:
                 _store_cached(entry_root, key, files)
-        _write_asset_dir(frames_dir / entry.id, files)
-        result.assets.append(ab)
+        pack_frames.extend(ab.frames)
+        if entry.id in selected_ids:
+            _write_asset_dir(frames_dir / entry.id, files)
+            result.assets.append(ab)
 
     if not only and frames_dir.is_dir():
         for stale in sorted(frames_dir.iterdir()):
             if stale.is_dir() and stale.name not in by_id:
                 log.debug("forge build: removing stale %s", stale)
                 shutil.rmtree(stale)
+
+    if publish:
+        try:
+            result.atlases = pack_atlases(pack_frames)
+        except PackError as exc:
+            raise BuildError(str(exc)) from None
+        result.outputs = generated_files(result.atlases, [e.id for e in entries], palette)
+        result.publish_root = publish_root
+        result.changed_outputs = write_outputs(publish_root, result.outputs)
     return result
 
 
@@ -624,11 +657,23 @@ def cli(args: argparse.Namespace) -> int:
                 "(expected 0; forge lint fails 'Blender snap')",
                 file=sys.stderr,
             )
-    shown: Path | None = result.frames_dir
-    if shown is not None and shown.is_relative_to(Path.cwd()):
-        shown = shown.relative_to(Path.cwd())
     print(
-        f"forge build: {len(result.frames)} frames from {len(result.assets)} assets -> {shown}; "
+        f"forge build: {len(result.frames)} frames from {len(result.assets)} assets -> {_shown(result.frames_dir)}; "
         f"palette snap changed {result.snap_changed_px} px in total"
     )
+    for atlas in result.atlases:
+        print(f"forge build: atlas {atlas.name}: {atlas.width}x{atlas.height}, {len(atlas.frames)} frames")
+    root = result.publish_root
+    if root is not None:
+        changed = len(result.changed_outputs)
+        print(
+            f"forge build: {len(result.outputs)} generated outputs under {_shown(root) or '.'} "
+            f"({changed} changed{': ' + ', '.join(result.changed_outputs) if changed else ''})"
+        )
     return 0
+
+
+def _shown(path: Path | None) -> Path | None:
+    if path is not None and path.is_relative_to(Path.cwd()):
+        return path.relative_to(Path.cwd())
+    return path

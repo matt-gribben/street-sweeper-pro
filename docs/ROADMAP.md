@@ -236,7 +236,7 @@ Each milestone has the same shape:
 
 *Probe import (do this first)*
 
-- [ ] Copy `assets-src/_probe/blender/sweeper_v2.py` → `assets-src/blender/vehicles/sweeper.py` (body and dented) plus `sweeper_brush.py` (the 96×96 brush overlay). Refactor them onto `assets-src/blender/rig.py`, at 0° tilt, with Kerbside-32 palette names via `rig.toon_material`/`rig.pal()` (no hex literals).
+- [x] Copy `assets-src/_probe/blender/sweeper_v2.py` → `assets-src/blender/vehicles/sweeper.py` (body and dented) plus `sweeper_brush.py` (the 96×96 brush overlay). Refactor them onto `assets-src/blender/rig.py`, at 0° tilt, with Kerbside-32 palette names via `rig.toon_material`/`rig.pal()` (no hex literals).
 - [ ] Copy `assets-src/_probe/tools/pixelize.py` → `tools/forge/forge/pixelize.py`, with pytest coverage of the FFT period detector (expect 9.22/9.38 px on the old-woman sheet, 10.8 px on the rubbish sheet).
 - [x] Copy `assets-src/_probe/codex/old_woman_sheet.png` → candidate for `assets-src/ai/ref.people_style/golden.png`, with a retro-filled `meta.json` (`tool_version: "codex-cli 0.160.1"`, `seed: null`, `golden_sha256`).
 - [x] Copy `assets-src/_probe/codex4/rubbish_sheet.png` → candidate for `assets-src/ai/litter.sheet_01/golden.png`, with a retro-filled `meta.json`.

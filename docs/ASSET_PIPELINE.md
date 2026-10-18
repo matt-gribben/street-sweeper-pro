@@ -617,7 +617,7 @@ The forge runs this for you (`npm run assets:blender -- veh.sweeper`). Run it by
 | Render | `film_transparent = True`. `view_transform = 'Standard'` (**never AgX** or Filmic). Look `None`, exposure 0, gamma 1. `dither_intensity = 0`. EEVEE with `taa_render_samples = 1` and `filter_size = 0.0`. PNG, RGBA, 8-bit. |
 | Light | One sun at azimuth 315° (north-west), elevation 50°. Materials are emissive, so the sun object exists to **define the lighting vector** that the toon materials read, keeping one direction for every technique. |
 | Materials | Unlit toon: `dot(normal, sun)` → constant ColorRamp with three **exact Kerbside-32 stops** (light/base/dark) → Emission. Colours are looked up by palette name from `kerbside32.json`, and **raw hex literals in bpy scripts are forbidden**. |
-| Shading thresholds | Defaults: dot < 0.35 → dark, 0.35–0.85 → base, ≥ 0.85 → lit. A flat top face scores 0.766, so it renders `base`, matching the roof convention. Final values TBD (M0 spike). |
+| Shading thresholds | dot < 0.33 → dark, 0.33–0.83 → base, ≥ 0.83 → lit (settled in SSP-008 from Bessie test renders; the M0 defaults were 0.35/0.85). A flat top face scores 0.766, so it renders `base`, matching the roof convention. A 45° chamfer whose facing is t° off the sun azimuth scores 0.542 + 0.455 cos t; at 32 headings t steps by 11.25°, so chamfers at t ≤ 45° are lit and t ≥ 123.75° dark, and each threshold sits midway between neighbouring chamfer values (≥ 0.03 margin). The 0.35/0.85 defaults gave pixel-identical chamfers but only 0.013 of margin on the lit side. |
 | Headings | Rotate the **model root**, never the camera, so the light stays NW in screen space. `h00` faces north (screen up), stepping 360/headings clockwise (11.25° at 32). |
 | Pivots | Recorded per frame in `render.json`. Constant at 0° tilt. |
 | No baked shadows | No shadow catchers or ground planes. Actor drop shadows are added at runtime (+2, +2 px SE), and building shadows come from the mask target. |
@@ -651,7 +651,7 @@ PALETTE = json.loads((REPO / "assets-src/palette/kerbside32.json").read_text())
 
 SUN_AZIMUTH_DEG = 315.0   # north-west, clockwise from north
 SUN_ELEVATION_DEG = 50.0
-T_BASE, T_LIT = 0.35, 0.85  # toon thresholds; final values TBD (M0 spike)
+T_BASE, T_LIT = 0.33, 0.83  # toon thresholds, settled in SSP-008 (see §7.2)
 PX_PER_M = 16
 
 

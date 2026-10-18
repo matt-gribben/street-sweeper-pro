@@ -2,7 +2,7 @@
 id: SSP-039
 title: "Add the world atlas with 1 px tile/facade extrusion and confirm npm run assets runs end to end"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: S
 labels: [type:feature, area:tooling, area:assets, area:render, size:S, vertical-slice]

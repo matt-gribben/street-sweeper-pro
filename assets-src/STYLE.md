@@ -283,7 +283,7 @@ These stay open, owned by the milestone named, and are recorded in [ART_BIBLE §
 |---|---|
 | Ramp-swap slot allocation and key indices | M4 (SSP-114) |
 | Whether the ramp lint ignores `00 ink` used as outline | M4 (forge lint) |
-| Atlas trimming and padding | M4 (forge pack) |
+| Atlas trimming and the actor/item/fx gutter (tile, facade and roof frames are 1 px extruded from M1, SSP-039) | M4 (forge pack, SSP-113) |
 | Animation timings (frame counts are locked in ART_BIBLE §7.1) | M3–M4 |
 | VFX IDs, HUD pixel layout | M2 (HUD), M4 (art) |
 | Font metrics, descenders, kerning | M4 |

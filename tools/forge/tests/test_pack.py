@@ -24,8 +24,11 @@ from forge.outputs import (
     write_outputs,
 )
 from forge.pack import (
+    EXTRUDE,
+    EXTRUDED_CLASSES,
     MAX_ATLAS_SIZE,
     PADDING,
+    AtlasFrame,
     MaxRects,
     PackError,
     PackItem,
@@ -33,6 +36,8 @@ from forge.pack import (
     atlas_json,
     candidate_sizes,
     compose_atlas,
+    extrude,
+    extrusion,
     pack_atlases,
     pack_items,
     pack_order,
@@ -342,3 +347,253 @@ def test_publish_false_writes_frames_only(tmp_path: Path) -> None:
     result = build(repo_root=repo, out_root=tmp_path / "o", use_cache=False, publish=False)
     assert result.atlases == [] and result.outputs == {} and result.publish_root is None
     assert not (tmp_path / "o" / "public").exists()
+
+
+# ---------------------------------------------------------------------------------------------
+# World atlas: 1 px extrusion of tiling surfaces (SSP-039, ART_BIBLE §14.6)
+
+
+def pattern_frame(fid: str, w: int, h: int, seed: int, atlas: str = "world") -> F:
+    """A fully opaque frame whose every pixel (edges included) is a random palette index."""
+    rng = Generator(PCG64(seed))
+    return F(fid, fid.split(":")[0], atlas, rng.integers(0, 32, size=(h, w)).astype(np.int16), (w // 2, h // 2))
+
+
+def assert_extruded(indices: np.ndarray, af: AtlasFrame, cell: np.ndarray) -> None:
+    """The rect holds exactly the cell, and the 1 px ring around it duplicates the cell's edge pixels."""
+    assert (af.w, af.h) == (cell.shape[1], cell.shape[0])
+    assert af.x >= EXTRUDE and af.y >= EXTRUDE, "the border must fit inside the atlas"
+    assert af.x + af.w + EXTRUDE <= indices.shape[1] and af.y + af.h + EXTRUDE <= indices.shape[0]
+    np.testing.assert_array_equal(indices[af.y : af.y + af.h, af.x : af.x + af.w], cell)
+    block = indices[af.y - 1 : af.y + af.h + 1, af.x - 1 : af.x + af.w + 1]
+    np.testing.assert_array_equal(block[0, 1:-1], cell[0])  # top row
+    np.testing.assert_array_equal(block[-1, 1:-1], cell[-1])  # bottom row
+    np.testing.assert_array_equal(block[1:-1, 0], cell[:, 0])  # left column
+    np.testing.assert_array_equal(block[1:-1, -1], cell[:, -1])  # right column
+    corners = [block[0, 0], block[0, -1], block[-1, 0], block[-1, -1]]
+    assert corners == [cell[0, 0], cell[0, -1], cell[-1, 0], cell[-1, -1]], "corners repeat the corner pixel"
+
+
+def assert_not_extruded(indices: np.ndarray, af: AtlasFrame, cell: np.ndarray) -> None:
+    """The rect holds the cell, and every pixel just outside it (inside the atlas) is transparent."""
+    np.testing.assert_array_equal(indices[af.y : af.y + af.h, af.x : af.x + af.w], cell)
+    h, w = indices.shape
+    outside = [(af.y - 1, x) for x in range(af.x - 1, af.x + af.w + 1)]
+    outside += [(af.y + af.h, x) for x in range(af.x - 1, af.x + af.w + 1)]
+    outside += [(y, af.x - 1) for y in range(af.y, af.y + af.h)]
+    outside += [(y, af.x + af.w) for y in range(af.y, af.y + af.h)]
+    for y, x in outside:
+        if 0 <= y < h and 0 <= x < w:
+            assert indices[y, x] == TRANSPARENT, (af.frame_id, y, x)
+
+
+def blocks_of(frames: tuple[AtlasFrame, ...]) -> list[Placement]:
+    """Each frame's rect grown by its extruded border: what the packer actually placed."""
+    return [
+        Placement(af.frame_id, af.x - b, af.y - b, af.w + 2 * b, af.h + 2 * b)
+        for af in frames
+        for b in (extrusion(af.asset_id),)
+    ]
+
+
+def test_extruded_classes_are_tiles_facades_and_roofs() -> None:
+    assert EXTRUDE == 1
+    assert EXTRUDED_CLASSES == {"tile", "facade", "roof"}
+    assert [extrusion(a) for a in ("tile.asphalt", "facade.terrace_brick", "roof.slate")] == [1, 1, 1]
+    assert [extrusion(a) for a in ("stain.oil", "veh.sweeper", "npc.cat", "litter.can", "prop.bin")] == [0] * 5
+
+
+def test_extrude_duplicates_edges_and_corners() -> None:
+    cell = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int16)
+    np.testing.assert_array_equal(
+        extrude(cell, 1),
+        [[1, 1, 2, 3, 3], [1, 1, 2, 3, 3], [4, 4, 5, 6, 6], [4, 4, 5, 6, 6]],
+    )
+    assert extrude(cell, 0) is cell
+
+
+def test_compose_atlas_extrudes_tiles_facades_and_roofs_but_not_stains_or_actors() -> None:
+    frames = [
+        pattern_frame("tile.toy:v:-:0", 8, 8, 1),
+        pattern_frame("tile.toy:v:-:1", 8, 8, 2),
+        pattern_frame("facade.toy:base:-:0", 8, 10, 3),
+        pattern_frame("roof.toy:v:-:0", 6, 6, 4),
+        pattern_frame("stain.toy:v:-:0", 5, 5, 5),
+        pattern_frame("veh.toy:body:h00:0", 7, 7, 6),
+    ]
+    atlas = compose_atlas("world", frames)
+    by_id = {af.frame_id: af for af in atlas.frames}
+    for f in frames:
+        if extrusion(f.asset_id):
+            assert_extruded(atlas.indices, by_id[f.frame_id], f.indices)
+        else:
+            assert_not_extruded(atlas.indices, by_id[f.frame_id], f.indices)
+    # Extruded blocks (rect + border) keep the 1 px transparent padding between each other.
+    assert_no_overlap(blocks_of(atlas.frames), (atlas.width, atlas.height))
+    # Opaque pixels = every cell plus the rings of the extruded ones, nothing else.
+    rings = sum(2 * (f.indices.shape[0] + f.indices.shape[1]) + 4 for f in frames if extrusion(f.asset_id))
+    assert int((atlas.indices != TRANSPARENT).sum()) == sum(f.indices.size for f in frames) + rings
+
+
+def test_extruded_random_layouts_never_overlap() -> None:
+    rng = Generator(PCG64(39))
+    classes = ("tile", "facade", "roof", "stain")
+    for trial in range(20):
+        n = int(rng.integers(1, 40))
+        frames = [
+            pattern_frame(
+                f"{classes[int(rng.integers(0, 4))]}.t{trial}_{i}:v:-:0",
+                int(rng.integers(1, 40)),
+                int(rng.integers(1, 40)),
+                trial * 100 + i,
+            )
+            for i in range(n)
+        ]
+        atlas = compose_atlas("world", frames)
+        assert_no_overlap(blocks_of(atlas.frames), (atlas.width, atlas.height))
+        by_id = {f.frame_id: f for f in frames}
+        for af in atlas.frames:
+            if extrusion(af.asset_id):
+                assert_extruded(atlas.indices, af, by_id[af.frame_id].indices)
+            else:
+                assert_not_extruded(atlas.indices, af, by_id[af.frame_id].indices)
+
+
+# Through forge build, with a fixture manifest (the repo has no world frames until SSP-040/041).
+
+TILE_GRID = """\
+id: tile.toy
+cell: 4x3
+palette: kerbside32
+
+frame v:-:0
+1234
+5678
+9abc
+
+frame v:-:1
+2222
+2332
+2222
+"""
+
+FACADE_GRID = """\
+id: facade.toy
+cell: 3x4
+palette: kerbside32
+
+frame base:-:0
+def
+ghi
+jkl
+mno
+"""
+
+BLOCK_GRID = """\
+id: veh.block
+cell: 3x3
+palette: kerbside32
+
+frame body:h00:0
+fed
+cba
+987
+"""
+
+
+def sprite_entry(asset_id: str, cell: tuple[int, int], state: str, n: int, dirs: object, atlas: str) -> dict[str, object]:
+    cls, name = asset_id.split(".")
+    return {
+        "id": asset_id,
+        "class": cls,
+        "technique": "grid",
+        "source": f"assets-src/sprites/{cls}/{name}.sprite.txt",
+        "cell": list(cell),
+        "states": [state],
+        "dirs": dirs,
+        "frames": {state: n},
+        "atlas": atlas,
+        "outline": False,
+        "swaps": [],
+    }
+
+
+def add_sprite(repo: Path, asset_id: str, text: str) -> None:
+    cls, name = asset_id.split(".")
+    p = repo / "assets-src" / "sprites" / cls / f"{name}.sprite.txt"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+
+
+def world_repo(tmp_path: Path) -> Path:
+    entries = [
+        sprite_entry("facade.toy", (3, 4), "base", 1, "-", "world"),
+        sprite_entry("tile.toy", (4, 3), "v", 2, "-", "world"),
+        sprite_entry("veh.block", (3, 3), "body", 1, ["h00"], "actors"),
+    ]
+    repo = make_repo(tmp_path, entries)
+    add_sprite(repo, "tile.toy", TILE_GRID)
+    add_sprite(repo, "facade.toy", FACADE_GRID)
+    add_sprite(repo, "veh.block", BLOCK_GRID)
+    return repo
+
+
+def grid_cell(rows: str) -> np.ndarray:
+    """Rows written with the default grid key (``0``-``9``, ``a``-``v``) as an index array."""
+    key = {str(i): i for i in range(10)} | {chr(ord("a") + i - 10): i for i in range(10, 32)}
+    return np.array([[key[c] for c in row] for row in rows.split()], dtype=np.int16)
+
+
+def rect_of(doc: dict[str, dict[str, dict[str, int]]], fid: str) -> AtlasFrame:
+    r = doc["frames"][fid]
+    return AtlasFrame(fid, fid.split(":")[0], r["x"], r["y"], r["w"], r["h"], r["px"], r["py"])
+
+
+def test_build_packs_world_entries_into_an_extruded_world_atlas(tmp_path: Path) -> None:
+    repo = world_repo(tmp_path)
+    result = build(repo_root=repo, use_cache=False)
+    assert [a.name for a in result.atlases] == ["world", "actors"]
+    assert (repo / ATLAS_DIR / "world.png").is_file() and (repo / ATLAS_DIR / "world.json").is_file()
+    cells = {
+        "tile.toy:v:-:0": grid_cell("1234 5678 9abc"),
+        "tile.toy:v:-:1": grid_cell("2222 2332 2222"),
+        "facade.toy:base:-:0": grid_cell("def ghi jkl mno"),
+    }
+    doc = json.loads((repo / ATLAS_DIR / "world.json").read_text(encoding="utf-8"))
+    assert sorted(doc["frames"]) == sorted(cells)
+    world = decode_indexed_png((repo / ATLAS_DIR / "world.png").read_bytes(), PALETTE)
+    for fid, cell in cells.items():
+        # The JSON rect is exactly the interior cell; the duplicated border lies outside it.
+        assert_extruded(world, rect_of(doc, fid), cell)
+    # The actor in the same build lands in `actors` and is not extruded.
+    actors_doc = json.loads((repo / ATLAS_DIR / "actors.json").read_text(encoding="utf-8"))
+    actors = decode_indexed_png((repo / ATLAS_DIR / "actors.png").read_bytes(), PALETTE)
+    assert_not_extruded(actors, rect_of(actors_doc, "veh.block:body:h00:0"), grid_cell("fed cba 987"))
+    # src/gen/assets.ts mirrors the interior rects, and the hashes cover the world atlas.
+    ts = (repo / ASSETS_TS).read_text(encoding="utf-8")
+    for fid, r in doc["frames"].items():
+        assert f'"{fid}": {{ atlas: "world", x: {r["x"]}, y: {r["y"]}, w: {r["w"]}, h: {r["h"]},' in ts
+    hashes = json.loads((repo / HASHES_JSON).read_text(encoding="utf-8"))
+    assert {f"{ATLAS_DIR}/world.json", f"{ATLAS_DIR}/world.png"} <= set(hashes)
+
+
+def test_world_atlas_is_byte_identical_across_builds(tmp_path: Path) -> None:
+    repo = world_repo(tmp_path)
+    first = build(repo_root=repo, out_root=tmp_path / "a", use_cache=False)
+    second = build(repo_root=repo, out_root=tmp_path / "b", use_cache=False)
+    for name in ("world.png", "world.json"):
+        a = (tmp_path / "a" / ATLAS_DIR / name).read_bytes()
+        assert a == (tmp_path / "b" / ATLAS_DIR / name).read_bytes()
+        assert a == first.outputs[f"{ATLAS_DIR}/{name}"] == second.outputs[f"{ATLAS_DIR}/{name}"]
+    assert first.outputs == second.outputs
+
+
+def test_no_world_entries_emit_no_world_atlas(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, [sprite_entry("veh.block", (3, 3), "body", 1, ["h00"], "actors")])
+    add_sprite(repo, "veh.block", BLOCK_GRID)
+    result = build(repo_root=repo, use_cache=False)
+    assert [a.name for a in result.atlases] == ["actors"]
+    assert not (repo / ATLAS_DIR / "world.png").exists()
+    assert not (repo / ATLAS_DIR / "world.json").exists()
+    assert not any("world" in path for path in result.outputs)
+    assert 'atlas: "world"' not in result.outputs[ASSETS_TS].decode("utf-8")

@@ -37,7 +37,7 @@ Runner (`tests/replay/replay.test.ts`, Vitest replay project):
 - `npm run test:replay -- --update` re-records hashes. Vitest forwards `--update` to its own CLI, and test workers cannot read argv. Suggested mechanism: in `vitest.config.ts`, compute `process.argv.includes('--update')` and pass it to the replay project via `provide`, read with `inject` in the test. It must never be the default.
 - Node is the canonical replay environment (R-09 contingency).
 
-Zero-allocation check (§17): run the replay project with `--expose-gc` (e.g. `poolOptions.forks.execArgv`). After a 600-tick warm-up, force GC, run 3,600 ticks, force GC again, and fail if retained heap grew beyond a threshold. The threshold is TBD (M0 spike). If M0 did not set it, propose one, flag it, and record it in TECHNICAL_DESIGN §17.
+Zero-allocation check (§17): run the replay project with `--expose-gc` (Vitest 5.0.5: `pool: 'forks'` plus top-level `execArgv`, as `GC_EXPOSED` in vitest.config.ts; `poolOptions` no longer exists). After a 600-tick warm-up, force GC, run 3,600 ticks, force GC again, and fail if retained heap grew beyond a threshold. The threshold is TBD (M0 spike). If M0 did not set it, propose one, flag it, and record it in TECHNICAL_DESIGN §17.
 
 Recording: dev builds record every shift's input log (the World's phase-1 hook appends to a preallocated log). The dev panel's 'Save replay' (SSP-048 issue) serialises it through this module.
 

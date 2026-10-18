@@ -277,9 +277,9 @@ Each milestone has the same shape:
 
 *Spike scene*
 
-- [ ] `src/render/camera.ts`: `PerspectiveCamera`, vertical FOV 30°, H = 31.5 m, XZ snap to 1/16 m, a (W+2)×272 target, fractional blit offset.
-- [ ] Speed zoom: H eases 31.5 → 37.8 m on a critically damped spring (ω = 3 rad/s), driven by a dev-panel speed slider (no vehicle sim yet).
-- [ ] `src/render/upscale.ts`: `W = clampEven(round(270 × aspect), 432, 640)`, integer scale, `#0f0e12` letterbox, devicePixelRatio handling.
+- [x] `src/render/camera.ts`: `PerspectiveCamera`, vertical FOV 30°, H = 31.5 m, XZ snap to 1/16 m, a (W+2)×272 target, fractional blit offset.
+- [x] Speed zoom: H eases 31.5 → 37.8 m on a critically damped spring (ω = 3 rad/s), driven by a dev-panel speed slider (no vehicle sim yet).
+- [x] `src/render/upscale.ts`: `W = clampEven(round(270 × aspect), 432, 640)`, integer scale, `#0f0e12` letterbox, devicePixelRatio handling.
 - [ ] `src/render/palettePass.ts`: 64³ LUT, night remap, shadow remap. A test asserts that no output pixel lies outside Kerbside-32.
 - [ ] `src/render/cityMesh.ts` (simple): merged boxes for 1-, 3- and 6-storey blocks, `_lit`/`_base`/`_dark` facade ramp variants, flat placeholder facade and roof textures.
 - [ ] `src/render/shadows.ts`: SE shadow polygons (length 0.84 × height) into the mask target.

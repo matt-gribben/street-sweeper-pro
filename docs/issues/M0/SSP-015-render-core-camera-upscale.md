@@ -2,7 +2,7 @@
 id: SSP-015
 title: "Build the renderer skeleton: perspective camera, sub-pixel snap, upscale and speed zoom"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:render, size:L, vertical-slice]
@@ -64,14 +64,14 @@ Files: `src/render/Renderer.ts`, `camera.ts`, `upscale.ts`, `src/main.ts`, optio
 
 ## Acceptance criteria
 
-- [ ] Unit tests: W = 480 at 1920x1080, W = 432 at 1600x1200 (4:3 clamp), W = 640 at 3440x1440 (clamp)
-- [ ] Property test: for random window sizes, W is even and within [432, 640]
-- [ ] Unit tests: integer scale 4 at 1920x1080, 5 at 2560x1440, 8 at 3840x2160, 2 at 960x540, and 5 for a 1280x720 CSS window at DPR 2
-- [ ] Unit test: at H = 31.5 the projection maps 1 m of ground to 16 px within 0.1%
-- [ ] Unit test: snapped camera XZ lies on the 1/16 m grid and the remainder is in [0, 1) internal px
-- [ ] Unit test: the spring moves H from 31.5 toward 37.8 with no overshoot, settles within 1%, and the flag disables it
-- [ ] `npm run dev` shows a letterboxed canvas with #0f0e12 bars and no console errors; `npm run build` contains no devPanel code (grep dist)
-- [ ] `npm run typecheck`, `npm run lint` and `npm test` pass
+- [x] Unit tests: W = 480 at 1920x1080, W = 432 at 1600x1200 (4:3 clamp), W = 640 at 3440x1440 (clamp)
+- [x] Property test: for random window sizes, W is even and within [432, 640]
+- [x] Unit tests: integer scale 4 at 1920x1080, 5 at 2560x1440, 8 at 3840x2160, 2 at 960x540, and 5 for a 1280x720 CSS window at DPR 2
+- [x] Unit test: at H = 31.5 the projection maps 1 m of ground to 16 px within 0.1%
+- [x] Unit test: snapped camera XZ lies on the 1/16 m grid and the remainder is in [0, 1) internal px
+- [x] Unit test: the spring moves H from 31.5 toward 37.8 with no overshoot, settles within 1%, and the flag disables it
+- [x] `npm run dev` shows a letterboxed canvas with #0f0e12 bars and no console errors; `npm run build` contains no devPanel code (grep dist)
+- [x] `npm run typecheck`, `npm run lint` and `npm test` pass
 
 ## Verification
 

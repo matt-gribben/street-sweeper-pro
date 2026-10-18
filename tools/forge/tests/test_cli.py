@@ -10,8 +10,8 @@ import pytest
 from forge.__main__ import EXIT_NOT_IMPLEMENTED, NOT_IMPLEMENTED_UNTIL, build_parser, main
 
 SUBCOMMANDS = ("build", "ingest", "blender", "gen-ai", "lint", "sheets", "verify")
-IMPLEMENTED = frozenset({"blender", "build", "ingest", "verify"})  # SSP-007 (test_blender.py),
-# SSP-009 (test_build.py), SSP-010 (test_verify.py), SSP-013 (test_ingest.py)
+IMPLEMENTED = frozenset({"blender", "build", "ingest", "lint", "sheets", "verify"})  # SSP-007 (test_blender.py),
+# SSP-009 (test_build.py), SSP-010 (test_verify.py), SSP-011 (test_lint.py, test_sheets.py), SSP-013 (test_ingest.py)
 STUBBED = tuple(c for c in SUBCOMMANDS if c not in IMPLEMENTED)
 
 # Each subcommand invoked with every documented flag (ASSET_PIPELINE §5.3).
@@ -118,9 +118,9 @@ def test_parsed_flags() -> None:
 @pytest.mark.parametrize(
     "argv",
     [
-        ["-v", "lint"],
-        ["lint", "-v"],
-        ["--verbose", "sheets", "--atlas", "actors"],
+        ["-v", "gen-ai", "x"],
+        ["gen-ai", "x", "-v"],
+        ["--verbose", "gen-ai", "x", "--tool", "codex"],
     ],
 )
 def test_global_verbose_before_or_after_subcommand(argv: list[str], capsys: pytest.CaptureFixture[str]) -> None:
@@ -132,7 +132,7 @@ def test_global_verbose_before_or_after_subcommand(argv: list[str], capsys: pyte
 
 def test_verbose_off_by_default(capsys: pytest.CaptureFixture[str]) -> None:
     assert build_parser().parse_args(["lint"]).verbose is False
-    main(["lint"])
+    main(["gen-ai", "x"])
     assert "forge: forge " not in capsys.readouterr().err
 
 

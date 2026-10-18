@@ -2,7 +2,7 @@
 id: SSP-005
 title: "Author kerbside32.json and forge OKLab palette mapping with a shared 4,096-sample fixture"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:assets, area:tooling, area:test, size:M, vertical-slice]
@@ -66,12 +66,12 @@ Risk: JS Math.cbrt and numpy cbrt can differ by 1 ulp, which flips near-ties. If
 
 ## Acceptance criteria
 
-- [ ] kerbside32.json has exactly 32 colours whose indices, snake_case names and hex values match ART_BIBLE §5.1 (names without parenthetical glosses)
-- [ ] Each palette hex maps to its own index via forge.palette
-- [ ] A constructed equidistant tie resolves to the lower index (unit test)
-- [ ] Regenerating the fixture twice yields byte-identical files, and it has exactly 4,096 entries including all 32 palette colours
-- [ ] A pytest validates every night[i] and shadow[i] against the stated ramp rule and fails on a deliberately bad entry
-- [ ] `grep -nE '#[0-9a-fA-F]{6}' tools/forge/forge/palette.py` prints nothing
+- [x] kerbside32.json has exactly 32 colours whose indices, snake_case names and hex values match ART_BIBLE §5.1 (names without parenthetical glosses)
+- [x] Each palette hex maps to its own index via forge.palette
+- [x] A constructed equidistant tie resolves to the lower index (unit test)
+- [x] Regenerating the fixture twice yields byte-identical files, and it has exactly 4,096 entries including all 32 palette colours
+- [x] A pytest validates every night[i] and shadow[i] against the stated ramp rule and fails on a deliberately bad entry
+- [x] `grep -nE '#[0-9a-fA-F]{6}' tools/forge/forge/palette.py` prints nothing
 
 ## Verification
 

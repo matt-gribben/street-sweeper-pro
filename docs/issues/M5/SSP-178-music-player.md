@@ -60,7 +60,7 @@ Play songs as sample-locked looping stems with encoder-delay-corrected loop poin
 - [ ] All stems of a song start at an identical `when` time (unit test with a fake context recording start calls)
 - [ ] loopStart and loopEnd equal music.json `loopStartSec`/`loopEndSec` adjusted by `encoderDelaySamples[codec] / sampleRate` (unit test)
 - [ ] The Playwright test shows the decoded loop boundary of a fixture stem is within 1 ms of the intended loop point after correction, in Chromium
-- [ ] music.json `encoderDelaySamples` holds measured numbers (not 0 or TBD), and AUDIO_DESIGN §15.2 A2 records them
+- [ ] music.json `encoderDelaySamples` holds measured numbers (not a placeholder or TBD; 0 is valid when measured, as SSP-025 measured in Playwright Chromium and WebKit), and AUDIO_DESIGN §15.2 A2 records them
 - [ ] Starting a jingle schedules a music duck to silence with a 120 ms attack and restores music state after the jingle length (unit test against the mixer API)
 - [ ] Entering a Puddle Lane shift loads `mus.puddle_lane` stems during ShiftIntroScene and starts base at 0 dB with drums and lead silent; leaving releases the buffers
 - [ ] Under `?test=1`, `window.__ssp` exposes the music state ('Base' / 'BaseDrums' / 'BaseLead' / 'AllStems') without constructing an AudioContext

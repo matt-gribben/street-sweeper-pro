@@ -2,7 +2,7 @@
 id: SSP-025
 title: "Measure cross-platform PNG identity and ffmpeg encode determinism (D-12, D-11)"
 milestone: M0
-status: todo
+status: done
 type: spike
 estimate: M
 labels: [type:spike, area:tooling, area:audio, area:build, size:M, vertical-slice]
@@ -26,7 +26,7 @@ D-11: encode the same WAV twice with `-bitexact -map_metadata -1`, on the Mac AN
 
 Also TBD (M0 spike):
 - how CI obtains ffmpeg 9.0.2 on ubuntu (static build vs skipping encode in verify mode), TECHNICAL_DESIGN §19;
-- AUDIO_DESIGN open questions A1 (same as D-11) and A2 (encoderDelaySamples per browser, §11.4 JSON). A2 is a browser measurement: measure it if cheap, otherwise re-defer it to M5 explicitly with a reason;
+- AUDIO_DESIGN open questions A1 (same as D-11) and A2 (encoderDelaySamples per browser, §12.1 JSON). A2 is a browser measurement: measure it if cheap, otherwise re-defer it to M5 explicitly with a reason;
 - ASSET_PIPELINE §14 timing rows: `npm run assets` cold/cached, and `assets:verify` in CI (always cold).
 
 Linux access: no GitHub remote exists yet.
@@ -39,7 +39,7 @@ Linux access: no GitHub remote exists yet.
 
 - Mac: build the M0 assets twice (byte check) and record SHA-256s; Linux amd64: rebuild and compare (or document as pending)
 - Mac and Linux: encode a fixed WAV twice to OGG and M4A with -bitexact -map_metadata -1 and compare
-- Record D-11 and D-12 in ROADMAP §8; update TECHNICAL_DESIGN §19 (ffmpeg in CI, verify mode) and AUDIO_DESIGN §15.2 A1 (A2 measured or re-deferred; §11.4 encoderDelaySamples accordingly)
+- Record D-11 and D-12 in ROADMAP §8; update TECHNICAL_DESIGN §19 (ffmpeg in CI, verify mode) and AUDIO_DESIGN §15.2 A1 (A2 measured or re-deferred; §12.1 encoderDelaySamples accordingly)
 - Record `npm run assets` cold/cached and verify timings in ASSET_PIPELINE §14
 
 ## Out of scope

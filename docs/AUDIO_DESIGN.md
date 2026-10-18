@@ -749,7 +749,7 @@ flowchart LR
 |---|---|
 | `npm run audio` | `node tools/audio/render-sfx.ts && node tools/audio/render-music.ts` (canonical) |
 | `npm run assets` | `forge build` + `npm run audio` + `npm run levels` |
-| `npm run assets:verify` | Rebuilds into a temporary directory and compares WAV hashes (and encoded files, if ffmpeg proves deterministic; §11.4) |
+| `npm run assets:verify` | Rebuilds into a temporary directory and compares WAV hashes and the audio JSON. Encoded files are not compared (D-11, §11.4) |
 | `node tools/audio/render-sfx.ts --only horn` | Renders one SFX (development convenience) |
 | `node tools/audio/render-sfx.ts --only horn --report` | Also writes the review evidence (§11.5) to `build/audio-report/` |
 | `node tools/audio/render-music.ts --only mus.puddle_lane --report` | Renders one song, plus its piano roll and loudness report |
@@ -784,7 +784,7 @@ Output naming:
 | Stage | Guarantee |
 |---|---|
 | JSON → WAV | Byte-identical. All DSP is pure TS with no browser globals and no wall-clock time. The vendored ZzFX takes an injected seeded `sfc32`, and `Math.random` is swapped for seeded `sfc32` during jsfxr calls (§5.3). Hashes are pinned to **Node 24.21.0** (V8's `Math.sin` and similar are consistent across platforms for one V8 version). The WAV writer (`tools/audio/wav.ts`) emits a fixed 44-byte header with no `LIST`/`INFO` chunks. |
-| WAV → OGG/M4A | ffmpeg runs with `-bitexact -map_metadata -1`. Whether libopus and the native AAC encoder are byte-stable between runs and between the Mac and `ubuntu-latest` is **TBD (M0 spike)**. If they are not, `assets:verify` compares WAV hashes only, as the Facts Sheet allows. |
+| WAV → OGG/M4A | ffmpeg runs with `-bitexact -map_metadata -1`. **Decision D-11 ([ROADMAP §8](ROADMAP.md#8-m0-spike-decision-log)): WAV only.** `assets:verify` compares WAV hashes and the audio JSON, never encoded bytes. In verify mode (`--out`), the renderers skip the ffmpeg encode, so CI needs no ffmpeg ([TECHNICAL_DESIGN §19](TECHNICAL_DESIGN.md#19-ci)). The committed OGG/M4A are derived artefacts that `npm run assets` on the dev Mac rebuilds. Verify checks that each one exists, not its bytes (SSP-168). Measured in SSP-025: on the dev Mac (ffmpeg 9.0.2, libopus 1.6.1), libopus and the native AAC encoder are byte-stable between runs with both the minimal flags and the exact §11.3 invocations, so re-running `npm run assets` does not churn committed encodes. The Mac-vs-`ubuntu-latest` comparison is pending and informational. |
 | Hashes | WAV sha256 values are recorded in `public/assets/asset-hashes.json` alongside the image hashes |
 
 ### 11.5 Review evidence (what Claude reads before accepting audio)
@@ -831,12 +831,12 @@ Output naming:
     "lengthSamples": 3497143, "loopStartSamples": 205714, "loopEndSamples": 3497143,
     "loopStartSec": 4.285714, "loopEndSec": 72.857143,
     "stems": ["base", "drums", "lead"], "stemPan": { "base": 0, "drums": 0, "lead": 0.15 },
-    "encoderDelaySamples": { "ogg": "TBD (M0 spike)", "m4a": "TBD (M0 spike)" }
+    "encoderDelaySamples": { "ogg": 0, "m4a": 0 }
   }
 }
 ```
 
-Loops are played by decoding to an `AudioBuffer` and setting `AudioBufferSourceNode.loopStart` and `loopEnd` in seconds, never with `<audio loop>`. AAC encoder priming can offset the decoded buffer differently per browser. The measured `encoderDelaySamples` correct for that, and a Playwright audio-offset test guards it. The measurement method is TBD (M0 spike).
+Loops are played by decoding to an `AudioBuffer` and setting `AudioBufferSourceNode.loopStart` and `loopEnd` in seconds, never with `<audio loop>`. AAC encoder priming can offset the decoded buffer differently per browser. The measured `encoderDelaySamples` correct for that, and a Playwright audio-offset test guards it. Method (SSP-025): decode the §11.3 music-profile encodes with `OfflineAudioContext.decodeAudioData` at 48 kHz and cross-correlate them with the source WAV (`node tools/spikes/audioDecodeOffset.ts`). A 300-sample shifted control reads back as exactly 300. The values above, 0 and 0, are **provisional**. They were measured in Playwright Chromium 156 and WebKit 27.2, which both trim Opus pre-skip and honour the M4A edit list. Firefox and the branded browsers are confirmed in M5 (A2, SSP-178). WebKit leaves 512 trailing padding samples on a decoded M4A, so take `loopEnd` from `loopEndSamples`, never from `AudioBuffer.duration`.
 
 ### 12.2 Loading strategy
 
@@ -960,7 +960,7 @@ Audio is never compared by ear in CI. The listening pass is human (§11.5).
 
 | Milestone | Audio deliverables |
 |---|---|
-| **M0 — Foundations & Look Spike** | Vendor ZzFX `buildSamples` into `tools/audio/synth/zzfx.ts` and confirm it and jsfxr 1.4.1 (`jsfxr/sfxr.mjs`) run in Node 24 with no browser globals (§5.3). Confirm ffmpeg 9.0.2 determinism on macOS vs `ubuntu-latest` (§11.4). Measure AAC/Opus encoder delay per browser. |
+| **M0 — Foundations & Look Spike** | Vendor ZzFX `buildSamples` into `tools/audio/synth/zzfx.ts` and confirm it and jsfxr 1.4.1 (`jsfxr/sfxr.mjs`) run in Node 24 with no browser globals (§5.3). Confirm ffmpeg 9.0.2 determinism on macOS vs `ubuntu-latest` (§11.4). Measure AAC/Opus encoder delay per browser. (SSP-025: D-11 decided WAV only, and the Linux half is pending. Encoder delay was measured in Chromium and WebKit, and the rest moves to M5; see A1 and A2.) |
 | **M1 — Drivable Bessie** | A placeholder engine (one oscillator) so handling can be felt. `bump_wall` and `bump_kerb` as inline presets. |
 | **M2 — Sweeping Core** | Placeholder `pickup_small` with the pitch ladder, `hopper_full`, `dump`, `brush_lower`/`brush_raise`, and the spray noise |
 | **M3 — Living Street** | Placeholder barks and animal sounds, `complaint_stamp`, `crash` |
@@ -974,8 +974,8 @@ Audio is never compared by ear in CI. The listening pass is human (§11.5).
 
 | # | Question | Owner / when |
 |---|---|---|
-| A1 | Are libopus and native AAC byte-deterministic across macOS arm64 and `ubuntu-latest`? | M0 spike |
-| A2 | Encoder delay correction values for Opus and AAC per browser (`encoderDelaySamples`) | M0 spike |
+| A1 | Are libopus and native AAC byte-deterministic across macOS arm64 and `ubuntu-latest`? | **Resolved by D-11 (SSP-025): WAV only.** Encodes are byte-stable run to run on the dev Mac, so verify compares WAVs and never encoded bytes, whatever the cross-platform answer is (§11.4). The Linux measurement is pending and informational ([ROADMAP §8](ROADMAP.md#8-m0-spike-decision-log) lists the commands). |
+| A2 | Encoder delay correction values for Opus and AAC per browser (`encoderDelaySamples`) | **Partly measured in M0, finished in M5 (SSP-178).** SSP-025 measured a start offset of 0 for both OGG and M4A in Playwright Chromium 156.0.8078.4 and WebKit 27.2 (`node tools/spikes/audioDecodeOffset.ts`, §12.1), so the provisional values are `{ ogg: 0, m4a: 0 }`. It is re-deferred because Playwright Firefox would not launch inside the agent sandbox, branded Chrome, Safari and iOS Safari are not in the toolchain, and no real looping stems exist before M5. SSP-178's audio-offset test confirms or replaces the values, and 0 is a valid measured result. |
 | A3 | Do mono stems sound too narrow? If so, per-channel pan rendered to stereo stems would cost about 2× memory. | End of M5 |
 | A4 | Positional ambience emitters in the level legend (§7.2) | M5, with [LEVEL_DESIGN](LEVEL_DESIGN.md) |
 | A5 | The exact AudioWorklet module import form under Vite 8.3.4 | M5 |

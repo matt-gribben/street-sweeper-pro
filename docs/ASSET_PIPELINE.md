@@ -245,14 +245,14 @@ All forge commands run as `uv run --project tools/forge python -m forge <cmd>`. 
   - The rebuild is always cold (`--no-cache`), into an emptied `build/tmp/verify/`. A guard tool that exits non-zero fails verify.
   - The compared set is every file under `public/assets/` plus `src/gen/assets.ts`, on both sides, plus the keys of the committed `asset-hashes.json`. A path also fails when it is generated but not committed (**missing**), committed but not generated (**stale**), generated but not listed (**unlisted**), listed but not generated, or when its committed bytes do not match its listed SHA-256.
   - With `--pixels`, a PNG whose bytes differ passes if its decoded RGBA is identical, and is reported as `pixels identical, bytes differ`. JSON and TS stay byte-compared, with one exception: the `asset-hashes.json` entries of exactly those PNGs may differ, because they hash encoder output.
-- CI invokes `forge verify` (byte compare) or `forge verify --pixels` (decoded RGBA plus JSON/TS bytes) according to decision D-12 in [ROADMAP §8](ROADMAP.md#8-m0-spike-decision-log), recorded in the M0 spike (see §13.5).
+- CI invokes `forge verify --pixels` (decoded RGBA plus JSON/TS bytes) per decision D-12 in [ROADMAP §8](ROADMAP.md#8-m0-spike-decision-log) (SSP-025). The dev Mac's `npm run assets:verify` stays a byte compare (see §13.5).
 
 ### 5.3 Forge subcommands (full reference)
 
 | Subcommand | Key flags | Notes |
 |---|---|---|
 | `build` | `[--only <id>…] [--out <dir>] [--no-cache]` | Pure. Cached by content hash in `build/.forge-cache/`. `--only` still repacks all atlases, so packing stays global and deterministic (the other assets come from the cache, or are rebuilt). `--out <dir>` also receives the generated outputs, at their repo-relative paths (`<dir>/public/assets/…`, `<dir>/src/gen/assets.ts`), instead of the repo. |
-| `verify` | `[--pixels]` | `--pixels` decodes mismatching PNGs and compares RGBA pixels instead of PNG bytes (JSON and TS outputs are still byte-compared), reporting whether the pixels or only the encoded bytes differ (§13.5). It is CI's sanctioned mode only if D-12 records cross-platform encoder drift. |
+| `verify` | `[--pixels]` | `--pixels` decodes mismatching PNGs and compares RGBA pixels instead of PNG bytes (JSON and TS outputs are still byte-compared), reporting whether the pixels or only the encoded bytes differ (§13.5). It is CI's sanctioned mode (D-12). Local runs on the dev Mac use byte mode. |
 | `lint` | `[--only <id>…] [--warn-as-error]` | CI passes `--warn-as-error` except for the "re-render needed" warning, which blocks merge by review rule instead. |
 | `sheets` | `[--atlas world\|actors\|items\|ui\|fx] [--only <id>…]` | 4×, labelled, light `#c3c1c0` and dark `#24222a` backgrounds, palette strip, Bessie h00 for scale. |
 | `ingest` | `<id> [--force] [--dry-run]` | Refuses to overwrite an edited grid without `--force`. `--dry-run` writes previews to `build/tmp/ingest/<id>/` only. |
@@ -1424,7 +1424,7 @@ Once a candidate passes, run `npm run gen:ai -- <id> --accept <n>`. Write `accep
 | Symptom | Cause | Fix |
 |---|---|---|
 | `assets:verify` fails on a file you did not touch | Generated outputs not committed after a source change | `npm run assets` and commit everything it changed |
-| Fails on CI only. `forge verify --pixels` says "pixels identical, bytes differ" | PNG encoder drift: an out-of-date venv, or Pillow wheels that bundle different compression libraries on macOS-arm64 and ubuntu-x86_64 | Run `uv sync --project tools/forge` and confirm Pillow 13.0.0. If the M0 spike recorded that macOS and Linux wheels encode differently ([TECHNICAL_DESIGN §19](TECHNICAL_DESIGN.md#19-ci), decision D-12), CI runs `forge verify --pixels`, which compares decoded RGBA plus JSON/TS bytes, and that is the sanctioned mode. Otherwise the bytes must match. |
+| Fails on CI only. `forge verify --pixels` says "pixels identical, bytes differ" | PNG encoder drift: an out-of-date venv, or Pillow wheels that bundle different compression libraries on macOS-arm64 and ubuntu-x86_64 | Run `uv sync --project tools/forge` and confirm Pillow 13.0.0. CI runs `forge verify --pixels` (decision D-12, [TECHNICAL_DESIGN §19](TECHNICAL_DESIGN.md#19-ci)), which compares decoded RGBA plus JSON/TS bytes, so this note alone never fails CI. On the dev Mac, the bytes must match. |
 | Fails with real pixel diffs on CI only | Hidden non-determinism (set iteration, float summation order, unseeded RNG) | Reproduce with `forge build --no-cache --out build/tmp/a` twice and diff. Fix the generator, and add a pytest. |
 | Audio entries fail | See [AUDIO_DESIGN.md](AUDIO_DESIGN.md) | — |
 
@@ -1440,7 +1440,7 @@ Once a candidate passes, run `npm run gen:ai -- <id> --accept <n>`. Write `accep
 | Codex, one image | ~60 s | 4 candidates ≈ 4 min. A litter sheet of 8 items costs the same as one item. |
 | Cursor, one image | 93–136 s | Concept only |
 | `forge ingest` | < 2 s per sheet | |
-| `npm run assets` (cold / cached) | TBD (M0 spike) | Cached by content hash |
-| `npm run assets:verify` in CI | TBD (M0 spike) | Always cold |
+| `npm run assets` (cold / cached) | 1.3 s / 0.55 s at M0 scope | Cached by content hash. Median of 5 on the dev Mac (Apple M4 Pro, 12 cores, 24 GB, macOS 27.0.1), SSP-025. M0 scope means 2 Blender assets, 192 frames and 1 atlas; the audio and level tools are still 0-source guards. Cold means `rm -rf build/.forge-cache`. Re-measure when M4/M5 content lands. |
+| `npm run assets:verify` in CI | Pending (no remote, so no `ubuntu-latest` run yet). Dev Mac: 1.1 s at M0 scope | Always cold. The Mac figure is the median of 5 on the same machine and scope as the row above (SSP-025). The CI row is filled in by the first real `checks` run (SSP-117 / SSP-296). |
 
 Related documents: [ART_BIBLE.md](ART_BIBLE.md) · [adr/0002-ai-authored-asset-pipeline.md](adr/0002-ai-authored-asset-pipeline.md) · [ENTITY_CATALOG.md](ENTITY_CATALOG.md) · [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md) · [AUDIO_DESIGN.md](AUDIO_DESIGN.md) · [LEVEL_DESIGN.md](LEVEL_DESIGN.md) · [ROADMAP.md](ROADMAP.md) · [GLOSSARY.md](GLOSSARY.md) · [../CLAUDE.md](../CLAUDE.md) · [../README.md](../README.md)

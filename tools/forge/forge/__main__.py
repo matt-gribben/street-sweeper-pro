@@ -21,7 +21,6 @@ ATLASES = ("world", "actors", "items", "ui", "fx")
 GENAI_TOOLS = ("codex", "cursor")
 
 NOT_IMPLEMENTED_UNTIL: dict[str, str] = {
-    "ingest": "SSP-013",
     "gen-ai": "SSP-012",
     "lint": "SSP-011",
     "sheets": "SSP-011",
@@ -63,6 +62,13 @@ def _build(args: argparse.Namespace) -> int:
     from forge import build  # deferred so other subcommands never import it
 
     return build.cli(args)
+
+
+def _ingest(args: argparse.Namespace) -> int:
+    """``forge ingest <id> [--force] [--dry-run]`` (SSP-013)."""
+    from forge import ingest  # deferred so other subcommands never import it
+
+    return ingest.cli(args)
 
 
 def _positive_int(text: str) -> int:
@@ -120,7 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--no-cache", action="store_true", help="neither read nor write build/.forge-cache/entries/")
 
-    p = add("ingest", "AI golden -> indexed text grid (assets-src/sprites/).")
+    p = add("ingest", "AI golden -> indexed text grid (assets-src/sprites/).", _ingest)
     p.add_argument("id", help="asset ID")
     p.add_argument("--force", action="store_true", help="overwrite an edited grid (discards the edits)")
     p.add_argument("--dry-run", action="store_true", help="write previews to build/tmp/ingest/<id>/ only")

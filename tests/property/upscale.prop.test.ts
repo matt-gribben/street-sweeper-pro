@@ -72,9 +72,16 @@ describe('viewport layout properties', () => {
           expect(right).toBeLessThan(rtWidthPx(w));
           expect(top).toBeGreaterThanOrEqual(0);
           expect(bottom).toBeLessThan(RT_HEIGHT_PX);
-          // Exactly W texels across and 270 down: every internal pixel stays exactly `scale` device pixels wide.
-          expect(right - left + 1).toBe(w);
-          expect(bottom - top + 1).toBe(INTERNAL_HEIGHT_PX);
+          // A whole-texel offset (0 or `scale`) shows exactly W x 270 texels. Any sub-texel offset shows a
+          // partial texel at each edge, so W+1 (271) distinct texels; that is what the 1 px margin is for.
+          expect(right - left + 1).toBe(ox % scale === 0 ? w : w + 1);
+          expect(bottom - top + 1).toBe(oy % scale === 0 ? INTERNAL_HEIGHT_PX : INTERNAL_HEIGHT_PX + 1);
+          // Every texel fully inside the canvas stays exactly `scale` device pixels wide (integer offset).
+          const firstFull = left + (ox % scale === 0 ? 0 : 1);
+          const firstFullStartPx = (firstFull - 1) * scale - ox;
+          expect(blitSourceTexel(firstFullStartPx, ox, scale)).toBe(firstFull);
+          expect(blitSourceTexel(firstFullStartPx + scale - 1, ox, scale)).toBe(firstFull);
+          expect(blitSourceTexel(firstFullStartPx + scale, ox, scale)).toBe(firstFull + 1);
         },
       ),
     );

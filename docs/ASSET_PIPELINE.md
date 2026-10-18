@@ -160,7 +160,7 @@ assets-src/
 tools/forge/
 ├─ pyproject.toml  uv.lock
 ├─ forge/  __main__.py build.py ingest.py pixelize.py palette.py outline.py
-│          pack.py lint.py sheets.py blender.py genai.py
+│          pack.py lint.py sheets.py blender.py genai.py sprite.py manifest.py pngio.py
 │          procedural/  tiles.py roofs.py facades.py stains.py fx.py roof_layout.py
 └─ tests/  test_ingest.py test_pack.py test_determinism.py …
 
@@ -340,9 +340,11 @@ Field semantics the forge relies on:
 Format:
 
 - A header with `id:`, `cell: WxH` and `palette: kerbside32`, then an optional key map. The default key is `.` = transparent, `0`–`9` = indices 00–09 and `a`–`v` = indices 10–31.
+- The key map is one or more `key: <c>=<v> …` lines, e.g. `key: .=- K=00 Y=15 L=16`. `<c>` is one printable ASCII character other than space, `#` or `:`; `<v>` is an index `0`–`31` or `-` for transparent. A key map **replaces** the default key entirely.
 - One block per frame: `frame <state>:<dir>:<n>`, followed by exactly H rows of W characters.
-- Optional `mirror <dir> from <dir>` lines.
-- `#` starts a comment line.
+- Optional `mirror <dir> from <dir>` lines: every authored frame in the source dir also exists in the target dir, flipped left-right. The target dir has no authored frames, and mirrors never chain.
+- `#` starts a comment line. Blank lines are ignored. Unknown header names are errors.
+- The parser and writer are `tools/forge/forge/sprite.py`, shared by `forge build` and `forge ingest`. The writer emits headers in the order above, then the frame blocks, then the mirror lines; comments are not preserved.
 
 Default key, for quick reference while hand-editing:
 
@@ -1068,8 +1070,10 @@ Notes on each step:
 |---|---|
 | `grid` / `ai-ingest` | Parse → validate (size, key, frame list against manifest) → render frames → apply mirrors → litter rotations → outline if `outline: true` |
 | `procedural` | Run the generator with its seed → palette indices → PNG frames. Facades: assemble modules, then derive `_lit/_base/_dark` by ramp shift. |
-| `blender` | Read `assets-src/rendered/<id>/` → block-mode 4×4 → 1 px → palette snap (expected no-op; the lint flags any changed pixel) → alpha 128 → **1 px ink (`#0f0e12`) outline, 4-connected, outside the silhouette** → record pivots |
+| `blender` | Read `assets-src/rendered/<id>/` → block-mode 4×4 → 1 px → palette snap (expected no-op; the lint flags any changed pixel) → alpha 128 → **1 px ink (`#0f0e12`) outline, 4-connected, outside the silhouette** → record pivots. Block mode keys each render pixel by its exact colour (a Kerbside-32 colour by its index, any other colour after all 32), so ties go to the lower palette index and an output pixel is always one of its block's colours; the snap then changes only off-palette winners, and their count is reported per frame (`snap_changed_px`). |
 | `ai-art` | Golden → crop → pixelize (FFT period detection and block-mode at the detected period, exactly as in ingest; `period_override` in `ingest.json`, `null` = auto) → if the result exceeds `size`, centre-crop; never upscale (a result smaller than `size` fails, so regenerate or set `period_override`) → palette map (optional ordered 4×4 Bayer) → 480×270 or 64×64 (`public/assets/art/`) |
+
+**Build outputs (SSP-009).** `forge build` writes each frame as an indexed PNG to `<out>/frames/<asset-id>/<frame-id>.png` (PLTE = the 32 colours plus a 33rd entry made transparent by `tRNS`, so alpha is binary and the stored value is the palette index), plus `<out>/frames/<asset-id>/asset.json` with the frame list, pivots and snap counts. Without `--out`, `<out>` is `build/.forge-cache/`. Every PNG goes through `tools/forge/forge/pngio.py`: Pillow, `compress_level=9`, never `optimize`, and only the `IHDR`/`PLTE`/`tRNS`/`IDAT`/`IEND` chunks. Each asset is cached under `build/.forge-cache/entries/<asset-id>/<sha256>/`, keyed by the forge code, the palette file, the manifest entry and the source bytes; `--no-cache` neither reads nor writes it. Grid frames get the cell centre as their pivot. A frame whose non-ink body touches the cell edge when `outline: true` fails the build, because its outline cannot be completed.
 
 Portraits use the same pixelize path: `crop` selects each expression from the 1:1 golden (1254×1254, 2 expressions), and the prompt asks for about 64×64 art pixels per portrait, so block-mode at the detected period lands on 64×64. There is no BOX pre-resize: resampling before block-mode blurs the pseudo-pixel grid into mush. A fixed `block: 3` on a golden with a ~10 px pseudo-pixel period would leave each art pixel about 3 game pixels wide (mixels), which [ART_BIBLE.md](ART_BIBLE.md) forbids outside roof magnification.
 

@@ -264,8 +264,8 @@ Each milestone has the same shape:
 - [ ] `forge/blender.py`: wraps the exact command in [ASSET_PIPELINE.md](ASSET_PIPELINE.md), writes `render.json`, and implements `--check`.
 - [ ] `forge/genai.py`: Codex wrapper (prompt on stdin with `-`, stdin always redirected, model pinned with `-m` from `CODEX_MODEL`, fallback to `~/.codex/generated_images/<thread-id>/exec-*.png`). Implements `--candidates N` and `--accept <n>`. Cursor: document the raw command only; `--tool cursor` exits non-zero with "not implemented until needed". The Cursor gen-ai wrapper is deferred to the first milestone that actually needs a concept A/B.
 - [ ] `forge/ingest.py` prototype: steps 1–10 of the ingest spec, enough to turn `ref.people_style` into one grid.
-- [ ] `forge/build.py` for the `grid` and `blender` techniques. `forge/outline.py`: 1 px ink, 4-connected, outside the silhouette. Byte-identical PNG encode, with no metadata.
-- [ ] Deterministic Pillow encode test: build twice and compare SHA-256.
+- [x] `forge/build.py` for the `grid` and `blender` techniques. `forge/outline.py`: 1 px ink, 4-connected, outside the silhouette. Byte-identical PNG encode, with no metadata.
+- [x] Deterministic Pillow encode test: build twice and compare SHA-256.
 
 *Look lock*
 

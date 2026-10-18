@@ -139,6 +139,8 @@ def build() -> tuple[bpy.types.Object, dict, dict]:
     # Dented (below 40 HP), literal offsets only: the rear-left panel pushed in 1.25 px and
     # crumpled into tilted facets with two notch pixels (14 ochre, 01 tar) on its edge, the
     # rear bumper's left corner dangling out past the body, and the rear door ajar by 1 px.
+    # The corner is 4.5 px long (SSP-009): at 7 px its tip reached 33.5 px from the centre and
+    # was clipped by the 64 px cell at the diagonals, leaving no room for the 1 px outline.
     panel_dent = block("panel_dent", -11.25, 12.5, -21.5, -13, 0.50, 2.20, body, root, sides="e")
     z = 2.20
     crumple = [
@@ -155,7 +157,7 @@ def build() -> tuple[bpy.types.Object, dict, dict]:
     crumple_ob = _object("crumple", [(px(x), px(y), zz) for x, y, zz in crumple], crumple_faces, body, root)
     notch_a = block("notch_a", -11.25, -10.0, -15.5, -14.25, 2.30, 2.32, seam, root, bevel=0)
     notch_b = block("notch_b", -11.25, -10.0, -20.0, -18.75, 2.30, 2.32, notch, root, bevel=0)
-    bumper_corner = block("bumper_corner", -17.5, -10.5, -25.75, -23.75, 0.40, 0.65, steel, root, bevel=0)
+    bumper_corner = block("bumper_corner", -15.0, -10.5, -25.75, -23.75, 0.40, 0.65, steel, root, bevel=0)
     _dangle(bumper_corner)
 
     body_only = {"panel": panel_body}

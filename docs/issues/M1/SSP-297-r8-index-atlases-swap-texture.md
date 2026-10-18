@@ -2,7 +2,7 @@
 id: SSP-297
 title: "Convert actors/items atlases to R8 index textures with an identity 32x8 swap texture"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:render, area:test, size:M, vertical-slice]
@@ -42,13 +42,13 @@ The per-instance `swap` (uint8) attribute already exists from SSP-018. The drop-
 
 ## Acceptance criteria
 
-- [ ] Vitest: converting a fixture atlas maps each of the 32 Kerbside-32 hex values to its index and fully transparent pixels to 255
-- [ ] Vitest: a non-palette pixel and a semi-transparent pixel each fail at load with an error naming the atlas and the pixel coordinates
-- [ ] Vitest: with `swaps: {}`, row k, column i of the 32x8 swap texture equals i for all 8 rows
-- [ ] Vitest: with fixture `swaps: { "slot_1": { "21": 19 } }`, row 1 maps 21 -> 19 and every other entry is identity; a 9th table, or a destination index >= 32, fails at load
-- [ ] The existing `lean_quadrants` and `scale_1440` visual goldens pass unchanged at threshold 0 (identity swaps are pixel-identical)
-- [ ] renderer.info.render.calls is unchanged (≤ 10) in the spike scene
-- [ ] npm run typecheck, lint and test pass
+- [x] Vitest: converting a fixture atlas maps each of the 32 Kerbside-32 hex values to its index and fully transparent pixels to 255
+- [x] Vitest: a non-palette pixel and a semi-transparent pixel each fail at load with an error naming the atlas and the pixel coordinates
+- [x] Vitest: with `swaps: {}`, row k, column i of the 32x8 swap texture equals i for all 8 rows
+- [x] Vitest: with fixture `swaps: { "slot_1": { "21": 19 } }`, row 1 maps 21 -> 19 and every other entry is identity; a 9th table, or a destination index >= 32, fails at load
+- [x] The existing `lean_quadrants` and `scale_1440` visual goldens pass unchanged at threshold 0 (identity swaps are pixel-identical)
+- [x] renderer.info.render.calls is unchanged (≤ 10) in the spike scene
+- [x] npm run typecheck, lint and test pass
 
 ## Verification
 

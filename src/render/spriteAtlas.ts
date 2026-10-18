@@ -5,8 +5,14 @@
 // hex lookup, so the GPU texture holds indices, not colours. A pixel that is not exactly a Kerbside-32 colour,
 // or that is semi-transparent, is a load-time error naming the atlas and the pixel. Fully transparent pixels
 // become TRANSPARENT_INDEX (255), which the sprite shaders discard (binary alpha). The shaders then map the
-// index through the instance's row of a 32×8 swap texture (identity here: the swap tables are M4, SSP-114;
-// their parsing is SSP-297) and look the result up in the palette texture.
+// index through the instance's row of a 32×8 swap texture and look the result up in the palette texture.
+//
+// Swap tables (SSP-297): the atlas JSON `swaps` is parsed provisionally as an object of at most 8 tables keyed
+// `slot_0`..`slot_7`, each `{ "<srcIndex>": dstIndex }` with both indices in 0..31. A missing slot, and every
+// index a table does not name, is identity; slot 0 is always identity. Anything else (a 9th table, another key,
+// an index outside 0..31, a non-identity slot 0) is a load-time error. The tables are authored in M4 (SSP-114),
+// which may lock a different representation (named vs slot) and update this parser; until then `swaps` is {}
+// and the swap texture is identity, so drawing through it is pixel-identical to drawing without it.
 //
 // The atlas JSON must agree with the generated FRAME table (src/gen/assets.ts) frame for frame: a mismatch
 // means the generated code is stale, which is a load-time error too.
@@ -49,7 +55,9 @@ export type SpriteAtlas = {
   readonly indices: Uint8Array;
   /** `indices` as an R8 texture: texelFetch(x, y) is atlas pixel (x, y), y down. */
   readonly texture: DataTexture;
-  /** 32×8 R8 swap texture: row k maps an index to its swap-table-k replacement (identity for now). */
+  /** The 32×8 swap tables (`swapTexture` data): entry row * 32 + i is index i's replacement in table `row`. */
+  readonly swaps: Uint8Array;
+  /** 32×8 R8 swap texture: row k maps an index to its swap-table-k replacement (identity where unset). */
   readonly swapTexture: DataTexture;
 };
 
@@ -125,15 +133,11 @@ function isFrameId(id: string): id is FrameId {
 
 /**
  * Validates an atlas JSON document (`{ frames, swaps }`) against the generated FRAME table: the same frame IDs
- * for this atlas, with the same rects and pivots, all inside the image. `swaps` must be empty until SSP-297
- * parses swap tables (the M0 swap texture is identity).
+ * for this atlas, with the same rects and pivots, all inside the image. `swaps` is checked by swapTableData.
  */
 export function validateAtlasJson(name: AtlasName, data: unknown, width: number, height: number): void {
   if (!isRecord(data) || !isRecord(data.frames) || !isRecord(data.swaps)) {
     throw new Error(`atlas '${name}': JSON must be { frames, swaps }`);
-  }
-  if (Object.keys(data.swaps).length > 0) {
-    throw new Error(`atlas '${name}': swap tables are not parsed yet (SSP-297); swaps must be {}`);
   }
   const expected = new Set<string>();
   for (const id of Object.keys(FRAME)) {
@@ -173,6 +177,51 @@ export function identitySwapData(): Uint8Array {
   const data = new Uint8Array(PALETTE_SIZE * SWAP_ROWS);
   for (let row = 0; row < SWAP_ROWS; row++) {
     for (let i = 0; i < PALETTE_SIZE; i++) data[row * PALETTE_SIZE + i] = i;
+  }
+  return data;
+}
+
+const SLOT_KEY = /^slot_([0-7])$/;
+const INDEX_KEY = /^(0|[1-9][0-9]?)$/;
+
+/**
+ * Builds the 32×8 swap table data from an atlas JSON `swaps` value (provisional slot form, see the file
+ * header): identity everywhere except the entries the tables name. Throws, naming the atlas, for more than
+ * SWAP_ROWS tables, a key other than `slot_0`..`slot_7`, a table that is not an object, a source or destination
+ * index outside 0..31, or a slot 0 that is not identity.
+ */
+export function swapTableData(name: string, swaps: unknown): Uint8Array {
+  if (!isRecord(swaps)) throw new Error(`atlas '${name}': swaps must be an object of swap tables`);
+  const slots = Object.keys(swaps);
+  if (slots.length > SWAP_ROWS) {
+    throw new Error(`atlas '${name}': ${slots.length} swap tables, at most ${SWAP_ROWS} per atlas`);
+  }
+  const data = identitySwapData();
+  for (const slot of slots) {
+    const match = SLOT_KEY.exec(slot);
+    if (match === null) {
+      throw new Error(`atlas '${name}': swap table '${slot}' is not slot_0..slot_${SWAP_ROWS - 1}`);
+    }
+    const row = Number(match[1]);
+    const table = swaps[slot];
+    if (!isRecord(table)) throw new Error(`atlas '${name}': swap table ${slot} must be { "<src>": dst }`);
+    for (const [src, dst] of Object.entries(table)) {
+      const srcIndex = INDEX_KEY.test(src) ? Number(src) : -1;
+      if (srcIndex < 0 || srcIndex >= PALETTE_SIZE) {
+        throw new Error(
+          `atlas '${name}': swap table ${slot} source index '${src}' is not 0..${PALETTE_SIZE - 1}`,
+        );
+      }
+      if (typeof dst !== 'number' || !Number.isInteger(dst) || dst < 0 || dst >= PALETTE_SIZE) {
+        throw new Error(
+          `atlas '${name}': swap table ${slot} maps ${src} to ${String(dst)}, not an index 0..${PALETTE_SIZE - 1}`,
+        );
+      }
+      if (row === 0 && dst !== srcIndex) {
+        throw new Error(`atlas '${name}': swap table slot_0 must be identity (maps ${src} to ${dst})`);
+      }
+      data[row * PALETTE_SIZE + srcIndex] = dst;
+    }
   }
   return data;
 }
@@ -220,8 +269,8 @@ export const browserAtlasSource: AtlasSource = {
 
 /**
  * Loads an atlas: fetches its PNG and JSON, checks every pixel against Kerbside-32 (throws on the first
- * non-palette or semi-transparent pixel), checks the JSON against FRAME, and builds the R8 index texture and
- * the identity swap texture.
+ * non-palette or semi-transparent pixel), checks the JSON against FRAME, parses its swap tables, and builds the
+ * R8 index texture and the 32×8 R8 swap texture.
  */
 export async function loadAtlas(
   name: AtlasName,
@@ -234,12 +283,14 @@ export async function loadAtlas(
   ]);
   const indices = indexAtlasPixels(name, image, palette);
   validateAtlasJson(name, json, image.width, image.height);
+  const swaps = swapTableData(name, isRecord(json) ? json.swaps : undefined);
   return {
     name,
     width: image.width,
     height: image.height,
     indices,
     texture: r8Texture(indices, image.width, image.height),
-    swapTexture: r8Texture(identitySwapData(), PALETTE_SIZE, SWAP_ROWS),
+    swaps,
+    swapTexture: r8Texture(swaps, PALETTE_SIZE, SWAP_ROWS),
   };
 }

@@ -1,6 +1,7 @@
 // Atlas loading with the load-time palette check (SSP-018; TECHNICAL_DESIGN §12.5, ASSET_PIPELINE §9.3):
-// the committed actors atlas loads as an R8 index texture with an identity 32×8 swap texture, and an atlas
-// with a non-palette (or semi-transparent) pixel, or JSON that disagrees with FRAME, fails at load time.
+// the committed actors and items atlases load as R8 index textures with an identity 32×8 swap texture, and an
+// atlas with a non-palette (or semi-transparent) pixel, or JSON that disagrees with FRAME, fails at load time.
+// Swap tables (SSP-297): the atlas JSON `swaps` (slot_0..slot_7, { "<src>": dst }) builds the swap texture.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -14,6 +15,7 @@ import {
   loadAtlas,
   type RgbaImage,
   SWAP_ROWS,
+  swapTableData,
   TRANSPARENT_INDEX,
 } from '../../src/render/spriteAtlas.ts';
 import { decodePng, encodeRgbaPng } from '../support/png.ts';
@@ -21,6 +23,8 @@ import { decodePng, encodeRgbaPng } from '../support/png.ts';
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const ATLAS_PNG = readFileSync(`${REPO_ROOT}public/assets/atlas/actors.png`);
 const ATLAS_JSON: unknown = JSON.parse(readFileSync(`${REPO_ROOT}public/assets/atlas/actors.json`, 'utf8'));
+const ITEMS_PNG = readFileSync(`${REPO_ROOT}public/assets/atlas/items.png`);
+const ITEMS_JSON: unknown = JSON.parse(readFileSync(`${REPO_ROOT}public/assets/atlas/items.json`, 'utf8'));
 
 /** A source serving `png` bytes and `json` for whatever URL is asked, decoding PNGs like a browser would. */
 function sourceOf(png: Uint8Array, json: unknown = ATLAS_JSON): AtlasSource & { urls: string[] } {
@@ -82,10 +86,17 @@ describe('loadAtlas: the committed actors atlas', () => {
     expect(atlas.texture.flipY).toBe(false);
     expect(atlas.swapTexture.image.width).toBe(PALETTE_SIZE);
     expect(atlas.swapTexture.image.height).toBe(SWAP_ROWS);
-    const swap = identitySwapData();
-    for (let row = 0; row < SWAP_ROWS; row++) {
-      for (let i = 0; i < PALETTE_SIZE; i++) expect(swap[row * PALETTE_SIZE + i]).toBe(i);
-    }
+    expect(atlas.swapTexture.image.data).toBe(atlas.swaps);
+    expect(atlas.swaps).toEqual(identitySwapData());
+  });
+
+  it('loads the committed items atlas the same way', async () => {
+    const atlas = await loadAtlas('items', sourceOf(ITEMS_PNG, ITEMS_JSON));
+    expect(atlas.indices).toHaveLength(atlas.width * atlas.height);
+    expect(atlas.indices.every((i) => i < PALETTE_SIZE || i === TRANSPARENT_INDEX)).toBe(true);
+    expect(atlas.indices.some((i) => i < PALETTE_SIZE)).toBe(true);
+    expect(atlas.indices.some((i) => i === TRANSPARENT_INDEX)).toBe(true);
+    expect(atlas.swaps).toEqual(identitySwapData());
   });
 
   it('resolves atlas URLs against the app base', () => {
@@ -144,9 +155,81 @@ describe('loadAtlas: load-time errors', () => {
     delete missing.frames['veh.sweeper:body:h00:0'];
     await expect(loadAtlas('actors', sourceOf(ATLAS_PNG, missing))).rejects.toThrow('missing from the JSON');
   });
+});
 
-  it('refuses swap tables until SSP-297 parses them', async () => {
-    const swapped = { ...(ATLAS_JSON as Record<string, unknown>), swaps: { slot_1: { '21': 19 } } };
-    await expect(loadAtlas('actors', sourceOf(ATLAS_PNG, swapped))).rejects.toThrow('swaps must be {}');
+/** Entry (row k, column i) of 32×8 swap data. */
+function swapAt(data: Uint8Array, row: number, i: number): number | undefined {
+  return data[row * PALETTE_SIZE + i];
+}
+
+describe('swap tables (SSP-297)', () => {
+  it('with swaps: {}, row k column i of the 32×8 swap texture is i for all 8 rows', async () => {
+    const atlas = await loadAtlas('actors', sourceOf(ATLAS_PNG, { ...(ATLAS_JSON as object), swaps: {} }));
+    expect(atlas.swapTexture.image.width).toBe(PALETTE_SIZE);
+    expect(atlas.swapTexture.image.height).toBe(SWAP_ROWS);
+    expect(SWAP_ROWS).toBe(8);
+    for (let row = 0; row < SWAP_ROWS; row++) {
+      for (let i = 0; i < PALETTE_SIZE; i++) expect(swapAt(atlas.swaps, row, i)).toBe(i);
+    }
+  });
+
+  it('slot_1 { 21: 19 } maps 21 -> 19 in row 1 and leaves every other entry identity', async () => {
+    const json = { ...(ATLAS_JSON as object), swaps: { slot_1: { '21': 19 } } };
+    const atlas = await loadAtlas('actors', sourceOf(ATLAS_PNG, json));
+    expect(atlas.swapTexture.image.data).toBe(atlas.swaps);
+    for (let row = 0; row < SWAP_ROWS; row++) {
+      for (let i = 0; i < PALETTE_SIZE; i++) {
+        expect(swapAt(atlas.swaps, row, i)).toBe(row === 1 && i === 21 ? 19 : i);
+      }
+    }
+  });
+
+  it('fills several slots and accepts an explicit identity slot_0', () => {
+    const data = swapTableData('fixture', {
+      slot_0: { '4': 4 },
+      slot_2: { '21': 25, '22': 26, '23': 27 },
+      slot_7: { '0': 31, '31': 0 },
+    });
+    expect(swapAt(data, 2, 21)).toBe(25);
+    expect(swapAt(data, 2, 23)).toBe(27);
+    expect(swapAt(data, 7, 0)).toBe(31);
+    expect(swapAt(data, 7, 31)).toBe(0);
+    expect(swapAt(data, 0, 4)).toBe(4);
+    expect(swapAt(data, 3, 21)).toBe(21);
+  });
+
+  it('fails at load for a 9th table, naming the atlas', async () => {
+    const nine: Record<string, unknown> = {};
+    for (let k = 0; k < 8; k++) nine[`slot_${k}`] = {};
+    nine.slot_extra = {};
+    const json = { ...(ATLAS_JSON as object), swaps: nine };
+    await expect(loadAtlas('actors', sourceOf(ATLAS_PNG, json))).rejects.toThrow(
+      "atlas 'actors': 9 swap tables, at most 8 per atlas",
+    );
+    expect(() => swapTableData('items', { slot_8: {} })).toThrow(
+      "atlas 'items': swap table 'slot_8' is not slot_0..slot_7",
+    );
+  });
+
+  it('fails at load for a destination index >= 32', async () => {
+    const json = { ...(ATLAS_JSON as object), swaps: { slot_1: { '21': 32 } } };
+    await expect(loadAtlas('actors', sourceOf(ATLAS_PNG, json))).rejects.toThrow(
+      "atlas 'actors': swap table slot_1 maps 21 to 32, not an index 0..31",
+    );
+    expect(() => swapTableData('fixture', { slot_1: { '21': 255 } })).toThrow('maps 21 to 255');
+    expect(() => swapTableData('fixture', { slot_1: { '21': -1 } })).toThrow('maps 21 to -1');
+    expect(() => swapTableData('fixture', { slot_1: { '21': 1.5 } })).toThrow('maps 21 to 1.5');
+    expect(() => swapTableData('fixture', { slot_1: { '21': '19' } })).toThrow('maps 21 to 19');
+  });
+
+  it('fails for a source index outside 0..31, a malformed table or a non-identity slot_0', () => {
+    expect(() => swapTableData('fixture', { slot_1: { '32': 1 } })).toThrow("source index '32' is not 0..31");
+    expect(() => swapTableData('fixture', { slot_1: { '07': 1 } })).toThrow("source index '07'");
+    expect(() => swapTableData('fixture', { slot_1: { red: 1 } })).toThrow("source index 'red'");
+    expect(() => swapTableData('fixture', { slot_1: [19] })).toThrow('swap table slot_1 must be');
+    expect(() => swapTableData('fixture', [])).toThrow('swaps must be an object');
+    expect(() => swapTableData('fixture', { slot_0: { '21': 19 } })).toThrow(
+      'swap table slot_0 must be identity (maps 21 to 19)',
+    );
   });
 });

@@ -2,7 +2,7 @@
 id: SSP-032
 title: "Add src/sim/map.ts compiled-level codec, tile/surface/collide ids and solid merge"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:physics, area:test, size:M, vertical-slice]
@@ -57,11 +57,11 @@ Solid merge (§9.1): greedy maximal rectangles over SOLID cells, emitted as `[x0
 
 ## Acceptance criteria
 
-- [ ] decodeLevel(encodeLevel(level)) reproduces every layer and list exactly, and re-encoding gives byte-identical JSON
-- [ ] The mergeSolids property passes (exact cover, no overlap) over at least 1,000 random grids with a fixed seed
-- [ ] mergeSolids output is identical across two runs on the same grid
-- [ ] map.ts imports nothing outside src/sim and runs under `node` type stripping (a tools smoke import or test proves it)
-- [ ] Units and any schema additions are documented in TECHNICAL_DESIGN §15.2
+- [x] decodeLevel(encodeLevel(level)) reproduces every layer and list exactly, and re-encoding gives byte-identical JSON
+- [x] The mergeSolids property passes (exact cover, no overlap) over at least 1,000 random grids with a fixed seed
+- [x] mergeSolids output is identical across two runs on the same grid
+- [x] map.ts imports nothing outside src/sim and runs under `node` type stripping (a tools smoke import or test proves it)
+- [x] Units and any schema additions are documented in TECHNICAL_DESIGN §15.2
 
 ## Verification
 

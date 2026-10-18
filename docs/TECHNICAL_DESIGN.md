@@ -140,6 +140,7 @@ The layout is canonical. New top-level directories need an ADR.
 - `src/sim/fmath.ts`, a thin wrapper for the transcendental maths the sim uses (`sin`, `cos`, `tan`, `atan2`, `exp`, `sqrt`, `hypot`). `tan` joined the list in SSP-028 because the vehicle yaw step uses `tan(δ)` ([§8.2](#82-per-tick-integration-phase-2)). See [§7.4](#74-determinism).
 - `src/sim/coords.ts`, the [§4](#4-coordinate-systems-and-units) conventions as allocation-free helpers: heading → forward/right vectors (into a caller-supplied out object), heading → vehicle frame index (`h00`–`h31`), heading → 8-way actor direction, metres → tile and grime cell (SSP-028).
 - `src/sim/inputFrame.ts`, the `InputFrame` type and its `BUTTON`/`PRESSED` bit constants ([§13.1](#131-actions-and-the-inputframe)). It lives in the sim because `src/input` may import only this type from `src/sim` ([§2.1](#21-who-may-import-whom)) (SSP-028).
+- `src/sim/base64.ts`, pure RFC 4648 base64 for the compiled-level grid layers ([§15.2](#152-compiled-schema-v1)). The sim runs in the browser and on Node type stripping, so it uses neither Node's `Buffer` nor the DOM's `atob`/`btoa` (SSP-032).
 
 ### 2.1 Who may import whom
 
@@ -468,7 +469,7 @@ Hand-written, synchronous, deterministic. Rapier2D stays a documented escape hat
 
 ### 9.1 Static world
 
-- `compile-level.ts` produces a per-cell **collision grid** (`Uint8`: `SOLID`, `KERB_EDGE_N/E/S/W` bits, surface type in a parallel grid) and merges solid cells into **maximal rectangles** (greedy merge). Merging removes the internal edges that cause "ghost" snagging when sliding along a terrace.
+- `compile-level.ts` produces a per-cell **collision grid** (`Uint8`: `SOLID`, `KERB_EDGE_N/E/S/W` bits, surface type in a parallel grid) and merges solid cells into **maximal rectangles** (greedy merge). Merging removes the internal edges that cause "ghost" snagging when sliding along a terrace. The bit constants (`COLLIDE`) and the merge (`mergeSolids`) live in `src/sim/map.ts`, shared by the compiler, static collision and the property tests: in fixed row-major order, the first unclaimed SOLID cell grows right as far as it can, then down while the whole span stays SOLID, so the rects cover the SOLID cells exactly, never overlap and come out in the same order every time.
 - Static props (`prop.lamp_post`, `prop.bollard`, `prop.bench`, `prop.bus_shelter`, `prop.phone_box`, `prop.post_box`, `prop.hydrant`, `prop.tree`, `prop.planter`, `prop.market_stall`, `prop.litter_bin`, `prop.roadworks_barrier`) are OBBs or circles registered in `collision/grid.ts` buckets (one bucket per tile).
 - Parked vehicles (`veh.<type>_parked`) are static OBBs. Denting one costs −100 and 5 HP.
 
@@ -908,19 +909,21 @@ Grid layers are base64-encoded raw `Uint8` arrays in row-major order (compact an
   "version": 1,
   "id": "district.puddle_lane",
   "size": [64, 48],                       // tiles
+  "roofIds": ["roof.slate", "roof.felt"],               // roof layer value n → roofIds[n − 1]
+  "wallIds": ["facade.brick_terrace"],                  // wall layer value n → wallIds[n − 1]
   "layers": {
     "ground":   "<base64 Uint8[w*h]>",    // ground tile type id
     "autotile": "<base64 Uint8[w*h]>",    // kerb blob index 0..46, 255 = none
-    "surface":  "<base64 Uint8[w*h]>",    // asphalt | pavement | grass | cobbles | ...
+    "surface":  "<base64 Uint8[w*h]>",    // surface id: asphalt | pavement | grass (+ M3 hazard ids)
     "storeys":  "<base64 Uint8[w*h]>",    // 0 = no building, 1..8
-    "roof":     "<base64 Uint8[w*h]>",    // roof style id
-    "wall":     "<base64 Uint8[w*h]>",    // facade style id
+    "roof":     "<base64 Uint8[w*h]>",    // 0 = none, else 1-based index into roofIds
+    "wall":     "<base64 Uint8[w*h]>",    // 0 = none, else 1-based index into wallIds
     "collide":  "<base64 Uint8[w*h]>",    // SOLID + KERB_EDGE bits
     "route":    "<base64 Uint8[w*h]>",    // 1 = counts toward Tidy %
     "grimeDensity": "<base64 Uint8[w*h]>",
     "gutter":   "<base64 Uint8[(w*8)*(h*8)]>"
   },
-  "solids": [[x0, y0, x1, y1]],           // merged rects in tiles
+  "solids": [[x0, y0, x1, y1]],           // merged rects in tiles, x1/y1 exclusive
   "props":  [{ "id": "prop.hydrant", "x": 21.0, "y": 14.0, "rot": 0 }],
   "sites":  [{ "id": "site.depot_bay", "rect": [2, 40, 6, 44] }],
   "frontages": [{ "id": "fr_10_3", "pledge": true, "rect": [10, 3, 14, 4], "face": "s" }],  // fr_<x>_<y>, LEVEL_DESIGN §7.10
@@ -930,11 +933,19 @@ Grid layers are base64-encoded raw `Uint8` arrays in row-major order (compact an
   "schedules": [...],
   "weather": "clear",
   "timerS": 240,
-  "player": { "x": 8.0, "y": 84.0, "heading": 0 }
+  "player": { "x": 8.0, "y": 84.0, "heading": 0 }   // metres, radians
 }
 ```
 
 `src/sim/map.ts` decodes this into typed arrays once per shift. The same module is imported by the compiler, so the decoder and encoder can never disagree.
+
+**Units (SSP-032).** Grid layers, `size`, `solids` and every `rect` (sites, frontages) are in **tiles**. Rects are `[x0, y0, x1, y1]` with x0/y0 inclusive and x1/y1 **exclusive**, so one cell is `[x, y, x+1, y+1]` and a rect scales to metres by ×2. `props[].x/y` and `player.x/y` are sim **metres** ([§4](#4-coordinate-systems-and-units)); `props[].rot` and `player.heading` are **radians** (0 = north, clockwise). The example player (8.0, 84.0) is metres: it is tile (4, 42), inside Puddle Lane's depot rect `[0, 38, 14, 10]`. `level.json` authors tile coordinates and a 0..31 heading index ([LEVEL_DESIGN §8.4](LEVEL_DESIGN.md#84-leveljson-schema)); the compiler converts. Lane and nav node units are set with the graphs in M3 (SSP-076).
+
+**Style tables (SSP-032).** `roofIds` and `wallIds` are header string tables of `roof.*` and `facade.*` asset ids. A `roof`/`wall` layer value of 0 means no building and n names entry n − 1, so the renderer resolves frames without a hard-coded list (`resolveStyle`) and a level can name at most 255 styles of each.
+
+**Id tables (SSP-032).** `map.ts` owns the numeric ids written into the layers, as `as const` objects that may be appended to but never renumbered: `Ground` (0 void, 1 road, 2–5 one-way road flowing E/W/N/S, 6 pavement, 7 cobbles, 8 alley, 9 grass, 10 yard, 11 apron, 12 water, 13 sand), `Surface` (0 asphalt, 1 pavement, 2 grass; 3 puddle, 4 wet leaves and 5 oil are reserved for the M3 runtime hazard overrides and never baked), the ground → surface table `GROUND_SURFACE` (cobbles and apron take asphalt; yard and, provisionally, alley take pavement; solid grounds read as asphalt), `COLLIDE` (bit 0 `SOLID`, bits 1–4 `KERB_EDGE_N/E/S/W`), `AUTOTILE_NONE = 255` and `STYLE_NONE = 0`.
+
+**Encoding (SSP-032).** `encodeLevel` writes the keys in the order above, layers as padded standard base64, one top-level key per line, one list entry per line (each entry compact) and a trailing newline; spawn and schedule entries, whose shape later milestones define, are written with their object keys sorted. `decodeLevel` accepts the text or the parsed value, checks every field with hand-written guards, the layer lengths (`gutter` is (w·8)·(h·8)) and the id ranges, and throws a message naming the field. Re-encoding a decoded level is byte-identical (`tests/unit/map.test.ts`).
 
 ---
 

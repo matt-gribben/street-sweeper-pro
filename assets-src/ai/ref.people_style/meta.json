@@ -1,0 +1,35 @@
+{
+  "id": "ref.people_style",
+  "tool": "codex",
+  "tool_version": "codex-cli 0.160.1",
+  "model": "gpt-6.1-sol (NOT pinned: probe ran without -m; inferred from ~/.codex/config.toml, unchanged since 2026-10-06); image model: Codex built-in image_gen, version not exposed",
+  "date": "2026-10-18",
+  "argv": [
+    "RECONSTRUCTED",
+    "~/.local/bin/codex",
+    "exec",
+    "--skip-git-repo-check",
+    "--ephemeral",
+    "-s",
+    "workspace-write",
+    "-C",
+    "/private/tmp/claude-501/-Users-matthew-Development-Personal-StreetSweeperPro/fcaa6beb-ce60-4329-918e-39c253d2a4d5/scratchpad/asset-probe/codex",
+    "--json",
+    "-o",
+    "/private/tmp/claude-501/-Users-matthew-Development-Personal-StreetSweeperPro/fcaa6beb-ce60-4329-918e-39c253d2a4d5/scratchpad/asset-probe/codex/last_message.txt",
+    "-"
+  ],
+  "prompt_sha256": null,
+  "preamble_version": null,
+  "reference_images": [],
+  "original_output_path": "~/.codex/generated_images/01a14d13-72ab-72a1-9953-765c8a00398c/exec-57353b28-3d78-4c16-bc3f-88a214cf3726.png",
+  "candidates_generated": 1,
+  "accepted_index": null,
+  "acceptance_notes": "Imported from asset probe (M0). Retro-filled meta.json for a CANDIDATE: not accepted (accepted_index null); acceptance is SSP-014 / decision D-04. Probe run assets-src/_probe/codex/ = experiment E2 in ADR 0002 2.1 (old-woman 4x2 key-pose sheet, magenta background, about 60 s). Evidence: assets-src/_probe/codex/events.jsonl (thread 01a14d13-72ab-72a1-9953-765c8a00398c; the agent cp'd original_output_path into the working dir, no drawing commands) and assets-src/_probe/reports/post.report.json (period 9.22 x 9.38 px, native cells 22-27 x 28-34 px, key rgb(250,5,249) not #ff00ff). golden.png is byte-identical to original_output_path (same SHA-256, checked 2026-10-18). candidates_generated 1: the thread's generated_images dir holds exactly one image. Not reconstructable: the prompt was piped on stdin and not preserved, and the run predates preamble v1, so prompt_sha256 and preamble_version are null and prompt.md is a retro note, not the text that was sent. argv is RECONSTRUCTED (argv[0] is the marker), not captured: it is the documented ASSET_PIPELINE 8.2 shape with -m and -i removed (the probe passed neither) and the probe working dir filled in. Evidenced by the artefacts: --json (events.jsonl), -o last_message.txt, the prompt on stdin ('-') and the working dir (last_message.txt and the 'cp ... ./' command in events.jsonl). Assumed from the documented shape, not evidenced: --skip-git-repo-check, --ephemeral and -s workspace-write (the cp into the working dir does show the sandbox was writable). Read on import: 1774x887 8-bit RGB, no alpha, flat magenta key. Row 1 holds four front-facing walk poses, row 2 four side-on walk poses facing right. Grey bun, purple coat, brown handbag, 1 px dark outline. The handbag swaps hands between frames, so the walk is not a real cycle (the grid holds the animation). The camera reads as a high three-quarter view (face and coat front visible) rather than strictly straight down: a point for the SSP-014 review.",
+  "golden_sha256": "45867af714be82dbd0bf9a0c9109ffb08730bf7097e56b7ea2157fc56cc4d765",
+  "size": [
+    1774,
+    887
+  ],
+  "seed": null
+}

@@ -2,7 +2,7 @@
 id: SSP-001
 title: "Import probe Codex sheets as AI golden candidates with retro-filled meta.json"
 milestone: M0
-status: todo
+status: done
 type: chore
 estimate: S
 labels: [type:chore, area:assets, area:tooling, size:S, vertical-slice]
@@ -65,14 +65,14 @@ No manifest entries: litter.sheet_01 stays a candidate through M0.
 
 ## Acceptance criteria
 
-- [ ] `shasum -a 256 assets-src/ai/ref.people_style/golden.png` = 45867af714be82dbd0bf9a0c9109ffb08730bf7097e56b7ea2157fc56cc4d765 = meta.json golden_sha256
-- [ ] `shasum -a 256 assets-src/ai/litter.sheet_01/golden.png` = b5a46c6f609e106413a2e4546eb79ff7b106aa7c491a7d265b2e6723f36e5d1f = meta.json golden_sha256
-- [ ] Both meta.json files are valid JSON with all 17 schema keys present, tool "codex", tool_version "codex-cli 0.160.1", seed null, size [1774, 887]
-- [ ] original_output_path is the ~/.codex/generated_images/<thread-id>/exec-*.png path for each run
-- [ ] model is explicitly labelled as not pinned and inferred; prompt_sha256 and preamble_version are null; argv is marked reconstructed or null. No field is fabricated
-- [ ] Both prompt.md files say they are retro notes and contain no trademark terms
-- [ ] litter.sheet_01/ingest.json lists exactly the 8 canonical litter IDs in reading order
-- [ ] `git status --short assets-src/_probe` shows no changes
+- [x] `shasum -a 256 assets-src/ai/ref.people_style/golden.png` = 45867af714be82dbd0bf9a0c9109ffb08730bf7097e56b7ea2157fc56cc4d765 = meta.json golden_sha256
+- [x] `shasum -a 256 assets-src/ai/litter.sheet_01/golden.png` = b5a46c6f609e106413a2e4546eb79ff7b106aa7c491a7d265b2e6723f36e5d1f = meta.json golden_sha256
+- [x] Both meta.json files are valid JSON with all 16 schema keys present (the §6.5 schema names 16), tool "codex", tool_version "codex-cli 0.160.1", seed null, size [1774, 887]
+- [x] original_output_path is the ~/.codex/generated_images/<thread-id>/exec-*.png path for each run
+- [x] model is explicitly labelled as not pinned and inferred; prompt_sha256 and preamble_version are null; argv is marked reconstructed or null. No field is fabricated
+- [x] Both prompt.md files say they are retro notes and contain no trademark terms
+- [x] litter.sheet_01/ingest.json lists exactly the 8 canonical litter IDs in reading order
+- [x] `git status --short assets-src/_probe` shows no changes
 
 ## Verification
 

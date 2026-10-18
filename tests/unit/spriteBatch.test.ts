@@ -218,6 +218,22 @@ describe('SpriteBatch and DropShadowBatch instance buffers', () => {
     expect(() => new DropShadowBatch([atlas, atlas, atlas], 1)).toThrow();
   });
 
+  it('writes the light mask only for sprites flagged Lit (lamp heads, SSP-021)', async () => {
+    const atlas = await loadActors();
+    const batch = new SpriteBatch(atlas, 2);
+    batch.begin(0);
+    batch.addAtHeight('veh.sweeper:body:h00:0', 0, 0, 1, DepthLayer.Bessie, SpriteFlag.Lit);
+    batch.addAtHeight('veh.sweeper:body:h00:0', 0, 0, 1, DepthLayer.Bessie);
+    batch.end();
+    const flags = batch.mesh.geometry.getAttribute('flags');
+    expect([flags.getX(0), flags.getX(1)]).toEqual([SpriteFlag.Lit, 0]);
+    expect(SpriteFlag.Lit & SpriteFlag.MirrorX).toBe(0);
+    const material = batch.mesh.material as unknown as { fragmentShader: string; vertexShader: string };
+    expect(material.vertexShader).toContain(`(int(flags) & ${SpriteFlag.Lit}) != 0 ? 1.0 : 0.0`);
+    // R (shadow) is never written by a sprite; G (light) only when lit.
+    expect(material.fragmentShader).toContain('outMask = vec4(0.0, vLit, 0.0, 0.0)');
+  });
+
   it('runs a spike frame (6 instances over two batches) with no per-frame allocation', async () => {
     const atlas = await loadActors();
     const spike = createSpikeActors(atlas);

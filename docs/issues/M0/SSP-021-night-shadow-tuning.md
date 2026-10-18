@@ -2,7 +2,7 @@
 id: SSP-021
 title: "Tune night[32] and shadow[32] remap tables in the spike scene (D-05, D-06)"
 milestone: M0
-status: todo
+status: done
 type: spike
 estimate: M
 labels: [type:spike, area:render, area:assets, size:M, vertical-slice]

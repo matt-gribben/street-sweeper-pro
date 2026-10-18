@@ -6,7 +6,9 @@
 //   seed=<n>    run seed, an unsigned 32-bit integer (no sim reads it until M1);
 //   scene=<id>  boot straight into a scene (`lean_quadrants`, `scale_1440`; main.ts dispatches);
 //   tick=<n>    advance n ticks synchronously after load, before `ready` turns true;
-//   freeze=1    the loop keeps rendering but never steps.
+//   freeze=1    the loop keeps rendering but never steps;
+//   night=1     the palette pass applies the night remap outside the light mask, and scenes draw their light
+//               pools (SSP-021; `lean_quadrants` hangs one under each lamp post).
 // Malformed values throw at boot: a test must never run against a silently defaulted parameter.
 //
 // `window.__ssp`:
@@ -50,6 +52,8 @@ export type TestParams = {
   readonly tick: number;
   /** `freeze=1`: render but never step. */
   readonly freeze: boolean;
+  /** `night=1`: night remap outside the light mask, light pools drawn (SSP-021). */
+  readonly night: boolean;
 };
 
 /** Camera part of {@link TestState}: focus in sim metres, height in metres. */
@@ -134,9 +138,16 @@ function parseCount(name: string, raw: string, max: number): number {
   return value;
 }
 
+/** A `0`/`1` switch parameter: false when absent; throws on any other value. */
+function parseSwitch(name: string, raw: string | null): boolean {
+  if (raw === null) return false;
+  if (raw !== '0' && raw !== '1') throw new Error(`?test=1: ${name}=${raw} must be 0 or 1`);
+  return raw === '1';
+}
+
 /**
  * Parses the test parameters from a `location.search` string. Returns null unless `test=1` is present (any other
- * value, or none, means test mode is off); throws on a malformed seed, scene, tick or freeze.
+ * value, or none, means test mode is off); throws on a malformed seed, scene, tick, freeze or night.
  */
 export function readTestParams(search: string): TestParams | null {
   const query = new URLSearchParams(search);
@@ -145,19 +156,16 @@ export function readTestParams(search: string): TestParams | null {
   const seedRaw = query.get('seed');
   const sceneRaw = query.get('scene');
   const tickRaw = query.get('tick');
-  const freezeRaw = query.get('freeze');
 
   if (sceneRaw !== null && !SCENE_ID.test(sceneRaw)) {
     throw new Error(`?test=1: scene=${sceneRaw} is not a scene ID`);
-  }
-  if (freezeRaw !== null && freezeRaw !== '0' && freezeRaw !== '1') {
-    throw new Error(`?test=1: freeze=${freezeRaw} must be 0 or 1`);
   }
   return {
     seed: seedRaw === null ? null : parseCount('seed', seedRaw, MAX_SEED),
     scene: sceneRaw,
     tick: tickRaw === null ? 0 : parseCount('tick', tickRaw, Number.MAX_SAFE_INTEGER),
-    freeze: freezeRaw === '1',
+    freeze: parseSwitch('freeze', query.get('freeze')),
+    night: parseSwitch('night', query.get('night')),
   };
 }
 

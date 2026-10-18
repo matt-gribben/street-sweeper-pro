@@ -23,6 +23,15 @@
 // and no two blocks overlap on screen (tests/unit/leanQuadrants.test.ts). The cell edges sit on odd metres,
 // so a 2 m street runs along each screen axis.
 //
+// Ground swatches (SSP-021, the shadow[32] tuning): the blocks mirror exactly, but the pavement cells do not.
+// The east half keeps 05 slab, the north-west quadrant is paved in 06 kerb stone (`k`) and the south-west in
+// 22 grass (`,`), so building shadows (0.84 × h, SE) and the pedestrians' +2,+2 px drop shadows fall on all four
+// ground types of the spike (02 asphalt, 05, 06, 22) in one frame.
+//
+// Night (SSP-021, `?test=1&night=1`): setNight(true) shows a hard-edged light pool (lightPools.ts, radius 5 m)
+// under each lamp post, and each lamp head (the lantern slice) writes the light mask, so the palette pass leaves
+// them out of night[32]. By day the pools are hidden: the day frame is unchanged by them.
+//
 // Room is left in every quadrant for SSP-024's 8° comparison (swap Bessie's frames, or add a second Bessie on
 // the open ground).
 //
@@ -30,11 +39,12 @@
 // from a fixed per-quadrant offset (north-east h00, south-east h08, south-west h16, north-west h24 at frame 0),
 // so `freeze=1` (which holds the counter) gives one fixed frame. The lamp posts never change. Draw calls: the
 // city mesh, building shadows, drop shadows, the actors atlas and the items atlas (5), plus the palette pass and
-// blit: 7 of the 10 allowed (TECHNICAL_DESIGN §12.7).
-import { Group } from 'three';
+// blit: 7 of the 10 allowed (TECHNICAL_DESIGN §12.7); at night the light pools add the fx draw (8).
+import { Group, type Mesh } from 'three';
 import type { FrameId } from '../gen/assets.ts';
 import { createCityMesh, mergeBoxes, parseCityGrid } from '../render/cityMesh.ts';
 import { bessieBodyFrame, bessieBrushFrame, HEADING_COUNT } from '../render/headings.ts';
+import { createLightPools } from '../render/lightPools.ts';
 import { createBuildingShadows } from '../render/shadows.ts';
 import { spikeBrushSpin, spikeHeading } from '../render/spikeActors.ts';
 import type { SpriteAtlas } from '../render/spriteAtlas.ts';
@@ -44,15 +54,15 @@ import { DepthLayer } from '../render/worldMaterial.ts';
 
 /** One character per 2 m cell (`.` asphalt, `:` slab, digits = storeys); row 0 is north. 17 × 9 cells. */
 export const LEAN_QUADRANTS_ROWS: readonly string[] = [
-  '.:::..::.::..:::.',
-  '.:1...........1:.',
-  '.::...::.::...::.',
-  '..:3:::6.6:::3:..',
+  '.kkk..kk.::..:::.',
+  '.k1...........1:.',
+  '.kk...kk.::...::.',
+  '..k3kkk6.6:::3:..',
   '.................',
-  '..:3:::6.6:::3:..',
-  '.::...::.::...::.',
-  '.:1...........1:.',
-  '.:::..::.::..:::.',
+  '..,3,,,6.6:::3:..',
+  '.,,...,,.::...::.',
+  '.,1...........1:.',
+  '.,,,..,,.::..:::.',
 ];
 
 /** Sim position of the grid's NW corner: the 34 m × 18 m grid is centred on the origin. */
@@ -130,6 +140,8 @@ export function leanQuadrantHeading(quadrant: LeanQuadrant, frameCount: number):
 export class LeanQuadrantsScene {
   /** World-pass content: the city mesh and building shadows now, the sprites once attachSprites() runs. */
   readonly world: Group;
+  /** One hard-edged light pool under each lamp post: drawn only at night (setNight). */
+  readonly lightPools: Mesh;
   private sprites: SpriteBatch | null = null;
   private items: SpriteBatch | null = null;
   private shadows: DropShadowBatch | null = null;
@@ -141,9 +153,20 @@ export class LeanQuadrantsScene {
     const shadows = createBuildingShadows(mergeBoxes(grid));
     // Building shadows follow the city so roofs and walls are already in the depth buffer.
     shadows.renderOrder = 1;
+    // The light pools go last (after the items atlas, 4), so lamp-post slices are already in the depth buffer
+    // and hide the pool, while the flat actors inside it are lit. Hidden by day: it changes nothing without the
+    // night remap, and the day frame keeps its 7 draw calls.
+    this.lightPools = createLightPools(LEAN_QUADRANTS.map((q) => q.lampPostM));
+    this.lightPools.renderOrder = 5;
+    this.lightPools.visible = false;
     this.world = new Group();
     this.world.name = 'leanQuadrants';
-    this.world.add(city, shadows);
+    this.world.add(city, shadows, this.lightPools);
+  }
+
+  /** Night on or off: shows the light pools (the palette pass's night remap is the renderer's switch). */
+  setNight(on: boolean): void {
+    this.lightPools.visible = on;
   }
 
   /**

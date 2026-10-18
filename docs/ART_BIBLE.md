@@ -302,7 +302,7 @@ The renderer supports **up to 8 swap tables per atlas**; each instance picks one
 
 ### 5.7 Shadow and night remaps (intent)
 
-The exact `shadow[32]` and `night[32]` tables are tuned in M0 and recorded in `kerbside32.json`. Until that tuning (SSP-021, D-05/D-06) the file holds **provisional** tables: identity, overlaid with the example targets below. The **intent** the tuning must satisfy:
+The exact `shadow[32]` and `night[32]` tables were tuned in M0 (SSP-021, [ROADMAP §8](ROADMAP.md#8-m0-spike-decision-log) D-05/D-06) and live in `kerbside32.json`, which is the truth; the table at the end of this section mirrors it (kept in sync by `tools/forge/tests/test_palette.py`). The **intent** the tuning satisfies:
 
 | Remap | Intent | Example targets (illustrative, not final) |
 |---|---|---|
@@ -312,6 +312,43 @@ The exact `shadow[32]` and `night[32]` tables are tuned in M0 and recorded in `k
 **Ramp rule (mechanical form, enforced by forge pytest via `forge.palette.remap_violations`).** An entry `source → target` is legal when `target == source`; or `target` shares a ramp with `source` and is not lighter in OKLab L; or `target` is in a different ramp and is strictly darker in OKLab L (§5.2). This is how "within its own ramp, or to the next ramp down" is checked.
 
 Shadow is applied after night, so a shadowed pixel at night is darker still. Lit windows, headlights and street lamps write the light mask and are exempt from the night remap (§13).
+
+**Tuned tables (SSP-021, pending owner review).** Both tables also keep **value order within every ramp** (a lighter source never maps darker than a darker source of the same ramp), so shading survives either remap. Under `night`, Bessie's body (15 → 14 ochre, L 0.68) stays at least 0.12 L above every other remapped colour (the brightest, 07 → 04, is 0.56); only her own highlight 16 shares her night colour. Where the tuning departs from the illustrative targets above: `16 → 14` at night, not 15 (a 15 highlight would outshine the 14 body); warm walls step down their own ramp at night (`11 → 09`, `10 → 08`) rather than to maroon, because 11 → 19 turned every lit wall saturated red; `03`, `04 → 02` at night keep slate courses and asphalt speckle (02 on 01); grass shade goes to tar in shadow (`21 → 01`), not navy, which read as blue paint rather than shade. Asphalt in shadow (02 → 01) differs by only 0.09 L, the most the neutral ramp allows without turning shadows into ink outlines; large shadows and the 2 px drop-shadow fringe still read at 1× (evidence in D-06).
+
+| # | Name | `night` | `shadow` |
+|---|---|---|---|
+| 00 | ink | 00 ink | 00 ink |
+| 01 | tar | 00 ink | 00 ink |
+| 02 | asphalt | 01 tar | 01 tar |
+| 03 | asphalt_lt | 02 asphalt | 01 tar |
+| 04 | slab_dk | 02 asphalt | 02 asphalt |
+| 05 | slab | 02 asphalt | 03 asphalt_lt |
+| 06 | kerb | 03 asphalt_lt | 04 slab_dk |
+| 07 | chalk | 04 slab_dk | 05 slab |
+| 08 | soot_brown | 00 ink | 00 ink |
+| 09 | brick_dk | 01 tar | 08 soot_brown |
+| 10 | brick | 08 soot_brown | 09 brick_dk |
+| 11 | terracotta | 09 brick_dk | 13 umber |
+| 12 | skin_lt | 13 umber | 11 terracotta |
+| 13 | umber | 08 soot_brown | 08 soot_brown |
+| 14 | ochre | 13 umber | 13 umber |
+| 15 | sweeper_yellow | 14 ochre | 14 ochre |
+| 16 | lemon | 14 ochre | 15 sweeper_yellow |
+| 17 | hivis_orange | 13 umber | 18 postbox_red |
+| 18 | postbox_red | 19 maroon | 19 maroon |
+| 19 | maroon | 30 plum | 30 plum |
+| 20 | bubblegum | 19 maroon | 31 lavender |
+| 21 | hedge_dk | 25 navy | 01 tar |
+| 22 | grass | 21 hedge_dk | 21 hedge_dk |
+| 23 | grass_lt | 21 hedge_dk | 22 grass |
+| 24 | lime | 22 grass | 23 grass_lt |
+| 25 | navy | 25 navy | 00 ink |
+| 26 | council_blue | 25 navy | 25 navy |
+| 27 | sky | 25 navy | 26 council_blue |
+| 28 | spray | 26 council_blue | 27 sky |
+| 29 | teal | 25 navy | 26 council_blue |
+| 30 | plum | 25 navy | 25 navy |
+| 31 | lavender | 30 plum | 30 plum |
 
 ---
 

@@ -12,7 +12,7 @@
 //   frameRect (vec4) x, y, w, h in atlas pixels, from the generated FRAME table;
 //   pivot (vec2)     the frame's pivot in frame pixels (atlas JSON px/py): body centre or feet;
 //   swap             swap-table row 0..7 (a uint8 value; the M0 table is identity);
-//   flags            SpriteFlag bits;
+//   flags            SpriteFlag bits (mirror; lit: the sprite writes G = 1, the light mask, SSP-021);
 //   layer, sortBias  the depth layer (DepthLayer) and the in-layer bias in [0, 1), computed by the batch from
 //                    the sprite's sim y and the camera y given to begin();
 //   atlas            drop shadows only: which atlas to sample (per-instance selector).
@@ -25,7 +25,8 @@
 // Drop shadows: the caster's silhouette offset +2, +2 px (SE, 0.125 m), one instanced draw on depth layer 4
 // that can sample either atlas, writing R = 1 into the mask with MAX blending and vec4(0) into colour; the
 // palette pass then remaps the ground under it through shadow[32]. Sprites write mask (0, 0), so an actor
-// drawn over a drop shadow (its own included) is not darkened: only the SE fringe of the shadow shows.
+// drawn over a drop shadow (its own included) is not darkened: only the SE fringe of the shadow shows. A sprite
+// flagged `Lit` writes (0, 1) instead: it is a light source (a lamp head), exempt from the night remap.
 import {
   BufferAttribute,
   BufferGeometry,
@@ -47,6 +48,8 @@ import { DEPTH_LAYER_GLSL, DepthLayer, maskDrawParameters, WORLD_OUTPUTS_GLSL } 
 export const SpriteFlag = {
   /** Mirror the frame left-right about its pivot. */
   MirrorX: 1,
+  /** A light source (lamp head, ART_BIBLE §8.6, §13): writes G = 1 into the mask, so night never remaps it. */
+  Lit: 2,
 } as const;
 export type SpriteFlag = (typeof SpriteFlag)[keyof typeof SpriteFlag];
 
@@ -223,9 +226,11 @@ const SPRITE_VERTEX = /* glsl */ `
 ${SPRITE_VERTEX_COMMON}
 in float swap;
 flat out int vSwap;
+flat out float vLit;
 void main() {
   placeSprite(vec2(0.0));
   vSwap = int(swap);
+  vLit = (int(flags) & ${SpriteFlag.Lit}) != 0 ? 1.0 : 0.0;
 }
 `;
 
@@ -236,6 +241,7 @@ uniform highp sampler2D uAtlas;
 uniform highp sampler2D uSwap;
 uniform highp sampler2D uPalette;
 flat in int vSwap;
+flat in float vLit;
 ${SPRITE_TEXEL_GLSL}
 ${WORLD_OUTPUTS_GLSL}
 void main() {
@@ -243,7 +249,7 @@ void main() {
   if (idx == ${TRANSPARENT_INDEX}) discard;
   idx = indexAt(uSwap, ivec2(idx, clamp(vSwap, 0, ${SWAP_ROWS - 1})));
   outColour = vec4(texelFetch(uPalette, ivec2(idx, 0), 0).rgb, 1.0);
-  outMask = vec4(0.0);
+  outMask = vec4(0.0, vLit, 0.0, 0.0);
 }
 `;
 
@@ -343,14 +349,15 @@ export class SpriteBatch {
    * slice (spriteStack.ts). Unlike flat sprites it keeps its real height, so the perspective camera magnifies it
    * by H / (H − height) and leans it away from the screen centre exactly like a roof at that height; its real
    * depth also puts it in front of every flat layer once it is about 0.4 m up (the largest layer offset, fx at
-   * 81e-5 in NDC, equals about 0.39 m of height at H = 31.5 m).
+   * 81e-5 in NDC, equals about 0.39 m of height at H = 31.5 m). `flags` are SpriteFlag bits (a lamp head
+   * passes `Lit`).
    */
-  addAtHeight(frame: FrameId, xM: number, yM: number, heightM: number, layer: DepthLayer): void {
+  addAtHeight(frame: FrameId, xM: number, yM: number, heightM: number, layer: DepthLayer, flags = 0): void {
     const atlas = FRAME[frame].atlas;
     if (atlas !== this.atlas.name)
       throw new Error(`frame ${frame} is in atlas '${atlas}', not '${this.atlas.name}'`);
     if (!(heightM >= 0)) throw new RangeError(`sprite height ${heightM} m must be >= 0`);
-    this.instances.push(frame, xM, yM, heightM, layer, 0, 0, 0, 0);
+    this.instances.push(frame, xM, yM, heightM, layer, 0, flags, 0, 0);
   }
 
   /** Ends the frame: sets the draw count and flags the instance buffer for upload (one needsUpdate). */

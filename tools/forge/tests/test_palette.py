@@ -41,9 +41,10 @@ from forge.palette import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ART_BIBLE = REPO_ROOT / "docs" / "ART_BIBLE.md"
 
-# ART_BIBLE §5.7 illustrative targets, overlaid on identity (provisional until SSP-021).
-SHADOW_TARGETS = {2: 1, 5: 3, 6: 4, 7: 5, 10: 9, 15: 14, 23: 22, 27: 26}
-NIGHT_TARGETS = {2: 1, 5: 2, 7: 4, 10: 8, 15: 14, 16: 15, 23: 21, 27: 25}
+# Bessie's body colour (ART_BIBLE §5.1) and the value separation needed at 1x (§5.2).
+SWEEPER_YELLOW = 15
+LEMON = 16
+SEPARATE_AT_1X_L = 0.12
 
 
 @pytest.fixture(scope="module")
@@ -86,6 +87,19 @@ def _art_bible_ramps() -> dict[str, list[int]]:
         key = re.sub(r"[^a-z]+", "_", cells[0].lower()).strip("_")
         out[key] = [int(d) for d in re.findall(r"\d{2}", cells[1])]
     return out
+
+
+def _art_bible_remaps() -> dict[str, list[int]]:
+    """{"night": [...], "shadow": [...]} from the §5.7 tuned-table mirror (rows `| 02 | asphalt | 01 tar | 01 tar |`)."""
+    night: dict[int, int] = {}
+    shadow: dict[int, int] = {}
+    row = re.compile(r"^\|\s*(\d{2})\s*\|\s*([a-z_]+)\s*\|\s*(\d{2}) [a-z_]+\s*\|\s*(\d{2}) [a-z_]+\s*\|$")
+    for line in _section("5.7").splitlines():
+        m = row.match(line.strip())
+        if m:
+            night[int(m.group(1))] = int(m.group(3))
+            shadow[int(m.group(1))] = int(m.group(4))
+    return {"night": [night[i] for i in sorted(night)], "shadow": [shadow[i] for i in sorted(shadow)]}
 
 
 def _art_bible_lightness() -> dict[int, float]:
@@ -260,9 +274,49 @@ def test_fixture_is_seed_dependent(pal: Palette) -> None:
 # --- ramp rule for night and shadow -------------------------------------------------------------
 
 
-def test_provisional_remaps_are_identity_plus_art_bible_targets(pal: Palette) -> None:
-    assert {i: t for i, t in enumerate(pal.shadow) if i != t} == SHADOW_TARGETS
-    assert {i: t for i, t in enumerate(pal.night) if i != t} == NIGHT_TARGETS
+def test_tuned_remaps_match_art_bible_mirror(raw: dict[str, Any]) -> None:
+    # SSP-021 (D-05/D-06): kerbside32.json is the truth, ART_BIBLE §5.7 mirrors it row for row.
+    doc = _art_bible_remaps()
+    assert len(doc["night"]) == 32 and len(doc["shadow"]) == 32
+    assert doc == {"night": raw["night"], "shadow": raw["shadow"]}
+
+
+@pytest.mark.parametrize("table", ["night", "shadow"])
+def test_remaps_keep_value_order_within_every_ramp(pal: Palette, table: str) -> None:
+    # A lighter source never maps darker than a darker source of the same ramp, so lit/base/dark shading
+    # survives the remap (ties allowed: two steps may merge).
+    lightness = pal.oklab[:, 0]
+    remap = pal.remap(table)
+    for name, ramp in pal.ramps.items():
+        for a in ramp:
+            for b in ramp:
+                if lightness[a] < lightness[b]:
+                    assert lightness[remap[a]] <= lightness[remap[b]], f"{table} inverts {a} < {b} in {name}"
+
+
+def test_shadow_darkens_every_colour_but_ink(pal: Palette) -> None:
+    lightness = pal.oklab[:, 0]
+    for i, t in enumerate(pal.shadow):
+        if i == 0:
+            assert t == 0
+        else:
+            assert lightness[t] < lightness[i], f"shadow[{i:02d}] = {t:02d} is not darker"
+
+
+def test_night_keeps_bessie_the_brightest_non_light_colour(pal: Palette) -> None:
+    # ART_BIBLE §5.7: under night Bessie's body stays the brightest non-light object, by at least the 0.12 L
+    # that separates colours at 1x; only her own highlight (16 lemon) may share her night colour.
+    lightness = pal.oklab[:, 0]
+    body = pal.night[SWEEPER_YELLOW]
+    assert {i for i, t in enumerate(pal.night) if t == body} == {SWEEPER_YELLOW, LEMON}
+    for i, t in enumerate(pal.night):
+        if t != body:
+            assert lightness[t] + SEPARATE_AT_1X_L <= lightness[body], f"night[{i:02d}] = {t:02d} is too bright"
+
+
+def test_night_keeps_blues_blue(pal: Palette) -> None:
+    for i in pal.ramps["blue"]:
+        assert pal.night[i] in pal.ramps["blue"]
 
 
 @pytest.mark.parametrize("table", ["night", "shadow"])

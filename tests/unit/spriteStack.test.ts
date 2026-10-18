@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { FRAME } from '../../src/gen/assets.ts';
 import { createCameraRig, pinCameraRig, SWEEP_HEIGHT_M } from '../../src/render/camera.ts';
 import { loadAtlas, type RgbaImage, type SpriteAtlas } from '../../src/render/spriteAtlas.ts';
-import { DropShadowBatch, INSTANCE_STRIDE, SpriteBatch } from '../../src/render/spriteBatch.ts';
+import { DropShadowBatch, INSTANCE_STRIDE, SpriteBatch, SpriteFlag } from '../../src/render/spriteBatch.ts';
 import {
   addSpriteStack,
   LAMP_POST_STACK,
@@ -126,8 +126,10 @@ describe('addSpriteStack', () => {
       ]);
       expect(read(sprites.mesh, 'layer', i, 0)).toBe(STACK_LAYER);
       expect(read(sprites.mesh, 'rotation', i, 0)).toBe(0);
-      expect(read(sprites.mesh, 'flags', i, 0)).toBe(0);
+      // The lantern is the night light (ART_BIBLE §8.6): it alone writes the light mask (SSP-021).
+      expect(read(sprites.mesh, 'flags', i, 0)).toBe(slice.lightsAtNight ? SpriteFlag.Lit : 0);
     });
+    expect([0, 1, 2, 3].map((i) => read(sprites.mesh, 'flags', i, 0))).toEqual([0, 0, 0, SpriteFlag.Lit]);
     const shadowHeights = [0, 1].map((i) => read(shadows.mesh, 'offset', i, 1));
     expect(shadowHeights).toEqual([Math.fround(0.6), Math.fround(4.4)]);
     expect([0, 1].map((i) => read(shadows.mesh, 'atlas', i, 0))).toEqual([1, 1]);

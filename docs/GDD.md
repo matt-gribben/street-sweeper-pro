@@ -5,7 +5,7 @@
 >
 > **Language:** British English throughout (colour, kerb, tyre, rubbish). Gameplay numbers here are mirrored in `src/data/tuning.json`, `src/data/entities.json`, `src/data/upgrades.json` and `src/data/districts.json`. **Until a data file exists, this document is the truth for its tuning, district and economy numbers (entity and upgrade numbers belong to [ENTITY_CATALOG.md](ENTITY_CATALOG.md)). From the commit that creates the data file, the data file wins for the build and this document gets a fix PR** (see [CLAUDE.md §2](../CLAUDE.md#2-where-truth-lives)).
 >
-> Values marked **(proposed)** are design intent that the sheet does not fix. They are expected to move during tuning and must be confirmed in the milestone named next to them. Values marked `TBD (M0 spike)` are deliberately undecided.
+> Values marked **(proposed)** are design intent that the sheet does not fix. They are expected to move during tuning and must be confirmed in the milestone named next to them. Values marked `TBD (M0 spike)` were deliberately left to the M0 spike; none remain since M0 closed (SSP-027).
 
 ---
 
@@ -328,7 +328,7 @@ The full-hopper multipliers scale **linearly with fill fraction** (LU in hopper 
 From the player's point of view (details in [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md)):
 
 - **Look-ahead:** the camera leads Bessie by up to 3.0 m along her velocity, so you see more of where you're going.
-- **Speed zoom:** above the brush-down top speed the camera eases out (height 31.5 m → 37.8 m at transit top speed) so transit driving shows more road. At sweeping speeds it returns to exact 1:1 pixels. *(The M0 spike may disable zoom; if so, look-ahead alone remains.)*
+- **Speed zoom:** above the brush-down top speed the camera eases out (height 31.5 m → 37.8 m at transit top speed) so transit driving shows more road. At sweeping speeds it returns to exact 1:1 pixels. *(The M0 spike kept zoom on, [ROADMAP D-01](ROADMAP.md#8-m0-spike-decision-log); M1 re-judges it with real driving. If it is ever disabled, look-ahead alone remains.)*
 
 ---
 
@@ -1048,7 +1048,7 @@ Tracked here until resolved; resolutions go into the relevant section and data f
 | 4 | Is the chain timer frozen during a dump? | M2 | Yes (§8.7) |
 | 5 | Does the Shift map overlay pause? | M3 | No (§6.2); revisit if playtests show frustration |
 | 6 | Trophy threshold and exact Inspection Score formula | M6 | 0.5 × mean best Tidy % Mon–Sat + 0.5 × Inspection pass rate; Trophy at ≥ 80 (§12.8) |
-| 7 | Speed zoom on or off | M0 | `TBD (M0 spike)` |
+| 7 | Speed zoom on or off | M0 | **Resolved in M0: On** ([ROADMAP D-01](ROADMAP.md#8-m0-spike-decision-log), SSP-024; `SPEED_ZOOM_DEFAULT = true`). Transit driving zooms out to H = 37.8 m as in §7.5. Re-judged with real driving and procedural asphalt in M1 (SSP-047); if it is turned off there, look-ahead alone remains and [LEVEL_DESIGN §7.9](LEVEL_DESIGN.md#79-sight-lines-and-the-camera) switches to the 24 m telegraph |
 | 8 | Is dust coughing a "penalty" that resets the chain? | M2 | Yes, for consistency with "any penalty resets the chain" |
 | 9 | Free Sweep: collectibles allowed? HP floor at 1? | M6 | Yes and yes (§13.2) |
 | 10 | Undumped hopper contents at shift end: any pay-out? | M2 | None (§5.3) |

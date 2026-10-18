@@ -623,7 +623,7 @@ See [Week](#week).
 Two related settings, both defaulting to 0°:
 
 - **`camera.tiltDeg`** (runtime). Tips the game camera off vertical, up to a maximum of 12°. It is reserved for optional post-1.0 route views and is not used in any 1.0 district. Early design notes informally call it the "Paperboy tilt" after its inspiration. Never use that name in code, assets or in-game text.
-- **Blender `--tilt`** (pre-render). Tips the sprite render camera. It is 0° unless the M0 spike approves up to 8°, because a steeper tilt (the probe used 22°) clashes with radially leaning buildings. It is recorded as `tilt_deg` in `render.json`.
+- **Blender `--tilt`** (pre-render). Tips the sprite render camera. It is 0°: the M0 spike compared 0° with 8° and kept 0° ([ROADMAP D-02](ROADMAP.md#8-m0-spike-decision-log)), because a steeper tilt (the probe used 22°) clashes with radially leaning buildings. It is recorded as `tilt_deg` in `render.json`.
 
 ### Tipping fee
 The payment for dumping at the depot: **£1 per 5 LU** dumped. Skip dumps pay nothing.

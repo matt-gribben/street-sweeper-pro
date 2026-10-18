@@ -23,7 +23,7 @@ Implement tick phase 3: `collision/grid.ts` holds the static world (merged solid
 grid.ts (TECHNICAL_DESIGN §9.1):
 - Built from the decoded level's `solids` (merged rects, in tiles → metres) and `props`, plus the map boundary as solid.
 - Static props (`prop.lamp_post`, `prop.bollard`, `prop.bench`, `prop.bus_shelter`, `prop.phone_box`, `prop.post_box`, `prop.hydrant`, `prop.tree`, `prop.planter`, `prop.market_stall`, `prop.litter_bin`, `prop.roadworks_barrier`) are OBBs or circles, registered in one bucket per tile.
-- Prop footprints are not specified: ENTITY_CATALOG §9 says 'opaque bbox of the lowest slice', and slice counts are TBD (M0 spike). OPEN: add one provisional footprint table in one place (proposal: tuning.json → `propFootprints`, keyed by prop id, moving to entities.json in M2), flagged provisional until M4 art. Use a 0.3 m-diameter circle for `prop.bollard` (TECHNICAL_DESIGN §9.5 property uses a 0.3 m bollard). Extend tuning.ts type guards accordingly.
+- Prop footprints are not specified: ENTITY_CATALOG §9 says 'opaque bbox of the lowest slice', and slice counts were decided in M0 (4 or 8 per prop by the lean rule, ART_BIBLE §8.6 and STYLE.md v1 §8), but footprints were not. OPEN: add one provisional footprint table in one place (proposal: tuning.json → `propFootprints`, keyed by prop id, moving to entities.json in M2), flagged provisional until M4 art. Use a 0.3 m-diameter circle for `prop.bollard` (TECHNICAL_DESIGN §9.5 property uses a 0.3 m bollard). Extend tuning.ts type guards accordingly.
 - Parked vehicles (`veh.<type>_parked`) are static OBBs, but they arrive with M3 spawns.
 
 Phase 3 (§9.2):

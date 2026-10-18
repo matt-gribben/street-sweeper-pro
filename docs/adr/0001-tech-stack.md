@@ -172,7 +172,7 @@ The panel's per-judge numeric scores are not preserved in the project record. Th
 - **No game-framework batteries.** No scenes, input, audio, tweens, tilemaps or UI. We write them ourselves (§2.4). This is deliberate, but it is real work across M1–M3.
 - **A monthly release cadence that breaks APIs.** Mitigated by the exact pin `0.186.1`. Upgrades go through a PR with a full visual golden run.
 - **Colour management and filtering defaults are wrong for pixel art.** sRGB conversion, mipmaps, linear filtering and MSAA would all corrupt exact palette values. Every texture uses `NearestFilter` with no mipmaps, and the colour-space settings are locked in the M0 spike. The `zoo` visual golden (pixelmatch threshold 0) catches any drift, because a shifted source colour snaps to the wrong palette entry.
-- **Perspective artefacts.** Ground shimmer while the speed zoom is pulled out (H up to 37.8 m), and roof magnification up to 1.91× at 6 storeys. Both are accepted as part of the look. The M0 spike may disable zoom.
+- **Perspective artefacts.** Ground shimmer while the speed zoom is pulled out (H up to 37.8 m), and roof magnification up to 1.91× at 6 storeys. Both are accepted as part of the look. The M0 spike kept zoom on (§4.4, [ROADMAP D-01](../ROADMAP.md#8-m0-spike-decision-log)).
 - **Bundle size** is larger than PixiJS. The M0 production build's JS is 145,933 B gzipped (585,584 B raw; measured in SSP-023, [§4.4](#44-m0-spike-decisions-this-adr-depends-on)), and it grows with content. It is a one-off download and acceptable for an itch.io HTML5 game.
 
 ### 3.3 PixiJS 8.22.0 + custom 2.5D (close second)

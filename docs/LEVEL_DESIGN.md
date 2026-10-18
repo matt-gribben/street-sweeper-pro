@@ -2,7 +2,7 @@
 
 > **Scope:** the seven districts of the Tidy Town Week plus the Depot Yard: what each one contains, how it is laid out, how dense it is, how it is authored as text, how things spawn, and how a shift unfolds second by second. For *why* the game plays the way it does, see [GDD.md](GDD.md). For *the stats of every entity named here*, see [ENTITY_CATALOG.md](ENTITY_CATALOG.md). For *how the compiled level is rendered and simulated*, see [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md).
 >
-> **Status:** v1.0, 2026-10-18. Numbers marked *(initial)* are starting values for M3/M6 playtest tuning. Their source of truth is the level JSON, not this document. Values that depend on an engine decision still to be made are marked `TBD (M0 spike)` or with the milestone that decides them.
+> **Status:** v1.0, 2026-10-18. Numbers marked *(initial)* are starting values for M3/M6 playtest tuning. Their source of truth is the level JSON, not this document. Values that depend on an engine decision still to be made are marked with the milestone that decides them (`TBD (M0 spike)` markers were all resolved when M0 closed).
 
 **Related docs:** [README](../README.md) · [CLAUDE.md](../CLAUDE.md) · [GDD](GDD.md) · [TECHNICAL_DESIGN](TECHNICAL_DESIGN.md) · [ASSET_PIPELINE](ASSET_PIPELINE.md) · [ART_BIBLE](ART_BIBLE.md) · [AUDIO_DESIGN](AUDIO_DESIGN.md) · [ENTITY_CATALOG](ENTITY_CATALOG.md) · [ROADMAP](ROADMAP.md) · [ADR 0001](adr/0001-tech-stack.md) · [ADR 0002](adr/0002-ai-authored-asset-pipeline.md) · [GLOSSARY](GLOSSARY.md)
 
@@ -463,7 +463,7 @@ Each district below lists its layout, density, hazards and NPC mix. The numbers 
 | Parked | 12 | |
 | Knockables | 16 `prop.wheelie_bin`, 4 `prop.shopping_trolley` |
 
-**Design notes.** The night rule is that every `haz.*` placement and every litter hotspot must sit inside a lamp pool or be flagged `darkOk` (the compiler checks this, [§10.3](#103-validation-rules)). Darkness hides the Golden Crisp, never a penalty. The light pool radius is a render constant, `TBD (M0 spike)`; this document assumes about 5 m. The police double the cost of mistakes nearby (+1 complaint for anything witnessed within 15 m), so their patrol loop avoids the densest litter streets and gives the player a choice of where to be careless.
+**Design notes.** The night rule is that every `haz.*` placement and every litter hotspot must sit inside a lamp pool or be flagged `darkOk` (the compiler checks this, [§10.3](#103-validation-rules)). Darkness hides the Golden Crisp, never a penalty. The light pool radius is a render constant, decided in M0 as **5 m** ([ROADMAP D-05](ROADMAP.md#8-m0-spike-decision-log); `LIGHT_POOL_RADIUS_M` in `src/render/lightPools.ts`), which is what this document assumes. The police double the cost of mistakes nearby (+1 complaint for anything witnessed within 15 m), so their patrol loop avoids the densest litter streets and gives the player a choice of where to be careless.
 
 ### 5.7 Sun: Civic Quarter (`district.civic_quarter`), finale
 
@@ -719,7 +719,7 @@ At sweeping speed the camera shows **30 m × 16.875 m** (about 15 × 8.4 tiles) 
 | Brush-down top speed, 6.0 m/s | 6.6 m | 11.4 m | Fair for anything visible |
 | Transit, 11.0 m/s | 16.7 m | 13.1 m | **Not fair.** Any hard obstacle on a transit road (open manhole, roadworks, a parked van across the lane) must be telegraphed with cones or barriers at least **20 m** before it, or placed on an east–west street. |
 
-If M0 disables speed zoom, the transit view shrinks to 11.4 m and the telegraph distance rises to 24 m (`TBD (M0 spike)`, recorded in [ROADMAP](ROADMAP.md)).
+M0 kept speed zoom **on** ([ROADMAP D-01](ROADMAP.md#8-m0-spike-decision-log), SSP-024), so the 13.1 m transit view and the 20 m telegraph above stand. M1 re-judges zoom with real driving (SSP-047). If it is turned off then, the transit view shrinks to 11.4 m and the telegraph distance rises to 24 m.
 
 **Building lean.** A roof edge at height *h* and screen offset *d* from the camera axis projects to *d × H / (H − h)*. At H = 31.5 m a 6-storey (15 m) roof overhangs about 0.9 m of ground per metre of offset, so tall blocks near the screen edge hide the street behind them. Rules:
 
@@ -1353,8 +1353,8 @@ Run this before opening a PR that adds or changes a level. Paste the par report 
 
 | # | Question | Default until resolved | Resolve in |
 |---|---|---|---|
-| 1 | Is speed zoom kept? It changes transit sight lines and the telegraph distance (20 m vs 24 m). | 20 m with zoom; 24 m if zoom is cut | M0 |
-| 2 | Night light pool radius for lamps and headlights | Design assumes ≈ 5 m | M0 |
+| 1 | Is speed zoom kept? It changes transit sight lines and the telegraph distance (20 m vs 24 m). | **Resolved in M0: kept** ([ROADMAP D-01](ROADMAP.md#8-m0-spike-decision-log)), so 20 m; re-judged in M1 (SSP-047), 24 m if it is cut then | M0 (done) |
+| 2 | Night light pool radius for lamps and headlights | **Resolved in M0: 5 m** for lamps ([ROADMAP D-05](ROADMAP.md#8-m0-spike-decision-log), `LIGHT_POOL_RADIUS_M`); headlight cones stay 8 m long ([ART_BIBLE §13](ART_BIBLE.md#13-night-weather-and-time-of-day)) | M0 (done) |
 | 3 | Does the timer start on first throttle or after a fixed 3 s rollout? | Whichever comes first; on the first play of Puddle Lane, on the first brush-lower ([GDD §16.1](GDD.md#161-principles)) | M2 |
 | 4 | Frontage widths by use (house 3, shop 4, pub/takeaway 5, unit 6, civic 8) and the zone depth (3 tiles + gutter) | As listed | M2 |
 | 5 | Is Mon's `dawn` transition (Bayer dither from the night remap) affordable and readable, or is Mon simply "morning"? | Keep the dissolve, 20 s | M6 |

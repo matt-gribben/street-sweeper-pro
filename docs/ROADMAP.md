@@ -262,7 +262,7 @@ Each milestone has the same shape:
 - [ ] `forge/palette.py`: load `kerbside32.json`, OKLab nearest-colour mapping, deterministic tie-breaking (lower index wins).
 - [ ] A shared test vector file of 4,096 RGB samples → expected index, used by **both** pytest (forge) and Vitest (the 64³ LUT builder in `src/render/palettePass.ts`), so the two languages can never disagree.
 - [ ] `forge/blender.py`: wraps the exact command in [ASSET_PIPELINE.md](ASSET_PIPELINE.md), writes `render.json`, and implements `--check`.
-- [ ] `forge/genai.py`: Codex wrapper (prompt on stdin with `-`, stdin always redirected, model pinned with `-m` from `CODEX_MODEL`, fallback to `~/.codex/generated_images/<thread-id>/exec-*.png`). Implements `--candidates N` and `--accept <n>`. Cursor: document the raw command only; `--tool cursor` exits non-zero with "not implemented until needed". The Cursor gen-ai wrapper is deferred to the first milestone that actually needs a concept A/B.
+- [x] `forge/genai.py`: Codex wrapper (prompt on stdin with `-`, stdin always redirected, model pinned with `-m` from `CODEX_MODEL`, fallback to `~/.codex/generated_images/<thread-id>/exec-*.png`). Implements `--candidates N` and `--accept <n>`. Cursor: document the raw command only; `--tool cursor` exits non-zero with "not implemented until needed". The Cursor gen-ai wrapper is deferred to the first milestone that actually needs a concept A/B.
 - [ ] `forge/ingest.py` prototype: steps 1–10 of the ingest spec, enough to turn `ref.people_style` into one grid.
 - [x] `forge/build.py` for the `grid` and `blender` techniques. `forge/outline.py`: 1 px ink, 4-connected, outside the silhouette. Byte-identical PNG encode, with no metadata.
 - [x] Deterministic Pillow encode test: build twice and compare SHA-256.
@@ -271,7 +271,7 @@ Each milestone has the same shape:
 
 - [ ] `assets-src/palette/kerbside32.json`: the 32 colours and ramps from [ART_BIBLE.md](ART_BIBLE.md), verbatim.
 - [ ] Tune `night[32]` and `shadow[32]` in the spike scene. Every entry must map within its own ramp, or to the next ramp down. Record the tables in the file and in D-05/D-06.
-- [ ] `assets-src/ai/_style_preamble.md` v1 (overhead, characters about 20 px tall head to feet, 1 px dark outline, top-left light, palette hex list, transparent background, no text, no logos).
+- [x] `assets-src/ai/_style_preamble.md` v1 (overhead, characters about 20 px tall head to feet, 1 px dark outline, top-left light, palette hex list, transparent background, no text, no logos).
 - [ ] Accept `ref.people_style` (from the probe candidate, or regenerate with Codex if it fails review). Open it with Read before accepting.
 - [ ] `assets-src/STYLE.md` v1: scale sheet (16 px/m, 32×32 tiles, 32×40 facade module, sprite size table), palette and ramps, sun at azimuth 315° and elevation 50°, outline rule, people style reference. [ART_BIBLE.md](ART_BIBLE.md) mirrors it.
 

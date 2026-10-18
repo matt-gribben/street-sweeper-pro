@@ -1,0 +1,36 @@
+{
+  "id": "concept.spike_street",
+  "tool": "codex",
+  "tool_version": "codex-cli 0.160.1",
+  "model": "gpt-6.1-sol (agent, pinned via -m); image model: Codex built-in image_gen, version not exposed",
+  "date": "2026-10-19",
+  "argv": [
+    "~/.local/bin/codex",
+    "exec",
+    "-m",
+    "gpt-6.1-sol",
+    "--skip-git-repo-check",
+    "--ephemeral",
+    "-s",
+    "workspace-write",
+    "-C",
+    "build/ai-candidates/concept.spike_street/run_00",
+    "--json",
+    "-o",
+    "build/ai-candidates/concept.spike_street/run_00/last_message.txt",
+    "-"
+  ],
+  "prompt_sha256": "e93bbbc1d75658f7639e640d65b9471d17012b576a7a5655d583a85eb58eb2f3",
+  "preamble_version": "v1",
+  "reference_images": [],
+  "original_output_path": "~/.codex/generated_images/01a15058-b6a4-7ac1-98b5-6c588de90ad5/exec-0998c123-cde1-48f6-92d9-e6758e1cb972.png",
+  "candidates_generated": 1,
+  "accepted_index": 0,
+  "acceptance_notes": "Concept board: reference only, never shipped, no manifest entry (ASSET_PIPELINE 10.13). Accepted run_00, the single candidate of the SSP-012 smoke run (one candidate by design: no looping for luck), after reading review.png and run_00/street.png. Why it is kept: the roofs, pavements, road markings, zebra crossing and promenade read as straight down; the layout follows the brief top to bottom; the yellow sweeper with red brushes leaves a visibly cleaner stripe through the grime; the people read as a high three-quarter cheat at a small size; litter is scattered in the gutters; no text, lettering, logos or brand-like marks. Verified by the wrapper: byte-identical to the thread's image_gen exec-*.png, and events.jsonl shows only a cat of the skill file and a cp (no drawing). Caveats for anyone using it as a style reference: the cars and the sweeper show their sides and wheels (a three-quarter cheat; ART_BIBLE vehicles are strictly overhead), the colours are not limited to Kerbside-32, the road grime is noisy speckle rather than clean pixel clusters, and it added a sea strip below the beach that the brief did not ask for. Shadows fall to the right as briefed.",
+  "golden_sha256": "50588ea521988edc03671145b3e4fad86799159c890c13c8e87d91350e36d947",
+  "size": [
+    1774,
+    887
+  ],
+  "seed": null
+}

@@ -7,12 +7,12 @@ import sys
 
 import pytest
 
-from forge.__main__ import EXIT_NOT_IMPLEMENTED, NOT_IMPLEMENTED_UNTIL, build_parser, main
+from forge.__main__ import EXIT_NOT_IMPLEMENTED, NOT_IMPLEMENTED_UNTIL, _not_implemented, build_parser, main
 
 SUBCOMMANDS = ("build", "ingest", "blender", "gen-ai", "lint", "sheets", "verify")
-IMPLEMENTED = frozenset({"blender", "build", "ingest", "lint", "sheets", "verify"})  # SSP-007 (test_blender.py),
-# SSP-009 (test_build.py), SSP-010 (test_verify.py), SSP-011 (test_lint.py, test_sheets.py), SSP-013 (test_ingest.py)
-STUBBED = tuple(c for c in SUBCOMMANDS if c not in IMPLEMENTED)
+IMPLEMENTED = frozenset({"blender", "build", "gen-ai", "ingest", "lint", "sheets", "verify"})  # SSP-007
+# (test_blender.py), SSP-009 (test_build.py), SSP-010 (test_verify.py), SSP-011 (test_lint.py, test_sheets.py),
+# SSP-012 (test_genai.py), SSP-013 (test_ingest.py)
 
 # Each subcommand invoked with every documented flag (ASSET_PIPELINE §5.3).
 FULL_INVOCATIONS: dict[str, list[str]] = {
@@ -28,8 +28,6 @@ FULL_INVOCATIONS: dict[str, list[str]] = {
         "cursor",
         "--candidates",
         "3",
-        "--accept",
-        "2",
         "--ref",
         "a.png",
         "--ref",
@@ -60,10 +58,13 @@ def _run_module(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_every_documented_subcommand_has_a_stub_entry() -> None:
-    assert set(NOT_IMPLEMENTED_UNTIL) == set(STUBBED)
-    assert not set(NOT_IMPLEMENTED_UNTIL) & IMPLEMENTED
+def test_every_documented_subcommand_has_a_real_handler() -> None:
+    assert set(IMPLEMENTED) == set(SUBCOMMANDS)
+    assert NOT_IMPLEMENTED_UNTIL == {}, "every subcommand has landed; a new stub needs an entry and a test"
     assert set(FULL_INVOCATIONS) == set(SUBCOMMANDS) == set(MINIMAL_INVOCATIONS)
+    parser = build_parser()
+    for cmd in SUBCOMMANDS:
+        assert parser.parse_args(MINIMAL_INVOCATIONS[cmd]).handler is not _not_implemented, cmd
 
 
 def test_help_lists_every_subcommand() -> None:
@@ -73,20 +74,11 @@ def test_help_lists_every_subcommand() -> None:
         assert cmd in result.stdout
 
 
-@pytest.mark.parametrize("cmd", STUBBED)
-def test_stub_exits_non_zero_with_message_subprocess(cmd: str) -> None:
-    result = _run_module(*MINIMAL_INVOCATIONS[cmd])
+def test_genai_cursor_exits_non_zero_subprocess() -> None:
+    result = _run_module("gen-ai", "x", "--tool", "cursor")
     assert result.returncode == EXIT_NOT_IMPLEMENTED
-    assert result.returncode != 0
-    assert f"forge {cmd}: not implemented until {NOT_IMPLEMENTED_UNTIL[cmd]}" in result.stderr
+    assert "not implemented until needed" in result.stderr
     assert result.stdout == ""
-
-
-@pytest.mark.parametrize("cmd", STUBBED)
-def test_stub_accepts_every_documented_flag(cmd: str, capsys: pytest.CaptureFixture[str]) -> None:
-    status = main(FULL_INVOCATIONS[cmd])
-    assert status == EXIT_NOT_IMPLEMENTED
-    assert "not implemented until SSP-" in capsys.readouterr().err
 
 
 def test_parsed_flags() -> None:
@@ -98,9 +90,11 @@ def test_parsed_flags() -> None:
     a = parser.parse_args(FULL_INVOCATIONS["gen-ai"])
     assert a.id == "litter.sheet_01"
     assert a.tool == "cursor", "the last --tool wins (npm gen:ai prepends --tool codex)"
-    assert (a.candidates, a.accept, a.ref) == (3, 2, ["a.png", "b.png"])
+    assert (a.candidates, a.accept, a.ref) == (3, None, ["a.png", "b.png"])
     a = parser.parse_args(["gen-ai", "x"])
-    assert a.tool == "codex"
+    assert (a.tool, a.candidates, a.accept) == ("codex", None, None)
+    a = parser.parse_args(["gen-ai", "x", "--accept", "0"])
+    assert a.accept == 0, "candidate runs are numbered from run_00"
     a = parser.parse_args(FULL_INVOCATIONS["ingest"])
     assert (a.id, a.force, a.dry_run) == ("litter.sheet_01", True, True)
     a = parser.parse_args(FULL_INVOCATIONS["blender"])
@@ -118,21 +112,21 @@ def test_parsed_flags() -> None:
 @pytest.mark.parametrize(
     "argv",
     [
-        ["-v", "gen-ai", "x"],
-        ["gen-ai", "x", "-v"],
-        ["--verbose", "gen-ai", "x", "--tool", "codex"],
+        ["-v", "gen-ai", "x", "--tool", "cursor"],
+        ["gen-ai", "x", "-v", "--tool", "cursor"],
+        ["--verbose", "gen-ai", "x", "--tool", "codex", "--tool", "cursor"],
     ],
 )
 def test_global_verbose_before_or_after_subcommand(argv: list[str], capsys: pytest.CaptureFixture[str]) -> None:
     assert build_parser().parse_args(argv).verbose is True
     assert main(argv) == EXIT_NOT_IMPLEMENTED
     err = capsys.readouterr().err
-    assert "forge: forge " in err, "-v enables per-step debug logging"
+    assert "forge: forge gen-ai: arguments" in err, "-v enables per-step debug logging"
 
 
 def test_verbose_off_by_default(capsys: pytest.CaptureFixture[str]) -> None:
     assert build_parser().parse_args(["lint"]).verbose is False
-    main(["gen-ai", "x"])
+    main(["gen-ai", "x", "--tool", "cursor"])
     assert "forge: forge " not in capsys.readouterr().err
 
 
@@ -149,6 +143,8 @@ def test_verbose_off_by_default(capsys: pytest.CaptureFixture[str]) -> None:
         ["gen-ai"],
         ["gen-ai", "x", "--tool", "dalle"],
         ["gen-ai", "x", "--candidates", "0"],
+        ["gen-ai", "x", "--accept", "-1"],
+        ["gen-ai", "x", "--candidates", "2", "--accept", "1"],
         ["sheets", "--atlas", "nope"],
     ],
 )

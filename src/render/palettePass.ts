@@ -386,7 +386,8 @@ void main() {
 }
 `;
 
-function nearestDataTexture<T extends Texture>(texture: T): T {
+/** Data-texture setup shared by every lookup texture: nearest, clamped, no mipmaps, tightly packed rows. */
+export function nearestDataTexture<T extends Texture>(texture: T): T {
   texture.minFilter = NearestFilter;
   texture.magFilter = NearestFilter;
   texture.wrapS = ClampToEdgeWrapping;

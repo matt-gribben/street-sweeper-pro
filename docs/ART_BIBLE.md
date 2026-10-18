@@ -350,7 +350,7 @@ One sun for every technique: **north-west, azimuth 315°, elevation 50°**. Hand
 
 | Shadow | Rule |
 |---|---|
-| Actor drop shadow | The same sprite offset **+2, +2 px** (SE), written to the shadow mask. Never painted into the sprite. Not drawn for flying birds while airborne *(proposed)*; drawn for the cat on Bessie's roof. |
+| Actor drop shadow | The same sprite offset **+2, +2 px** (SE), written to the shadow mask. Never painted into the sprite. Not drawn for flying birds while airborne *(proposed)*; drawn for the cat on Bessie's roof. Bessie's brush overlay casts none: its discs run on the road (SSP-018). |
 | Building shadow | Polygon projected toward the SE, length 0.84 × height (tan 50°), written to the shadow mask. |
 | Sprite stacks | Each slice casts its own +2, +2 offset *(proposed: only the lowest and highest slices, to keep mask draws cheap; decided in M0)*. |
 | Result | Pixels under the mask are remapped through `shadow[32]`: shadows are always palette colours. |

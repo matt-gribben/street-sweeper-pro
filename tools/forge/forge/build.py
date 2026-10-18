@@ -8,7 +8,8 @@ Techniques built here (M0):
 
 - ``grid`` / ``ai-ingest``: parse the ``.sprite.txt`` (:mod:`forge.sprite`) -> validate id,
   cell, key and frame list against the manifest -> render frames -> apply mirrors -> outline
-  when ``outline: true``. (Litter rotations arrive with the litter grids, M2/M4.)
+  when ``outline: true`` -> pivot (:func:`grid_pivot`: feet for ``npc`` creatures, cell centre
+  otherwise). (Litter rotations arrive with the litter grids, M2/M4.)
 - ``blender``: read ``assets-src/rendered/<id>/`` -> block-mode 4x4 -> 1 px -> palette snap ->
   alpha 128 -> 1 px ink outline (:mod:`forge.outline`) -> pivots from ``render.json``.
 
@@ -361,6 +362,21 @@ def _build_blender(entry: AssetEntry, repo_root: Path, palette: Palette) -> Asse
 # ---------------------------------------------------------------------------------------------
 # Grid technique
 
+#: Asset classes whose grids are creatures (people and animals): their pivot is the feet.
+FEET_PIVOT_CLASSES = frozenset({"npc"})
+
+
+def grid_pivot(entry: AssetEntry) -> tuple[int, int]:
+    """Pivot of a grid frame, in cell pixels.
+
+    Creatures (``npc``) pivot on the bottom-centre of the feet, row ``h - 2`` with the last row
+    clear (ART_BIBLE §4.4, §7.2: row 22 of a 24x24 human cell), so actors sort and stand on their
+    feet (SSP-018). Everything else pivots on the cell centre.
+    """
+    if entry.asset_class in FEET_PIVOT_CLASSES:
+        return (entry.width // 2, entry.height - 2)
+    return (entry.width // 2, entry.height // 2)
+
 
 def _build_grid(entry: AssetEntry, repo_root: Path) -> AssetBuild:
     path = repo_root / entry.source
@@ -380,7 +396,7 @@ def _build_grid(entry: AssetEntry, repo_root: Path) -> AssetBuild:
             f"{entry.id}: {entry.source} cell {grid.width}x{grid.height} != manifest cell {entry.width}x{entry.height}"
         )
     _check_frame_list(entry, rendered, "grid")
-    pivot = (entry.width // 2, entry.height // 2)
+    pivot = grid_pivot(entry)
     frames: list[Frame] = []
     for local in sorted(rendered):
         fid, state, d, n = _split_local(entry.id, local)

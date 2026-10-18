@@ -2,7 +2,7 @@
 id: SSP-018
 title: "Draw Bessie (32 headings) and the pedestrian via instanced sprite batches"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:render, size:L, vertical-slice]

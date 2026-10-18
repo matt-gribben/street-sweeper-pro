@@ -2,7 +2,7 @@
 id: SSP-007
 title: "Implement assets-src/blender/rig.py and the forge blender wrapper with --check"
 milestone: M0
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:tooling, area:assets, size:M, vertical-slice]
@@ -68,13 +68,13 @@ Timing: first frame about 3.3 s (shader compile), then about 0.05 s per frame.
 
 ## Acceptance criteria
 
-- [ ] `uv run --project tools/forge python -m forge blender --version` prints `Blender 5.2.2 LTS` on the dev Mac
-- [ ] With SSP_BLENDER pointing at a fake binary reporting another version, the wrapper exits non-zero before rendering
-- [ ] A fake render that writes a Traceback to stderr, or exits 1, makes the wrapper exit non-zero and leaves assets-src/rendered/<id>/ byte-identical
-- [ ] pytest verifies script_sha256 = sha256(script + b'\0' + rig.py)
-- [ ] `--check` on identical synthetic frames reports 0 changed pixels and exits 0; on a 1 px change it reports 1, writes a diff PNG and exits non-zero
-- [ ] `grep -rnE '#[0-9a-fA-F]{6}' assets-src/blender` prints nothing
-- [ ] `uv run --project tools/forge pytest` passes
+- [x] `uv run --project tools/forge python -m forge blender --version` prints `Blender 5.2.2 LTS` on the dev Mac
+- [x] With SSP_BLENDER pointing at a fake binary reporting another version, the wrapper exits non-zero before rendering
+- [x] A fake render that writes a Traceback to stderr, or exits 1, makes the wrapper exit non-zero and leaves assets-src/rendered/<id>/ byte-identical
+- [x] pytest verifies script_sha256 = sha256(script + b'\0' + rig.py)
+- [x] `--check` on identical synthetic frames reports 0 changed pixels and exits 0; on a 1 px change it reports 1, writes a diff PNG and exits non-zero
+- [x] `grep -rnE '#[0-9a-fA-F]{6}' assets-src/blender` prints nothing
+- [x] `uv run --project tools/forge pytest` passes
 
 ## Verification
 

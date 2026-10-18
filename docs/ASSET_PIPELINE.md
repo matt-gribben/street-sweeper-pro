@@ -253,7 +253,7 @@ All forge commands run as `uv run --project tools/forge python -m forge <cmd>`. 
 | `lint` | `[--only <id>…] [--warn-as-error]` | CI passes `--warn-as-error` except for the "re-render needed" warning, which blocks merge by review rule instead. |
 | `sheets` | `[--atlas world\|actors\|items\|ui\|fx] [--only <id>…]` | 4×, labelled, light `#c3c1c0` and dark `#24222a` backgrounds, palette strip, Bessie h00 for scale. |
 | `ingest` | `<id> [--force] [--dry-run]` | Refuses to overwrite an edited grid without `--force`. `--dry-run` writes previews to `build/tmp/ingest/<id>/` only. |
-| `blender` | `<id\|all> [--check]` | Local only. Wraps the exact Blender command (§7.1). |
+| `blender` | `<id\|all> [--check]`, `--version` | Local only. Wraps the exact Blender command (§7.1). `--version` prints the Blender version. |
 | `gen-ai` | `<id> [--tool codex\|cursor] [--candidates N] [--accept <n>] [--ref <path>]…` | Local only. `--ref` defaults to whatever `prompt.md` declares. |
 
 Until its implementing issue lands, a subcommand accepts its flags but exits 3 with `forge <cmd>: not implemented until SSP-xxx` on stderr (never 0). The mapping is `NOT_IMPLEMENTED_UNTIL` in `tools/forge/forge/__main__.py`.
@@ -589,11 +589,24 @@ The forge runs this for you (`npm run assets:blender -- veh.sweeper`). Run it by
 
 `forge blender` adds what the raw command cannot do safely:
 
-- It checks `--version` against 5.2.2 LTS.
-- It renders into `build/tmp/blender/<id>/` and only swaps the folder into `assets-src/rendered/<id>/` after every expected file exists.
-- It passes `--python-exit-code 1` so any uncaught Python exception exits non-zero, and also treats a `Traceback` in stderr as failure.
-- It writes `render.json`.
-- `--check` renders to `build/tmp/` and reports per-frame pixel diffs against the committed renders without replacing anything.
+- It checks `<blender> -b --factory-startup --version` against `Blender 5.2.2 LTS` and refuses to run anything otherwise. `forge blender --version` prints the reported version (and exits non-zero on a mismatch).
+- It renders into `build/tmp/blender/<id>/` and only swaps the folder into `assets-src/rendered/<id>/` after Blender exits 0, `render.json` verifies and the PNG set is exactly the expected frames (each a square RGBA `--size` image). The swap stages the new folder next to the target and uses two renames, so any failure leaves the committed folder byte-identical. Stale frames from an older render disappear with the swap.
+- It passes `--python-exit-code 1` so any uncaught Python exception exits non-zero, and also treats a `Traceback` in stderr as failure. Blender's output is kept in `build/tmp/blender/<id>/stdout.txt` and `stderr.txt`.
+- The rig writes `render.json` (`rig.write_render_json`); the wrapper verifies every field (`blender_version`, `script_sha256` = sha256(script + NUL + `rig.py`), `argv` = what it passed, `tilt_deg` = 0, `pivots_px` = the cell centre for every heading), then rewrites only the `--out` value in `argv` from the temp dir to `assets-src/rendered/<id>` so committed provenance does not depend on the machine.
+- `--check` renders to `build/tmp/blender/<id>/`, prints per-frame changed-pixel counts (any RGBA channel differs) against the committed renders, writes diff PNGs to `build/tmp/blender/<id>/diff/` (changed pixels `18 postbox_red`, unchanged silhouette `04 slab_dk`, empty `00 ink`), replaces nothing and exits non-zero if any pixel changed or a frame was added or removed.
+- `all` renders (or checks) every script under `assets-src/blender/{vehicles,props,roofkit}/`.
+
+**Script lookup and arguments** (decided in SSP-007, so a script can be rendered before its manifest entry exists):
+
+| Input | Rule |
+|---|---|
+| Script | The asset ID minus its class prefix maps to `assets-src/blender/{vehicles,props,roofkit}/<name>.py`: `veh.sweeper` → `vehicles/sweeper.py`, `veh.sweeper_brush` → `vehicles/sweeper_brush.py`. Zero or several matches is an error, and so is a match in the wrong class folder (`veh` → `vehicles/`, `prop` → `props/`, `roof` → `roofkit/`). |
+| `--size` | 4 × the script's module-level `CELL_PX = <int>` (read by regex, never executed) |
+| `--headings` | By class: `veh` 32, `prop` 1, `roof` 4 |
+| Expected frames | The script's module-level `STATES` literal (state → frames per heading, the same shape as the manifest's `frames`), read with `ast`: `body` → `hNN.png`; `slice` → `slice_<k>.png` (1 heading only); another single-frame state → `<state>_hNN.png`; n > 1 frames → `<state>_hNN_<f>.png` (§6.6). The frame count must equal the sum of `STATES` × headings. |
+| `--out` | The temp dir, repo-relative (`build/tmp/blender/<id>`); Blender runs with the repo root as its working directory |
+| `--tilt` | Always 0 |
+| Manifest | When `assets-src/manifest.json` has an entry for the ID, its `cell`, `frames` and `dirs` must agree with `CELL_PX`, `STATES` and the class headings |
 
 ### 7.2 Rig rules (enforced in `rig.py`)
 
@@ -612,6 +625,8 @@ The forge runs this for you (`npm run assets:blender -- veh.sweeper`). Run it by
 | Timing | The first frame costs about 3.3 s of shader compile, then about 0.05 s per frame |
 
 ### 7.3 Skeleton: `assets-src/blender/rig.py`
+
+The committed `assets-src/blender/rig.py` (SSP-007) is the implementation and wins over this skeleton if they differ; it adds palette-name validation, a check that the render settings stuck, and `heading_rad()`.
 
 ```python
 """Shared Blender rig for Street Sweeper Pro. Blender 5.2.2 LTS only.
@@ -671,8 +686,7 @@ def pal(name: str) -> tuple[float, float, float, float]:
 def reset_scene(cell_px: int, size: int, tilt_deg: float) -> bpy.types.Scene:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
-    engines = {e.identifier for e in bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items}
-    scene.render.engine = "BLENDER_EEVEE" if "BLENDER_EEVEE" in engines else "BLENDER_EEVEE_NEXT"
+    scene.render.engine = "BLENDER_EEVEE"   # the only EEVEE identifier in 5.2.2
     scene.eevee.taa_render_samples = 1
     r = scene.render
     r.filter_size = 0.0
@@ -683,6 +697,9 @@ def reset_scene(cell_px: int, size: int, tilt_deg: float) -> bpy.types.Scene:
     r.image_settings.file_format = "PNG"
     r.image_settings.color_mode = "RGBA"
     r.image_settings.color_depth = "8"
+    for prop in r.bl_rna.properties:          # no Date/Time/RenderTime PNG text chunks
+        if prop.identifier.startswith("use_stamp"):
+            setattr(r, prop.identifier, False)
     vs = scene.view_settings
     vs.view_transform = "Standard"   # never AgX
     vs.look = "None"
@@ -712,7 +729,7 @@ def reset_scene(cell_px: int, size: int, tilt_deg: float) -> bpy.types.Scene:
 def toon_material(name: str, lit: str, base: str, dark: str) -> bpy.types.Material:
     """Unlit toon: dot(N, sun) -> constant ramp (exact palette stops) -> Emission."""
     mat = bpy.data.materials.new(name)
-    mat.use_nodes = True
+    # 5.x materials always have a node tree; setting use_nodes is deprecated (warns on stderr).
     nt = mat.node_tree
     nt.nodes.clear()
     geom = nt.nodes.new("ShaderNodeNewGeometry")
@@ -786,6 +803,7 @@ import bpy  # noqa: E402
 import rig  # noqa: E402
 
 CELL_PX = 64
+STATES = {"body": 1, "dented": 1}   # state -> frames per heading; forge blender expects exactly these frames
 SCRIPT = Path(__file__).resolve()
 
 
@@ -830,7 +848,7 @@ def main():
 main()
 ```
 
-The brush overlay script, `assets-src/blender/vehicles/sweeper_brush.py`, follows the same shape (imports, `SCRIPT` and the `box()` helper as above) with `CELL_PX = 96`, run with `--size 384`:
+The brush overlay script, `assets-src/blender/vehicles/sweeper_brush.py`, follows the same shape (imports, `SCRIPT` and the `box()` helper as above) with `CELL_PX = 96` and `STATES = {"brush": 4}`, run with `--size 384`:
 
 ```python
 def build():

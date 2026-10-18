@@ -39,9 +39,22 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     ids = [e.id for e in entries]
     assert ids == sorted(ids), "manifest entries must be sorted by id"
     assert unsorted_ids(entries) == []
-    assert ids == ["npc.old_woman", "prop.lamp_post", "veh.sweeper", "veh.sweeper_brush"]
+    assert ids == ["litter.banana_skin", "npc.old_woman", "prop.lamp_post", "veh.sweeper", "veh.sweeper_brush"]
     raw = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     assert raw["assets"][0] == {
+        "id": "litter.banana_skin",
+        "class": "litter",
+        "technique": "ai-ingest",
+        "source": "assets-src/sprites/litter/banana_skin.sprite.txt",
+        "cell": [16, 16],
+        "states": ["idle"],
+        "dirs": ["h00"],
+        "frames": {"idle": 1},
+        "atlas": "items",
+        "outline": False,
+        "swaps": [],
+    }
+    assert raw["assets"][1] == {
         "id": "npc.old_woman",
         "class": "npc",
         "technique": "ai-ingest",
@@ -54,7 +67,7 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "outline": False,
         "swaps": [],
     }
-    assert raw["assets"][1] == {
+    assert raw["assets"][2] == {
         "id": "prop.lamp_post",
         "class": "prop",
         "technique": "blender",
@@ -67,8 +80,8 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "outline": True,
         "swaps": [],
     }
-    assert raw["assets"][2] == SWEEPER
-    assert raw["assets"][3] == {
+    assert raw["assets"][3] == SWEEPER
+    assert raw["assets"][4] == {
         "id": "veh.sweeper_brush",
         "class": "veh",
         "technique": "blender",
@@ -81,7 +94,7 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "outline": True,
         "swaps": [],
     }
-    assert sum(len(e.frame_ids()) for e in entries) == 204
+    assert sum(len(e.frame_ids()) for e in entries) == 205
     for e in raw["assets"]:
         assert list(e) == list(FIELDS), "fields in the documented order"
         assert not e["id"].startswith(("concept.", "_probe")), "_probe and concept.* are never in the manifest"
@@ -103,7 +116,9 @@ def test_expand_dirs() -> None:
     assert expand_dirs("h4") == ("h00", "h01", "h02", "h03")
     assert expand_dirs("-") == ("-",)
     assert expand_dirs(["s", "sw", "w"]) == ("s", "sw", "w")
-    for bad in ("h8", [], ["x"], ["s", "s"], 3):
+    assert expand_dirs(["h00"]) == ("h00",)
+    assert expand_dirs(["h00", "h08", "h16", "h24"]) == ("h00", "h08", "h16", "h24")
+    for bad in ("h8", [], ["x"], ["s", "s"], 3, ["h32"], ["h08", "h00"], ["h00", "h00"], ["h00", "s"], ["h7"]):
         with pytest.raises(ManifestError):
             expand_dirs(bad)
 

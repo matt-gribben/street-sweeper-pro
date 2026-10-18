@@ -32,8 +32,8 @@
 // under each lamp post, and each lamp head (the lantern slice) writes the light mask, so the palette pass leaves
 // them out of night[32]. By day the pools are hidden: the day frame is unchanged by them.
 //
-// Room is left in every quadrant for SSP-024's 8° comparison (swap Bessie's frames, or add a second Bessie on
-// the open ground).
+// SSP-024 compared 0° and 8° Bessie here (D-02) by serving a temporary 8° actors atlas in place of the committed
+// one (tools/spikes/lookDecisions.ts); 0° was kept.
 //
 // Determinism: everything is a pure function of the render-frame counter. Each Bessie cycles her 32 headings
 // from a fixed per-quadrant offset (north-east h00, south-east h08, south-west h16, north-west h24 at frame 0),

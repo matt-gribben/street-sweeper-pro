@@ -335,7 +335,7 @@ Field semantics the forge relies on:
 |---|---|
 | `technique: "ai-ingest"` | Built **exactly like `grid`** from `source` (a `.sprite.txt`). The technique exists so that lint also requires the provenance folder named in the grid's `origin:` header to be complete and hash-valid. |
 | `technique: "ai-art"` | Built from `assets-src/ai/<id>/golden.png` + `ingest.json` every build (crop → pixelize at the detected pseudo-pixel period → palette map). There is no intermediate grid. |
-| `dirs` | `"h32"` = `h00`–`h31`. `"h4"` = `h00`–`h03` (90° steps, used for roof kit). A list = compass dirs. `"-"` = undirected. |
+| `dirs` | `"h32"` = `h00`–`h31`. `"h4"` = `h00`–`h03` (90° steps, used for roof kit). A list = compass dirs, or a list of only `hNN` headings in increasing order (litter: `["h00"]` while only the authored rotation exists, SSP-024; the code-generated `h08`/`h16`/`h24` arrive with the litter grids). `"-"` = undirected. |
 | `outline` | `true` → forge **adds** the 1 px ink (`#0f0e12`) outline, 4-connected, outside the silhouette. `false` → the source already contains it (grids usually draw their own). Lint checks the result either way, so the visible body must be ≤ cell − 2 px when `outline` is `true`. |
 | `swaps` | Names of per-instance ramp-swap tables (index → index, at most 8 per atlas). They are defined in `assets-src/palette/kerbside32.json` under `swaps` and emitted into the atlas JSON. |
 
@@ -622,7 +622,7 @@ The forge runs this for you (`npm run assets:blender -- veh.sweeper`). Run it by
 | `--` | Everything after it goes to the script (`sys.argv` after `--`), not to Blender |
 | `--size` | Render resolution, **4× the target cell**: 256 for 64 px cells, 128 for 32 px, 384 for `veh.bin_lorry` and `veh.sweeper_brush` (96), 512 for `veh.bus` (128) |
 | `--headings` | 32 for vehicles. 4 for roof kit. 1 for sprite-stack props. |
-| `--tilt` | 0 by default. Up to 8° only if the M0 spike approves it (the probe's 22° clashes with radially leaning buildings). |
+| `--tilt` | Always 0 for committed renders: [ROADMAP D-02](ROADMAP.md#8-m0-spike-decision-log) rejected 8° (SSP-024; it leans against the buildings in the bottom half of the screen), as the probe's 22° was. Other values are for debugging comparisons under `build/` only. |
 
 `forge blender` adds what the raw command cannot do safely:
 

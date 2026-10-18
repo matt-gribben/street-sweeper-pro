@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
@@ -9,6 +10,7 @@ import {
   groundPxPerMetre,
   pinCameraRig,
   roofMagnification,
+  SPEED_ZOOM_DEFAULT,
   type SpringState,
   SWEEP_HEIGHT_M,
   setCameraFrame,
@@ -222,6 +224,17 @@ describe('speed zoom', () => {
     stepCriticalSpring(s, 37.8, 3, 0);
     stepCriticalSpring(s, 37.8, 3, -1);
     expect(s.value).toBe(31.5);
+  });
+
+  it('is on by default, as ROADMAP D-01 decided and TECHNICAL_DESIGN §12.2 states (SSP-024)', () => {
+    expect(SPEED_ZOOM_DEFAULT).toBe(true);
+    const rig = createCameraRig(480);
+    expect(rig.zoomEnabled).toBe(SPEED_ZOOM_DEFAULT);
+    for (let i = 0; i < 600; i++) updateCameraRig(rig, 0, 0, 11, 1 / 60);
+    expect(rig.height.value).toBeCloseTo(ZOOM_OUT_HEIGHT_M, 6);
+    const doc = readFileSync(new URL('../../docs/TECHNICAL_DESIGN.md', import.meta.url), 'utf8');
+    const row = doc.split('\n').find((line) => line.startsWith('| Speed zoom |'));
+    expect(row).toContain(`default **${SPEED_ZOOM_DEFAULT ? 'On' : 'Off'}** (D-01`);
   });
 
   it('the flag disables it: H stays at 31.5 m at transit speed', () => {

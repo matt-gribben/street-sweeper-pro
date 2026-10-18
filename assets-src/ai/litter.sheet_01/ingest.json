@@ -1,16 +1,7 @@
 {
   "mode": "sheet",
   "grid": [4, 2],
-  "cells": [
-    "litter.drink_can",
-    "litter.banana_skin",
-    "litter.glass_bottle",
-    "litter.newspaper",
-    "litter.crisp_packet",
-    "litter.bin_bag",
-    "litter.dog_mess",
-    "litter.cigarette_butts"
-  ],
+  "cells": [null, "litter.banana_skin", null, null, null, null, null, null],
   "frame": "idle:h00:0",
   "target_cell": [16, 16],
   "largest_item_px": 14,

@@ -1,11 +1,11 @@
 """Determinism and acceptance checks over a real build of the committed M0 assets (SSP-009, SSP-010, SSP-014,
-SSP-020).
+SSP-020, SSP-024).
 
 Builds ``assets-src/manifest.json`` twice with the cache off, into two temp dirs, and checks
 that every output file has the same SHA-256 (frames, atlas PNG/JSON, ``src/gen/assets.ts``,
-``asset-hashes.json``); then inspects the built frames: 204 of them, 64x64 Bessie / 96x96
+``asset-hashes.json``); then inspects the built frames: 205 of them, 64x64 Bessie / 96x96
 brush / 24x24 npc.old_woman (8 idle directions, 3 of them mirrored) / 32x32 prop.lamp_post
-(4 sprite-stack slices), Kerbside-32 colours only with binary alpha, the outline rule, no
+(4 sprite-stack slices) / 16x16 litter.banana_skin (the D-07 scale sample, h00 only), Kerbside-32 colours only with binary alpha, the outline rule, no
 metadata chunks, and a palette snap that changed 0 pixels; and the packed ``actors`` and
 ``items`` atlases.
 """
@@ -28,13 +28,15 @@ from forge.pngio import FORBIDDEN_METADATA_CHUNKS, decode_indexed_png, png_chunk
 
 PALETTE = load_palette()
 CELLS = {
+    "litter.banana_skin": (16, 16),
     "npc.old_woman": (24, 24),
     "prop.lamp_post": (32, 32),
     "veh.sweeper": (64, 64),
     "veh.sweeper_brush": (96, 96),
 }
-FRAME_COUNT = 204
+FRAME_COUNT = 205
 ATLAS_OF = {
+    "litter.banana_skin": "items",
     "npc.old_woman": "actors",
     "prop.lamp_post": "items",
     "veh.sweeper": "actors",
@@ -70,7 +72,7 @@ def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
     result, a, _ = builds
     assert len(result.frames) == FRAME_COUNT
     counts = {aid: sum(1 for f in result.frames if f.asset_id == aid) for aid in CELLS}
-    assert counts == {"npc.old_woman": 8, "prop.lamp_post": 4, "veh.sweeper": 64, "veh.sweeper_brush": 128}
+    assert counts == {"litter.banana_skin": 1, "npc.old_woman": 8, "prop.lamp_post": 4, "veh.sweeper": 64, "veh.sweeper_brush": 128}
     assert len(list((a / "frames").rglob("*.png"))) == FRAME_COUNT
     assert [f.frame_id for f in result.frames] == sorted(f.frame_id for f in result.frames)
     assert "veh.sweeper:body:h07:0" in {f.frame_id for f in result.frames}
@@ -170,7 +172,7 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
     assert names == ["actors.json", "actors.png", "items.json", "items.png"]
 
 
-@pytest.mark.parametrize(("name", "count"), [("actors", 200), ("items", 4)])
+@pytest.mark.parametrize(("name", "count"), [("actors", 200), ("items", 5)])
 def test_atlas_holds_every_frame_at_its_rect(
     builds: tuple[BuildResult, Path, Path], name: str, count: int
 ) -> None:

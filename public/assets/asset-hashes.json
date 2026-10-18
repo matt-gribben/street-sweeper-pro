@@ -1,7 +1,7 @@
 {
   "public/assets/atlas/actors.json": "d5a1aaf089f975c91c0a8ac4408158e600c81065ced5fcbbe665be3998a19721",
   "public/assets/atlas/actors.png": "34f3789ea4a88c43313f262afb7442260f630aeedc3fb5ebc149c753b506d6f1",
-  "public/assets/atlas/items.json": "419d9692cc3171caeedf32bc95d6b82b0ec01109e2e1a2166af36caf3e179c03",
-  "public/assets/atlas/items.png": "2d9d98ea78b3e8875131608da725a66b9efc5802a65babb21c748faad7b00dcd",
-  "src/gen/assets.ts": "57adf098f5b2cb6c69574df3070d9bd55b08864add985dd1912bec57046f526b"
+  "public/assets/atlas/items.json": "7750c9b56f1581ba6f56aaa24cd323c596c89e11a629ddcd653387e1d5b262e2",
+  "public/assets/atlas/items.png": "df3fae37642660fc77d0379d112523f2f49aafd4c94ec54f857e8bd023d5c8f3",
+  "src/gen/assets.ts": "c6c1b97bcfdea8a971b96b7b09873b5c9349018720d40ce3154ebc7411c4bdda"
 }

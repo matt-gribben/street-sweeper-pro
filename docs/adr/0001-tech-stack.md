@@ -265,9 +265,9 @@ The **M0 Foundations & Look Spike** must confirm the following and record the ou
 
 | Question | Default | Recorded in M0 |
 |---|---|---|
-| Speed zoom (H 31.5 → 37.8 m) on or off? | On | TBD (M0 spike) |
-| Vehicle render tilt: 0° vs ≤ 8° | 0° | TBD (M0 spike) |
-| 480×270 base resolution holds up at 1080p / 1440p / 4K | Yes | TBD (M0 spike) |
+| Speed zoom (H 31.5 → 37.8 m) on or off? | On | **On** (M0, SSP-024): zoomed frames shimmer (about 1,100 crawl px per frame on a flat scene at 37.8 m, 0 at 1:1) but every actor stays readable at 4×; `SPEED_ZOOM_DEFAULT = true`, re-judged in SSP-047. [ROADMAP D-01](../ROADMAP.md#8-m0-spike-decision-log) |
+| Vehicle render tilt: 0° vs ≤ 8° | 0° | **0°** (M0, SSP-024): an 8° Bessie always shows her south side, against the buildings' north walls in the bottom half of the screen. [ROADMAP D-02](../ROADMAP.md#8-m0-spike-decision-log) |
+| 480×270 base resolution holds up at 1080p / 1440p / 4K | Yes | **Yes** (M0, SSP-024): exact integer 4×/5×/8× (and 2×, ultrawide W = 640), 0 mismatched device pixels, index-00 bars; 24×24 humans and 16×16 litter read at every scale. [ROADMAP D-03](../ROADMAP.md#8-m0-spike-decision-log) |
 | Headless SwiftShader golden is byte-stable across runs | Yes | **Yes, locally** (M0, SSP-022): `lean_quadrants` and `scale_1440` byte-identical over 10 separate Playwright invocations on the dev Mac at pixelmatch threshold 0; `macos-latest` parity pending a remote. [ROADMAP D-09](../ROADMAP.md#8-m0-spike-decision-log) |
 | Production bundle size and p99 frame-time budget | — | **Bundle** (M0, SSP-023): JS 585,584 B raw, **145,933 B gzip**; `dist/` total 653,365 B (648K). **p99 frame time ≤ 20.6 ms** on the dev Mac (baseline 10.3 ms × 2). [ROADMAP D-08](../ROADMAP.md#8-m0-spike-decision-log) |
 

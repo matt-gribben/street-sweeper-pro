@@ -11,7 +11,8 @@
 //   rotation         quarter turns clockwise (0..3), pixel-exact; vehicle headings come from the frame instead;
 //   frameRect (vec4) x, y, w, h in atlas pixels, from the generated FRAME table;
 //   pivot (vec2)     the frame's pivot in frame pixels (atlas JSON px/py): body centre or feet;
-//   swap             swap-table row 0..7 (a uint8 value; the M0 table is identity);
+//   swap             swap-table row 0..7 (a uint8 value): the fragment shader maps the atlas index through that
+//                    row of the atlas's 32×8 swap texture before the palette lookup (identity until M4, SSP-114);
 //   flags            SpriteFlag bits (mirror; lit: the sprite writes G = 1, the light mask, SSP-021);
 //   layer, sortBias  the depth layer (DepthLayer) and the in-layer bias in [0, 1), computed by the batch from
 //                    the sprite's sim y and the camera y given to begin();
@@ -264,6 +265,9 @@ void main() {
 `;
 
 // GLSL ES 3.0 cannot index a sampler array with a non-constant, so the selector picks between two samplers.
+// The shadow needs only the silhouette, so it skips the swap row: a swap table maps 0..31 to 0..31 (the loader
+// refuses anything else, spriteAtlas.ts), so it can never make an opaque texel transparent or the reverse, and
+// the shadow writes no colour for it to change.
 const SHADOW_FRAGMENT = /* glsl */ `
 precision highp float;
 precision highp int;

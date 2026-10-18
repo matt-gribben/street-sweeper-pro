@@ -247,13 +247,13 @@ Each milestone has the same shape:
 - [x] `jsfxr` 1.4.1 is added in M5, not now (nothing uses it yet). `zzfx` is never installed: its `buildSamples` is vendored into `tools/audio/synth/zzfx.ts` in M5 ([AUDIO_DESIGN §5.3](AUDIO_DESIGN.md#53-determinism-rule-for-zzfx-and-jsfxr)).
 - [x] `tsconfig.json` (one project for `src/`, `tools/`, `tests/`): strict, `erasableSyntaxOnly: true`, `noEmit`, `allowImportingTsExtensions: true`, `module`/`moduleResolution: "nodenext"`. Relative imports use explicit `.ts` extensions everywhere. Confirm that `node tools/...ts` runs through native type stripping, including a tool that imports `src/sim`.
 - [x] Verify TypeScript 7.0.2 with Vite, Vitest and Biome. Fall back to 6.0.3 if any tool breaks, and record the outcome in D-10.
-- [ ] `biome.json` with the `noRestrictedImports` override on `src/sim/**` (bans `three` and DOM modules) and bans on the `Math.random`, `Date` and `performance` globals.
-- [ ] `tests/unit/simPurity.test.ts` (as in [TECHNICAL_DESIGN §18.1](TECHNICAL_DESIGN.md#181-unit-tests-examples)): scans every file under `src/sim/` and fails on imports of `three` or DOM modules, on the regex `\bMath\.random\b|\bDate\b|\bperformance\b`, and on any import outside `src/sim/`, `src/data/` or a type-only import of `src/gen/assets.ts`.
+- [x] `biome.json` with the `noRestrictedImports` override on `src/sim/**` (bans `three` and DOM modules) and bans on the `Math.random`, `Date` and `performance` globals.
+- [x] `tests/unit/simPurity.test.ts` (as in [TECHNICAL_DESIGN §18.1](TECHNICAL_DESIGN.md#181-unit-tests-examples)): scans every file under `src/sim/` and fails on imports of `three` or DOM modules, on the regex `\bMath\.random\b|\bDate\b|\bperformance\b`, and on any import outside `src/sim/`, `src/data/` or a type-only import of `src/gen/assets.ts`.
 - [ ] `vite.config.ts` (`base: './'`), `vitest.config.ts`, `playwright.config.ts` (Chromium; the visual and `ci` perf projects use `--use-angle=swiftshader --enable-unsafe-swiftshader`; a local-only `gpu` perf project runs headed with no SwiftShader flags, see [TECHNICAL_DESIGN §18.6](TECHNICAL_DESIGN.md#186-e2e)).
 - [x] `.gitignore` exactly: `node_modules/`, `dist/`, `build/`, `test-results/`, `playwright-report/`, `tools/forge/.venv/`.
 - [ ] npm scripts from the command tables in [README.md](../README.md), wired to real implementations or to stubs that exit non-zero with a "not implemented until Mx" message. A stub must never pass silently.
 - [ ] `.github/workflows/ci.yml`: an `ubuntu-latest` job (typecheck, lint, unit, replay) and a `macos-latest` job (Playwright). `assets:verify` and `assets:lint` join CI in M4.
-- [ ] `tests/unit/ipHygiene.test.ts`: fails if `assets-src/ai/**/prompt.md`, `_style_preamble.md`, `src/data/*.json` or asset IDs contain a blocked trademark term.
+- [x] `tests/unit/ipHygiene.test.ts`: fails if `assets-src/ai/**/prompt.md`, `_style_preamble.md`, `src/data/*.json` or asset IDs contain a blocked trademark term.
 
 *Forge skeleton (`tools/forge/`)*
 

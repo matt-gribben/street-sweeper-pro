@@ -462,7 +462,7 @@ Solid. Hitting them uses the standard impact-damage rule ([§3.2](#32-collision-
 
 | ID | Name | Technique | Render | Notes | Districts |
 |---|---|---|---|---|---|
-| `prop.lamp_post` | Lamp post | blender *(proposed)* | stack | Lifts the light mask at night (Sat, and the Depot Yard after Saturday's shift). | All |
+| `prop.lamp_post` | Lamp post | blender | stack | Lifts the light mask at night (Sat, and the Depot Yard after Saturday's shift). M0 spike asset (SSP-020): 4 slices, `prop.lamp_post:slice:-:0`–`3`, in the `items` atlas; the slice count is revisited in SSP-026 (ART_BIBLE §8.6). | All |
 | `prop.bollard` | Bollard | grid | stack | Small and easy to clip with the gutter brush. | All except Yard |
 | `prop.bench` | Bench | blender | flat | | Mon, Tue, Fri, Sun |
 | `prop.bus_shelter` | Bus shelter | blender | stack | Paired with `site.bus_stop`. | Tue, Fri, Sun |

@@ -14,20 +14,23 @@
 //   - Bessie on the open asphalt between them, centre (8.25, −5.75): her body (1.85 m reach) clears every wall
 //     and roof at all 32 headings and her brush discs (2.4 m) stay on screen;
 //   - the pedestrian on the slab pavement at (6.5, −2.25), between the 6- and 3-storey blocks, facing the
-//     screen centre, out of reach of the brush discs.
+//     screen centre, out of reach of the brush discs;
+//   - a sprite-stack lamp post (SSP-020, `prop.lamp_post`, 4 slices up to 4.4 m) on the open ground just north
+//     of the 6-storey tower at (4, −6.5): its lantern leans out to (4.65, −7.55) m, inside the frame, clear of
+//     the tower's roof (y > −5.7 m on screen), its foot 1.9 m beyond Bessie's brush reach.
 // The other quadrants mirror this (x → −x and/or y → −y). Each footprint is one 2 m cell, so the three blocks
 // differ only in height and screen offset. Every base and roof stays inside the frame and its own quadrant,
 // and no two blocks overlap on screen (tests/unit/leanQuadrants.test.ts). The cell edges sit on odd metres,
 // so a 2 m street runs along each screen axis.
 //
-// Room is left in every quadrant for SSP-020's lamp post (for instance on the open ground north of the
-// 6-storey tower, around (4, −6.5), where a 5 m lamp still leans inside the frame) and for SSP-024's 8°
-// comparison (swap Bessie's frames, or add a second Bessie on that ground).
+// Room is left in every quadrant for SSP-024's 8° comparison (swap Bessie's frames, or add a second Bessie on
+// the open ground).
 //
 // Determinism: everything is a pure function of the render-frame counter. Each Bessie cycles her 32 headings
 // from a fixed per-quadrant offset (north-east h00, south-east h08, south-west h16, north-west h24 at frame 0),
-// so `freeze=1` (which holds the counter) gives one fixed frame. Draw calls: the city mesh, building shadows,
-// drop shadows and the actors atlas (4), plus the palette pass and blit.
+// so `freeze=1` (which holds the counter) gives one fixed frame. The lamp posts never change. Draw calls: the
+// city mesh, building shadows, drop shadows, the actors atlas and the items atlas (5), plus the palette pass and
+// blit: 7 of the 10 allowed (TECHNICAL_DESIGN §12.7).
 import { Group } from 'three';
 import type { FrameId } from '../gen/assets.ts';
 import { createCityMesh, mergeBoxes, parseCityGrid } from '../render/cityMesh.ts';
@@ -36,6 +39,7 @@ import { createBuildingShadows } from '../render/shadows.ts';
 import { spikeBrushSpin, spikeHeading } from '../render/spikeActors.ts';
 import type { SpriteAtlas } from '../render/spriteAtlas.ts';
 import { DropShadowBatch, SpriteBatch } from '../render/spriteBatch.ts';
+import { addSpriteStack, LAMP_POST_STACK, stackShadowCount, stackSliceCount } from '../render/spriteStack.ts';
 import { DepthLayer } from '../render/worldMaterial.ts';
 
 /** One character per 2 m cell (`.` asphalt, `:` slab, digits = storeys); row 0 is north. 17 × 9 cells. */
@@ -66,11 +70,14 @@ export type LeanQuadrant = {
   readonly pedestrianM: readonly [x: number, y: number];
   /** The pedestrian frame: Doris idle, facing the screen centre. */
   readonly pedestrianFrame: FrameId;
+  /** The lamp post's foot (the sprite-stack pivot) in sim metres. */
+  readonly lampPostM: readonly [x: number, y: number];
 };
 
 /** Bessie and pedestrian positions in the north-east quadrant; the others mirror them. */
 const NE_BESSIE_M = [8.25, -5.75] as const;
 const NE_PEDESTRIAN_M = [6.5, -2.25] as const;
+const NE_LAMP_POST_M = [4, -6.5] as const;
 
 /** The four quadrants, ordered north to south (sprites of one layer are added in that order). */
 export const LEAN_QUADRANTS: readonly LeanQuadrant[] = [
@@ -79,6 +86,7 @@ export const LEAN_QUADRANTS: readonly LeanQuadrant[] = [
     bessieM: [-NE_BESSIE_M[0], NE_BESSIE_M[1]],
     headingOffset: 24,
     pedestrianM: [-NE_PEDESTRIAN_M[0], NE_PEDESTRIAN_M[1]],
+    lampPostM: [-NE_LAMP_POST_M[0], NE_LAMP_POST_M[1]],
     pedestrianFrame: 'npc.old_woman:idle:se:0',
   },
   {
@@ -86,6 +94,7 @@ export const LEAN_QUADRANTS: readonly LeanQuadrant[] = [
     bessieM: [NE_BESSIE_M[0], NE_BESSIE_M[1]],
     headingOffset: 0,
     pedestrianM: [NE_PEDESTRIAN_M[0], NE_PEDESTRIAN_M[1]],
+    lampPostM: [NE_LAMP_POST_M[0], NE_LAMP_POST_M[1]],
     pedestrianFrame: 'npc.old_woman:idle:sw:0',
   },
   {
@@ -93,6 +102,7 @@ export const LEAN_QUADRANTS: readonly LeanQuadrant[] = [
     bessieM: [-NE_BESSIE_M[0], -NE_BESSIE_M[1]],
     headingOffset: 16,
     pedestrianM: [-NE_PEDESTRIAN_M[0], -NE_PEDESTRIAN_M[1]],
+    lampPostM: [-NE_LAMP_POST_M[0], -NE_LAMP_POST_M[1]],
     pedestrianFrame: 'npc.old_woman:idle:ne:0',
   },
   {
@@ -100,23 +110,28 @@ export const LEAN_QUADRANTS: readonly LeanQuadrant[] = [
     bessieM: [NE_BESSIE_M[0], -NE_BESSIE_M[1]],
     headingOffset: 8,
     pedestrianM: [NE_PEDESTRIAN_M[0], -NE_PEDESTRIAN_M[1]],
+    lampPostM: [NE_LAMP_POST_M[0], -NE_LAMP_POST_M[1]],
     pedestrianFrame: 'npc.old_woman:idle:nw:0',
   },
 ];
 
-/** Sprites per quadrant: Bessie's body, her brush overlay and the pedestrian. */
-const SPRITES_PER_QUADRANT = 3;
+/** Actors-atlas sprites per quadrant: Bessie's body, her brush overlay and the pedestrian. */
+const ACTORS_PER_QUADRANT = 3;
+
+/** Drop shadows per quadrant: Bessie's body, the pedestrian and the lamp post's shadow-casting slices. */
+const SHADOWS_PER_QUADRANT = 2 + stackShadowCount(LAMP_POST_STACK);
 
 /** Bessie's heading index in `quadrant` at render frame `frameCount`. */
 export function leanQuadrantHeading(quadrant: LeanQuadrant, frameCount: number): number {
   return (spikeHeading(frameCount) + quadrant.headingOffset) % HEADING_COUNT;
 }
 
-/** The lean_quadrants scene: add `world` to the renderer, attach the actors atlas once loaded, update per frame. */
+/** The lean_quadrants scene: add `world` to the renderer, attach the sprite atlases once loaded, update per frame. */
 export class LeanQuadrantsScene {
-  /** World-pass content: the city mesh and building shadows now, the actors once attachActors() runs. */
+  /** World-pass content: the city mesh and building shadows now, the sprites once attachSprites() runs. */
   readonly world: Group;
   private sprites: SpriteBatch | null = null;
+  private items: SpriteBatch | null = null;
   private shadows: DropShadowBatch | null = null;
 
   constructor() {
@@ -131,30 +146,39 @@ export class LeanQuadrantsScene {
     this.world.add(city, shadows);
   }
 
-  /** Adds Bessie and the pedestrian in every quadrant, drawn from the loaded `actors` atlas. */
-  attachActors(actors: SpriteAtlas): void {
-    if (this.sprites !== null) throw new Error('lean_quadrants actors are already attached');
-    const capacity = LEAN_QUADRANTS.length * SPRITES_PER_QUADRANT;
-    const sprites = new SpriteBatch(actors, capacity);
-    const shadows = new DropShadowBatch([actors], capacity);
-    // After the city (0) and building shadows (1); drop shadows before the sprites (TECHNICAL_DESIGN §12.3).
+  /**
+   * Adds Bessie and the pedestrian in every quadrant from the loaded `actors` atlas, and the lamp posts from the
+   * `items` atlas (one instanced draw each, plus one drop-shadow draw sampling both).
+   */
+  attachSprites(actors: SpriteAtlas, items: SpriteAtlas): void {
+    if (this.sprites !== null) throw new Error('lean_quadrants sprites are already attached');
+    const quadrants = LEAN_QUADRANTS.length;
+    const sprites = new SpriteBatch(actors, quadrants * ACTORS_PER_QUADRANT);
+    const stacks = new SpriteBatch(items, quadrants * stackSliceCount(LAMP_POST_STACK));
+    const shadows = new DropShadowBatch([actors, items], quadrants * SHADOWS_PER_QUADRANT);
+    // After the city (0) and building shadows (1): drop shadows, then the actors atlas, then the items atlas
+    // (TECHNICAL_DESIGN §12.3).
     shadows.mesh.renderOrder = 2;
     sprites.mesh.renderOrder = 3;
+    stacks.mesh.renderOrder = 4;
     const group = new Group();
-    group.name = 'leanQuadrantsActors';
-    group.add(shadows.mesh, sprites.mesh);
+    group.name = 'leanQuadrantsSprites';
+    group.add(shadows.mesh, sprites.mesh, stacks.mesh);
     this.world.add(group);
     this.sprites = sprites;
+    this.items = stacks;
     this.shadows = shadows;
   }
 
   /** Poses the actors for render frame `frameCount`; `camYSimM` is the camera's sim y (for sprite sorting). */
   update(frameCount: number, camYSimM: number): void {
     const sprites = this.sprites;
+    const items = this.items;
     const shadows = this.shadows;
-    if (sprites === null || shadows === null) return;
+    if (sprites === null || items === null || shadows === null) return;
     const spin = spikeBrushSpin(frameCount);
     sprites.begin(camYSimM);
+    items.begin(camYSimM);
     shadows.begin(camYSimM);
     for (let i = 0; i < LEAN_QUADRANTS.length; i++) {
       const quadrant = LEAN_QUADRANTS[i];
@@ -169,8 +193,10 @@ export class LeanQuadrantsScene {
       // The brush discs run on the road surface, so only the body and the pedestrian cast drop shadows.
       shadows.add(quadrant.pedestrianFrame, px, py);
       shadows.add(body, bx, by);
+      addSpriteStack(LAMP_POST_STACK, quadrant.lampPostM[0], quadrant.lampPostM[1], items, shadows);
     }
     sprites.end();
+    items.end();
     shadows.end();
   }
 }

@@ -1,6 +1,6 @@
 // lean_quadrants (SSP-019): the 1/3/6-storey trio in every screen quadrant, fully on screen at W = 480 with
-// the camera over the origin, plus Bessie and the pedestrian placed clear of every wall and roof, and the
-// scene's actors driven only by the render-frame counter.
+// the camera over the origin, plus Bessie and the pedestrian placed clear of every wall and roof, the SSP-020
+// sprite-stack lamp posts beside the blocks, and the scene's actors driven only by the render-frame counter.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { type InstancedMesh, Vector3 } from 'three';
@@ -9,7 +9,8 @@ import { createCameraRig, roofMagnification, SWEEP_HEIGHT_M } from '../../src/re
 import { type CityBox, mergeBoxes, parseCityGrid } from '../../src/render/cityMesh.ts';
 import { HEADING_COUNT } from '../../src/render/headings.ts';
 import { FRAMES_PER_HEADING } from '../../src/render/spikeActors.ts';
-import { loadAtlas, type RgbaImage, type SpriteAtlas } from '../../src/render/spriteAtlas.ts';
+import { type AtlasName, loadAtlas, type RgbaImage, type SpriteAtlas } from '../../src/render/spriteAtlas.ts';
+import { LAMP_POST_STACK } from '../../src/render/spriteStack.ts';
 import { INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
 import {
   LEAN_QUADRANTS,
@@ -74,8 +75,11 @@ function quadrantOf(xM: number, yM: number): string {
   return `${yM < 0 ? 'n' : 's'}${xM < 0 ? 'w' : 'e'}`;
 }
 
-async function loadActors(): Promise<SpriteAtlas> {
-  return loadAtlas('actors', {
+/** Half the widest opaque slice of the lamp post (the 15 px crossbar), rounded up to 0.5 m. */
+const LAMP_SLICE_HALF_M = 0.5;
+
+async function loadSprites(name: AtlasName): Promise<SpriteAtlas> {
+  return loadAtlas(name, {
     fetchJson: async (url: string): Promise<unknown> =>
       JSON.parse(readFileSync(`${REPO_ROOT}public${url}`, 'utf8')),
     fetchImage: async (url: string): Promise<RgbaImage> =>
@@ -201,28 +205,78 @@ describe('lean_quadrants actors', () => {
   });
 });
 
+describe('lean_quadrants lamp posts (SSP-020)', () => {
+  const halfHeightM = SWEEP_HEIGHT_M * Math.tan((15 * Math.PI) / 180);
+  const halfWidthM = (halfHeightM * W) / INTERNAL_HEIGHT_PX;
+
+  /** Where slice k shows on screen, in ground metres: its pivot magnified about the screen centre. */
+  const sliceM = (x: number, y: number, heightM: number): [number, number] => {
+    const m = roofMagnification(SWEEP_HEIGHT_M, heightM);
+    return [x * m, y * m];
+  };
+
+  it('stands one lamp post in each quadrant, mirrored like the rest of the scene', () => {
+    for (const q of LEAN_QUADRANTS) {
+      expect(quadrantOf(...q.lampPostM)).toBe(q.name);
+      expect(q.lampPostM.map(Math.abs)).toEqual([4, 6.5]);
+    }
+  });
+
+  it('keeps every slice on screen, in its own quadrant and clear of every block, Bessie and the pedestrian', () => {
+    for (const q of LEAN_QUADRANTS) {
+      const [x, y] = q.lampPostM;
+      const [bx, by] = q.bessieM;
+      const [px, py] = q.pedestrianM;
+      const figure: Rect = {
+        x0: px - FIGURE_HALF_WIDTH_M,
+        x1: px + FIGURE_HALF_WIDTH_M,
+        y0: py - FIGURE_HEIGHT_M,
+        y1: py,
+      };
+      for (const slice of LAMP_POST_STACK.slices) {
+        const [sx, sy] = sliceM(x, y, slice.heightM);
+        const half = LAMP_SLICE_HALF_M * roofMagnification(SWEEP_HEIGHT_M, slice.heightM);
+        const rect: Rect = { x0: sx - half, x1: sx + half, y0: sy - half, y1: sy + half };
+        expect(quadrantOf(rect.x0, rect.y0)).toBe(q.name);
+        expect(quadrantOf(rect.x1, rect.y1)).toBe(q.name);
+        expect(Math.max(Math.abs(rect.x0), Math.abs(rect.x1))).toBeLessThan(halfWidthM);
+        expect(Math.max(Math.abs(rect.y0), Math.abs(rect.y1))).toBeLessThan(halfHeightM);
+        for (const box of boxes) expect(overlaps(rect, coverRectM(box))).toBe(false);
+        expect(distanceToRect(bx, by, rect)).toBeGreaterThan(BRUSH_REACH_M);
+        expect(overlaps(rect, figure)).toBe(false);
+      }
+    }
+  });
+});
+
 describe('LeanQuadrantsScene', () => {
-  it('builds the city mesh and building shadows, then 12 sprites and 8 drop shadows per frame', async () => {
+  it('builds the city mesh and building shadows, then 12 actors, 16 lamp slices and 16 drop shadows per frame', async () => {
     const scene = new LeanQuadrantsScene();
     expect(scene.world.children.map((c) => c.renderOrder)).toEqual([0, 1]);
-    scene.update(0, 0); // before the atlas: draws nothing and does not throw
-    scene.attachActors(await loadActors());
+    scene.update(0, 0); // before the atlases: draws nothing and does not throw
+    scene.attachSprites(await loadSprites('actors'), await loadSprites('items'));
     scene.update(0, 0);
     const meshes: InstancedMesh[] = [];
     scene.world.traverse((o) => {
       if ('isInstancedMesh' in o && o.isInstancedMesh === true) meshes.push(o as InstancedMesh);
     });
     const sprites = meshes.find((m) => m.name === 'sprites:actors');
+    const items = meshes.find((m) => m.name === 'sprites:items');
     const shadows = meshes.find((m) => m.name === 'dropShadows');
     expect(sprites?.count).toBe(12);
-    expect(shadows?.count).toBe(8);
-    expect(sprites?.renderOrder).toBe(3);
+    expect(items?.count).toBe(16);
+    // Bessie's body and the pedestrian, plus the plinth and lantern of each lamp post.
+    expect(shadows?.count).toBe(16);
     expect(shadows?.renderOrder).toBe(2);
+    expect(sprites?.renderOrder).toBe(3);
+    expect(items?.renderOrder).toBe(4);
+    // The batches are the world pass's only instanced draws: 3 of the frame's 7 calls.
+    expect(meshes).toHaveLength(3);
   });
 
   it('is a pure function of the frame counter', async () => {
     const scene = new LeanQuadrantsScene();
-    scene.attachActors(await loadActors());
+    scene.attachSprites(await loadSprites('actors'), await loadSprites('items'));
     const rects = (): number[] => {
       let out: number[] = [];
       scene.world.traverse((o) => {
@@ -241,10 +295,11 @@ describe('LeanQuadrantsScene', () => {
     expect(rects()).toEqual(first);
   });
 
-  it('refuses a second atlas', async () => {
+  it('refuses a second set of atlases', async () => {
     const scene = new LeanQuadrantsScene();
-    const atlas = await loadActors();
-    scene.attachActors(atlas);
-    expect(() => scene.attachActors(atlas)).toThrow(/already attached/);
+    const actors = await loadSprites('actors');
+    const items = await loadSprites('items');
+    scene.attachSprites(actors, items);
+    expect(() => scene.attachSprites(actors, items)).toThrow(/already attached/);
   });
 });

@@ -1,0 +1,21 @@
+{
+  "blender_version": "5.2.2 LTS",
+  "script_sha256": "a065cab93afc104a68cfbd3470edf33601eab6f21d8f67c2b2b049d2acb929d5",
+  "argv": [
+    "--out",
+    "assets-src/rendered/prop.lamp_post",
+    "--size",
+    "128",
+    "--headings",
+    "1",
+    "--tilt",
+    "0"
+  ],
+  "tilt_deg": 0,
+  "pivots_px": {
+    "h00": [
+      16,
+      16
+    ]
+  }
+}

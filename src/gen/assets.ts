@@ -8,6 +8,10 @@ export const FRAME = {
   "npc.old_woman:idle:se:0": { atlas: "actors", x: 0, y: 995, w: 24, h: 24, px: 12, py: 22 },
   "npc.old_woman:idle:sw:0": { atlas: "actors", x: 25, y: 970, w: 24, h: 24, px: 12, py: 22 },
   "npc.old_woman:idle:w:0": { atlas: "actors", x: 25, y: 995, w: 24, h: 24, px: 12, py: 22 },
+  "prop.lamp_post:slice:-:0": { atlas: "items", x: 0, y: 0, w: 32, h: 32, px: 16, py: 16 },
+  "prop.lamp_post:slice:-:1": { atlas: "items", x: 33, y: 0, w: 32, h: 32, px: 16, py: 16 },
+  "prop.lamp_post:slice:-:2": { atlas: "items", x: 66, y: 0, w: 32, h: 32, px: 16, py: 16 },
+  "prop.lamp_post:slice:-:3": { atlas: "items", x: 99, y: 0, w: 32, h: 32, px: 16, py: 16 },
   "veh.sweeper:body:h00:0": { atlas: "actors", x: 1067, y: 873, w: 64, h: 64, px: 32, py: 32 },
   "veh.sweeper:body:h01:0": { atlas: "actors", x: 1067, y: 938, w: 64, h: 64, px: 32, py: 32 },
   "veh.sweeper:body:h02:0": { atlas: "actors", x: 1132, y: 873, w: 64, h: 64, px: 32, py: 32 },
@@ -202,4 +206,4 @@ export const FRAME = {
   "veh.sweeper_brush:brush:h31:3": { atlas: "actors", x: 1067, y: 776, w: 96, h: 96, px: 48, py: 48 },
 } as const;
 export type FrameId = keyof typeof FRAME;
-export type AssetId = "npc.old_woman" | "veh.sweeper" | "veh.sweeper_brush";
+export type AssetId = "npc.old_woman" | "prop.lamp_post" | "veh.sweeper" | "veh.sweeper_brush";

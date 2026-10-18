@@ -14,6 +14,19 @@
       "swaps": []
     },
     {
+      "id": "prop.lamp_post",
+      "class": "prop",
+      "technique": "blender",
+      "source": "assets-src/rendered/prop.lamp_post",
+      "cell": [32, 32],
+      "states": ["slice"],
+      "dirs": "-",
+      "frames": { "slice": 4 },
+      "atlas": "items",
+      "outline": true,
+      "swaps": []
+    },
+    {
       "id": "veh.sweeper",
       "class": "veh",
       "technique": "blender",

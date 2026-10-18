@@ -341,6 +341,27 @@ def test_slice_frames_use_the_undirected_dir(tmp_path: Path) -> None:
     assert {f.atlas for f in result.frames} == {"items"}
 
 
+def test_slice_frames_take_the_single_heading_pivot_the_rig_writes(tmp_path: Path) -> None:
+    # forge blender renders props with --headings 1, and rig.write_render_json keys pivots_px by heading
+    # ({"h00": [c, c]}), so slice frames (dir "-") fall back to h00 (SSP-020).
+    entry = blender_entry("prop.toy_stack", states=["slice"], dirs="-", frames={"slice": 2}, atlas="items")
+    repo = make_repo(tmp_path, [entry])
+    src = repo / "assets-src" / "rendered" / "prop.toy_stack"
+    for k in range(2):
+        write_png(src / f"slice_{k}.png", toy_render(8, k))
+    (src / "render.json").write_text('{"pivots_px": {"h00": [4, 4]}}')
+    result = build(repo_root=repo, out_root=tmp_path / "o", use_cache=False)
+    assert {f.pivot for f in result.frames} == {(4, 4)}
+
+
+def test_directed_frames_never_fall_back_to_h00(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, [blender_entry()])
+    src = add_toy_renders(repo)
+    (src / "render.json").write_text('{"pivots_px": {"h00": [4, 4]}}')
+    with pytest.raises(BuildError, match="no entry for 'h01'"):
+        build(repo_root=repo, out_root=tmp_path / "o", use_cache=False)
+
+
 # ---------------------------------------------------------------------------------------------
 # Grid technique end to end
 

@@ -2,7 +2,7 @@
 id: SSP-020
 title: "Prototype a 4-slice sprite-stack lamp post and add it to lean_quadrants (D-02 input)"
 milestone: M0
-status: todo
+status: done
 type: spike
 estimate: M
 labels: [type:spike, area:render, area:assets, size:M, vertical-slice]

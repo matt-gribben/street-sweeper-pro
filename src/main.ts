@@ -153,6 +153,7 @@ const testHooks = installTestHooks(window, search, {
     const rig = renderer.rig;
     return { x: rig.focusX, y: rig.focusZ, h: rig.height.value, pinned: cameraPinned };
   },
+  drawCalls: () => renderer.drawCalls,
 });
 
 // The actors atlas loads asynchronously; the world draws alone until it arrives. A bad atlas (a non-palette
@@ -189,8 +190,12 @@ if (import.meta.env.DEV && !testMode) {
 /** Clamp for long gaps (background tab): springs are exact for any dt, but the pan should not jump. */
 const MAX_FRAME_DT_S = 0.1;
 let lastMs = -1;
+/** Test mode: the previous rAF timestamp once ready, for `__ssp.perf()` frame times (-1 before the first). */
+let lastReadyRafMs = -1;
 
 function frame(nowMs: number): void {
+  // Test mode only: CPU time of this callback for `__ssp.perf()` (SSP-023). Never read outside test mode.
+  const workStartMs = testHooks === null ? 0 : performance.now();
   // Test mode: a fixed 1/60 s render step, and none at all when frozen (the loop renders but never steps).
   let dtS: number;
   if (testMode) {
@@ -203,6 +208,11 @@ function frame(nowMs: number): void {
   draw();
   // In test mode the counter also holds until ready, so the frame at `ready` never depends on load time.
   if (!frozen && (testHooks === null || testHooks.api.ready)) renderFrame++;
+  // Frame timings are observations only: they never feed back into what is drawn.
+  if (testHooks?.api.ready === true) {
+    if (lastReadyRafMs >= 0) testHooks.recordFrame(nowMs - lastReadyRafMs, performance.now() - workStartMs);
+    lastReadyRafMs = nowMs;
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

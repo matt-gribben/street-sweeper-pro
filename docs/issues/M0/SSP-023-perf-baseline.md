@@ -2,7 +2,7 @@
 id: SSP-023
 title: "Baseline perf.spec.ts on the dev Mac GPU and set the p99 frame-time budget (D-08)"
 milestone: M0
-status: todo
+status: done
 type: test
 estimate: M
 labels: [type:test, area:perf, area:test, size:M, vertical-slice]

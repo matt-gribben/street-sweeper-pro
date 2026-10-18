@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import pkg from '../../package.json' with { type: 'json' };
-import playwrightConfig, { SWIFTSHADER_ARGS } from '../../playwright.config.ts';
+import playwrightConfig, { GPU_TAG, SWIFTSHADER_ARGS } from '../../playwright.config.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const scripts: Record<string, string> = pkg.scripts;
@@ -156,6 +156,15 @@ describe('playwright.config.ts', () => {
     expect(project('gpu').testDir).toBe('tests/e2e');
     expect(project('gpu').use?.headless).toBe(false);
     expect(argsOf('gpu').join(' ')).not.toMatch(/swiftshader/i);
+  });
+
+  it('splits tests/e2e by tag: @gpu tests run in gpu only, everything else in ci only (SSP-023)', () => {
+    expect(GPU_TAG.source).toBe('@gpu');
+    expect(project('gpu').grep).toBe(GPU_TAG);
+    expect(project('gpu').grepInvert).toBeUndefined();
+    expect(project('ci').grepInvert).toBe(GPU_TAG);
+    expect(project('ci').grep).toBeUndefined();
+    expect(project('visual').grep).toBeUndefined();
   });
 
   it('serves the production build through vite preview on 4173', () => {

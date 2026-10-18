@@ -4,7 +4,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import pkg from '../../package.json' with { type: 'json' };
-import playwrightConfig, { GPU_TAG, SWIFTSHADER_ARGS } from '../../playwright.config.ts';
+import playwrightConfig, {
+  DEFAULT_PREVIEW_PORT,
+  GPU_TAG,
+  PREVIEW_PORT,
+  SWIFTSHADER_ARGS,
+} from '../../playwright.config.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const scripts: Record<string, string> = pkg.scripts;
@@ -167,11 +172,14 @@ describe('playwright.config.ts', () => {
     expect(project('visual').grep).toBeUndefined();
   });
 
-  it('serves the production build through vite preview on 4173', () => {
+  it('serves the production build through vite preview on 4173 unless SSP_PREVIEW_PORT overrides it', () => {
+    expect(DEFAULT_PREVIEW_PORT).toBe(4173);
+    const expectedPort = process.env.SSP_PREVIEW_PORT ? Number(process.env.SSP_PREVIEW_PORT) : 4173;
+    expect(PREVIEW_PORT).toBe(expectedPort);
     const server = playwrightConfig.webServer;
     expect(Array.isArray(server)).toBe(false);
     expect(server && !Array.isArray(server) ? server.command : undefined).toBe(
-      'npm run build && npx vite preview --port 4173 --strictPort',
+      `npm run build && npx vite preview --port ${expectedPort} --strictPort`,
     );
   });
 });

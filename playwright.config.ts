@@ -13,8 +13,17 @@
 // The suite tests the shipping bundle: webServer builds with Vite and serves it with `vite preview`.
 import { defineConfig } from '@playwright/test';
 
-/** Port of the `vite preview` server Playwright starts (and the baseURL every spec navigates against). */
-export const PREVIEW_PORT = 4173;
+/**
+ * Port of the `vite preview` server Playwright starts (and the baseURL every spec navigates against).
+ * Defaults to 4173. `SSP_PREVIEW_PORT` overrides it so parallel checkouts (git worktrees) each get their own
+ * server: with `reuseExistingServer` on, a shared port would silently test another checkout's build.
+ */
+export const DEFAULT_PREVIEW_PORT = 4173;
+const portOverride = Number(process.env.SSP_PREVIEW_PORT);
+export const PREVIEW_PORT =
+  Number.isInteger(portOverride) && portOverride > 0 && portOverride < 65536
+    ? portOverride
+    : DEFAULT_PREVIEW_PORT;
 
 /** Chromium flags for deterministic CPU rasterisation (visual goldens and CI perf). */
 export const SWIFTSHADER_ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] as const;

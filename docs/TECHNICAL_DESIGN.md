@@ -42,7 +42,7 @@
 | Area | Package / tool | Version |
 |---|---|---|
 | Runtime / package manager | Node.js + npm (`package-lock.json`) | Node **24.21.0**, npm **11.19.0** |
-| Language | TypeScript, strict (fallback pin **6.0.3** if a tool breaks) | **7.0.2** |
+| Language | TypeScript, strict (verified with Vite, Vitest and Biome in M0, [D-10](ROADMAP.md#8-m0-spike-decision-log); fallback pin **6.0.3** if a tool breaks) | **7.0.2** |
 | Renderer | `three` | **0.186.1** |
 | Types | `@types/three` | **0.186.0** |
 | Build / dev server | `vite` | **8.3.4** |

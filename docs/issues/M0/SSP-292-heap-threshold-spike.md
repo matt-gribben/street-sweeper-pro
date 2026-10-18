@@ -2,7 +2,7 @@
 id: SSP-292
 title: "Measure the zero-allocation heap-growth threshold and add the shared --expose-gc heap-delta helper"
 milestone: M0
-status: todo
+status: done
 type: spike
 estimate: M
 labels: [type:spike, area:perf, area:test, area:tooling, size:M, vertical-slice]

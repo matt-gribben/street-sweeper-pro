@@ -132,7 +132,7 @@ The layout is canonical. New top-level directories need an ADR.
 └─ build/         (git-ignored: .forge-cache, sheets, ai-candidates, tmp)
 ```
 
-`.gitignore`: `node_modules/`, `dist/`, `build/`, `test-results/`, `playwright-report/`, `tools/forge/.venv/`.
+`.gitignore`: `node_modules/`, `dist/`, `build/`, `test-results/`, `playwright-report/`, `tools/forge/.venv/`. A nested `tools/forge/.gitignore` additionally ignores `__pycache__/` and `.pytest_cache/` (Python bytecode and pytest cache written when the forge and its tests run).
 
 **One addition this document makes:** `src/sim/fmath.ts`, a thin wrapper for the transcendental maths the sim uses (`sin`, `cos`, `atan2`, `exp`, `sqrt`, `hypot`). See [§7.4](#74-determinism).
 

@@ -1035,7 +1035,7 @@ mirror ne from nw
 
 - **Five atlases**, each at most 2048×2048, packed by a deterministic maxrects packer (inputs sorted by area descending, then by id): `world` (tiles, roofs, facades, stains), `actors` (vehicles, people, animals), `items` (litter, props, pickups), `ui` (HUD, icons, panels, fonts), `fx`.
 - **Trimming** *(proposed, locked in M4)*: each frame is trimmed to its opaque bounding box (outline included) before packing, and the pivot is stored relative to the trimmed rect (`px`, `py` in the atlas JSON). Trimming roughly halves the `actors` footprint (most vehicle headings fill well under their 64×64 cell) and is what keeps 192 Bessie frames, 11 other vehicle types and every pedestrian inside one 2048² atlas.
-- **Padding:** 1 px transparent gutter around every actor, item and fx frame (2 px between neighbours), so the speed-zoom (non-1:1 sampling) never bleeds a neighbour's pixels. **Ground tiles and facade modules are extruded** by 1 px (edge pixels duplicated) instead, so tiling surfaces never show transparent seams.
+- **Padding:** 1 px transparent gutter around every actor, item and fx frame (2 px between neighbours), so the speed-zoom (non-1:1 sampling) never bleeds a neighbour's pixels. **Ground tiles, facade modules and roof surfaces are extruded** by 1 px (edge pixels duplicated) instead, so tiling surfaces never show transparent seams. The atlas rect covers the interior cell only, never the border ([ASSET_PIPELINE §9.3](ASSET_PIPELINE.md#93-packing-and-outputs)). Roofs were added in SSP-039 (M1, lead decision, pending owner review) because roof textures also tile across footprints on the tile grid (§9.5) and are magnified up to 1.91×; roof furniture shares the `roof.*` class, but its transparent edges extrude to a transparent ring, which behaves like the gutter.
 - **Budget check:** `forge build` reports each atlas's fill ratio. Above 85% on any atlas, split classes before adding assets; never grow beyond 2048².
 
 ---
@@ -1142,7 +1142,7 @@ An asset passes only if every applicable item passes.
 | Sprite-stack slice counts per prop, and which slices cast shadows | M0 (SSP-020 shadows, SSP-026 counts) | **Decided**: lowest and highest slices cast (§6.4); 4 or 8 slices by the lean rule, per prop in §8.6 and STYLE.md v1 §8. Oversize prop cells: M4 (SSP-131). |
 | Swap-slot allocation and key indices | M4 | Proposed in §5.6. |
 | Whether ramp lint ignores index 00 used as outline | M4 (forge lint) | Assumed in §5.4. |
-| Atlas trimming and padding | M4 (forge pack) | Proposed in §14.6. |
+| Atlas trimming and the actor/item/fx gutter | M4 (forge pack, SSP-113) | Proposed in §14.6. The 1 px extrusion of tiles, facades and roofs is in force from M1 (SSP-039). |
 | Animation timings | M3–M4 | Proposed in §10.2; gameplay timings in the [GDD](GDD.md) win. |
 | VFX IDs and HUD layout details | M2 (HUD), M4 (art) | Proposed in §11 and §12.2. |
 | Font metrics, descender treatment and kerning set | M4 | Proposed in §12.5. |

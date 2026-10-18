@@ -1120,6 +1120,8 @@ Portraits use the same pixelize path: `crop` selects each expression from the 1:
   - Implementation (`tools/forge/forge/pack.py`, SSP-010): MaxRects with Best-Short-Side-Fit and integer maths only. Ties are broken by long-side leftover, then y, then x. The padding is 1 px between neighbours, so a frame may touch the atlas edge.
   - Atlas size: the first power-of-two size (sides 16–2048), ordered by area, then longest side, then height, that holds every frame of that atlas.
   - Until SSP-113 (M4), frames are packed untrimmed at their cell size, and `px`/`py` is the pivot within the cell.
+  - **Extrusion** (SSP-039, [ART_BIBLE §14.6](ART_BIBLE.md#146-atlas-packing)): every frame of a ground tile (`tile.*`), facade module (`facade.*`) or roof surface (`roof.*`) is packed with a 1 px border of duplicated edge pixels (corners repeat the corner pixel), not a transparent gutter, so tiling surfaces never show transparent seams. The 1 px padding sits outside that border. Other classes (stains, actors, items) are not extruded.
+  - **Interior-rect contract:** the atlas JSON rect `{x, y, w, h}` (and the matching `FRAME` entry) of an extruded frame covers **only the interior cell**, never the duplicated border, so `w`/`h` equal the manifest cell. `groundLayer` and `cityMesh` (SSP-045) sample inside the rect with no special case; the border only catches filtering or UV drift past the cell edge.
   - The atlas PNG is indexed, with the same PLTE/`tRNS` contract as the frame PNGs (§9.2).
   - `public/assets/atlas/` belongs to the packer: any file there that the build did not produce is removed.
 - **Atlases:** 5 atlases of at most 2048×2048:

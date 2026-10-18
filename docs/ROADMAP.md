@@ -281,8 +281,8 @@ Each milestone has the same shape:
 - [x] Speed zoom: H eases 31.5 → 37.8 m on a critically damped spring (ω = 3 rad/s), driven by a dev-panel speed slider (no vehicle sim yet).
 - [x] `src/render/upscale.ts`: `W = clampEven(round(270 × aspect), 432, 640)`, integer scale, `#0f0e12` letterbox, devicePixelRatio handling.
 - [ ] `src/render/palettePass.ts`: 64³ LUT, night remap, shadow remap. A test asserts that no output pixel lies outside Kerbside-32.
-- [ ] `src/render/cityMesh.ts` (simple): merged boxes for 1-, 3- and 6-storey blocks, `_lit`/`_base`/`_dark` facade ramp variants, flat placeholder facade and roof textures.
-- [ ] `src/render/shadows.ts`: SE shadow polygons (length 0.84 × height) into the mask target.
+- [x] `src/render/cityMesh.ts` (simple): merged boxes for 1-, 3- and 6-storey blocks, `_lit`/`_base`/`_dark` facade ramp variants, flat placeholder facade and roof textures.
+- [x] `src/render/shadows.ts`: SE shadow polygons (length 0.84 × height) into the mask target.
 - [ ] `src/render/spriteBatch.ts`: one `InstancedMesh` per atlas, per-instance frame rects. Bessie drawn from the Blender build at all 32 headings, cycling. One ingested pedestrian.
 - [ ] Sprite-stack prototype with one lamp post (4 slices), to check that its lean matches the building lean (input to D-02).
 - [ ] `src/debug/testHooks.ts`: `?test=1&scene=<id>&freeze=1`, `window.__ssp.readFrame()` and `setCamera()`.

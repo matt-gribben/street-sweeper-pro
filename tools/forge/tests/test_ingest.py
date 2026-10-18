@@ -556,7 +556,9 @@ def test_parse_config_accepts_the_documented_litter_example() -> None:
     cfg = parse_config(json.loads((REPO_ROOT / "assets-src/ai/litter.sheet_01/ingest.json").read_text(encoding="utf-8")))
     assert isinstance(cfg, IngestConfig)
     assert cfg.grid == (4, 2) and cfg.target_cell == (16, 16) and cfg.largest_item_px == 14
-    assert cfg.cells[0] is not None and cfg.cells[0].frame_id == "litter.drink_can:idle:h00:0"
+    # SSP-024 ingests only cell 1 (the D-07 scale sample); the other cells stay null until SSP-139.
+    assert cfg.cells[1] is not None and cfg.cells[1].frame_id == "litter.banana_skin:idle:h00:0"
+    assert [i for i, c in enumerate(cfg.cells) if c is not None] == [1]
 
 
 def test_missing_folder_is_an_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

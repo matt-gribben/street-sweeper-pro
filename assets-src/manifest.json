@@ -1,6 +1,19 @@
 {
   "assets": [
     {
+      "id": "litter.banana_skin",
+      "class": "litter",
+      "technique": "ai-ingest",
+      "source": "assets-src/sprites/litter/banana_skin.sprite.txt",
+      "cell": [16, 16],
+      "states": ["idle"],
+      "dirs": ["h00"],
+      "frames": { "idle": 1 },
+      "atlas": "items",
+      "outline": false,
+      "swaps": []
+    },
+    {
       "id": "npc.old_woman",
       "class": "npc",
       "technique": "ai-ingest",

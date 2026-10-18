@@ -118,11 +118,11 @@ A three.js `PerspectiveCamera` looks **straight down** (vertical FOV 30°, sweep
 - Walls are visible only on the side facing the screen centre: a building in the top half of the screen shows its **south** face, one on the left shows its **east** face, and so on.
 - Lean grows toward the screen edges. Near the centre a 1-storey wall is only a few pixels wide; at the horizontal edge (15 m off-centre) it is about 21 px. **Facade detail is therefore always seen foreshortened** and must read through bold horizontal banding and strong vertical rhythm, not fine texture (§9.4).
 - **Roof magnification** at H = 31.5: 1 storey 1.09×, 3 storeys 1.31×, 6 storeys 1.91×. Roof texels on tall buildings become visibly chunkier (mixels). This is **accepted as part of the look**. Roof textures for tall buildings are authored with low-frequency detail so magnification reads as "chunky", not "noisy" (§9.5).
-- Shimmer while speed-zoomed is accepted. At sweeping speeds the camera returns to exact 1:1, so all reviews happen at 1:1.
+- Shimmer while speed-zoomed is accepted (speed zoom stays on, [ROADMAP D-01](ROADMAP.md#8-m0-spike-decision-log)). At sweeping speeds the camera returns to exact 1:1, so all reviews happen at 1:1.
 
 ### 4.3 Vehicles are pure overhead
 
-Vehicles are rendered by Blender with an **orthographic camera looking straight down** (`--tilt 0`). We see roofs, bonnets and windscreens, never sides, except the 1–2 px of bodywork that bevels away from the roof. Tilt up to 8° is allowed only if the M0 spike approves it; the probe's 22° clashed with radially leaning buildings and is rejected.
+Vehicles are rendered by Blender with an **orthographic camera looking straight down** (`--tilt 0`). We see roofs, bonnets and windscreens, never sides, except the 1–2 px of bodywork that bevels away from the roof. **0° is locked** ([ROADMAP D-02](ROADMAP.md#8-m0-spike-decision-log), SSP-024): an 8° render shows the vehicle's south side in every quadrant, while buildings show their north walls in the bottom half of the screen, so it leans against them there (and overflows the 64 px cell at 16 of 32 headings). The probe's 22° clashed the same way and is rejected too.
 
 ### 4.4 Creatures use a high three-quarter cheat
 
@@ -1134,9 +1134,9 @@ An asset passes only if every applicable item passes.
 | Item | Decided by | Notes |
 |---|---|---|
 | Exact `shadow[32]` and `night[32]` tables | `TBD (M0 spike)` | Intent in §5.7. |
-| Vehicle tilt (0° vs ≤ 8°) | `TBD (M0 spike)` | Default 0°. |
+| Vehicle tilt (0° vs ≤ 8°) | M0, ROADMAP D-02 (SSP-024) | **0°** (§4.3). |
 | Character view angle and proportions | M0 (`ref.people_style` golden) | High three-quarter assumed (§4.4). |
-| Speed zoom on or off | `TBD (M0 spike)` | Art reviews always at 1:1 regardless. |
+| Speed zoom on or off | M0, ROADMAP D-01 (SSP-024) | **On**; art reviews always at 1:1 regardless. |
 | Shadow length multiplier for overcast and golden hour | `TBD (M0 spike)` | §9.3, §13. |
 | Sprite-stack slice counts per prop, and which slices cast shadows | `TBD (M0 spike)` (slice shadows decided in SSP-020) | Shadows: lowest and highest slices only (§6.4). Counts: SSP-020 recommends 8 for the lamp post, 4 for broad or short props (§8.6); SSP-026 locks them. |
 | Swap-slot allocation and key indices | M4 | Proposed in §5.6. |

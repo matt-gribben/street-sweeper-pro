@@ -4,7 +4,7 @@
 //
 // URL parameters, all optional after `test=1`:
 //   seed=<n>    run seed, an unsigned 32-bit integer (no sim reads it until M1);
-//   scene=<id>  boot straight into a scene (`lean_quadrants`, `scale_1440`; main.ts dispatches);
+//   scene=<id>  boot straight into a scene (`lean_quadrants`, `scale_1440`, `scale_sheet`; main.ts dispatches);
 //   tick=<n>    advance n ticks synchronously after load, before `ready` turns true;
 //   freeze=1    the loop keeps rendering but never steps;
 //   night=1     the palette pass applies the night remap outside the light mask, and scenes draw their light

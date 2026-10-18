@@ -24,6 +24,13 @@ export const ZOOM_START_SPEED_MPS = 6.0;
 /** Speed zoom is complete at this speed: the transit (brush-up) top speed (GDD §7.1). */
 export const ZOOM_FULL_SPEED_MPS = 11.0;
 
+/**
+ * Speed zoom on by default: ROADMAP §8 D-01 (SSP-024) kept it, mirrored in TECHNICAL_DESIGN §12.2. While zoomed out
+ * the ground and flat sprites are resampled below 1:1 and shimmer, which ART_BIBLE §4.2 accepts; at or below
+ * brush-down speed the camera is back at exactly 1:1. Turning it off (R-02's contingency) leaves look-ahead only.
+ */
+export const SPEED_ZOOM_DEFAULT = true;
+
 /** Natural frequency of the critically damped height spring, in rad/s. */
 export const ZOOM_SPRING_OMEGA_RAD_S = 3;
 
@@ -103,7 +110,7 @@ export function stepCriticalSpring(state: SpringState, target: number, omega: nu
 /** The game camera plus the render-time state that drives it. */
 export type CameraRig = {
   readonly camera: PerspectiveCamera;
-  /** Speed zoom on/off (D-01 may turn it off, leaving look-ahead only). Off pins H to SWEEP_HEIGHT_M. */
+  /** Speed zoom on/off (default SPEED_ZOOM_DEFAULT, D-01). Off pins H to SWEEP_HEIGHT_M (look-ahead only). */
   zoomEnabled: boolean;
   /** Camera tilt in degrees. Always 0 in 1.0 (post-1.0 feature); stored so the API is stable. */
   tiltDeg: number;
@@ -151,7 +158,7 @@ export function createCameraRig(internalWidth: number): CameraRig {
   camera.up.set(0, 0, -1);
   const rig: CameraRig = {
     camera,
-    zoomEnabled: true,
+    zoomEnabled: SPEED_ZOOM_DEFAULT,
     tiltDeg: 0,
     height: { value: SWEEP_HEIGHT_M, velocity: 0 },
     focusX: 0,

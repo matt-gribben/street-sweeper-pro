@@ -50,6 +50,7 @@ FIELDS = ("id", "class", "technique", "source", "cell", "states", "dirs", "frame
 
 _ID_RE = re.compile(r"^([a-z]+)\.([a-z0-9]+(?:_[a-z0-9]+)*)$")
 _STATE_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
+_HEADING_RE = re.compile(r"^h(?:[0-2][0-9]|3[01])$")
 
 
 class ManifestError(ValueError):
@@ -94,7 +95,10 @@ class AssetEntry:
 
 
 def expand_dirs(dirs: object, where: str = "dirs") -> tuple[str, ...]:
-    """``"h32"`` -> h00..h31, ``"h4"`` -> h00..h03, ``"-"`` -> ("-",), a list -> compass dirs."""
+    """``"h32"`` -> h00..h31, ``"h4"`` -> h00..h03, ``"-"`` -> ("-",), a list -> compass dirs, or a
+    list of vehicle headings ``hNN`` (00-31) in increasing order, e.g. ``["h00"]`` for a litter item
+    whose only authored rotation is ``h00`` (ENTITY_CATALOG §4; the code-generated h08/h16/h24
+    rotations arrive with the litter grids in M2/M4). A list never mixes the two kinds."""
     if dirs == "h32":
         return tuple(f"h{i:02d}" for i in range(32))
     if dirs == "h4":
@@ -102,15 +106,21 @@ def expand_dirs(dirs: object, where: str = "dirs") -> tuple[str, ...]:
     if dirs == "-":
         return ("-",)
     if isinstance(dirs, list) and dirs:
+        if all(isinstance(d, str) and _HEADING_RE.match(d) for d in dirs):
+            if list(dirs) != sorted(set(dirs)):
+                raise ManifestError(f"{where}: headings must be unique and in increasing order, got {dirs!r}")
+            return tuple(dirs)
         out: list[str] = []
         for d in dirs:
             if d not in COMPASS_DIRS:
-                raise ManifestError(f"{where}: {d!r} is not a compass dir {COMPASS_DIRS}")
+                raise ManifestError(f"{where}: {d!r} is not a compass dir {COMPASS_DIRS} (or a list of only hNN headings)")
             if d in out:
                 raise ManifestError(f"{where}: duplicate dir {d!r}")
             out.append(d)
         return tuple(out)
-    raise ManifestError(f'{where}: expected "h32", "h4", "-" or a non-empty list of compass dirs, got {dirs!r}')
+    raise ManifestError(
+        f'{where}: expected "h32", "h4", "-" or a non-empty list of compass dirs or of hNN headings, got {dirs!r}'
+    )
 
 
 def _str_list(value: object, where: str, *, pattern: re.Pattern[str] | None = None, nonempty: bool) -> tuple[str, ...]:

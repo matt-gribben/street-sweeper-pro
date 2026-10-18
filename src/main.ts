@@ -11,6 +11,7 @@ import { type AtlasName, loadAtlas, type SpriteAtlas } from './render/spriteAtla
 import { createTestWorld } from './render/testWorld.ts';
 import { attachUpscaler } from './render/upscale.ts';
 import { LeanQuadrantsScene } from './scenes/LeanQuadrantsScene.ts';
+import { ScaleSheetScene } from './scenes/ScaleSheetScene.ts';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game');
 if (canvas === null) {
@@ -44,8 +45,11 @@ type BootScene = {
   setNight(on: boolean): void;
 };
 
-/** Scenes `?test=1&scene=<id>` can boot. `scale_1440` is lean_quadrants viewed in a 2560×1440 page (SSP-022). */
-const TEST_SCENES = ['lean_quadrants', 'scale_1440'] as const;
+/**
+ * Scenes `?test=1&scene=<id>` can boot. `scale_1440` is lean_quadrants viewed in a 2560×1440 page (SSP-022);
+ * `scale_sheet` is the D-07 scale-sheet scene (SSP-024).
+ */
+const TEST_SCENES = ['lean_quadrants', 'scale_1440', 'scale_sheet'] as const;
 
 function leanQuadrants(): BootScene {
   const scene = new LeanQuadrantsScene();
@@ -57,6 +61,19 @@ function leanQuadrants(): BootScene {
     },
     update: (frameCount, camYSimM) => scene.update(frameCount, camYSimM),
     setNight: (on) => scene.setNight(on),
+  };
+}
+
+function scaleSheet(): BootScene {
+  const scene = new ScaleSheetScene();
+  return {
+    world: scene.world,
+    attachSprites: async (load) => {
+      const [actors, items] = await Promise.all([load('actors'), load('items')]);
+      scene.attachSprites(actors, items);
+    },
+    update: (frameCount, camYSimM) => scene.update(frameCount, camYSimM),
+    setNight: () => {},
   };
 }
 
@@ -95,6 +112,8 @@ function createBootScene(): BootScene {
       case 'lean_quadrants':
       case 'scale_1440':
         return leanQuadrants();
+      case 'scale_sheet':
+        return scaleSheet();
       default:
         throw new Error(`?test=1: unknown scene '${sceneId}' (known: ${TEST_SCENES.join(', ')})`);
     }

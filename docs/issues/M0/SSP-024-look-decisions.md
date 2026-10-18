@@ -2,7 +2,7 @@
 id: SSP-024
 title: "Decide speed zoom, vehicle tilt, 480x270 base and scale sheet (D-01, D-02, D-03, D-07)"
 milestone: M0
-status: todo
+status: done
 type: spike
 estimate: M
 labels: [type:spike, area:render, area:assets, size:M, vertical-slice]

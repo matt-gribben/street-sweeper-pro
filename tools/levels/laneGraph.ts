@@ -18,6 +18,8 @@
 //   per column (row) at the tile centre along it, in metres, and edges between consecutive nodes in the
 //   direction of travel. An edge carries ZEBRA, SCHOOL_CROSSING or BUS_STOP when the lane's half of the
 //   cross-section at its `to` node holds that site (the middle row of an odd width belongs to both halves).
+//   SSP-090: where the outer row of a cross-section is a parking bay `p`, a parked car stands in it, so the
+//   lanes take their places within the rest of the cross-section and taper back over 3 tiles (laneAcross).
 // - **Parking bays**: the `p` cells on a lane's kerb row (its outer cross-section row, or the lay-by row just
 //   outside it) are that lane's bays, grouped into runs along it with the lane's heading.
 // - **Segment ends**: an end on the map edge is a **portal** (an entry node on the edge for each lane driving
@@ -316,17 +318,18 @@ export function computeLaneGraph(
               [-1, 'low'],
             ];
     const len = seg.a1 - seg.a0 + 1;
+    const isBay = (k: number, c: number): boolean =>
+      map.defs[cellAt(seg, seg.a0 + k, c)]?.mark === 'parking_bay';
     for (const [dir, side] of sides) {
       const lane: Lane = { id: laneCount, dir, side, nodeAt: new Array<number>(len).fill(-1) };
       laneCount += 1;
       seg.lanes.push(lane);
+      const acrossAt = laneAcross(seg, side, isBay);
       for (let step = 0; step < len; step += 1) {
         const k = dir === 1 ? step : len - 1 - step;
         const a = seg.a0 + k;
         const lo = seg.lo[k] ?? 0;
-        const width = (seg.hi[k] ?? 0) - lo + 1;
-        const across =
-          side === 'low' ? lo + width / 4 : side === 'high' ? lo + (3 * width) / 4 : lo + width / 2;
+        const across = acrossAt[k] ?? 0;
         const along = (a + 0.5) * TILE_M;
         const node =
           seg.axis === 'h' ? addNode(along, across * TILE_M, s) : addNode(across * TILE_M, along, s);
@@ -640,6 +643,53 @@ function narrowFinding(i: number, w: number, width: number): LaneFinding {
     code: 'L011',
     message: `two-way traffic on a road ${width} tile(s) wide; a two-way road needs at least ${TWO_WAY_MIN_TILES} (use > < ^ v for a one-way street)`,
   };
+}
+
+/** Where a lane sits across its cross-section [lo, hi] (tiles from the map edge, a cell's west/north side = c). */
+function nominalAcross(lo: number, hi: number, side: LaneSide): number {
+  const width = hi - lo + 1;
+  return side === 'low' ? lo + width / 4 : side === 'high' ? lo + (3 * width) / 4 : lo + width / 2;
+}
+
+/**
+ * The taper weight of a parking-bay lane shift at `d` tiles along from a bay column (SSP-090): the full shift
+ * beside a bay and one tile either side, then two thirds and one third, so a lane eases out round a bay run
+ * over 3 tiles (0.5 m per 2 m node on a 3-tile road) and is back on its nominal line 4 tiles from it.
+ */
+const BAY_TAPER = [1, 1, 2 / 3, 1 / 3] as const;
+
+/**
+ * The across position (tiles) of a lane at every along offset of its segment. Two-way lanes sit a quarter of
+ * the cross-section in from each side, a one-way lane on its centre line, as SSP-076 built them; SSP-090
+ * moves them round the parking bays inside the carriageway. Where the outer row of the cross-section (`lo` or
+ * `hi`) is a bay `p` cell, a parked car stands there, so the lanes take their places within the rest of the
+ * cross-section (a 3-tile two-way road with bays on one side puts both lanes in the other 2 tiles, 2 m apart:
+ * every M3 car pair passes with the corridors clear, and clear of the car in the bay row); the shift then
+ * tapers along the segment (BAY_TAPER), so no lane jumps sideways at a bay run's end. Junction approaches keep
+ * 3 tiles of kerb clear of bays (LEVEL_DESIGN §7.4), so the taper never reaches a junction connector at more
+ * than a third.
+ */
+function laneAcross(seg: Segment, side: LaneSide, isBay: (k: number, c: number) => boolean): number[] {
+  const len = seg.a1 - seg.a0 + 1;
+  const nominal: number[] = [];
+  const shift: number[] = [];
+  for (let k = 0; k < len; k += 1) {
+    const lo = seg.lo[k] ?? 0;
+    const hi = seg.hi[k] ?? 0;
+    const n = nominalAcross(lo, hi, side);
+    const lo2 = isBay(k, lo) ? lo + 1 : lo;
+    const hi2 = isBay(k, hi) ? hi - 1 : hi;
+    nominal.push(n);
+    shift.push(hi2 >= lo2 && (lo2 !== lo || hi2 !== hi) ? nominalAcross(lo2, hi2, side) - n : 0);
+  }
+  return nominal.map((n, k) => {
+    let best = 0;
+    for (let j = Math.max(0, k - 3); j <= Math.min(len - 1, k + 3); j += 1) {
+      const v = (shift[j] ?? 0) * (BAY_TAPER[Math.abs(k - j)] ?? 0);
+      if (Math.abs(v) > Math.abs(best)) best = v;
+    }
+    return n + best;
+  });
 }
 
 /** The across indices of a lane's half of the cross-section at along offset k. */

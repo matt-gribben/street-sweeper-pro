@@ -21,7 +21,26 @@ export type TownTraffic = {
   mix: Record<string, number>;
   busRoute?: string[];
   busEveryS?: number;
+  /** Parked cars (SSP-090): 0 and none unless given. */
+  parkedFill?: number;
+  parkedMix?: Record<string, number>;
 };
+
+/**
+ * The parking street (SSP-090), 64 × 7 tiles (128 × 14 m): terraces (rows 0 and 6), 1-tile pavements (rows 1
+ * and 5) and a 3-tile two-way road (rows 2–4) running off the map at both ends, with two 10-cell runs of
+ * parking bays `p` on its south row (columns 10–19 and 36–45, the westbound lane's kerb row): 10 bays of 2
+ * tiles. Bessie's start is mid-road at column 30.
+ */
+export const PARKING_STREET: readonly string[] = [
+  'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  '................................................................',
+  '################################################################',
+  '##############################@#################################',
+  '##########pppppppppp################pppppppppp##################',
+  '................................................................',
+  'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+];
 
 /**
  * The one-way high street, 60 × 7 tiles (120 × 14 m): terraces (rows 0 and 6), 1-tile pavements (rows 1 and 5)
@@ -65,6 +84,25 @@ export const CROSSROADS: readonly string[] = (() => {
   const r = rows[15] as string;
   rows[15] = `${r.slice(0, 30)}@${r.slice(31)}`;
   return rows;
+})();
+
+/**
+ * The parking crossroads (SSP-090): CROSSROADS with bays on all four arms' kerb rows, each 4 tiles clear of the
+ * junction (LEVEL_DESIGN §7.4), so turning traffic, parked cars and Bessie meet at one junction.
+ */
+export const PARKING_CROSSROADS: readonly string[] = (() => {
+  const rows = CROSSROADS.map((r) => r.split(''));
+  const set = (x: number, y: number): void => {
+    const row = rows[y] as string[];
+    row[x] = 'p';
+  };
+  // West arm (row 16, the westbound lane's kerb row) and east arm (row 14, the eastbound lane's).
+  for (let x = 4; x <= 11; x += 1) set(x, 16);
+  for (let x = 26; x <= 33; x += 1) set(x, 14);
+  // North arm (column 18, the northbound lane's kerb column) and south arm (column 20, southbound).
+  for (let y = 3; y <= 8; y += 1) set(18, y);
+  for (let y = 22; y <= 27; y += 1) set(20, y);
+  return rows.map((r) => r.join(''));
 })();
 
 /** Compile `rows` with the `traffic` block and decode it, as the game loads it. Throws on a diagnostic error. */

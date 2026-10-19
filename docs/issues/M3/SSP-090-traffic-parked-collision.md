@@ -2,7 +2,7 @@
 id: SSP-090
 title: "Add parked cars and Bessie-vs-vehicle collision with dent and impact rules"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:physics, area:gameplay, area:test, size:M, vertical-slice]

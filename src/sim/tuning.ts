@@ -423,7 +423,8 @@ const NPC_RADIUS_SPEC = {
  * ahead holds it below blockedBelowMps, and a block is over once it has been clear for clearAfterS; a
  * pedestrian at a kerb waits while a vehicle would reach the crossing within crossingGapS (plus followGapM);
  * the first scheduled bus of a bus route is due at firstBusS (LEVEL_DESIGN §4.5, Tuesday: from 20 s), then one
- * every busEveryS (the compiled level).
+ * every busEveryS (the compiled level). SSP-090 (parked.ts): a parked car's dent contact episode ends once Bessie
+ * has not touched it for dentRearmS (0.5 s, the knockables' re-arm), so it dents once per episode.
  */
 const TRAFFIC_SPEC = {
   honkAfterBlockedS: 'positive',
@@ -434,6 +435,7 @@ const TRAFFIC_SPEC = {
   clearAfterS: 'nonNegative',
   crossingGapS: 'positive',
   firstBusS: 'nonNegative',
+  dentRearmS: 'positive',
 } as const satisfies GroupSpec;
 
 /**

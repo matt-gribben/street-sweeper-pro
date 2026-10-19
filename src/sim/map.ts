@@ -434,7 +434,7 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [key:
 /**
  * A run of parking bays (`p` cells) beside one traffic lane (SSP-076): the cells as a tile rect (x1/y1
  * exclusive, like every rect) and the heading in radians (0 = north, clockwise) of the lane beside it, which
- * is the way a car parked there faces. Parked-car slots are cut from the run at shift start (SSP-090).
+ * is the way a car parked there faces. The run is cut into 2-tile bays, one car each (parkingBays.ts, SSP-090).
  */
 export type ParkingBay = { rect: TileRect; heading: number };
 
@@ -602,8 +602,9 @@ export type NpcSpawn = {
 /**
  * The compiled traffic spawn spec (`spawns.traffic`, SSP-077; LEVEL_DESIGN §9.5). `laneKm` is the length of
  * the compiled lane graph (every directed edge, km) and `moving` = ceil(densityPerKm × laneKm), the moving
- * vehicles traffic.ts (SSP-089) aims for, drawn from `mix`. `parkedBays` counts the `p` cells of
- * `lanes.bays` and `parked` = ceil(parkedBays × parkedFill), drawn from `parkedMix` (SSP-090). `pavement`
+ * vehicles traffic.ts (SSP-089) aims for, drawn from `mix`. `parkedBays` counts the bays (2-tile car slots,
+ * parkingBays.ts) of `lanes.bays` and `parked` = ceil(parkedBays × parkedFill), the cars parked.ts places at shift
+ * start from `parkedMix` (SSP-090). `pavement`
  * vehicles (the mobility scooter) follow the nav graph instead, `count` of each at once (SSP-091). `taxiRank`
  * positions are metres; `busRoute` lists lane nodes, one per anchor; `busEveryS` is null without a bus route.
  */

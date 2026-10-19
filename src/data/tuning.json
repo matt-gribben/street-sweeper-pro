@@ -183,7 +183,8 @@
       "blockedBelowMps": 0.5,
       "clearAfterS": 0.5,
       "crossingGapS": 3,
-      "firstBusS": 20
+      "firstBusS": 20,
+      "dentRearmS": 0.5
     },
     "laneSpeed": {
       "residentialMps": 7,

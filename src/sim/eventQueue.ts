@@ -21,11 +21,12 @@ export const EVENTS_PER_TICK = 512;
  * Event type ids (`type`, Uint16). 0 is never a valid type. The values are hashed into replays: append new
  * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
  * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd, SSP-093 HazardJolt and HazardStop, SSP-063
- * ComboTier, SSP-078 Complaint and Horn, SSP-092 Knock, SSP-082 NpcHit, SSP-089 CarHorn; later issues append the
- * rest of the §7.2 list.
+ * ComboTier, SSP-078 Complaint and Horn, SSP-092 Knock, SSP-082 NpcHit, SSP-089 CarHorn, SSP-090 Dent; later issues
+ * append the rest of the §7.2 list.
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
- * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036).
+ * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036), for
+ *   walls, props, the map edge and (SSP-090) moving traffic and a parked car's contacts that are not a dent.
  * - KerbJolt: a = x, b = y (where the axle midpoint crossed the kerb edge, m), c = |vLong| just before the
  *   crossing (m/s). The front axle also loses speed; the rear axle only jolts.
  * - ReverseBeeper: a = x, b = y (Bessie's body centre, m), c = 0. Once per engagement of REV.
@@ -74,6 +75,10 @@ export const EVENTS_PER_TICK = 512;
  *   honk of the block it is (1, 2, 3: the rising `horn:car` honks at 3, 6 and 9 s, AUDIO_DESIGN §5.5).
  *   Phase 8 (traffic.ts, SSP-089), from the head of a queue Bessie is blocking. It is never Bessie's horn: it
  *   does not count towards horn spam and is never delivered to the NPCs as a Horn stimulus.
+ * - Dent: entity = the parked car's VehicleStore index, a = x, b = y (the contact point, m), c = the normal impact
+ *   speed vn (m/s). Phase 3 (collision/resolveStatic.ts, parked.ts, SSP-090), once per contact episode of Bessie
+ *   with a parked car whose approaching vn is above collision.damageThresholdMps (2 m/s): the flat dent HP and
+ *   the Offence.Dent penalty fact go with it, and no EV.Impact. Audio plays the car's sfx.dent (`crash`, M5).
  */
 export const EV = {
   Impact: 1,
@@ -94,6 +99,7 @@ export const EV = {
   Knock: 16,
   NpcHit: 17,
   CarHorn: 18,
+  Dent: 19,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

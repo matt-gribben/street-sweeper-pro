@@ -830,6 +830,8 @@ describe('M3 street-life sections (SSP-075) mirror ENTITY_CATALOG §3, GDD §11 
       3,
     ],
     ['streetLife.traffic.honkAfterBlockedS', 3, 'catalog', /Honks after (\d+) s blocked/, 1],
+    ['streetLife.traffic.dentRearmS', 0.5, 'td', /`streetLife\.traffic\.dentRearmS` \((\d+\.\d+) s/, 1],
+    ['streetLife.traffic.dentRearmS', 0.5, 'catalog', /clear of the car for (\d+\.\d+) s/, 1],
     [
       'streetLife.traffic.followDecelMps2',
       3.0,

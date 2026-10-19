@@ -39,7 +39,7 @@ Density
 - Par (LEVEL_DESIGN §6.2): 1★ 89 s, 2★ 150 s, 3★ 184 s, 100% 289 s; par.loadout upg.hopper L1 (140 LU).
 
 NPCs: shopper 18 (26 during the 120–180 s wave), market_trader 12 (one per pitch), businessman 5, litterbug 3 (+2 at 90 s), old_woman 1, old_man_frame 1, 2 pigeon flocks of 6–10 at chip wrappers in the square. Peak 51.
-Traffic: 12 moving (bus 2 every 45 s from 20 s; taxi 2; bicycle 2; cars 6 from hatchback/saloon/van_white) plus 14 parked in Station Road loading bays.
+Traffic: 12 moving (bus 2 every 45 s from 20 s; taxi 2; bicycle 2; cars 6 from hatchback/saloon/van_white) plus 14 parked in Station Road loading bays. *Note (SSP-090):* a parked car takes a 2-tile bay (a run of n `p` tiles holds ⌊n / 2⌋ cars), so 14 parked needs 28 bay tiles at parkedFill 0.5.
 Events: `market` (continuous), `market_close` at 180 s (about 40 items over 20 s).
 
 Validation: every L-rule in LEVEL_DESIGN §10.3, including L005/L007 and L020/L021 (dump within 200 m, water within 150 m). Run the §12 checklist except the human 3★ replay (M6). Grey-box: placeholder facades and tiles; real shopfronts and signs are M4.

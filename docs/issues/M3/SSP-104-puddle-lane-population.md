@@ -31,7 +31,7 @@ NPC peaks:
 - npc.dog_walker 1: from 120 s, loops Pump Green.
 - npc.cat 4: 2 on garden walls (`w`), 2 on parked car roofs.
 
-Traffic: 6 moving (veh.hatchback 55, veh.saloon 30, veh.van_white 15) plus 1 veh.mobility_scooter on pavements; parked 14 in bays on Puddle Lane and Drain Close, parkedFill 0.6. The scooter lives in the vehicle store (SSP-091), so the peak vehicle count can be 21.
+Traffic: 6 moving (veh.hatchback 55, veh.saloon 30, veh.van_white 15) plus 1 veh.mobility_scooter on pavements; parked 14 in bays on Puddle Lane and Drain Close, parkedFill 0.6. *Note (SSP-090):* a parked car takes a 2-tile bay, so the map's 24 `p` tiles are 12 bays (0.6 → 8 parked, 12 at most); 14 parked needs at least 24 bays at 0.58, or 28 at 0.5 (more `p` tiles). The scooter lives in the vehicle store (SSP-091), so the peak vehicle count can be 21.
 
 Other content:
 - Hazards: 8 haz.puddle (kerbside, near drains; rule kerbside_low_points); 3 speed-bump rows (`=`, already in the map).

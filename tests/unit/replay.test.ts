@@ -310,6 +310,12 @@ describe('state hash', () => {
     world.vehicles.blockTicks[v] = 200;
     world.vehicles.honks[v] = 1;
     world.traffic.carHorns = 1;
+    // SSP-090: a paint slot, a dent episode and a dent.
+    world.vehicles.paint[v] = 5;
+    world.vehicles.touchClear[v] = 7;
+    world.vehicles.dented[v] = 1;
+    world.vehicles.dents[v] = 1;
+    world.traffic.dents = 1;
     return world;
   }
 
@@ -336,6 +342,14 @@ describe('state hash', () => {
       ['carHorns', (w) => (w.traffic.carHorns = 2)],
       ['busesDue', (w) => (w.traffic.busesDue = 1)],
       ['traffic.rng', (w) => (w.traffic.rng.counter += 1)],
+      // SSP-090: the parked-car columns and the dent counter.
+      ['paint', (w) => (w.vehicles.paint[0] = 6)],
+      ['touchClear', (w) => (w.vehicles.touchClear[0] = 8)],
+      ['dented', (w) => (w.vehicles.dented[0] = 0)],
+      ['dents', (w) => (w.vehicles.dents[0] = 2)],
+      ['roofPerch', (w) => (w.vehicles.roofPerch[0] = 3)],
+      ['traffic.dents', (w) => (w.traffic.dents = 2)],
+      ['traffic.contactStops', (w) => (w.traffic.contactStops = 1)],
     ];
     for (const [name, edit] of edits) {
       const w = handSetWorld();
@@ -1437,8 +1451,10 @@ describe('state hash', () => {
  * b31a23d9 (f20bff33 on its branch, before SSP-092 merged).
  * SSP-089 appended the vehicle store and the traffic state, and gave the hand-set World a vehicle held by Bessie
  * with a two-edge plan: b31a23d9 → 68d953a7 (fc7651f5 on its branch, before SSP-092 and SSP-082 merged).
+ * SSP-090 appended the parked-car columns (paint, the dent episode, dents, the roof perch) and the dent counter,
+ * and gave the vehicle a paint slot and a dented episode: 68d953a7 → e6cb8040.
  */
-const GOLDEN_HAND_SET_HASH = '68d953a7';
+const GOLDEN_HAND_SET_HASH = 'e6cb8040';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

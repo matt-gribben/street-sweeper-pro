@@ -2,7 +2,13 @@
 // vehicle, moving and parked, allocated once at shift start with capacity VEHICLE_CAPACITY (30, §17; LEVEL_DESIGN
 // §9.5's budget: moving + parked ≤ 30). Live vehicles occupy indices 0..count−1; removal is swap-remove with the
 // last live vehicle. Bessie is not in it (world.vehicle is hers). traffic.ts moves the moving ones (phase 8);
-// SSP-090 adds the parked ones (VEHICLE_FLAG.PARKED, counted in `parkedCount`).
+// parked.ts (SSP-090) adds the parked ones at shift start, before any moving vehicle (VEHICLE_FLAG.PARKED,
+// counted in `parkedCount`). Parked cars are never removed, and a removal only ever moves the last live vehicle
+// (a moving one), so the parked cars keep indices 0..parkedCount−1 all shift: the static grid (collision/grid.ts)
+// names them by index.
+//
+// Parked-car columns (SSP-090): `paint` (the seeded paint swap slot of a hatchback or saloon, 0 otherwise),
+// the dent contact episode (`touchClear`, `dented`, `dents`) and the cat perched on the roof (`roofPerch`).
 //
 // Identity. An index is only good until the next removal; `uid` is a spawn serial (the store's `vehiclesAdded`
 // when the vehicle was added), unique for the shift, for the few links that must survive one (a junction box's
@@ -38,6 +44,19 @@ export const VEHICLE_CELL_M = 8;
 export const VEHICLE_GRID_MARGIN_CELLS = 2;
 /** Doubles per vehicle in `corners`. */
 export const VEHICLE_CORNER_DOUBLES = 8;
+/** Paint swap slots of a hatchback or saloon (ART_BIBLE §8.2, ENTITY_CATALOG §8.1: 8 paint swaps). */
+export const PAINT_SLOTS = 8;
+/** The kinds whose paint varies by swap slot (ART_BIBLE §8.2): the hatchback and saloon, moving or parked. */
+export const PAINTED_KINDS: readonly string[] = [
+  'veh.hatchback',
+  'veh.saloon',
+  'veh.hatchback_parked',
+  'veh.saloon_parked',
+];
+/** `roofPerch` of a parked car with no cat on its roof (the NPC store's NO_NPC_HANDLE). */
+export const ROOF_PERCH_FREE = -1;
+/** `touchClear` of a vehicle Bessie has never touched (saturates here). */
+export const TOUCH_CLEAR_MAX = 0x7fffffff;
 
 /** Per-vehicle flag bits (`flags`, Uint8). Hashed into replays: append, never renumber. */
 export const VEHICLE_FLAG = {
@@ -130,9 +149,30 @@ export type VehicleStore = {
   /** Junction boxes it holds (traffic.ts), −1 for none. */
   readonly box0: Int16Array;
   readonly box1: Int16Array;
+  /** The paint swap slot, 0..PAINT_SLOTS−1 (seeded for a parked hatchback or saloon; 0 otherwise). */
+  readonly paint: Uint8Array;
+  /**
+   * Ticks since Bessie's body last touched it (phase 3 pushed her out of it), saturating at TOUCH_CLEAR_MAX;
+   * a parked car's dent contact episode ends once this reaches streetLife.traffic.dentRearmS (parked.ts).
+   */
+  readonly touchClear: Int32Array;
+  /** 1 once the current contact episode has dented this parked car (parked.ts): it dents once per episode. */
+  readonly dented: Uint8Array;
+  /** Dents this shift (parked cars). */
+  readonly dents: Int32Array;
+  /** The NPC handle of the cat perched on a parked car's roof, or ROOF_PERCH_FREE (parked.ts). */
+  readonly roofPerch: Int32Array;
   /** Half width and half length by VEHICLE_IDS index. */
   readonly kindHalfWidth: Float64Array;
   readonly kindHalfLength: Float64Array;
+  /** By VEHICLE_IDS index: 1 for a kind with paint swaps (PAINTED_KINDS). */
+  readonly kindPainted: Uint8Array;
+  /**
+   * By VEHICLE_IDS index, a parked kind's dent rules (entities.json rules.dentPts, rules.dentHp; ENTITY_CATALOG
+   * §8.2): the points (≤ 0) and the flat HP a dent costs. 0 for every other kind.
+   */
+  readonly kindDentPts: Int32Array;
+  readonly kindDentHp: Float64Array;
   /** The largest half diagonal of any kind, metres (the query margin). */
   readonly maxHalfDiagonalM: number;
   /** Spatial lookup: grid size in cells, its origin (metres) and the bucket lists. */
@@ -169,6 +209,10 @@ export type VehicleStoreView = {
   readonly blocker: Uint8Array;
   readonly blockTicks: Int32Array;
   readonly dwellLeft: Int32Array;
+  readonly paint: Uint8Array;
+  readonly dented: Uint8Array;
+  readonly dents: Int32Array;
+  readonly roofPerch: Int32Array;
 };
 
 /** An empty store for `level` with room for `capacity` vehicles; body sizes from `entities`. Setup only. */
@@ -182,6 +226,14 @@ export function createVehicleStore(
   }
   const kindHalfWidth = Float64Array.from(VEHICLE_IDS, (id) => entities.vehicles[id].body.widthM / 2);
   const kindHalfLength = Float64Array.from(VEHICLE_IDS, (id) => entities.vehicles[id].body.lengthM / 2);
+  const kindPainted = Uint8Array.from(VEHICLE_IDS, (id) => (PAINTED_KINDS.includes(id) ? 1 : 0));
+  const dentRule = (id: string, key: 'dentPts' | 'dentHp'): number => {
+    const rules: Readonly<Record<string, number>> =
+      entities.vehicles[id as (typeof VEHICLE_IDS)[number]].rules;
+    return Object.hasOwn(rules, key) ? (rules[key] as number) : 0;
+  };
+  const kindDentPts = Int32Array.from(VEHICLE_IDS, (id) => dentRule(id, 'dentPts'));
+  const kindDentHp = Float64Array.from(VEHICLE_IDS, (id) => dentRule(id, 'dentHp'));
   let maxHalfDiagonalM = 0;
   for (let k = 0; k < VEHICLE_IDS.length; k += 1) {
     const w = kindHalfWidth[k] as number;
@@ -228,8 +280,16 @@ export function createVehicleStore(
     servedStop: new Int32Array(capacity),
     box0: new Int16Array(capacity),
     box1: new Int16Array(capacity),
+    paint: new Uint8Array(capacity),
+    touchClear: new Int32Array(capacity).fill(TOUCH_CLEAR_MAX),
+    dented: new Uint8Array(capacity),
+    dents: new Int32Array(capacity),
+    roofPerch: new Int32Array(capacity).fill(ROOF_PERCH_FREE),
     kindHalfWidth,
     kindHalfLength,
+    kindPainted,
+    kindDentPts,
+    kindDentHp,
     maxHalfDiagonalM,
     gridW,
     gridH,
@@ -288,6 +348,11 @@ export function addVehicle(store: VehicleStore, kind: number, flags: number): nu
   store.servedStop[i] = -1;
   store.box0[i] = -1;
   store.box1[i] = -1;
+  store.paint[i] = 0;
+  store.touchClear[i] = TOUCH_CLEAR_MAX;
+  store.dented[i] = 0;
+  store.dents[i] = 0;
+  store.roofPerch[i] = ROOF_PERCH_FREE;
   store.cellNext[i] = -1;
   return i;
 }
@@ -328,6 +393,11 @@ function moveSlot(store: VehicleStore, from: number, to: number): void {
   store.servedStop[to] = store.servedStop[from] as number;
   store.box0[to] = store.box0[from] as number;
   store.box1[to] = store.box1[from] as number;
+  store.paint[to] = store.paint[from] as number;
+  store.touchClear[to] = store.touchClear[from] as number;
+  store.dented[to] = store.dented[from] as number;
+  store.dents[to] = store.dents[from] as number;
+  store.roofPerch[to] = store.roofPerch[from] as number;
 }
 
 /**

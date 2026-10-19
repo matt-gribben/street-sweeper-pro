@@ -447,6 +447,8 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     servedStop, box0, box1, planLen, then its planLen plan edges
  *   I traffic.rng a, b, c, counter; I nextBusTick, busesDue, busesSpawned, carHorns, roadRageOffences, then per
  *     junction box its claim and claim edge and per slot its holder and holder edge
+ *   SSP-090 appends the parked cars and Bessie's vehicle contacts (parked.ts):
+ *   I traffic.dents, contactStops, then per vehicle: I paint, touchClear, dented, dents, roofPerch
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -506,6 +508,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbBodies(hasher, world);
   absorbReactions(hasher, world);
   absorbTraffic(hasher, world);
+  absorbVehicleContacts(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -1019,6 +1022,27 @@ function absorbReactions(hasher: StateHasher, world: World): void {
     w[k] = (npc.contactIgnore[i] as number) | 0;
     w[k + 1] = (npc.stateLimit[i] as number) | 0;
     k += 2;
+  }
+  mixWords(hasher, k);
+}
+
+function absorbVehicleContacts(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const s = world.vehicles;
+  w[0] = world.traffic.dents | 0;
+  w[1] = world.traffic.contactStops | 0;
+  let k = 2;
+  for (let i = 0; i < s.count; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (s.paint[i] as number) | 0;
+    w[k + 1] = (s.touchClear[i] as number) | 0;
+    w[k + 2] = (s.dented[i] as number) | 0;
+    w[k + 3] = (s.dents[i] as number) | 0;
+    w[k + 4] = (s.roofPerch[i] as number) | 0;
+    k += 5;
   }
   mixWords(hasher, k);
 }

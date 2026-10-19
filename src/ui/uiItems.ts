@@ -1,7 +1,8 @@
 // UI items (SSP-071): a screen laid out once as a flat list of panels, buttons and strings, then drawn through one
 // Panels (its sink is the scene's UiSpriteBatch, or a CPU rasteriser in tests). The intro card (introCard.ts) and
 // the tally page (tallyPage.ts) are built from them, so the same layout drives the GPU frame, the unit tests and
-// the e2e pixel check (tests/e2e/flow.spec.ts). SSP-286's menus.ts takes the buttons over in M3.
+// the e2e pixel check (tests/e2e/flow.spec.ts). Since SSP-286 the buttons' states and rects come
+// from a menus.ts Menu.
 //
 // Layouts are pure data computed off the per-frame path (when the width or the focus changes); drawUiItems walks
 // the list by index and allocates nothing.

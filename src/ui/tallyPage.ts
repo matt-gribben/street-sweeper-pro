@@ -17,10 +17,11 @@
 // rules (50% of the score, no stars) are M3 (SSP-079): until then the page shows the figures as they stand.
 //
 // Pure layout over UiItems (uiItems.ts): TallyScene draws it, the tests rasterise it on the CPU. Text is 00 ink
-// on the paper panel (ART_BIBLE §12.4: the Mercury is 00 on 07).
+// on the paper panel (ART_BIBLE §12.4: the Mercury is 00 on 07). The buttons are a menus.ts Menu (SSP-286): the
+// scene passes each button's ButtonState in, and tallyButtonRects() gives the menu the same rects for the mouse.
 import type { SimShiftEndReason, SimSnapshot } from '../sim/snapshot.ts';
 import { type BitmapFont, TextAlign, TextVariant } from './bitmapText.ts';
-import { ButtonState, buttonWidthFor, PanelStyle } from './panels.ts';
+import { ButtonState, buttonWidthFor, PanelStyle, type UiRect } from './panels.ts';
 import { textItem, type UiItem } from './uiItems.ts';
 
 /** The page's buttons, top to bottom; Try Again is the default focus (GDD §11.3, §15.3). */
@@ -128,24 +129,36 @@ export function tallyRows(figures: TallyFigures): readonly (readonly [label: str
   ];
 }
 
-/** Moves the focus one step for the MENU_UP / MENU_DOWN edges in `up` and `down`, wrapping at the ends. */
-export function stepTallyFocus(focus: TallyButton, up: boolean, down: boolean): TallyButton {
-  if (up === down) return focus;
-  const next = (focus + (down ? 1 : TALLY_BUTTON_COUNT - 1)) % TALLY_BUTTON_COUNT;
-  return next === TallyButton.TryAgain ? TallyButton.TryAgain : TallyButton.BackToBriefing;
+/** The buttons' rects at internal size `widthPx` × `heightPx`, in TallyButton order (centred, one width). */
+export function tallyButtonRects(font: BitmapFont, widthPx: number, heightPx: number): UiRect[] {
+  const y = (heightPx - PANEL_H_PX) >> 1;
+  const buttonW = Math.max(...TALLY_BUTTON_LABELS.map((label) => buttonWidthFor(font, label)));
+  const buttonX = (widthPx - buttonW) >> 1;
+  return TALLY_BUTTON_LABELS.map((_label, i) => ({
+    x: buttonX,
+    y: y + FIRST_BUTTON_Y_PX + i * BUTTON_STEP_PX,
+    w: buttonW,
+    h: BUTTON_H_PX,
+  }));
+}
+
+/** Button states with `focus` focused (Try Again is the default) and nothing pressed: the page as it first shows. */
+export function tallyButtonStates(focus: TallyButton, pressed = false): ButtonState[] {
+  return TALLY_BUTTON_LABELS.map((_label, i) =>
+    i !== focus ? ButtonState.Normal : pressed ? ButtonState.Pressed : ButtonState.Focus,
+  );
 }
 
 /**
- * The page at internal size `widthPx` × `heightPx`: `focus` is the focused button, drawn Pressed instead when
- * `pressed` (the choice has been made and the next scene is loading).
+ * The page at internal size `widthPx` × `heightPx`, each button drawn in its `states` entry (TallyButton order:
+ * the menu's buttonState(), or tallyButtonStates()).
  */
 export function tallyPageLayout(
   font: BitmapFont,
   widthPx: number,
   heightPx: number,
   figures: TallyFigures,
-  focus: TallyButton,
-  pressed: boolean,
+  states: readonly ButtonState[],
 ): UiItem[] {
   const x = (widthPx - PANEL_W_PX) >> 1;
   const y = (heightPx - PANEL_H_PX) >> 1;
@@ -176,12 +189,11 @@ export function tallyPageLayout(
         : textItem(STAR, starX, rowY, SLAB_DK),
     );
   }
-  const buttonW = Math.max(...TALLY_BUTTON_LABELS.map((label) => buttonWidthFor(font, label)));
-  const buttonX = (widthPx - buttonW) >> 1;
+  const rects = tallyButtonRects(font, widthPx, heightPx);
   TALLY_BUTTON_LABELS.forEach((label, i) => {
-    const state = i !== focus ? ButtonState.Normal : pressed ? ButtonState.Pressed : ButtonState.Focus;
-    const rect = { x: buttonX, y: y + FIRST_BUTTON_Y_PX + i * BUTTON_STEP_PX, w: buttonW, h: BUTTON_H_PX };
-    items.push({ kind: 'button', state, rect, label });
+    const rect = rects[i];
+    if (rect === undefined) return;
+    items.push({ kind: 'button', state: states[i] ?? ButtonState.Normal, rect, label });
   });
   return items;
 }

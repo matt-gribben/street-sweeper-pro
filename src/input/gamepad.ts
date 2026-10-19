@@ -7,8 +7,14 @@
 // to full range outside it: s = sign(x) · max(0, |x| − 0.15) / 0.85. Actions quantises (0.575 → 0.5 → 64).
 //
 // Menu navigation (GDD §6.1, SSP-071; never in the sim frame, actions.ts): A and Start select, B goes back,
-// [12] D-pad up and [13] D-pad down move the focus. The left stick and hold-repeat join with SSP-286 (a first try
-// at reading axes[1] in the poll boxed a double per poll and failed tests/unit/inputAllocation.test.ts).
+// [12] D-pad up and [13] D-pad down move the focus, and so does the left stick (SSP-286): axes[1] at or past
+// ∓MENU_STICK_THRESHOLD holds MENU_UP / MENU_DOWN exactly like the D-pad (standard mapping: up is negative). The
+// stick value is only compared, never stored or returned, so the poll still boxes no double
+// (tests/unit/inputAllocation.test.ts). Hold-repeat is menuInput.ts's job, over the held bits.
+//
+// Activity (SSP-286, actions.ts activeDevice): a newly held bound button or stick direction, a trigger or the
+// steering stick leaving rest, or any input already showing on the first poll of a pad (browsers only reveal a pad
+// once a button is pressed, so that press is the player picking the pad up) makes the pad the active device.
 //
 // Edges: a button newly pressed since the previous poll latches until Actions takes it. A press and release
 // that both fall between two polls is invisible to a polled API; at 60 fps that is a press shorter than 17 ms.
@@ -24,10 +30,18 @@
 // Rumble setting and the Reduce loud sounds gate arrive with settings in M7 (SSP-241); until then
 // `rumbleEnabled` is the switch.
 
-import { ACTION, type InputDevice } from './actions.ts';
+import { ACTION, type InputDevice, type InputDeviceKind } from './actions.ts';
 
 /** Left stick X deadzone (GDD §6.1). */
 export const STICK_DEADZONE = 0.15;
+
+/** Left stick Y deflection that holds a menu direction (GDD §6.1, SSP-286). */
+export const MENU_STICK_THRESHOLD = 0.5;
+
+/** Activity bits for the analogue controls (triggers past the deadzone, steering off centre). */
+const ANALOGUE_THROTTLE = 1;
+const ANALOGUE_BRAKE = 2;
+const ANALOGUE_STEER = 4;
 
 /** Standard-mapping button indices. */
 export const PAD_BUTTON = {
@@ -43,8 +57,11 @@ export const PAD_BUTTON = {
   DPAD_DOWN: 13,
 } as const;
 
-/** Digital button → ACTION bits (TECHNICAL_DESIGN §13.1, plus the GDD §6.1 menu bits, SSP-071). */
-const BUTTON_ACTIONS: readonly (readonly [index: number, actions: number])[] = [
+/**
+ * Digital button → ACTION bits (TECHNICAL_DESIGN §13.1, plus the GDD §6.1 menu bits, SSP-071), in priority order:
+ * the glyph lookup (src/app/glyphBindings.ts) names an action by the first button carrying it.
+ */
+export const PAD_BUTTON_ACTIONS: readonly (readonly [index: number, actions: number])[] = [
   [PAD_BUTTON.SOUTH, ACTION.BRUSH | ACTION.MENU_SELECT],
   [PAD_BUTTON.EAST, ACTION.HORN | ACTION.MENU_BACK],
   [PAD_BUTTON.WEST, ACTION.SPRAY],
@@ -157,8 +174,13 @@ function buttonValue(pad: PadLike, index: number): number {
 
 /** The standard gamepad as an InputDevice. */
 export class GamepadDevice implements InputDevice {
+  readonly kind: InputDeviceKind = 'gamepad';
   /** False turns rumble off (the M7 Rumble setting will drive it). */
   rumbleEnabled = true;
+  /** ANALOGUE_* bits of the last poll. */
+  private analogue = 0;
+  /** The pad was used since takeActivity() last ran. */
+  private used = false;
   private readonly source: PadSource;
   private throttleValue = 0;
   private brakeValue = 0;
@@ -216,6 +238,12 @@ export class GamepadDevice implements InputDevice {
     return taken;
   }
 
+  takeActivity(): boolean {
+    const used = this.used;
+    this.used = false;
+    return used;
+  }
+
   /** Plays the impact rumble on the active pad where supported. Never throws, never waits. */
   rumbleImpact(speedMps: number): void {
     if (!this.rumbleEnabled) return;
@@ -239,17 +267,31 @@ export class GamepadDevice implements InputDevice {
     const brake = buttonValue(pad, PAD_BUTTON.LEFT_TRIGGER);
     const steer = applyDeadzone(pad.axes[0] ?? 0);
     let mask = 0;
-    for (let i = 0; i < BUTTON_ACTIONS.length; i += 1) {
-      const entry = BUTTON_ACTIONS[i];
+    for (let i = 0; i < PAD_BUTTON_ACTIONS.length; i += 1) {
+      const entry = PAD_BUTTON_ACTIONS[i];
       if (entry !== undefined && pad.buttons[entry[0]]?.pressed === true) mask |= entry[1];
     }
+    const stickY = pad.axes[1] ?? 0;
+    if (stickY <= -MENU_STICK_THRESHOLD) mask |= ACTION.MENU_UP;
+    else if (stickY >= MENU_STICK_THRESHOLD) mask |= ACTION.MENU_DOWN;
+    const analogue =
+      (throttle > STICK_DEADZONE ? ANALOGUE_THROTTLE : 0) |
+      (brake > STICK_DEADZONE ? ANALOGUE_BRAKE : 0) |
+      (steer !== 0 ? ANALOGUE_STEER : 0);
     const fresh = pad.index !== this.padIndex;
     // Commit only after every read succeeded, so a throw mid-read leaves no half-updated state.
     this.throttleValue = throttle;
     this.brakeValue = brake;
     this.steerValue = steer;
-    if (!fresh) this.edges |= mask & ~this.mask;
+    if (fresh) {
+      if (mask !== 0 || analogue !== 0) this.used = true;
+    } else {
+      const rising = mask & ~this.mask;
+      this.edges |= rising;
+      if (rising !== 0 || (analogue & ~this.analogue) !== 0) this.used = true;
+    }
     this.mask = mask;
+    this.analogue = analogue;
     this.padIndex = pad.index;
   }
 
@@ -258,6 +300,7 @@ export class GamepadDevice implements InputDevice {
     this.brakeValue = 0;
     this.steerValue = 0;
     this.mask = 0;
+    this.analogue = 0;
     this.padIndex = -1;
   }
 }

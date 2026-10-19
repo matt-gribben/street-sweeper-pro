@@ -9,6 +9,8 @@
 // Input (SSP-044): the Game builds the keyboard (listening on the window) and the standard gamepad, merges them
 // in src/input/actions.ts, polls once per frame (beginFrame) and samples one quantised InputFrame per tick.
 // Gamepad rumble follows EV.Impact on the bus: src/input may not import the bus, so the wiring lives here.
+// Menus (SSP-286) also get the canvas pointer (src/input/pointer.ts, queued into Actions) and map its client
+// coordinates to internal pixels through SceneContext.clientToInternal (the inverse of the upscale transform).
 // Scenes read the frame's pause/map/dev-panel edges from `game.actions.sceneActions` (the dev panel reads F1 from
 // its `afterFrame` hook). `options.input`
 // replaces the whole source (then `actions` is null).
@@ -26,10 +28,11 @@ import { TEST_RENDER_STEP_S } from '../debug/testHooks.ts';
 import { Actions } from '../input/actions.ts';
 import { browserPadSource, GamepadDevice } from '../input/gamepad.ts';
 import { KeyboardDevice } from '../input/keyboard.ts';
+import { PointerDevice } from '../input/pointer.ts';
 import { pinCameraRig, resetCameraSprings, updateCameraRig } from '../render/camera.ts';
 import { Renderer } from '../render/Renderer.ts';
 import { type AtlasName, loadAtlas, type SpriteAtlas } from '../render/spriteAtlas.ts';
-import { attachUpscaler } from '../render/upscale.ts';
+import { attachUpscaler, clientToInternalPx, type InternalPoint } from '../render/upscale.ts';
 import { DT_S } from '../sim/constants.ts';
 import { EV } from '../sim/eventQueue.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
@@ -69,6 +72,12 @@ export type SceneContext = {
   followCamera(xM: number, yM: number, vxMps: number, vyMps: number, speedMps: number): void;
   /** Hands the camera back to the Game's own pan, springs at rest (a following scene calls it from exit()). */
   releaseCamera(): void;
+  /**
+   * Maps a point in client (CSS) pixels, such as a PointerEvent's, to the internal pixel under it (upscale.ts
+   * clientToInternalPx over the current window layout) into `out`; false when it is off the frame or no layout has
+   * been applied yet (SSP-286).
+   */
+  clientToInternal(clientX: number, clientY: number, out: InternalPoint): boolean;
 };
 
 /** One InputFrame per tick, edges latched (src/input/actions.ts, SSP-044). */
@@ -145,7 +154,9 @@ export class Game {
       keyboard.attach(window);
       const gamepad = new GamepadDevice(browserPadSource(navigator));
       this.events.on(EV.Impact, (event) => gamepad.rumbleImpact(event.speedMps));
-      this.actions = new Actions([keyboard, gamepad]);
+      const pointer = new PointerDevice();
+      pointer.attach(canvas);
+      this.actions = new Actions([keyboard, gamepad], pointer);
       this.input = this.actions;
     } else {
       this.actions = null;
@@ -169,6 +180,10 @@ export class Game {
       releaseCamera: () => {
         this.cameraFollowed = false;
         resetCameraSprings(this.renderer.rig);
+      },
+      clientToInternal: (clientX, clientY, out) => {
+        const layout = this.renderer.viewport;
+        return layout !== null && clientToInternalPx(layout, clientX, clientY, out);
       },
     };
     const scenes = this.scenes;

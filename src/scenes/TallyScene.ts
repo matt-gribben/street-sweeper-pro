@@ -2,34 +2,42 @@
 // The shift flow (src/app/shiftFlow.ts) enters it on EV.ShiftEnd, after the knock-off coast or on TOWED, with the
 // SimSnapshot the shift ended in; src/ui/tallyPage.ts lays the figures out.
 //
-//   enter()        loads the `ui` atlas and the font (uiScreen.ts) and drops the menu edges latched during the
-//                  shift (Space is the brush too, so a press made while driving must never pick a button).
+//   enter()        loads the `ui` atlas and the font (uiScreen.ts) and resets its menu input (menuController.ts):
+//                  menu edges and clicks latched during the shift are dropped (Space is the brush too, so a press
+//                  made while driving must never pick a button), and a direction still held is ignored until
+//                  released.
 //   fixedUpdate()  ignores menu input for TALLY_INPUT_LOCK_TICKS (0.5 s, so a brush or horn press made as the
-//                  shift ended cannot pick a button either), then takes the tick's menu edges: W/↑, S/↓, D-pad and
-//                  left stick move the focus (wrapping), Space / Enter / pad A / Start pick the focused button,
-//                  Esc / Backspace / pad B pick Back to Briefing. Try Again is the default focus (GDD §15.3).
-//                  The first pick calls onRetry or onBack once and draws that button pressed; later input is
-//                  ignored. The sim InputFrame is ignored: menu input never reaches a sim (§13.1).
-//   render()       draws the page, re-laid out only when the width, the focus or the pressed state changes.
+//                  shift ended cannot pick a button either), then feeds the tick's input to the buttons' Menu
+//                  (src/ui/menus.ts, SSP-286): W/↑, S/↓, the D-pad and the left stick move the focus (wrapping, with
+//                  hold-repeat), Space / Enter / pad A / Start pick the focused button, Esc / Backspace / pad B pick
+//                  Back to Briefing, and a mouse click picks the button under the pointer (on release). Try Again
+//                  is the default focus (GDD §15.3). The Menu is `once`: the first pick calls onRetry or onBack once
+//                  and draws that button pressed; later input is ignored. UiMove / UiSelect / UiBack go to the
+//                  scene context's bus. The sim InputFrame is ignored: menu input never reaches a sim (§13.1).
+//   render()       draws the page, re-laid out only when the width or the menu's state changes.
 //   snapshot()     the SimSnapshot the shift ended with: `__ssp.state()` returns it while the page shows.
 //
-// Back to Briefing stands in for 'quit' until a TitleScene exists (GDD §15.1). Mouse selection is SSP-286.
+// Back to Briefing stands in for 'quit' until a TitleScene exists (GDD §15.1).
 import type { SceneContext } from '../app/Game.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
-import { ACTION, type MenuInputSource } from '../input/actions.ts';
+import type { MenuInputSource } from '../input/actions.ts';
 import { INTERNAL_HEIGHT_PX } from '../render/upscale.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
 import type { FontJsonSource } from '../ui/bitmapText.ts';
 import { districtDisplayName } from '../ui/introCard.ts';
+import { Menu } from '../ui/menus.ts';
+import type { ButtonState } from '../ui/panels.ts';
 import {
-  stepTallyFocus,
+  TALLY_BUTTON_LABELS,
   TallyButton,
   type TallyFigures,
+  tallyButtonRects,
   tallyFigures,
   tallyPageLayout,
 } from '../ui/tallyPage.ts';
 import { type UiItem, uiItemStrings } from '../ui/uiItems.ts';
+import { MenuController } from './menuController.ts';
 import { UiScreen } from './uiScreen.ts';
 
 /** Ticks after the page appears during which menu input is ignored (0.5 s, proposed in GDD §15.1). */
@@ -64,37 +72,49 @@ export class TallyScene implements Scene {
   readonly simEvents = null;
   readonly result: TallyResult;
   readonly figures: TallyFigures;
+  /** The buttons (TallyButton order). */
+  readonly menu: Menu;
   private readonly context: SceneContext;
-  private readonly menu: MenuInputSource;
-  private readonly onRetry: () => void;
-  private readonly onBack: () => void;
+  private readonly input: MenuController;
   private readonly fontSource: FontJsonSource | undefined;
   private screen: UiScreen | null = null;
   private lockTicks = TALLY_INPUT_LOCK_TICKS;
-  private focused: TallyButton = TallyButton.TryAgain;
-  private chosen: TallyButton | null = null;
   private items: readonly UiItem[] = [];
-  /** Width, focus and pressed state the items were laid out for (width −1: never). */
-  private laidOut = { width: -1, focus: -1, pressed: false };
+  /** Width and menu state the items were laid out for (width −1: never). */
+  private laidOut = { width: -1, key: -1 };
 
   constructor(context: SceneContext, options: TallySceneOptions) {
     this.context = context;
     this.result = options.result;
     this.figures = tallyFigures(options.result.snapshot, districtDisplayName(options.result.district));
-    this.menu = options.menu;
-    this.onRetry = options.onRetry;
-    this.onBack = options.onBack;
+    this.input = new MenuController(context, options.menu);
+    const onRetry = options.onRetry;
+    const onBack = options.onBack;
+    this.menu = new Menu({
+      id: 'tally',
+      items: [
+        { label: TALLY_BUTTON_LABELS[TallyButton.TryAgain] ?? '', onSelect: () => onRetry() },
+        { label: TALLY_BUTTON_LABELS[TallyButton.BackToBriefing] ?? '', onSelect: () => onBack() },
+      ],
+      events: context.events,
+      focus: TallyButton.TryAgain,
+      backItem: TallyButton.BackToBriefing,
+      once: true,
+    });
     this.fontSource = options.fontSource;
   }
 
   /** The focused button. */
   get focus(): TallyButton {
-    return this.focused;
+    return this.menu.focus === TallyButton.BackToBriefing ? TallyButton.BackToBriefing : TallyButton.TryAgain;
   }
 
   /** The button picked, or null while the page waits for the player. */
   get choice(): TallyButton | null {
-    return this.chosen;
+    if (!this.menu.finished) return null;
+    return this.menu.selected === TallyButton.BackToBriefing
+      ? TallyButton.BackToBriefing
+      : TallyButton.TryAgain;
   }
 
   /** The strings the page shows now, top to bottom (the layout is built on first use). */
@@ -109,7 +129,7 @@ export class TallyScene implements Scene {
 
   async enter(_params: SceneParams): Promise<void> {
     this.screen = await UiScreen.load(this.context, 'tally', this.fontSource);
-    this.menu.takeMenuEdges();
+    this.input.reset();
   }
 
   exit(): void {
@@ -118,48 +138,32 @@ export class TallyScene implements Scene {
   }
 
   fixedUpdate(_input: Readonly<InputFrame>): void {
-    const edges = this.menu.takeMenuEdges();
     if (this.lockTicks > 0) {
       this.lockTicks -= 1;
+      this.input.update(null);
       return;
     }
-    if (this.chosen !== null) return;
-    this.focused = stepTallyFocus(
-      this.focused,
-      (edges & ACTION.MENU_UP) !== 0,
-      (edges & ACTION.MENU_DOWN) !== 0,
-    );
-    if ((edges & ACTION.MENU_SELECT) !== 0) this.choose(this.focused);
-    else if ((edges & ACTION.MENU_BACK) !== 0) this.choose(TallyButton.BackToBriefing);
+    // Rects follow the current width before any click is hit-tested.
+    this.layout();
+    this.input.update(this.menu);
   }
 
   render(_alpha: number): void {
     this.screen?.draw(this.layout());
   }
 
-  private choose(button: TallyButton): void {
-    this.focused = button;
-    this.chosen = button;
-    if (button === TallyButton.TryAgain) this.onRetry();
-    else this.onBack();
-  }
-
   private layout(): readonly UiItem[] {
     const screen = this.screen;
     if (screen === null) return this.items;
     const width = this.context.renderer.rig.internalWidth;
-    const pressed = this.chosen !== null;
+    const menu = this.menu;
+    const key = menu.stateKey();
     const last = this.laidOut;
-    if (width !== last.width || this.focused !== last.focus || pressed !== last.pressed) {
-      this.items = tallyPageLayout(
-        screen.font,
-        width,
-        INTERNAL_HEIGHT_PX,
-        this.figures,
-        this.focused,
-        pressed,
-      );
-      this.laidOut = { width, focus: this.focused, pressed };
+    if (width !== last.width || key !== last.key) {
+      menu.setRects(tallyButtonRects(screen.font, width, INTERNAL_HEIGHT_PX));
+      const states: ButtonState[] = menu.items.map((_item, i) => menu.buttonState(i));
+      this.items = tallyPageLayout(screen.font, width, INTERNAL_HEIGHT_PX, this.figures, states);
+      this.laidOut = { width, key };
     }
     return this.items;
   }

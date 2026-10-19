@@ -12,6 +12,12 @@
 // rewritten for every event of that type, so a subscriber must copy what it needs and never keep the object.
 // subscribe() and unsubscribing copy the listener list (copy-on-write), so a listener may unsubscribe itself,
 // or subscribe another, during dispatch: the change takes effect from the next event.
+//
+// UI events (SSP-286): menus (src/ui/menus.ts) report UiMove, UiSelect and UiBack through emitUi() as they act on
+// the player's input, and the audio director maps them to sfx.ui_move / ui_select / ui_back (M5; nothing listens
+// yet). They are not sim events: they never enter an EventQueue, a replay or a hash, and they are dispatched at once
+// to the onUi() subscribers of their type (onAny() is for sim events only). Same rules otherwise: one preallocated
+// payload per type, copy-on-write listener lists.
 
 import { Offence } from '../sim/complaints.ts';
 import { LITTER_IDS, type LitterId, STAIN_IDS, type StainId } from '../sim/entities.ts';
@@ -336,12 +342,55 @@ function isEventType(type: number): type is EventType {
   );
 }
 
+/** UI event types (SSP-286): what a menu did with the player's input. Strings, so they never collide with EV ids. */
+export const UI_EV = { UiMove: 'ui_move', UiSelect: 'ui_select', UiBack: 'ui_back' } as const;
+export type UiEventType = (typeof UI_EV)[keyof typeof UI_EV];
+
+/** Fields every UI event carries. */
+type UiEventBase = {
+  /** The menu's id (`tally`, `shift_intro`, ...). */
+  readonly menu: string;
+  /** The item concerned: newly focused (UiMove), selected (UiSelect), or focused when Back came (UiBack). */
+  readonly item: number;
+};
+
+/** The menu focus moved to another item (sfx.ui_move, M5). */
+export type UiMoveEvent = UiEventBase & { readonly type: typeof UI_EV.UiMove };
+/** A menu item was selected (sfx.ui_select, M5). */
+export type UiSelectEvent = UiEventBase & { readonly type: typeof UI_EV.UiSelect };
+/** A menu went back (sfx.ui_back, M5). */
+export type UiBackEvent = UiEventBase & { readonly type: typeof UI_EV.UiBack };
+
+export type UiEventByType = {
+  [UI_EV.UiMove]: UiMoveEvent;
+  [UI_EV.UiSelect]: UiSelectEvent;
+  [UI_EV.UiBack]: UiBackEvent;
+};
+
+/** A subscriber to one UI event type. The event object is reused: copy what you need, never keep it. */
+export type UiEventListener<T extends UiEventType> = (event: UiEventByType[T]) => void;
+
+/** Where a menu reports what it did (EventBus implements it; unit tests pass recorders). */
+export type UiEventSink = { emitUi(type: UiEventType, menu: string, item: number): void };
+
+type UiListenerLists = { [T in UiEventType]: readonly UiEventListener<T>[] };
+
 /** Listener lists per type, each replaced (never mutated) on subscribe/unsubscribe. */
 type ListenerLists = { [T in EventType]: readonly SimEventListener<T>[] };
 
-/** The bus. One per Game; the loop drains each sim tick into it. */
-export class EventBus {
+/** The bus. One per Game; the loop drains each sim tick into it, and menus emit UI events on it. */
+export class EventBus implements UiEventSink {
   private readonly payloads: Payloads = createPayloads();
+  private readonly uiPayloads: { [T in UiEventType]: Writable<UiEventByType[T]> } = {
+    [UI_EV.UiMove]: { type: UI_EV.UiMove, menu: '', item: -1 },
+    [UI_EV.UiSelect]: { type: UI_EV.UiSelect, menu: '', item: -1 },
+    [UI_EV.UiBack]: { type: UI_EV.UiBack, menu: '', item: -1 },
+  };
+  private uiListeners: UiListenerLists = {
+    [UI_EV.UiMove]: [],
+    [UI_EV.UiSelect]: [],
+    [UI_EV.UiBack]: [],
+  };
   private listeners: ListenerLists = {
     [EV.Impact]: [],
     [EV.KerbJolt]: [],
@@ -385,6 +434,29 @@ export class EventBus {
       subscribed = false;
       this.anyListeners = this.anyListeners.filter((l) => l !== listener);
     };
+  }
+
+  /** Subscribes `listener` to UI events of `type` (SSP-286). Listeners run in subscription order. */
+  onUi<T extends UiEventType>(type: T, listener: UiEventListener<T>): Unsubscribe {
+    const lists = this.uiListeners as { [K in T]: readonly UiEventListener<T>[] };
+    lists[type] = [...lists[type], listener];
+    let subscribed = true;
+    return () => {
+      if (!subscribed) return;
+      subscribed = false;
+      lists[type] = lists[type].filter((l) => l !== listener);
+    };
+  }
+
+  /** Dispatches one UI event to the onUi() subscribers of `type`, now. */
+  emitUi(type: UiEventType, menu: string, item: number): void {
+    const event = this.uiPayloads[type];
+    event.menu = menu;
+    event.item = item;
+    const listeners = (this.uiListeners as { [K in UiEventType]: readonly UiEventListener<K>[] })[
+      type
+    ] as readonly ((event: UiEventByType[UiEventType]) => void)[];
+    for (let i = 0; i < listeners.length; i += 1) listeners[i]?.(event);
   }
 
   /**

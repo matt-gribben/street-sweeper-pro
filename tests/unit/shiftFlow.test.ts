@@ -1,7 +1,8 @@
 // SSP-071: the shift flow (src/app/shiftFlow.ts) with the real ShiftIntroScene, ShiftScene and TallyScene over a
 // SceneManager, the event bus and the keyboard + gamepad Actions, without WebGL: intro card → Space → a complete
 // shift → EV.ShiftEnd → the numbers-only tally (matching the World's final SimSnapshot) → Try Again (same seed, the
-// intro skipped, tick 0, no level fetch) → tally → Back to Briefing. Both menus answer the keyboard and the pad.
+// intro skipped, tick 0, no level fetch) → tally → Back to Briefing. Both menus answer the keyboard, the pad and
+// (SSP-286) mouse clicks, mapped from client pixels through the real upscale transform of a 1920×1080 window.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Group } from 'three';
@@ -10,11 +11,13 @@ import { EventBus } from '../../src/app/events.ts';
 import type { SceneContext } from '../../src/app/Game.ts';
 import { SceneManager } from '../../src/app/SceneManager.ts';
 import { ShiftFlow } from '../../src/app/shiftFlow.ts';
-import { Actions } from '../../src/input/actions.ts';
+import { Actions, POINTER_PHASE } from '../../src/input/actions.ts';
 import { GamepadDevice, PAD_BUTTON } from '../../src/input/gamepad.ts';
 import { KeyboardDevice } from '../../src/input/keyboard.ts';
+import { PointerDevice } from '../../src/input/pointer.ts';
 import type { Renderer } from '../../src/render/Renderer.ts';
 import { type AtlasName, loadAtlas, type RgbaImage } from '../../src/render/spriteAtlas.ts';
+import { clientToInternalPx, computeViewportLayout, INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
 import { ShiftIntroScene } from '../../src/scenes/ShiftIntroScene.ts';
 import { DEFAULT_DISTRICT, ShiftScene } from '../../src/scenes/ShiftScene.ts';
 import { TALLY_INPUT_LOCK_TICKS, TallyScene } from '../../src/scenes/TallyScene.ts';
@@ -22,10 +25,12 @@ import { DT_S, SHIFT_TICKS } from '../../src/sim/constants.ts';
 import { EV } from '../../src/sim/eventQueue.ts';
 import type { SimSnapshot } from '../../src/sim/snapshot.ts';
 import { IntroStatus } from '../../src/ui/introCard.ts';
-import { TallyButton } from '../../src/ui/tallyPage.ts';
+import { TallyButton, tallyButtonRects } from '../../src/ui/tallyPage.ts';
 import { fakePad, keyEvent, padSource, setButton } from '../support/fakeInput.ts';
 import { decodePng } from '../support/png.ts';
-import { readFontJson } from '../support/textRaster.ts';
+import { readBitmapFont, readFontJson } from '../support/textRaster.ts';
+
+const readBitmapFontForTest = () => readBitmapFont('kerbside5x7');
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const read = (rel: string): string => readFileSync(`${REPO_ROOT}${rel}`, 'utf8');
@@ -45,8 +50,10 @@ function harness(levelGate: Promise<void> = Promise.resolve()) {
   const keyboard = new KeyboardDevice(DT_S);
   const pad = fakePad();
   const pads = padSource(pad);
-  const actions = new Actions([keyboard, new GamepadDevice(pads.source)]);
+  const pointer = new PointerDevice();
+  const actions = new Actions([keyboard, new GamepadDevice(pads.source)], pointer);
   actions.beginFrame(); // the pad's first poll sets its edge baseline
+  const layout = computeViewportLayout(1920, 1080, 1);
   const scenes = new SceneManager();
   const history: string[] = [];
   scenes.onEntered = (scene) => history.push(scene.id);
@@ -70,6 +77,7 @@ function harness(levelGate: Promise<void> = Promise.resolve()) {
     pinCamera: () => {},
     followCamera: () => {},
     releaseCamera: () => {},
+    clientToInternal: (x, y, out) => clientToInternalPx(layout, x, y, out),
   };
   const levelFetches: string[] = [];
   const levelSource = async (url: string): Promise<string> => {
@@ -111,6 +119,17 @@ function harness(levelGate: Promise<void> = Promise.resolve()) {
     actions.beginFrame();
     setButton(pad, button, false);
   };
+  /** A mouse click (press and release) at internal pixel (x, y), sent in client pixels as the browser would. */
+  const click = (x: number, y: number): void => {
+    const event = {
+      clientX: (layout.canvasDeviceLeft + (x + 0.5) * layout.scale) / layout.devicePixelRatio,
+      clientY: (layout.canvasDeviceTop + (y + 0.5) * layout.scale) / layout.devicePixelRatio,
+      button: 0,
+      isPrimary: true,
+    };
+    pointer.handle(POINTER_PHASE.Down, event);
+    pointer.handle(POINTER_PHASE.Up, event);
+  };
   const topIs = async (id: string): Promise<void> => {
     await vi.waitFor(() => expect(scenes.top?.id).toBe(id), { timeout: 5000, interval: 2 });
   };
@@ -143,6 +162,7 @@ function harness(levelGate: Promise<void> = Promise.resolve()) {
     frame,
     tap,
     press,
+    click,
     topIs,
     finishShift,
     levelFetches,
@@ -285,6 +305,51 @@ describe('ShiftFlow', () => {
     await h.topIs('shift');
     expect(h.errors).toEqual([]);
   }, 60_000);
+
+  it('answers the mouse (SSP-286): a click on the card starts, a click on a tally button picks it', async () => {
+    const h = harness();
+    await h.flow.startAtIntro();
+    const intro = h.scenes.top as ShiftIntroScene;
+    await vi.waitFor(() => expect(intro.status).toBe(IntroStatus.Ready));
+    h.frame();
+    h.click(5, 5); // the letterbox-free frame, but off the card: nothing
+    h.frame();
+    expect(intro.hasStarted).toBe(false);
+    h.click(240, 135); // the middle of the card
+    h.frame();
+    expect(intro.hasStarted).toBe(true);
+    await h.topIs('shift');
+    const { tally } = await h.finishShift();
+    const rects = tallyButtonRects(readBitmapFontForTest(), 480, INTERNAL_HEIGHT_PX);
+    const back = rects[TallyButton.BackToBriefing];
+    if (back === undefined) throw new Error('no rect');
+    h.click(back.x + 10, back.y + 8); // during the 0.5 s lock: ignored
+    h.frame();
+    h.frame(TALLY_INPUT_LOCK_TICKS);
+    expect(tally.choice).toBeNull();
+    h.click(back.x + (back.w >> 1), back.y + (back.h >> 1));
+    h.frame();
+    expect(tally.choice).toBe(TallyButton.BackToBriefing);
+    await h.topIs('shift_intro');
+    expect(h.history).toEqual(['shift_intro', 'shift', 'tally', 'shift_intro']);
+    expect(h.errors).toEqual([]);
+  }, 60_000);
+
+  it("names the active device's select control on the card: Space, then A once the pad is used", async () => {
+    const h = harness();
+    await h.flow.startAtIntro();
+    const intro = h.scenes.top as ShiftIntroScene;
+    await vi.waitFor(() => expect(intro.status).toBe(IntroStatus.Ready));
+    h.frame();
+    expect(intro.text[2]).toBe('Press Space to start');
+    h.press(PAD_BUTTON.DPAD_DOWN); // pad input that does not start the shift
+    h.frame();
+    expect(intro.text[2]).toBe('Press A to start');
+    h.keyboard.handleKeyDown(keyEvent('KeyH'));
+    h.frame();
+    expect(intro.text[2]).toBe('Press Space to start');
+    expect(intro.hasStarted).toBe(false);
+  });
 
   it('starts when Space was pressed before the level had loaded', async () => {
     let release = (): void => {};

@@ -448,6 +448,8 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *   I traffic.rng a, b, c, counter; I nextBusTick, busesDue, busesSpawned, carHorns, roadRageOffences, then per
  *     junction box its claim and claim edge and per slot its holder and holder edge
  *   SSP-083 appends the behaviour timers: per NPC, after stateLimit, I timerA, timerB
+ *   SSP-094 appends broken glass and the puddle splashes: I hazards.glassSmashed, glassSwept; B splash.wet;
+ *     I splash.episode, splashes, crossingSplashes, complaints; then per NPC I splashEpisode
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -507,6 +509,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbBodies(hasher, world);
   absorbReactions(hasher, world);
   absorbTraffic(hasher, world);
+  absorbSplashGlass(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -1022,6 +1025,29 @@ function absorbReactions(hasher: StateHasher, world: World): void {
     w[k + 2] = (npc.timerA[i] as number) | 0;
     w[k + 3] = (npc.timerB[i] as number) | 0;
     k += 4;
+  }
+  mixWords(hasher, k);
+}
+
+function absorbSplashGlass(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const npc = world.npc;
+  const s = world.npcAi.splash;
+  w[0] = world.hazards.glassSmashed | 0;
+  w[1] = world.hazards.glassSwept | 0;
+  w[2] = s.wet ? 1 : 0;
+  w[3] = s.episode | 0;
+  w[4] = s.splashes | 0;
+  w[5] = s.crossingSplashes | 0;
+  w[6] = s.complaints | 0;
+  let k = 7;
+  for (let i = 0; i < npc.count; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (npc.splashEpisode[i] as number) | 0;
+    k += 1;
   }
   mixWords(hasher, k);
 }

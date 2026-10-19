@@ -137,6 +137,11 @@ export type NpcStore = {
    */
   readonly timerA: Int32Array;
   readonly timerB: Int32Array;
+  /**
+   * Puddle splash (npc/splash.ts, SSP-094): the serial of the puddle crossing that last splashed it, 0 = never.
+   * A pedestrian is splashed at most once per crossing.
+   */
+  readonly splashEpisode: Int32Array;
   /** Handle slot of each live index. */
   readonly handleSlot: Int32Array;
   /** Live index of each handle slot, −1 while the slot is free. */
@@ -191,6 +196,7 @@ export type NpcStoreView = {
   readonly stateLimit: Uint16Array;
   readonly timerA: Int32Array;
   readonly timerB: Int32Array;
+  readonly splashEpisode: Int32Array;
   readonly handleSlot: Int32Array;
   readonly slotGen: Uint32Array;
 };
@@ -245,6 +251,7 @@ export function createNpcStore(level: Level, capacity: number = NPC_CAPACITY): N
     stateLimit: new Uint16Array(capacity),
     timerA: new Int32Array(capacity),
     timerB: new Int32Array(capacity),
+    splashEpisode: new Int32Array(capacity),
     handleSlot: new Int32Array(capacity).fill(-1),
     slotIndex: new Int32Array(capacity).fill(-1),
     slotGen: new Uint32Array(capacity),
@@ -434,6 +441,7 @@ export function addNpc(
   store.stateLimit[i] = 0;
   store.timerA[i] = 0;
   store.timerB[i] = 0;
+  store.splashEpisode[i] = 0;
   linkCell(store, i, npcCellIndex(store, i));
   return i;
 }
@@ -495,6 +503,7 @@ export function removeNpc(store: NpcStore, i: number): void {
     store.stateLimit[i] = store.stateLimit[last] as number;
     store.timerA[i] = store.timerA[last] as number;
     store.timerB[i] = store.timerB[last] as number;
+    store.splashEpisode[i] = store.splashEpisode[last] as number;
     const movedSlot = store.handleSlot[last] as number;
     store.handleSlot[i] = movedSlot;
     store.slotIndex[movedSlot] = i;

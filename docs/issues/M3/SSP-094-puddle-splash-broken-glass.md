@@ -2,7 +2,7 @@
 id: SSP-094
 title: "Add puddle splash penalties and broken glass from flung bottles"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: S
 labels: [type:feature, area:sim, area:gameplay, area:test, size:S, vertical-slice]
@@ -49,11 +49,11 @@ Broken glass
 
 ## Acceptance criteria
 
-- [ ] Test: crossing a puddle at 3.5 m/s with 2 pedestrians within 1.5 m costs −100 total and startles both; at 2.9 m/s it costs nothing.
-- [ ] Test: the 3rd counted splash in a shift adds exactly 1 complaint, and the 6th adds another.
-- [ ] Test: a flung glass bottle creates one haz.broken_glass at its landing point.
-- [ ] Test: driving on broken glass for 60 ticks costs 5 HP ± 0.01.
-- [ ] Test: sweeping the glass awards +20 once and removes the hazard.
+- [x] Test: crossing a puddle at 3.5 m/s with 2 pedestrians within 1.5 m costs −100 total and startles both; at 2.9 m/s it costs nothing.
+- [x] Test: the 3rd counted splash in a shift adds exactly 1 complaint, and the 6th adds another.
+- [x] Test: a flung glass bottle creates one haz.broken_glass at its landing point.
+- [x] Test: driving on broken glass for 60 ticks costs 5 HP ± 0.01.
+- [x] Test: sweeping the glass awards +20 once and removes the hazard.
 
 ## Verification
 

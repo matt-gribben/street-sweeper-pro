@@ -607,7 +607,7 @@ Full per-entity values are in [ENTITY_CATALOG.md](ENTITY_CATALOG.md). The tiers 
 | Lead Tangle | Driving through a dog walker's lead | −150 + 1 complaint |
 | Chalk art | Cleaning `stain.chalk_art` while its kid is present ("WAAAH!") | −100 + 1 complaint |
 | Parked car dent | Denting a `veh.<type>_parked` | −100 and 5 HP |
-| Splashes | Puddle splash above 3 m/s | −50 per pedestrian; every 3rd splash = 1 complaint |
+| Splashes | Puddle splash above 3 m/s | −50 per pedestrian; every 3rd splash = 1 complaint (the 3rd, 6th… splashed pedestrian of the shift; one splash per pedestrian per puddle crossing; proposed in SSP-094, [ENTITY_CATALOG §3.4](ENTITY_CATALOG.md#34-generic-pedestrian-reaction-model)) |
 | Knockables | Wheelie bin (−50, spills 4 items), A-board (−25), recycling box (−25, spills 2). Cones and shopping trolleys are free. Penalty and spill on a prop's first hit only ([ENTITY_CATALOG §9.1](ENTITY_CATALOG.md#91-knockable-props), SSP-092). | Points only |
 | Dog mess with brush up | Splat stain | −20 |
 | Dust | Coughing pedestrian within 3 m | −10 per pedestrian per 2 s |

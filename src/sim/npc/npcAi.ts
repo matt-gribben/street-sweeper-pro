@@ -6,7 +6,8 @@
 //      ambient population (at most 2 spawns or retirements);
 //   4. stepReactions (reactions.ts, SSP-082): pushReactionStimuli, the tick's Horn (from EV.Horn), HiVis and
 //      BeaconYield, then stepActorContacts, Bessie against the actors' circles: hits (penalty, EV.NpcHit, drops,
-//      a Hit stimulus) and bumps (a Bump stimulus);
+//      a Hit stimulus) and bumps (a Bump stimulus), then stepPuddleSplash (splash.ts, SSP-094): EV.Splash per
+//      puddle crossed above 3 m/s and the pedestrians within 1.5 m (penalty, EV.NpcSplash, a Splash stimulus);
 //   5. deliverStimuli (stimuli.ts): every queued stimulus, to the behaviours' onStimulus;
 //   6. perceiveNpcs (perception.ts): the perception query of the quarter of the store on this tick's phase;
 //   7. tickNpcBehaviours (here): each live NPC's behaviour tick, in index order, then its state clock;
@@ -26,6 +27,7 @@ import { createOldWomanParams, type OldWomanParams } from './behaviours/oldWoman
 import { createReactions, type Reactions } from './reactions.ts';
 import { behavioursByKind } from './registry.ts';
 import { createNpcSpawner, type NpcSpawner } from './spawner.ts';
+import { createPuddleSplash, type PuddleSplash } from './splash.ts';
 import { createSteering, type Steering, type Zebras } from './steering.ts';
 import { createStimulusQueue, type StimulusQueue } from './stimuli.ts';
 
@@ -48,6 +50,8 @@ export type NpcAi = {
   readonly reactions: Reactions;
   /** Doris's numbers in ticks and metres (behaviours/oldWoman.ts, SSP-083), from entities.json. */
   readonly oldWoman: OldWomanParams;
+  /** The puddle-splash rules' state: the crossing, the shift's splash count (splash.ts, SSP-094). */
+  readonly splash: PuddleSplash;
 };
 
 /**
@@ -72,6 +76,7 @@ export function createNpcAi(
     entities,
     reactions: createReactions(tuning, entities, capacity),
     oldWoman: createOldWomanParams(entities),
+    splash: createPuddleSplash(tuning, entities, capacity),
   };
 }
 

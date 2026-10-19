@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { EventBus, PAUSE_EV, PauseExit, PauseReason, type SimEvent } from '../../src/app/events.ts';
 import { Offence } from '../../src/sim/complaints.ts';
-import { KNOCKABLE_IDS, LITTER_IDS, NPC_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
+import { HAZARD_ENTITY_IDS, KNOCKABLE_IDS, LITTER_IDS, NPC_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
 import {
   createEventQueue,
   EV,
@@ -61,9 +61,13 @@ describe('EventBus', () => {
       [EV.NpcHit, 12, 30.5, 9.25, NPC_IDS.indexOf('npc.old_woman')],
       [EV.CarHorn, 2, 30.5, 5.5, 3],
       [EV.HandbagWhack, 12, 31, 9.5, 2],
+      [EV.Splash, 3, 49, 43, 3.5],
+      [EV.NpcSplash, 7, 50.5, 42.25, 1],
+      [EV.GlassSmash, 5, 20.75, 9.5, 1],
+      [EV.GlassSwept, HAZARD_ENTITY_IDS.indexOf('haz.broken_glass'), 21, 7, 20],
       [EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0],
     ]);
-    expect(bus.drain(queue)).toBe(20);
+    expect(bus.drain(queue)).toBe(24);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -92,6 +96,18 @@ describe('EventBus', () => {
       { type: EV.NpcHit, tick: 42, entity: 12, x: 30.5, y: 9.25, kind: 'npc.old_woman' },
       { type: EV.CarHorn, tick: 42, entity: 2, x: 30.5, y: 5.5, honk: 3 },
       { type: EV.HandbagWhack, tick: 42, entity: 12, x: 31, y: 9.5, hp: 2 },
+      { type: EV.Splash, tick: 42, entity: 3, x: 49, y: 43, speedMps: 3.5 },
+      { type: EV.NpcSplash, tick: 42, entity: 7, x: 50.5, y: 42.25, complaints: 1 },
+      { type: EV.GlassSmash, tick: 42, entity: 5, x: 20.75, y: 9.5, created: true },
+      {
+        type: EV.GlassSwept,
+        tick: 42,
+        entity: HAZARD_ENTITY_IDS.indexOf('haz.broken_glass'),
+        x: 21,
+        y: 7,
+        kind: 'haz.broken_glass',
+        pts: 20,
+      },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.TimeUp },
     ]);
   });
@@ -213,6 +229,9 @@ describe('EventBus', () => {
     expect(() => bus.drain(sealedQueue(20, [[EV.NpcHit, 0, 0, 0, NPC_IDS.length]]))).toThrow(
       /unknown NPC kind/,
     );
+    expect(() => bus.drain(sealedQueue(21, [[EV.GlassSwept, HAZARD_ENTITY_IDS.length, 0, 0, 20]]))).toThrow(
+      /unknown hazard kind/,
+    );
   });
 
   it('decodes every EV id the sim defines (a new EV type must be wired into the bus)', () => {
@@ -227,8 +246,8 @@ describe('EventBus', () => {
           (type) =>
             [
               type,
-              // StainCleaned carries the stain kind (a STAIN_IDS index) in `entity`.
-              type === EV.StainCleaned ? 0 : -1,
+              // StainCleaned and GlassSwept carry a kind (a STAIN_IDS / HAZARD_ENTITY_IDS index) in `entity`.
+              type === EV.StainCleaned || type === EV.GlassSwept ? 0 : -1,
               type === EV.ShiftEnd
                 ? ShiftEndReason.Towed
                 : type === EV.DumpStart || type === EV.DumpEnd

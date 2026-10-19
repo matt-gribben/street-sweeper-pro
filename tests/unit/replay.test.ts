@@ -275,6 +275,15 @@ describe('state hash', () => {
     // Its behaviour timers (SSP-083).
     world.npc.timerA[n] = 600;
     world.npc.timerB[n] = 17;
+    // A splashed NPC in a running puddle crossing, and broken glass smashed and swept (SSP-094).
+    world.npc.splashEpisode[n] = 2;
+    world.npcAi.splash.wet = true;
+    world.npcAi.splash.episode = 2;
+    world.npcAi.splash.splashes = 4;
+    world.npcAi.splash.crossingSplashes = 3;
+    world.npcAi.splash.complaints = 1;
+    world.hazards.glassSmashed = 2;
+    world.hazards.glassSwept = 1;
     world.npcAi.reactions.hiVisUntilTick = 700;
     world.npcAi.reactions.hits = 1;
     world.npcAi.reactions.bumps = 2;
@@ -389,6 +398,25 @@ describe('state hash', () => {
       ['hiVisUntilTick', (w) => (w.npcAi.reactions.hiVisUntilTick = 701)],
       ['hits', (w) => (w.npcAi.reactions.hits = 2)],
       ['bumps', (w) => (w.npcAi.reactions.bumps = 3)],
+    ];
+    for (const [name, edit] of edits) {
+      const w = handSetWorld();
+      edit(w);
+      expect(hashOf(w), name).not.toBe(base);
+    }
+  });
+
+  it('absorbs broken glass and the puddle splashes (SSP-094): the counters, the crossing and each NPC’s', () => {
+    const base = hashOf(handSetWorld());
+    const edits: [string, (w: World) => void][] = [
+      ['splashEpisode', (w) => (w.npc.splashEpisode[0] = 1)],
+      ['splash.wet', (w) => (w.npcAi.splash.wet = false)],
+      ['splash.episode', (w) => (w.npcAi.splash.episode = 3)],
+      ['splash.splashes', (w) => (w.npcAi.splash.splashes = 5)],
+      ['splash.crossingSplashes', (w) => (w.npcAi.splash.crossingSplashes = 4)],
+      ['splash.complaints', (w) => (w.npcAi.splash.complaints = 2)],
+      ['hazards.glassSmashed', (w) => (w.hazards.glassSmashed = 3)],
+      ['hazards.glassSwept', (w) => (w.hazards.glassSwept = 2)],
     ];
     for (const [name, edit] of edits) {
       const w = handSetWorld();
@@ -1444,8 +1472,11 @@ describe('state hash', () => {
  * with a two-edge plan: b31a23d9 → 68d953a7 (fc7651f5 on its branch, before SSP-092 and SSP-082 merged).
  * SSP-083 appended each NPC's behaviour timers (timerA, timerB) after its state limit, and gave the NPC both:
  * 68d953a7 → 424363e8 (5ed1888a on its branch, before SSP-089 merged).
+ * SSP-094 appended broken glass and the puddle splashes (the hazard store's glassSmashed and glassSwept, the
+ * splash crossing and counters, then each NPC's splashEpisode), and gave the hand-set World a splashed NPC in a
+ * running crossing and some smashed and swept glass: 424363e8 → 4f2347ac.
  */
-const GOLDEN_HAND_SET_HASH = '424363e8';
+const GOLDEN_HAND_SET_HASH = '4f2347ac';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

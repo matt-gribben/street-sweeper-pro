@@ -12,6 +12,8 @@
 //      its event `c` (the stain's `pts`), each × the multiplier after that pickup's chain increment (GDD §10.4).
 //      Every pickup counts for the chain, including the 0-point ones (litter.spilled_shopping, stain.splat).
 //      Stain cleans take the multiplier and extend the chain (ENTITY_CATALOG §17 Q5, resolved in SSP-063).
+//      EV.GlassSwept (haz.broken_glass swept up, SSP-094) scores its event `c` (rules.sweepPts, 20) the same way,
+//      into itemPts: a litter-like pickup (proposed in SSP-094, owner to review).
 //   3. Grime: (tickCleanedCells − tickCleanedGutterCells) × grimeCellPts (1) + tickCleanedGutterCells ×
 //      gutterGrimeCellPts (2) (GDD §9.1). Grime neither builds nor breaks the chain.
 //   4. Kerb Hugger (GDD §10.3): `kerbContactTicks` counts consecutive ticks with dirt.kerbContact and resets to
@@ -61,7 +63,7 @@ export type Scoring = {
   readonly litterPts: Int32Array;
   /** The score: the sum of the five parts below. */
   score: number;
-  /** Σ litter pts × multiplier. */
+  /** Σ litter pts × multiplier, swept broken glass included (SSP-094). */
   itemPts: number;
   /** Σ stain pts × multiplier. */
   stainPts: number;
@@ -213,6 +215,11 @@ export function stepScoring(
       const pts = (events.c[i] as number) | 0;
       const mul = addComboPickup(combo, events);
       scoring.stainPts += pts * mul;
+      scoring.score += pts * mul;
+    } else if (t === EV.GlassSwept) {
+      const pts = (events.c[i] as number) | 0;
+      const mul = addComboPickup(combo, events);
+      scoring.itemPts += pts * mul;
       scoring.score += pts * mul;
     }
   }

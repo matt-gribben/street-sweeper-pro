@@ -257,6 +257,20 @@ export type CarHornEvent = SimEventBase & {
   readonly honk: number;
 };
 
+/**
+ * Bessie drove through a dog walker's lead (phase 7, npc/behaviours/dogWalker.ts, SSP-086): once per crossing
+ * episode that costs the Lead Tangle. `entity` is the walker's store index. Audio plays dog_bark, then ped_oi
+ * 120 ms after (M5); the −150 popup reads it.
+ */
+export type LeadTangleEvent = SimEventBase & {
+  readonly type: typeof EV.LeadTangle;
+  /** Where Bessie's body crosses the lead (the middle of the overlapping stretch), sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The dog's store index. */
+  readonly dog: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -277,6 +291,7 @@ export type SimEventByType = {
   [EV.Knock]: KnockEvent;
   [EV.NpcHit]: NpcHitEvent;
   [EV.CarHorn]: CarHornEvent;
+  [EV.LeadTangle]: LeadTangleEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -356,6 +371,7 @@ function createPayloads(): Payloads {
     [EV.Knock]: { type: EV.Knock, tick: 0, entity: -1, x: 0, y: 0, kind: 'prop.wheelie_bin' },
     [EV.NpcHit]: { type: EV.NpcHit, tick: 0, entity: -1, x: 0, y: 0, kind: 'npc.shopper' },
     [EV.CarHorn]: { type: EV.CarHorn, tick: 0, entity: -1, x: 0, y: 0, honk: 1 },
+    [EV.LeadTangle]: { type: EV.LeadTangle, tick: 0, entity: -1, x: 0, y: 0, dog: -1 },
   };
 }
 
@@ -418,7 +434,8 @@ function isEventType(type: number): type is EventType {
     type === EV.Horn ||
     type === EV.Knock ||
     type === EV.NpcHit ||
-    type === EV.CarHorn
+    type === EV.CarHorn ||
+    type === EV.LeadTangle
   );
 }
 
@@ -538,6 +555,7 @@ export class EventBus implements UiEventSink, PauseEventSink {
     [EV.Knock]: [],
     [EV.NpcHit]: [],
     [EV.CarHorn]: [],
+    [EV.LeadTangle]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -831,6 +849,16 @@ export class EventBus implements UiEventSink, PauseEventSink {
         e.y = b;
         e.honk = c;
         this.emit(EV.CarHorn, e);
+        return;
+      }
+      case EV.LeadTangle: {
+        const e = this.payloads[EV.LeadTangle];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.dog = c;
+        this.emit(EV.LeadTangle, e);
         return;
       }
     }

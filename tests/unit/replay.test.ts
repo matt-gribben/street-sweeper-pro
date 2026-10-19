@@ -272,6 +272,9 @@ describe('state hash', () => {
     // Its reaction columns and a running hi-vis with one hit and two bumps (SSP-082).
     world.npc.contactIgnore[n] = 42;
     world.npc.stateLimit[n] = 30;
+    // Its behaviour words (SSP-086).
+    world.npc.dueTick[n] = 2_500;
+    world.npc.routeAt[n] = 2;
     world.npcAi.reactions.hiVisUntilTick = 700;
     world.npcAi.reactions.hits = 1;
     world.npcAi.reactions.bumps = 2;
@@ -384,6 +387,19 @@ describe('state hash', () => {
       ['hiVisUntilTick', (w) => (w.npcAi.reactions.hiVisUntilTick = 701)],
       ['hits', (w) => (w.npcAi.reactions.hits = 2)],
       ['bumps', (w) => (w.npcAi.reactions.bumps = 3)],
+    ];
+    for (const [name, edit] of edits) {
+      const w = handSetWorld();
+      edit(w);
+      expect(hashOf(w), name).not.toBe(base);
+    }
+  });
+
+  it('absorbs the behaviour words (SSP-086): the per-NPC due tick and route place', () => {
+    const base = hashOf(handSetWorld());
+    const edits: [string, (w: World) => void][] = [
+      ['dueTick', (w) => (w.npc.dueTick[0] = 2_501)],
+      ['routeAt', (w) => (w.npc.routeAt[0] = 3)],
     ];
     for (const [name, edit] of edits) {
       const w = handSetWorld();
@@ -1437,8 +1453,10 @@ describe('state hash', () => {
  * b31a23d9 (f20bff33 on its branch, before SSP-092 merged).
  * SSP-089 appended the vehicle store and the traffic state, and gave the hand-set World a vehicle held by Bessie
  * with a two-edge plan: b31a23d9 → 68d953a7 (fc7651f5 on its branch, before SSP-092 and SSP-082 merged).
+ * SSP-086 appended the behaviours' own per-NPC words (dueTick, routeAt) after the traffic, and gave the hand-set
+ * NPC a due tick and a route place: 68d953a7 → 82d0b612.
  */
-const GOLDEN_HAND_SET_HASH = '68d953a7';
+const GOLDEN_HAND_SET_HASH = '82d0b612';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

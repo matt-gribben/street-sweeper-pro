@@ -6,6 +6,7 @@ import { NPC_BEHAVIOURS, NPC_IDS } from '../../src/sim/entities.ts';
 import { createInputFrame } from '../../src/sim/inputFrame.ts';
 import { createBlankLevel } from '../../src/sim/map.ts';
 import { type Behaviour, Stimulus } from '../../src/sim/npc/behaviour.ts';
+import { dogWalkerBehaviour } from '../../src/sim/npc/behaviours/dogWalker.ts';
 import { NOOP, noopBehaviour, noopJaywalkBehaviour } from '../../src/sim/npc/behaviours/noop.ts';
 import {
   pedestrianBehaviour,
@@ -39,12 +40,13 @@ describe('behaviour registry', () => {
   it('maps every entities.json behaviour key to a module: the generic pedestrian or the no-op until each lands', () => {
     expect(Object.keys(BEHAVIOUR_REGISTRY).sort()).toEqual([...NPC_BEHAVIOURS].sort());
     // SSP-082: every person kind gets the generic pedestrian (the businessman, an M3 jaywalker, its jaywalking
-    // twin; the market trader the stationary one); the animals keep the no-op (SSP-081: the cat jaywalks).
+    // twin; the market trader the stationary one); the animals keep the no-op (SSP-081: the cat jaywalks). SSP-086:
+    // the dog walker has its own module.
     const expected: { readonly [K in (typeof NPC_BEHAVIOURS)[number]]: Behaviour } = {
       shopper: pedestrianBehaviour,
       old_woman: pedestrianBehaviour,
       old_man_frame: pedestrianBehaviour,
-      dog_walker: pedestrianBehaviour,
+      dog_walker: dogWalkerBehaviour,
       litterbug: pedestrianBehaviour,
       businessman: pedestrianJaywalkBehaviour,
       mum_pushchair: pedestrianBehaviour,

@@ -37,7 +37,7 @@ export default mergeConfig(
           extends: true,
           test: {
             name: 'unit',
-            include: ['tests/unit/*.test.ts'],
+            include: ['tests/unit/**/*.test.ts'],
             pool: GC_EXPOSED.pool,
             execArgv: [...GC_EXPOSED.execArgv],
           },

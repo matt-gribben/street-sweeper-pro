@@ -32,7 +32,8 @@
 // FALLEN is set through Fallen and GetUp (contact ignores such an actor), YIELDING through Yield.
 //
 // A companion dog (origin Companion) runs the same machine but, instead of wandering, heels: it walks to within
-// COMPANION_HEEL_M of its walker (`link`) and waits there. SSP-086 gives the dog walker its own module.
+// COMPANION_HEEL_M of its walker (`link`) and waits there. Since SSP-086 the registry gives the dog walker its own
+// module (dogWalker.ts), whose dog roams ahead on the lead instead; the heel stays for any other companion.
 //
 // Timings are ART_BIBLE §10.2's. STARTLE_TICKS, YIELD_MIN_TICKS and the idle range are not in any doc; SSP-082
 // proposed them (TBD (M3 tuning), owner to review): a 0.5 s startle, 0.5 s minimum yield, 1–3 s idles.

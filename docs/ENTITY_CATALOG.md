@@ -287,6 +287,12 @@ All hits also play `complaint_stamp` for each complaint and reset the combo chai
 | `npc.reveller` | **Weaves, sings, drops pizza boxes and kebab wrappers.** The weave is a sine offset on the nav path, so its line is readable but never straight. | walk with sway |
 | `npc.inspector` | **Walks a fixed route with a clipboard.** Each `site.frontage` he passes that is **below 90% clean: −100**. Splash or hit: 2 C. Sweeping ahead of his route is the Sunday puzzle. | idle = writing on the clipboard; angry = clipboard tap |
 
+*As built (SSP-086, `src/sim/npc/behaviours/dogWalker.ts`; lead calls for owner review):*
+- **The lead is never longer than 5 m** (`rules.leadMaxM`): the dog trots ahead at 2.0 m/s, about 3 m out with a ±1.25 m sway, and a step of either that would stretch the lead past 5 m is taken back.
+- **Lead Tangle** (−150, 1 C) is counted on the tick Bessie's body first overlaps the lead (walker centre to dog centre). Re-arm: she must clear the whole segment before another Tangle counts. The walker spins (startle) and the dog barks; a crossing during a contact episode with the walker or the dog (a hit or a bump) is part of that episode and costs no Tangle.
+- **Hitting the dog** (unspecified above) is the walker's animal hit, −300 and 1 C, and shares one contact episode with the walker: hitting both costs one hit.
+- **Dog mess:** the first is due 40–60 s after the pair spawns, then every 40–60 s after each drop; a due mess waits until the dog stands on a pavement or grass tile ([LEVEL_DESIGN §9.1](LEVEL_DESIGN.md#91-litter) rule 5) and lands under it.
+
 ### 6.3 Doris (`npc.old_woman`)
 
 Doris is the game's mascot antagonist. She is never knocked aside, never yields, and turns every confrontation into a scene.

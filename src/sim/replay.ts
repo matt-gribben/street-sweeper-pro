@@ -447,6 +447,8 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     servedStop, box0, box1, planLen, then its planLen plan edges
  *   I traffic.rng a, b, c, counter; I nextBusTick, busesDue, busesSpawned, carHorns, roadRageOffences, then per
  *     junction box its claim and claim edge and per slot its holder and holder edge
+ *   SSP-086 appends the behaviours' own words: per NPC I dueTick, routeAt (none without NPCs, so a run with an
+ *     empty store hashes as before)
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -506,6 +508,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbBodies(hasher, world);
   absorbReactions(hasher, world);
   absorbTraffic(hasher, world);
+  absorbBehaviourWords(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -1097,6 +1100,22 @@ function absorbTraffic(hasher: StateHasher, world: World): void {
       w[k + 1] = (t.boxHolderEdge[b * BOX_SLOTS + slot] as number) | 0;
       k += 2;
     }
+  }
+  mixWords(hasher, k);
+}
+
+function absorbBehaviourWords(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const npc = world.npc;
+  let k = 0;
+  for (let i = 0; i < npc.count; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (npc.dueTick[i] as number) | 0;
+    w[k + 1] = (npc.routeAt[i] as number) | 0;
+    k += 2;
   }
   mixWords(hasher, k);
 }

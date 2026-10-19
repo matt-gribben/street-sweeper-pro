@@ -43,7 +43,9 @@ export const NPC_PATH_NODES = 32;
  * AWARE and HI_VIS, the two per-tick stimulus marks of the reaction model (npc/reactions.ts): phase 7 clears both
  * on every NPC before it delivers the tick's stimuli, and a behaviour that takes BeaconYield (Bessie within the
  * awareness radius) sets AWARE, one that takes HiVis (pwr.hi_vis running) sets HI_VIS. A FALLEN or ON_ROOF NPC
- * cannot be hit (actor contact skips it).
+ * cannot be hit (actor contact skips it). SSP-086 appends LEAD_CROSSED, on a dog walker: Bessie's body overlaps its
+ * lead this tick (behaviours/dogWalker.ts). A Lead Tangle counts only on the tick it is set, so Bessie must clear
+ * the whole lead before another one counts.
  */
 export const NPC_FLAG = {
   FALLEN: 1,
@@ -51,6 +53,7 @@ export const NPC_FLAG = {
   YIELDING: 4,
   AWARE: 8,
   HI_VIS: 16,
+  LEAD_CROSSED: 32,
 } as const;
 export type NpcFlagBit = (typeof NPC_FLAG)[keyof typeof NPC_FLAG];
 
@@ -130,6 +133,16 @@ export type NpcStore = {
   readonly contactIgnore: Uint8Array;
   /** The planned length of its current state in ticks, set by its behaviour (0 = none; an idle, a startle). */
   readonly stateLimit: Uint16Array;
+  /**
+   * Behaviours (SSP-086): the tick its kind's next timed action is due, −1 = none yet (the dog walker's dog: its
+   * next litter.dog_mess).
+   */
+  readonly dueTick: Int32Array;
+  /**
+   * Behaviours (SSP-086): a named NPC's place on its spawns.npc `route`, the index of the route node it walks to
+   * next; −1 before it starts the route.
+   */
+  readonly routeAt: Int16Array;
   /** Handle slot of each live index. */
   readonly handleSlot: Int32Array;
   /** Live index of each handle slot, −1 while the slot is free. */
@@ -182,7 +195,10 @@ export type NpcStoreView = {
   readonly navState: Uint8Array;
   readonly contactIgnore: Uint8Array;
   readonly stateLimit: Uint16Array;
+  readonly dueTick: Int32Array;
+  readonly routeAt: Int16Array;
   readonly handleSlot: Int32Array;
+  readonly slotIndex: Int32Array;
   readonly slotGen: Uint32Array;
 };
 
@@ -234,6 +250,8 @@ export function createNpcStore(level: Level, capacity: number = NPC_CAPACITY): N
     navTicks: new Uint32Array(capacity),
     contactIgnore: new Uint8Array(capacity),
     stateLimit: new Uint16Array(capacity),
+    dueTick: new Int32Array(capacity).fill(-1),
+    routeAt: new Int16Array(capacity).fill(-1),
     handleSlot: new Int32Array(capacity).fill(-1),
     slotIndex: new Int32Array(capacity).fill(-1),
     slotGen: new Uint32Array(capacity),
@@ -265,8 +283,11 @@ export function npcHandle(store: NpcStore, i: number): number {
   return ((store.slotGen[slot] as number) << NPC_HANDLE_SLOT_BITS) | slot;
 }
 
-/** The live index `handle` names, or −1 when the NPC it named has been removed (or it is NO_NPC_HANDLE). */
-export function resolveNpcHandle(store: NpcStore, handle: number): number {
+/**
+ * The live index `handle` names, or −1 when the NPC it named has been removed (or it is NO_NPC_HANDLE). Takes the
+ * read-only view too, so the renderer can follow a link (the dog walker's lead).
+ */
+export function resolveNpcHandle(store: NpcStoreView, handle: number): number {
   if (handle < 0) return -1;
   const slot = handle & ((1 << NPC_HANDLE_SLOT_BITS) - 1);
   if (slot >= store.capacity) return -1;
@@ -370,8 +391,9 @@ export function queryNpcs(store: NpcStore, box: Readonly<Aabb>, out: Int32Array)
 /**
  * Add an NPC of `kind` (NPC_IDS index) and `origin`, spawned from spec entry `group` (−1 for none), at
  * (xs[j], ys[j]), at rest, facing north, in state 0 with no target node, flags, link, perception, path, contact
- * window or state limit, and radius and walking speed 0 (the spawner sets the state, radius and speed). Returns its index, or −1 (changing nothing) when the store
- * is full. Takes the position through arrays so no double crosses the call.
+ * window, state limit, due tick or route place, and radius and walking speed 0 (the spawner sets the state,
+ * radius and speed). Returns its index, or −1 (changing nothing) when the store is full. Takes the position
+ * through arrays so no double crosses the call.
  */
 export function addNpc(
   store: NpcStore,
@@ -421,6 +443,8 @@ export function addNpc(
   store.navTicks[i] = 0;
   store.contactIgnore[i] = 0;
   store.stateLimit[i] = 0;
+  store.dueTick[i] = -1;
+  store.routeAt[i] = -1;
   linkCell(store, i, npcCellIndex(store, i));
   return i;
 }
@@ -480,6 +504,8 @@ export function removeNpc(store: NpcStore, i: number): void {
     store.navTicks[i] = store.navTicks[last] as number;
     store.contactIgnore[i] = store.contactIgnore[last] as number;
     store.stateLimit[i] = store.stateLimit[last] as number;
+    store.dueTick[i] = store.dueTick[last] as number;
+    store.routeAt[i] = store.routeAt[last] as number;
     const movedSlot = store.handleSlot[last] as number;
     store.handleSlot[i] = movedSlot;
     store.slotIndex[movedSlot] = i;

@@ -6,10 +6,12 @@
 // - since SSP-082 every person kind maps to the generic pedestrian (behaviours/pedestrian.ts), the shared
 //   reaction model: the businessman, an M3 jaywalker (TECHNICAL_DESIGN §11.1), to its jaywalking twin, and the
 //   market trader to the stationary one;
+// - since SSP-086 the dog walker (and the dog on its lead) has its own module, behaviours/dogWalker.ts;
 // - the animals keep the no-op behaviour (SSP-080): they have their own reactions (ENTITY_CATALOG §7); the cat,
 //   the other M3 jaywalker, has the jaywalking no-op (SSP-081).
 import { type Entities, NPC_IDS, type NpcBehaviour } from '../entities.ts';
 import type { Behaviour } from './behaviour.ts';
+import { dogWalkerBehaviour } from './behaviours/dogWalker.ts';
 import { noopBehaviour, noopJaywalkBehaviour } from './behaviours/noop.ts';
 import {
   pedestrianBehaviour,
@@ -22,7 +24,7 @@ export const BEHAVIOUR_REGISTRY: { readonly [K in NpcBehaviour]: Behaviour } = {
   shopper: pedestrianBehaviour,
   old_woman: pedestrianBehaviour,
   old_man_frame: pedestrianBehaviour,
-  dog_walker: pedestrianBehaviour,
+  dog_walker: dogWalkerBehaviour,
   litterbug: pedestrianBehaviour,
   businessman: pedestrianJaywalkBehaviour,
   mum_pushchair: pedestrianBehaviour,

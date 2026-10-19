@@ -2,7 +2,7 @@
 id: SSP-086
 title: "Implement the dog walker with a lead line obstacle, Lead Tangle and dog mess drops"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:ai-npc, area:gameplay, area:test, size:M, vertical-slice]

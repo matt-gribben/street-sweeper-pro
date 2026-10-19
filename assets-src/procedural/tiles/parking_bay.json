@@ -1,0 +1,17 @@
+{
+  "id": "tile.parking_bay",
+  "generator": "tiles.markings",
+  "seed": 1049,
+  "cell": [32, 32],
+  "variants": 4,
+  "params": {
+    "layouts": [
+      [{ "along": "x", "offset_px": 30, "width_px": 1, "index": 7, "dash_px": [6, 2] }],
+      [{ "along": "y", "offset_px": 1, "width_px": 1, "index": 7, "dash_px": [6, 2] }],
+      [{ "along": "x", "offset_px": 1, "width_px": 1, "index": 7, "dash_px": [6, 2] }],
+      [{ "along": "y", "offset_px": 30, "width_px": 1, "index": 7, "dash_px": [6, 2] }]
+    ],
+    "wear": { "index": 6, "density": 0.1 },
+    "wrap": false
+  }
+}

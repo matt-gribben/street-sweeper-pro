@@ -19,6 +19,7 @@ from forge.sheets import (
     BESSIE_FRAME,
     BG_DARK,
     BG_LIGHT,
+    PREVIEW_REPEAT,
     SCALE,
     SheetError,
     cli,
@@ -176,7 +177,74 @@ def test_repo_actors_sheet_and_only_sweeper(tmp_path: Path) -> None:
     assert [p.name for p, _ in written] == ["world.png", "actors.png", "items.png"]
     for (_, sheet), atlas in zip(written, ("world", "actors", "items"), strict=True):
         n = sum(len(e.frame_ids()) for e in load_manifest() if e.atlas == atlas)
-        assert len([t for t in sheet.tiles if not t.scale_ref]) == n
+        assert len([t for t in sheet.tiles if not t.scale_ref and not t.preview]) == n
     (path, only), = write_sheets(REPO_ROOT, only=["veh.sweeper"], out_dir=tmp_path)
     assert path.name == "only_veh.sweeper.png"
     assert len([t for t in only.tiles if not t.scale_ref]) == 64
+
+
+# ---------------------------------------------------------------------------------------------
+# 3x3 previews of wrap tiles (SSP-040, ASSET_PIPELINE §10.8)
+
+
+def add_tile(repo: Path, asset_id: str, wrap: bool) -> None:
+    name = asset_id.split(".")[1]
+    entry = {
+        "id": asset_id,
+        "class": "tile",
+        "technique": "procedural",
+        "source": f"assets-src/procedural/tiles/{name}.json",
+        "cell": [32, 32],
+        "states": ["v"],
+        "dirs": "-",
+        "frames": {"v": 2},
+        "atlas": "world",
+        "outline": False,
+        "swaps": [],
+    }
+    manifest = repo / "assets-src" / "manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["assets"] = sorted([*data["assets"], entry], key=lambda e: e["id"])
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    params = {"base_index": 2, "speckle": {"indices": [1, 3], "density": 0.05, "max_fraction": 0.08}, "wrap": wrap}
+    doc = {"id": asset_id, "generator": "tiles.asphalt", "seed": 5, "cell": [32, 32], "variants": 2, "params": params}
+    src = repo / entry["source"]
+    src.parent.mkdir(parents=True, exist_ok=True)
+    src.write_text(json.dumps(doc), encoding="utf-8")
+
+
+def test_every_wrap_tile_gets_a_3x3_preview_per_frame(repo: Path) -> None:
+    add_tile(repo, "tile.wrapped", wrap=True)
+    add_tile(repo, "tile.single", wrap=False)
+    written = dict((p.name, s) for p, s in write_sheets(repo, atlas="world"))
+    sheet = written["world.png"]
+    canvas = load_sheet(repo / "build" / "sheets" / "world.png")
+    previews = [t for t in sheet.tiles if t.preview]
+    assert [t.frame_id for t in previews] == ["tile.wrapped:v:-:0", "tile.wrapped:v:-:1"]
+    frames = {f.frame_id: f for e in load_manifest(repo / "assets-src" / "manifest.json") for f in build_asset(e, repo, PALETTE).frames}
+    last_frame_y = max(t.label_xy[1] for t in sheet.tiles if t.frame_id.startswith("tile.wrapped") and not t.preview)
+    for t in previews:
+        assert t.label == f"3x3 {t.frame_id}"
+        assert t.label_xy[1] > last_frame_y, "previews follow the frames"
+        tiled = np.tile(frames[t.frame_id].indices, (PREVIEW_REPEAT, PREVIEW_REPEAT))
+        h, w = tiled.shape[0] * SCALE, tiled.shape[1] * SCALE
+        x, y = t.light_xy
+        assert np.array_equal(canvas[y : y + h, x : x + w], big(tiled, BG_LIGHT))
+    (_, only), = write_sheets(repo, only=["tile.wrapped"])
+    assert sum(t.preview for t in only.tiles) == 2
+    (_, single), = write_sheets(repo, only=["tile.single"])
+    assert not any(t.preview for t in single.tiles)
+
+
+def test_a_run_longer_than_a_row_wraps(repo: Path) -> None:
+    from forge import sheets
+
+    add_tile(repo, "tile.wrapped", wrap=False)
+    old = sheets.MAX_ROW_PX
+    sheets.MAX_ROW_PX = 300  # one tile per row
+    try:
+        (_, sheet), = write_sheets(repo, only=["tile.wrapped"])
+    finally:
+        sheets.MAX_ROW_PX = old
+    ys = [t.label_xy[1] for t in sheet.tiles if not t.scale_ref]
+    assert len(ys) == 2 and ys[0] < ys[1]

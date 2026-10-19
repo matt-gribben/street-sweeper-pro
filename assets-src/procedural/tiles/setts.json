@@ -1,0 +1,14 @@
+{
+  "id": "tile.setts",
+  "generator": "tiles.setts",
+  "seed": 1037,
+  "cell": [32, 32],
+  "variants": 4,
+  "params": {
+    "block_px": [8, 4],
+    "base_index": 3,
+    "gap_index": 2,
+    "tint": { "index": 4, "probability": 0.25 },
+    "wrap": true
+  }
+}

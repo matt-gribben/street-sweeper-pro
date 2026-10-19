@@ -1,0 +1,29 @@
+{
+  "id": "tile.double_yellow",
+  "generator": "tiles.markings",
+  "seed": 1047,
+  "cell": [32, 32],
+  "variants": 4,
+  "params": {
+    "layouts": [
+      [
+        { "along": "x", "offset_px": 2, "width_px": 1, "index": 15 },
+        { "along": "x", "offset_px": 5, "width_px": 1, "index": 15 }
+      ],
+      [
+        { "along": "y", "offset_px": 29, "width_px": 1, "index": 15 },
+        { "along": "y", "offset_px": 26, "width_px": 1, "index": 15 }
+      ],
+      [
+        { "along": "x", "offset_px": 29, "width_px": 1, "index": 15 },
+        { "along": "x", "offset_px": 26, "width_px": 1, "index": 15 }
+      ],
+      [
+        { "along": "y", "offset_px": 2, "width_px": 1, "index": 15 },
+        { "along": "y", "offset_px": 5, "width_px": 1, "index": 15 }
+      ]
+    ],
+    "wear": { "index": 14, "density": 0.15 },
+    "wrap": false
+  }
+}

@@ -383,6 +383,7 @@ describe('freeze mode', () => {
       sceneId: () => null,
       sceneHistory: () => [],
       boot: () => ({ status: 'loaded', error: null, lutBuilds: 1 }),
+      loadInputs: () => {},
     });
     expect(hooks?.params.freeze).toBe(true);
     loop.start();

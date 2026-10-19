@@ -65,6 +65,11 @@ const game = new Game(canvas, {
         lastReadyRafMs = nowMs;
       }
     : null,
+  // `__ssp.loadInputs` replays a log by the running World's tick (SSP-073): the top ShiftScene's, none otherwise.
+  simTick: () => {
+    const top = game.scenes.top;
+    return top instanceof ShiftScene ? top.worldTick : null;
+  },
 });
 
 // Scene choice (src/scenes/BootScene.ts bootRoute, SSP-284). BootScene always runs first: it loads every atlas, the
@@ -205,6 +210,11 @@ const testHooks = installTestHooks(window, search, {
     error: boot.error === null ? null : errorMessage(boot.error),
     lutBuilds: lutBuildCount(),
   }),
+  loadInputs: (log) => {
+    const scripted = game.scriptedInput;
+    if (scripted === null) throw new Error('__ssp.loadInputs: the Game has no scripted input');
+    scripted.load(log);
+  },
 });
 
 // The loop renders from the first frame (palette index 00 until BootScene has installed the registry). A missing

@@ -11,6 +11,13 @@ import {
   type TestHookHost,
   type TestHookTarget,
 } from '../../src/debug/testHooks.ts';
+import {
+  appendInput,
+  createInputLog,
+  encodeInputs,
+  type InputLog,
+  inputLogsEqual,
+} from '../../src/sim/replay.ts';
 
 /** A host that records calls: a tick counter, a camera and a 2x1 "frame" holding the tick. */
 function fakeHost(
@@ -43,6 +50,9 @@ function fakeHost(
     sceneId: () => history[history.length - 1] ?? null,
     sceneHistory: () => history,
     boot: () => ({ status: 'failed', error: "asset registry: atlas 'ui' failed to load", lutBuilds: 1 }),
+    loadInputs: (log) => {
+      calls.push(`loadInputs ${log.length}`);
+    },
   };
 }
 
@@ -144,6 +154,7 @@ describe('installTestHooks with test=1', () => {
     expect(typeof api?.setCamera).toBe('function');
     expect(Object.keys(api ?? {}).sort()).toEqual([
       'boot',
+      'loadInputs',
       'perf',
       'perfReset',
       'readFrame',
@@ -182,6 +193,35 @@ describe('installTestHooks with test=1', () => {
       lutBuilds: 1,
     });
     expect(JSON.parse(JSON.stringify(boot))).toEqual(boot);
+  });
+
+  it('loadInputs(inputs, ticks) decodes a replay log strictly and hands it to the host (SSP-073)', () => {
+    const target: TestHookTarget = {};
+    const host = fakeHost();
+    const loaded: InputLog[] = [];
+    host.loadInputs = (log) => loaded.push(log);
+    installTestHooks(target, '?test=1&freeze=1', host);
+    const api = target.__ssp;
+    if (api === undefined) throw new Error('hooks not installed');
+    // Throttle 255 from tick 0, then the brush pressed on tick 5 only.
+    const log = createInputLog(10);
+    for (let t = 0; t < 10; t++) {
+      appendInput(log, t, { throttle: 255, brake: 0, steer: 0, buttons: 0, pressed: t === 5 ? 1 : 0 });
+    }
+    api.loadInputs(encodeInputs(log), 10);
+    expect(loaded).toHaveLength(1);
+    expect(inputLogsEqual(loaded[0] as InputLog, log)).toBe(true);
+    // A neutral log is the empty string.
+    api.loadInputs('', 3);
+    expect(loaded[1]?.length).toBe(3);
+    expect(Array.from(loaded[1]?.throttle ?? [])).toEqual([0, 0, 0]);
+    // Malformed calls throw and load nothing.
+    expect(() => api.loadInputs(encodeInputs(log), 5)).toThrow(/past the replay/);
+    expect(() => api.loadInputs('', 0)).toThrow(RangeError);
+    expect(() => api.loadInputs('', Number.NaN)).toThrow(RangeError);
+    expect(() => api.loadInputs(null as unknown as string, 3)).toThrow(TypeError);
+    expect(loaded).toHaveLength(2);
+    expect(host.calls).toEqual([]);
   });
 
   it('reports ready only after markReady()', () => {

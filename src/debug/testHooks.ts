@@ -43,6 +43,11 @@
 //   boot()        BootScene's state (SSP-284): 'loading', 'loaded' or 'failed', the error that failed the boot (its
 //                 message, naming the asset, e.g. a 404 atlas) and how many times the palette LUT was built on this
 //                 page (palettePass.ts lutBuildCount: exactly 1 after boot).
+//   loadInputs(inputs, ticks) decodes a replay file's `inputs` (base64 RLE, src/sim/replay.ts decodeInputs, strict)
+//                 into a log of `ticks` frames and hands it to the Game's scripted input (scriptedInput.ts,
+//                 SSP-073): from the next tick on, World tick t is fed the log's frame t (neutral past its end and
+//                 while no World runs) instead of the keyboard and gamepad. Load it at World tick 0 and step(n)
+//                 replays the file's run; tests/e2e/smoke.spec.ts drives the M2 full-shift replay this way.
 //
 // step(n) runs n fixed 60 Hz loop ticks synchronously (loop.runTicks: input → scenes.fixedUpdate → event drain)
 // and renders once (loop.renderNow). In a shift each loop tick is one World tick (ShiftScene.fixedUpdate calls
@@ -65,6 +70,7 @@ export const TEST_RENDER_STEP_S = 1 / 60;
 /** Largest `seed`: sfc32 seeds are unsigned 32-bit integers. */
 export const MAX_SEED = 0xffff_ffff;
 
+import { decodeInputs, type InputLog, MAX_REPLAY_TICKS } from '../sim/replay.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
 import { createPerfCounters, type PerfSamples } from './perfCounters.ts';
 
@@ -147,6 +153,8 @@ export type SspTestApi = {
   sceneHistory(): string[];
   /** BootScene's state, error and the page's LUT build count (SSP-284). */
   boot(): TestBoot;
+  /** Replays a replay file's `inputs` (`ticks` frames) by World tick from the next tick on (SSP-073). */
+  loadInputs(inputs: string, ticks: number): void;
 };
 
 /** What the hooks drive: implemented by main.ts over the Game's loop and renderer. */
@@ -174,6 +182,8 @@ export type TestHookHost = {
   sceneHistory(): readonly string[];
   /** BootScene's state (BootScene.status / error) and the LUT build count. */
   boot(): TestBoot;
+  /** Hands a decoded input log to the Game's scripted input (Game.scriptedInput.load). */
+  loadInputs(log: InputLog): void;
 };
 
 /** An object that can carry `__ssp`: the browser's `window`, or a plain object in unit tests. */
@@ -301,6 +311,17 @@ export function installTestHooks(
     boot(): TestBoot {
       const b = host.boot();
       return { status: b.status, error: b.error, lutBuilds: b.lutBuilds };
+    },
+    loadInputs(inputs: string, ticks: number): void {
+      if (typeof inputs !== 'string') {
+        throw new TypeError("__ssp.loadInputs(inputs, ticks): inputs must be a replay file's base64 string");
+      }
+      if (!Number.isSafeInteger(ticks) || ticks < 1 || ticks > MAX_REPLAY_TICKS) {
+        throw new RangeError(
+          `__ssp.loadInputs(inputs, ticks): ticks must be an integer in 1..${MAX_REPLAY_TICKS}, got ${ticks}`,
+        );
+      }
+      host.loadInputs(decodeInputs(inputs, ticks));
     },
   };
   target.__ssp = api;

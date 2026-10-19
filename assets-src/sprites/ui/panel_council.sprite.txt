@@ -1,0 +1,34 @@
+id: ui.panel_council
+cell: 24x24
+palette: kerbside32
+# SSP-285 placeholder (ART_BIBLE §12.3): the council 9-slice panel, 24x24 with 8 px corners. A 00 ink outer
+# border with its four corner pixels cut, a 07 chalk inner border, 26 council_blue fill and a 2x2 05 slab bolt
+# in each corner. Rows and columns 8-15 are the repeating edge and centre cells, so they are uniform along the
+# repeat. Buttons reuse this panel (src/ui/panels.ts): focus recolours 07 -> 17, pressed 26 -> 25, disabled
+# 26 -> 03. SSP-144 (M4) replaces it with final art.
+
+frame panel:-:0
+.0000000000000000000000.
+077777777777777777777770
+07qqqqqqqqqqqqqqqqqqqq70
+07q55qqqqqqqqqqqqqq55q70
+07q55qqqqqqqqqqqqqq55q70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07qqqqqqqqqqqqqqqqqqqq70
+07q55qqqqqqqqqqqqqq55q70
+07q55qqqqqqqqqqqqqq55q70
+07qqqqqqqqqqqqqqqqqqqq70
+077777777777777777777770
+.0000000000000000000000.

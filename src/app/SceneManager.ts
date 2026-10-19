@@ -22,7 +22,7 @@ import type { EventBus } from './events.ts';
  * spike scenes are the M0 test scenes `?test=1&scene=<id>` boots (`spike_city`, the default world before SSP-046,
  * is still reachable as `?test=1&scene=spike_city` and the dev-only `?world=spike_city`), and `level_preview` is
  * the SSP-045 test scene that draws compiled Puddle Lane from a pinned camera; `text_sample` is the SSP-069 bitmap-text
- * and UI-pass test scene. `shift` is the drive-only
+ * and UI-pass test scene, and `panel_sample` the SSP-285 9-slice panel and button-state test scene. `shift` is the drive-only
  * ShiftScene (SSP-046), the default boot scene from M1, which `?test=1&scene=district.<name>` also boots.
  */
 export const SCENE_IDS = [
@@ -44,6 +44,7 @@ export const SCENE_IDS = [
   'scale_sheet',
   'level_preview',
   'text_sample',
+  'panel_sample',
 ] as const;
 export type SceneId = (typeof SCENE_IDS)[number];
 

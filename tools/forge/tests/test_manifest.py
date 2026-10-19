@@ -11,6 +11,7 @@ import pytest
 from forge.manifest import (
     FIELDS,
     MANIFEST_PATH,
+    OPTIONAL_FIELDS,
     ROTATION_SPEC,
     ManifestError,
     entry_from_data,
@@ -99,6 +100,9 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "tile.pavement",
         "tile.setts",
         "tile.zebra",
+        "ui.panel_council",
+        "ui.panel_dark",
+        "ui.panel_paper",
         "veh.sweeper",
         "veh.sweeper_brush",
     ]
@@ -163,11 +167,11 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     # 205 M0 frames + 27 SSP-041 facade and roof frames + 85 SSP-040 ground tiles, then SSP-051: the banana
     # skin's 1 frame becomes 12 and 14 more litter IDs add 12 each (180 litter frames in all); SSP-052 adds 12
     # stain variants, 12 grime overlay variants, 3 pickups x 2 bob frames and 3 flat placeholders (33 frames);
-    # + 200 SSP-068 font frames.
-    assert sum(len(e.frame_ids()) for e in entries) == 729
+    # + 200 SSP-068 font frames + the 3 SSP-285 placeholder 9-slice panels.
+    assert sum(len(e.frame_ids()) for e in entries) == 732
     assert sum(len(e.frame_ids()) for e in entries if e.asset_class == "litter") == 180
     for e in raw["assets"]:
-        assert list(e) == list(FIELDS), "fields in the documented order"
+        assert list(e) == list(FIELDS) + [k for k in OPTIONAL_FIELDS if k in e], "fields in the documented order"
         assert not e["id"].startswith(("concept.", "_probe")), "_probe and concept.* are never in the manifest"
 
 
@@ -251,11 +255,28 @@ def _mutate(**changes: Any) -> dict[str, Any]:
         (_mutate(atlas="cars"), "atlas must be"),
         (_mutate(outline="yes"), "outline must be"),
         (_mutate(swaps="none"), "list of strings"),
+        (_mutate(placeholder="yes"), "placeholder must be true or false"),
+        (_mutate(placeholder=1), "placeholder must be true or false"),
     ],
 )
 def test_entry_validation_errors(data: dict[str, Any], match: str) -> None:
     with pytest.raises(ManifestError, match=match):
         entry_from_data(data)
+
+
+def test_placeholder_is_an_optional_boolean() -> None:
+    assert entry_from_data(SWEEPER).placeholder is False
+    assert entry_from_data({**SWEEPER, "placeholder": True}).placeholder is True
+    assert entry_from_data({**SWEEPER, "placeholder": False}).placeholder is False
+
+
+def test_ssp285_panels_are_placeholders_in_the_ui_atlas() -> None:
+    by_id = {e.id: e for e in load_manifest()}
+    for name in ("council", "dark", "paper"):
+        e = by_id[f"ui.panel_{name}"]
+        assert e.placeholder is True
+        assert (e.technique, e.atlas, e.cell, e.outline) == ("grid", "ui", (24, 24), False)
+        assert e.frame_ids() == [f"ui.panel_{name}:panel:-:0"]
 
 
 def test_manifest_level_validation() -> None:

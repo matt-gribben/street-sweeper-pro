@@ -68,7 +68,7 @@ describe('src/ui', () => {
   it('imports only what TECHNICAL_DESIGN §2.1 allows', () => {
     const files = listTsFiles(`${REPO_ROOT}${UI_DIR}`);
     const names = files.map((f) => posix.basename(f.replaceAll('\\', '/'))).sort();
-    expect(names).toEqual(expect.arrayContaining(['bitmapText.ts']));
+    expect(names).toEqual(expect.arrayContaining(['bitmapText.ts', 'panels.ts']));
     const problems = files.flatMap((full) => {
       const rel = relative(REPO_ROOT, full).split(sep).join('/');
       return scanUiSource(rel, readFileSync(full, 'utf8'));

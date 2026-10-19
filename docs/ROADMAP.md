@@ -578,7 +578,7 @@ Each milestone has the same shape:
 - [ ] `npc.cat`, `npc.pigeon`, and the `npc.dog_loose` grid used by the walker's dog with a coat swap (all frames).
 - [ ] Small props: bollard, cone, hydrant, wheelie bin, A-board, recycling box, litter bin, post box.
 - [ ] Pickups: all `pwr.*` and the Mon–Tue `collect.*` (`collect.false_teeth`, `collect.lost_wallet`, `collect.golden_crisp`).
-- [ ] UI: HUD icons (16×16), 9-slice panels (24×24, 8 px corners).
+- [ ] UI: HUD icons (16×16), 9-slice panels (24×24, 8 px corners). *(Runtime slicing, the four button states and placeholder `ui.panel_council`/`_paper`/`_dark` grids done in M3: SSP-285, `src/ui/panels.ts`; final art is SSP-144.)*
 - [ ] Fonts: finalise `kerbside5x7.glyphs.txt`, write `kerbsidebold8x8.glyphs.txt`, generate outlined variants, define kerning pairs.
 
 *VFX*

@@ -2,7 +2,7 @@
 id: SSP-285
 title: "Implement src/ui/panels.ts 9-slice panels and button states with placeholder panel grids"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: S
 labels: [type:feature, area:ui, area:render, area:assets, size:S, vertical-slice]
@@ -41,11 +41,11 @@ Import rules (TECHNICAL_DESIGN §2.1): src/ui may import `src/render/spriteBatch
 
 ## Acceptance criteria
 
-- [ ] Vitest: each of the three panels slices to 3 arbitrary integer sizes (e.g. 24×24, 61×37, 200×19) with corner quads unchanged, edge and centre quads repeated in 8 px steps, a clipped final repeat, and no non-integer scale
-- [ ] Vitest: the focus state emits a → glyph instance, and pressed offsets the content by (+1, +1)
-- [ ] A captured frame shows all three panels and all four button states at integer positions (frame Read and noted in the PR)
-- [ ] Total draw calls stay ≤ 10 with panels on screen, and the draw path creates no `new` objects or array literals per frame
-- [ ] `npm run assets:verify` and `npm run test:visual` pass
+- [x] Vitest: each of the three panels slices to 3 arbitrary integer sizes (e.g. 24×24, 61×37, 200×19) with corner quads unchanged, edge and centre quads repeated in 8 px steps, a clipped final repeat, and no non-integer scale
+- [x] Vitest: the focus state emits a → glyph instance, and pressed offsets the content by (+1, +1)
+- [x] A captured frame shows all three panels and all four button states at integer positions (frame Read and noted in the PR)
+- [x] Total draw calls stay ≤ 10 with panels on screen, and the draw path creates no `new` objects or array literals per frame
+- [x] `npm run assets:verify` and `npm run test:visual` pass
 
 ## Verification
 

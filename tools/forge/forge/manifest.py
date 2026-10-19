@@ -1,7 +1,9 @@
 """``assets-src/manifest.json``: load, validate and expand to frame IDs (ASSET_PIPELINE §6.1).
 
 The manifest is the list of every asset (CLAUDE.md §2). Each entry has exactly the fields
-``{ id, class, technique, source, cell:[w,h], states, dirs, frames, atlas, outline, swaps }``.
+``{ id, class, technique, source, cell:[w,h], states, dirs, frames, atlas, outline, swaps }``,
+plus the optional ``placeholder`` (``true`` while the asset is a placeholder under its final
+ID; removed when the final art replaces it, ROADMAP M4 ``noPlaceholders``; SSP-285).
 This module validates the *shape* of each entry (what the build needs to run) and expands an
 entry into its expected frame IDs ``<asset-id>:<state>:<dir>:<n>`` (CLAUDE.md §5.4). Policy
 checks that do not stop a build (entries sorted by id, provenance) belong to ``forge lint``;
@@ -23,6 +25,7 @@ __all__ = [
     "ATLASES",
     "COMPASS_DIRS",
     "MANIFEST_PATH",
+    "OPTIONAL_FIELDS",
     "ROTATION_DIRS",
     "ROTATION_SPEC",
     "TECHNIQUES",
@@ -57,6 +60,9 @@ ROTATION_DIRS: dict[str, int] = {"h00": 0, "h08": 1, "h16": 2, "h24": 3}
 step clockwise, TECHNICAL_DESIGN §4)."""
 
 FIELDS = ("id", "class", "technique", "source", "cell", "states", "dirs", "frames", "atlas", "outline", "swaps")
+OPTIONAL_FIELDS = ("placeholder",)
+"""Fields an entry may add to :data:`FIELDS`. ``placeholder`` is a boolean; an entry that is not a
+placeholder leaves it out (SSP-285; SSP-115 adds the lint summary of remaining placeholders)."""
 
 _ID_RE = re.compile(r"^([a-z]+)\.([a-z0-9]+(?:_[a-z0-9]+)*)$")
 _STATE_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
@@ -84,6 +90,7 @@ class AssetEntry:
     outline: bool
     swaps: tuple[str, ...]
     raw: dict[str, object]
+    placeholder: bool = False
 
     @property
     def width(self) -> int:
@@ -158,10 +165,13 @@ def entry_from_data(data: object, index: int = 0) -> AssetEntry:
     where = f"assets[{index}]"
     if not isinstance(data, dict):
         raise ManifestError(f"{where}: expected an object")
-    if set(data) != set(FIELDS):
+    if not set(FIELDS) <= set(data) <= set(FIELDS) | set(OPTIONAL_FIELDS):
         missing = sorted(set(FIELDS) - set(data))
-        extra = sorted(set(data) - set(FIELDS))
-        raise ManifestError(f"{where}: fields must be exactly {list(FIELDS)} (missing {missing}, unknown {extra})")
+        extra = sorted(set(data) - set(FIELDS) - set(OPTIONAL_FIELDS))
+        raise ManifestError(
+            f"{where}: fields must be exactly {list(FIELDS)}, plus optionally {list(OPTIONAL_FIELDS)} "
+            f"(missing {missing}, unknown {extra})"
+        )
     asset_id = data["id"]
     if not isinstance(asset_id, str) or not (m := _ID_RE.match(asset_id)):
         raise ManifestError(f"{where}: id must be <class>.<snake_name>, got {asset_id!r}")
@@ -203,6 +213,9 @@ def entry_from_data(data: object, index: int = 0) -> AssetEntry:
     if not isinstance(outline, bool):
         raise ManifestError(f"{where}: outline must be true or false")
     swaps = _str_list(data["swaps"], f"{where}.swaps", pattern=_STATE_RE, nonempty=False)
+    placeholder = data.get("placeholder", False)
+    if not isinstance(placeholder, bool):
+        raise ManifestError(f"{where}: placeholder must be true or false, got {placeholder!r}")
     return AssetEntry(
         id=asset_id,
         asset_class=cls,
@@ -217,6 +230,7 @@ def entry_from_data(data: object, index: int = 0) -> AssetEntry:
         outline=outline,
         swaps=swaps,
         raw=dict(data),
+        placeholder=placeholder,
     )
 
 

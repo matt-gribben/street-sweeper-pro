@@ -444,9 +444,11 @@ export class DropShadowBatch {
 // UI pass (TECHNICAL_DESIGN §12.3, §12.6, §12.7 draw #7; SSP-069)
 //
 // The UI draws in internal pixel space with an orthographic camera (Renderer.ts) into RT_world after a depth
-// clear: one instanced draw of `ui` atlas quads (text, and from SSP-070 on HUD icons and panels). Positions are
-// whole internal pixels, x right and y DOWN from the frame's top-left; a frame's pivot lands on its position, so
-// a glyph (pivot (1, 1), the top-left of its ink box) sits with its ink box's top-left on the pen.
+// clear: one instanced draw of `ui` atlas quads (text, the 9-slice panels and buttons of src/ui/panels.ts from
+// SSP-285, and HUD icons). Positions are whole internal pixels, x right and y DOWN from the frame's top-left; a
+// frame's pivot lands on its position, so a glyph (pivot (1, 1), the top-left of its ink box) sits with its ink
+// box's top-left on the pen. addRegion() draws a sub-rectangle of a frame at its own size (pivot (0, 0)): the
+// panels' corner, edge and centre slices, including the clipped final repeat.
 //
 // Per-instance attributes, one interleaved Float32 buffer (stride 8):
 //   offset (vec2)    the pivot's position in internal pixels (integers);
@@ -608,6 +610,51 @@ export class UiSpriteBatch {
     this.instances++;
   }
 
+  /**
+   * Adds one quad showing only the `wPx` × `hPx` region of `frame` whose top-left is (srcXPx, srcYPx) in frame
+   * pixels, with that region's top-left at (xPx, yPx), whole internal pixels (the frame's pivot plays no part). The
+   * quad is the region's own size, so it draws 1:1, never stretched: the 9-slice panels (src/ui/panels.ts, SSP-285)
+   * draw their clipped final repeats this way. Recolouring as in add(). Throws for a frame of another atlas, a
+   * region that is not whole pixels inside the frame, a non-integer position, a bad recolour pair or a full batch.
+   */
+  addRegion(
+    frame: FrameId,
+    srcXPx: number,
+    srcYPx: number,
+    wPx: number,
+    hPx: number,
+    xPx: number,
+    yPx: number,
+    recolourFrom: number = NO_RECOLOUR,
+    recolourTo = 0,
+  ): void {
+    const f = FRAME[frame];
+    if (
+      f.atlas !== this.atlas.name ||
+      !isRegionOf(f.w, f.h, srcXPx, srcYPx, wPx, hPx) ||
+      !Number.isInteger(xPx) ||
+      !Number.isInteger(yPx) ||
+      !isRecolourIndex(recolourFrom, true) ||
+      !isRecolourIndex(recolourTo, false) ||
+      this.instances >= this.capacity
+    ) {
+      rejectUiRegion(this, frame, srcXPx, srcYPx, wPx, hPx, xPx, yPx, recolourFrom, recolourTo);
+    }
+    const d = this.data;
+    const o = this.instances * UI_INSTANCE_STRIDE;
+    d[o + U_OFFSET] = xPx;
+    d[o + U_OFFSET + 1] = yPx;
+    d[o + U_RECT] = f.x + srcXPx;
+    d[o + U_RECT + 1] = f.y + srcYPx;
+    d[o + U_RECT + 2] = wPx;
+    d[o + U_RECT + 3] = hPx;
+    d[o + U_PIVOT] = 0;
+    d[o + U_PIVOT + 1] = 0;
+    d[o + U_RECOLOUR] = recolourFrom;
+    d[o + U_RECOLOUR + 1] = recolourTo;
+    this.instances++;
+  }
+
   /** Ends the frame: sets the draw count and flags the instance buffer for upload (one needsUpdate). */
   end(): void {
     this.mesh.count = this.instances;
@@ -646,6 +693,44 @@ function rejectUiQuad(
     throw new RangeError(`recolour ${recolourFrom} -> ${recolourTo} is not a palette index pair`);
   }
   throw new Error(`UI batch full (capacity ${batch.capacity})`);
+}
+
+/** True when (x, y, w, h) is a non-empty whole-pixel region inside a `frameW` × `frameH` frame. */
+function isRegionOf(frameW: number, frameH: number, x: number, y: number, w: number, h: number): boolean {
+  return (
+    Number.isInteger(x) &&
+    Number.isInteger(y) &&
+    Number.isInteger(w) &&
+    Number.isInteger(h) &&
+    x >= 0 &&
+    y >= 0 &&
+    w >= 1 &&
+    h >= 1 &&
+    x + w <= frameW &&
+    y + h <= frameH
+  );
+}
+
+/** Throws the error UiSpriteBatch.addRegion found (kept out of the per-frame path). */
+function rejectUiRegion(
+  batch: UiSpriteBatch,
+  frame: FrameId,
+  srcXPx: number,
+  srcYPx: number,
+  wPx: number,
+  hPx: number,
+  xPx: number,
+  yPx: number,
+  recolourFrom: number,
+  recolourTo: number,
+): never {
+  const f = FRAME[frame];
+  if (f.atlas === batch.atlas.name && !isRegionOf(f.w, f.h, srcXPx, srcYPx, wPx, hPx)) {
+    throw new RangeError(
+      `region (${srcXPx}, ${srcYPx}) ${wPx}x${hPx} is not whole pixels inside ${frame} (${f.w}x${f.h})`,
+    );
+  }
+  rejectUiQuad(batch, frame, xPx, yPx, recolourFrom, recolourTo);
 }
 
 /** A palette index 0..31 (or NO_RECOLOUR when `allowNone`). */

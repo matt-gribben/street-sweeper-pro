@@ -6,7 +6,7 @@ import { NPC_BEHAVIOURS, NPC_IDS } from '../../src/sim/entities.ts';
 import { createInputFrame } from '../../src/sim/inputFrame.ts';
 import { createBlankLevel } from '../../src/sim/map.ts';
 import { type Behaviour, Stimulus } from '../../src/sim/npc/behaviour.ts';
-import { NOOP, noopBehaviour } from '../../src/sim/npc/behaviours/noop.ts';
+import { NOOP, noopBehaviour, noopJaywalkBehaviour } from '../../src/sim/npc/behaviours/noop.ts';
 import { PERCEPTION_EVERY_TICKS, PERCEPTION_PATH_S } from '../../src/sim/npc/perception.ts';
 import { BEHAVIOUR_REGISTRY, behavioursByKind } from '../../src/sim/npc/registry.ts';
 import { pushStimulus, STIMULUS_CAPACITY, STIMULUS_EVERYONE } from '../../src/sim/npc/stimuli.ts';
@@ -33,7 +33,13 @@ const neutral = createInputFrame();
 describe('behaviour registry', () => {
   it('maps every entities.json behaviour key to a module, the no-op one until each lands', () => {
     expect(Object.keys(BEHAVIOUR_REGISTRY).sort()).toEqual([...NPC_BEHAVIOURS].sort());
-    for (const key of NPC_BEHAVIOURS) expect(BEHAVIOUR_REGISTRY[key]).toBe(noopBehaviour);
+    // SSP-081: the M3 jaywalkers (the cat and the businessman) get the jaywalking no-op.
+    const jaywalkers: readonly string[] = ['cat', 'businessman'];
+    for (const key of NPC_BEHAVIOURS) {
+      const jay = jaywalkers.includes(key);
+      expect(BEHAVIOUR_REGISTRY[key], key).toBe(jay ? noopJaywalkBehaviour : noopBehaviour);
+      expect(BEHAVIOUR_REGISTRY[key].jaywalks, key).toBe(jay);
+    }
     const byKind = behavioursByKind(DEFAULT_ENTITIES);
     expect(byKind).toHaveLength(NPC_IDS.length);
     const custom = { ...BEHAVIOUR_REGISTRY, cat: { ...noopBehaviour, initial: 3 } };
@@ -59,6 +65,7 @@ describe('behaviour pass', () => {
     const order: number[] = [];
     const recorder: Behaviour = {
       initial: 0,
+      jaywalks: false,
       tick(w, i) {
         order.push(i);
         if (w.tick === 5 && i === 1) setNpcState(w.npc, i, 2);
@@ -149,6 +156,7 @@ describe('stimuli', () => {
     const log: string[] = [];
     world.npcAi.behaviours.fill({
       initial: 0,
+      jaywalks: false,
       tick() {},
       onStimulus(w, i, s, slot) {
         log.push(`${w.npc.x[i]}:${s}:${slot}`);

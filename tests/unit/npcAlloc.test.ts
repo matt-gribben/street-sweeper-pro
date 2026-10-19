@@ -45,6 +45,7 @@ const WALK = { Start: 0, Walk: 1, Hurry: 2 } as const;
 /** Walk straight at 1.2 m/s (2.5 m/s for a second after a Horn), turning back at the map edge. */
 const walker: Behaviour = {
   initial: WALK.Start,
+  jaywalks: false,
   tick(w: World, i: number): void {
     const npc = w.npc;
     if (npc.state[i] === WALK.Start) {

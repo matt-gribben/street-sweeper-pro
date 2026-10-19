@@ -426,6 +426,25 @@ const LANE_SPEED_SPEC = {
   roundaboutMps: 'positive',
 } as const satisfies GroupSpec;
 
+/**
+ * TECHNICAL_DESIGN §11.1 (SSP-081, M3 tuning: the docs gave no numbers): the shared NPC steering core
+ * (npc/steering.ts). accelMps2 and turnRateDegPerS limit how fast an NPC changes speed and heading (degrees as
+ * stored; steering converts); arriveRadiusM is how close a path node counts as reached (more round a prop that
+ * stands on the node) and slowRadiusM where an arrival starts slowing; separationGapM is the extra gap beyond
+ * two NPCs' touching circles inside which they steer apart; sidestepClearM the margin beyond Bessie's half
+ * width and the NPC's radius inside which her predicted path makes an NPC sidestep; kerbLookS how long an NPC
+ * waits at the kerb before it steps onto a crossing.
+ */
+const NPC_STEERING_SPEC = {
+  accelMps2: 'positive',
+  turnRateDegPerS: 'positive',
+  arriveRadiusM: 'positive',
+  slowRadiusM: 'positive',
+  separationGapM: 'nonNegative',
+  sidestepClearM: 'nonNegative',
+  kerbLookS: 'nonNegative',
+} as const satisfies GroupSpec;
+
 const STREET_LIFE_GROUPS = {
   awareness: AWARENESS_SPEC,
   horn: HORN_SPEC,
@@ -436,6 +455,7 @@ const STREET_LIFE_GROUPS = {
   npcRadius: NPC_RADIUS_SPEC,
   traffic: TRAFFIC_SPEC,
   laneSpeed: LANE_SPEED_SPEC,
+  npcSteering: NPC_STEERING_SPEC,
 } as const;
 
 /** GDD §11.1: the meter reaching sackedAt complaints is SACKED!. */

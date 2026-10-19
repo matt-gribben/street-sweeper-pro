@@ -692,6 +692,9 @@ describe('M3 street-life sections (SSP-075) mirror ENTITY_CATALOG §3, GDD §11 
   };
   /** A doc number: U+2212 minus read as a sign. */
   const num = (text: string): number => Number(text.replaceAll('−', '-'));
+  /** TECHNICAL_DESIGN §11.1's sentence of steering starting values (SSP-081). */
+  const STEERING_NUMBERS =
+    /acceleration (\d+) m\/s², turn rate (\d+)°\/s, arrive radius (\d+\.\d+) m, slow radius (\d+) m, separation gap (\d+\.\d+) m, sidestep clearance (\d+\.\d+) m, kerb look (\d+\.\d+) s/;
 
   // [JSON path from the root, value, doc, regex whose capture `group` states the value]
   it.each([
@@ -774,6 +777,14 @@ describe('M3 street-life sections (SSP-075) mirror ENTITY_CATALOG §3, GDD §11 
       /residential (\d+) m\/s, main road (\d+) m\/s, one-way (\d+) m\/s, junction (\d+) m\/s, roundabout (\d+) m\/s/,
       5,
     ],
+    // SSP-081: the steering core's starting values (M3 tuning), stated in TECHNICAL_DESIGN §11.1.
+    ['streetLife.npcSteering.accelMps2', 4, 'td', STEERING_NUMBERS, 1],
+    ['streetLife.npcSteering.turnRateDegPerS', 540, 'td', STEERING_NUMBERS, 2],
+    ['streetLife.npcSteering.arriveRadiusM', 0.4, 'td', STEERING_NUMBERS, 3],
+    ['streetLife.npcSteering.slowRadiusM', 1, 'td', STEERING_NUMBERS, 4],
+    ['streetLife.npcSteering.separationGapM', 0.3, 'td', STEERING_NUMBERS, 5],
+    ['streetLife.npcSteering.sidestepClearM', 0.5, 'td', STEERING_NUMBERS, 6],
+    ['streetLife.npcSteering.kerbLookS', 0.5, 'td', STEERING_NUMBERS, 7],
     ['complaints.meter.sackedAt', 5, 'catalog', /Reaching (\d+) = \*\*SACKED!\*\*/, 1],
     ['complaints.hornSpam.maxHonks', 3, 'catalog', /more than (\d+) honks in (\d+) s = (\d+) complaint/, 1],
     ['complaints.hornSpam.windowS', 5, 'catalog', /more than (\d+) honks in (\d+) s = (\d+) complaint/, 2],

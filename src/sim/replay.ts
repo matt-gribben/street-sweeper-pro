@@ -23,6 +23,7 @@ import { SHIFT_TICKS } from './constants.ts';
 import { EV, ShiftEndReason } from './eventQueue.ts';
 import { BRAKE_MAX, createInputFrame, type InputFrame, STEER_MAX, THROTTLE_MAX } from './inputFrame.ts';
 import type { Level } from './map.ts';
+import { NPC_PATH_NODES } from './npc/store.ts';
 import { FNV1A32_OFFSET, FNV1A32_PRIME } from './rng.ts';
 import type { Tuning } from './tuning.ts';
 import { createWorld, type World } from './world.ts';
@@ -425,6 +426,9 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     target; F x, y, radiusM
  *   I spawner.perchPending, flocksPlaced, ambientSpawned, ambientRetired, ambientCount, then namedRemaining
  *     per named NPC, flockRemaining per flock spec and perchUsed per wall perch
+ *   SSP-081 appends steering: per NPC, after handleSlot, F walkMps; I goalNode, pathLen, pathAt, crossEdge,
+ *     navState, navTicks, then its path segment's pathLen nodes; and after the spawner I zebras.count, then
+ *     each zebra's occupancy
  *   SSP-078 appends the complaints and the penalty log:
  *   I complaints.count, max; B complaints.twoToneHorn; F complaints.hornRadiusM; I complaints.maxHonks,
  *     windowTicks, noiseComplaints; B complaints.hornThisTick, hornCaught; I complaints.honks, honksCaught,
@@ -506,8 +510,11 @@ function mixWords(hasher: StateHasher, n: number): void {
   hasher.state[0] = h;
 }
 
-/** Words a section may write after its last flush check (the longest per-entity record is 21, an NPC). */
-const SECTION_SLACK = 32;
+/**
+ * Words a section may write after its last flush check (the longest per-entity record is an NPC's: 28 words
+ * plus its path segment, up to NPC_PATH_NODES = 32 more, since SSP-081).
+ */
+const SECTION_SLACK = 64;
 const FLUSH_AT = HASH_WORDS - SECTION_SLACK;
 
 function absorbEvents(hasher: StateHasher, world: World): void {
@@ -819,7 +826,19 @@ function absorbNpcs(hasher: StateHasher, world: World): void {
     w[k + 18] = Math.round((npc.pathEtaS[i] as number) * q) | 0;
     w[k + 19] = (npc.perceivedTick[i] as number) | 0;
     w[k + 20] = (npc.handleSlot[i] as number) | 0;
-    k += 21;
+    // SSP-081: steering.
+    w[k + 21] = Math.round((npc.walkMps[i] as number) * q) | 0;
+    w[k + 22] = (npc.goalNode[i] as number) | 0;
+    w[k + 23] = (npc.pathLen[i] as number) | 0;
+    w[k + 24] = (npc.pathAt[i] as number) | 0;
+    w[k + 25] = (npc.crossEdge[i] as number) | 0;
+    w[k + 26] = (npc.navState[i] as number) | 0;
+    w[k + 27] = (npc.navTicks[i] as number) | 0;
+    k += 28;
+    const len = npc.pathLen[i] as number;
+    const base = i * NPC_PATH_NODES;
+    for (let p = 0; p < len; p += 1) w[k + p] = (npc.path[base + p] as number) | 0;
+    k += len;
   }
   mixWords(hasher, k);
   const ai = world.npcAi;
@@ -874,6 +893,22 @@ function absorbNpcs(hasher: StateHasher, world: World): void {
       k = 0;
     }
     w[k] = (sp.perchUsed[s] as number) | 0;
+    k += 1;
+  }
+  // SSP-081: the zebras' occupancy.
+  const z = world.zebras;
+  if (k > FLUSH_AT) {
+    mixWords(hasher, k);
+    k = 0;
+  }
+  w[k] = z.count | 0;
+  k += 1;
+  for (let s = 0; s < z.count; s += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (z.occupancy[s] as number) | 0;
     k += 1;
   }
   mixWords(hasher, k);

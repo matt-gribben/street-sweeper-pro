@@ -169,6 +169,15 @@
       "oneWayMps": 6,
       "junctionMps": 4,
       "roundaboutMps": 4
+    },
+    "npcSteering": {
+      "accelMps2": 4,
+      "turnRateDegPerS": 540,
+      "arriveRadiusM": 0.4,
+      "slowRadiusM": 1,
+      "separationGapM": 0.3,
+      "sidestepClearM": 0.5,
+      "kerbLookS": 0.5
     }
   },
   "complaints": {

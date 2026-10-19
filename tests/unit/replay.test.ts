@@ -20,7 +20,7 @@ import { addLitter } from '../../src/sim/litter.ts';
 import { createBlankLevel, decodeLevel } from '../../src/sim/map.ts';
 import { Stimulus } from '../../src/sim/npc/behaviour.ts';
 import { pushStimulus } from '../../src/sim/npc/stimuli.ts';
-import { addNpcAt, NO_NPC_HANDLE, NpcOrigin, removeNpc } from '../../src/sim/npc/store.ts';
+import { addNpcAt, NO_NPC_HANDLE, NPC_PATH_NODES, NpcOrigin, removeNpc } from '../../src/sim/npc/store.ts';
 import {
   absorbTick,
   appendInput,
@@ -238,6 +238,8 @@ describe('state hash', () => {
         ],
       },
     ];
+    // A zebra, so the SSP-081 occupancy words are in the stream.
+    level.sites = [{ id: 'site.zebra', rect: [2, 0, 3, 4] }];
     const world = createWorld(level, 1234, DEFAULT_TUNING);
     world.tick = 7;
     Object.assign(world.input, { throttle: 200, brake: 0, steer: -40, buttons: 1, pressed: 2 });
@@ -255,6 +257,17 @@ describe('state hash', () => {
     world.npc.radius[n] = 0.3;
     world.npc.heading[n] = 0.5;
     world.npc.seenDistM[n] = 3.125;
+    // Its steering columns and a two-node path segment (SSP-081).
+    world.npc.walkMps[n] = 1.3;
+    world.npc.goalNode[n] = 3;
+    world.npc.pathLen[n] = 2;
+    world.npc.pathAt[n] = 1;
+    world.npc.path[n * NPC_PATH_NODES] = 5;
+    world.npc.path[n * NPC_PATH_NODES + 1] = 3;
+    world.npc.crossEdge[n] = 7;
+    world.npc.navState[n] = 3;
+    world.npc.navTicks[n] = 9;
+    world.zebras.occupancy[0] = 1;
     const k = pushStimulus(world.npcAi.stimuli, Stimulus.Horn, NO_NPC_HANDLE);
     world.npcAi.stimuli.x[k] = 3.25;
     world.npcAi.stimuli.y[k] = 4.5;
@@ -273,6 +286,30 @@ describe('state hash', () => {
     absorbTick(hasher, world);
     return stateHash(hasher);
   }
+
+  it('absorbs the steering state (SSP-081): every column, the held path nodes and the zebra occupancy', () => {
+    const base = hashOf(handSetWorld());
+    const edits: [string, (w: World) => void][] = [
+      ['walkMps', (w) => (w.npc.walkMps[0] = 1.4)],
+      ['goalNode', (w) => (w.npc.goalNode[0] = 4)],
+      ['pathLen', (w) => (w.npc.pathLen[0] = 1)],
+      ['pathAt', (w) => (w.npc.pathAt[0] = 0)],
+      ['path[1]', (w) => (w.npc.path[1] = 6)],
+      ['crossEdge', (w) => (w.npc.crossEdge[0] = -1)],
+      ['navState', (w) => (w.npc.navState[0] = 1)],
+      ['navTicks', (w) => (w.npc.navTicks[0] = 10)],
+      ['zebras.occupancy', (w) => (w.zebras.occupancy[0] = 0)],
+    ];
+    for (const [name, edit] of edits) {
+      const w = handSetWorld();
+      edit(w);
+      expect(hashOf(w), name).not.toBe(base);
+    }
+    // A node past pathLen is not held, so it is not hashed.
+    const w = handSetWorld();
+    w.npc.path[2] = 9;
+    expect(hashOf(w)).toBe(base);
+  });
 
   it('keeps its canonical byte layout (golden value for a hand-set World)', () => {
     // Changing the field order, the quantum or the header changes this value: that is a replay format change
@@ -1241,8 +1278,10 @@ describe('state hash', () => {
  * NPC state (store, handles, npc stream, stimuli, spawner) and gave it an NPC and a Horn: ada67916 → 0449a66a.
  * SSP-078 appended the complaints meter, the horn window and the penalty log, and gave the hand-set World two
  * complaints and a honk in the window: 0449a66a → b25f1a0a (2cab5426 on its branch, before SSP-080 merged).
+ * SSP-081 appended the steering columns, the path segment and the zebra occupancy, and gave the NPC a path and
+ * the level a zebra: b25f1a0a → 196fee33 (b52f12bf on its branch, before SSP-078 merged).
  */
-const GOLDEN_HAND_SET_HASH = 'b25f1a0a';
+const GOLDEN_HAND_SET_HASH = '196fee33';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

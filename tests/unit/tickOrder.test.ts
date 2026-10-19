@@ -1,4 +1,4 @@
-// The canonical tick order (TECHNICAL_DESIGN §5.2) as the systems are actually called (SSP-065; SSP-080 phase 7). The phase
+// The canonical tick order (TECHNICAL_DESIGN §5.2) as the systems are actually called (SSP-065; SSP-080 phase 7; SSP-081 zebra occupancy). The phase
 // trace in tests/unit/world.test.ts proves the eleven phase slots run in order; this file wraps every system
 // function World.step calls, records each call, and checks the full per-tick sequence, so a system that moved
 // to another phase (or swapped places inside one) fails here. SSP-078 adds the horn (phase 1) and the honk window
@@ -82,6 +82,9 @@ vi.mock('../../src/sim/npc/perception.ts', async (importOriginal) =>
 vi.mock('../../src/sim/npc/npcAi.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['tickNpcBehaviours']),
 );
+vi.mock('../../src/sim/npc/steering.ts', async (importOriginal) =>
+  wrap(await importOriginal(), ['updateZebraOccupancy']),
+);
 vi.mock('../../src/sim/scoring.ts', async (importOriginal) => wrap(await importOriginal(), ['stepScoring']));
 vi.mock('../../src/sim/tidy.ts', async (importOriginal) => wrap(await importOriginal(), ['stepTidy']));
 vi.mock('../../src/sim/complaints.ts', async (importOriginal) =>
@@ -121,6 +124,7 @@ const ONE_TICK = [
   'deliverStimuli',
   'perceiveNpcs',
   'tickNpcBehaviours',
+  'updateZebraOccupancy',
   'phase 8',
   'phase 9',
   'stepHornSpam',
@@ -143,6 +147,7 @@ describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078
       'deliverStimuli',
       'perceiveNpcs',
       'tickNpcBehaviours',
+      'updateZebraOccupancy',
     ];
     expect(at('phase 6')).toBeLessThan(at('phase 7'));
     expect(at('cleanStainsInCone')).toBeLessThan(at('phase 7')); // the last dirt system

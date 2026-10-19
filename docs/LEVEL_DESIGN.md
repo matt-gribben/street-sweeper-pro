@@ -233,18 +233,38 @@ Each district below lists its layout, density, hazards and NPC mix. The numbers 
 - **Compile report:** route area 1,264 tiles, max dump distance 158 m, max water distance 108 m, kerb blob indices used 4, 10, 12, 26, 31, 33, 34, 36, 41, 42, 44, 45.
 - **Deviation:** Puddle Lane's west end (x 0, fixed by the §8.5 excerpt) and the 2-tile alley at x 12–13 (rows 0–2) run off the map edge. L014 treats an edge as "the town goes on", so they pass, but Puddle Lane west of Gutter Row is not part of a loop: driving west, Bessie meets the map edge. What the edge does is the runtime's call (SSP-036/SSP-045).
 
+*As built (SSP-056, the M2 sweeping content; lead calls pending owner review):* `puddle_lane.level.json` now carries `pledges`, `litter`, `grime`, `powerups` and `collectibles` with the values in the table below, and the map is unchanged (it already had 2 bays, 1 skip and 2 hydrants).
+
+- **Building uses.** The parade `C` is now `shop` (default width 4), like the corner shop `D` (width 5); `P` is `depot`; every other building is `house` (width 3; `F` and `X`, the flats, 4).
+- **Frontages: 122, not 46.** The generator makes a frontage on every building side that faces open street, and §13 Q4 fixed a house frontage at 3 tiles, one terraced house front. Puddle Lane as built (SSP-042) has about 370 tiles of such facade, so 46 would need a house width of 10 tiles (20 m; width 10 still gives 47), which is no longer one house. So the widths stay and 122 is recorded here and in §6.1. Clean Sweep (+100 each) has 2.7× the frontages the §6.3 bands assumed; the M6 economy pass re-checks Monday's band.
+- **Pledges** (8, at most 2 per street, on 7 of the 10 streets): `fr_3_3` (Doris's front door, anchor `1`), `fr_16_7` (the corner shop, a litter hotspot beside the zebra), `fr_44_7` (Puddle Lane behind the parking bays at x 41–46), `fr_25_16` (flats `F` on Gutter Row), `fr_49_11` (Drain Close behind the west-kerb bays), `fr_30_20` (flats `F` on Soapsud, on the dog walker's leg 6 → 7), `fr_5_31` (Mangle Street, the first pledge on screen in the rollout) and `fr_53_29` (flats `X` behind the Drain Close east-kerb bays). Five compete with something: parked cars over the gutter (`fr_44_7`, `fr_49_11`, `fr_53_29`, from M3), Doris (`fr_3_3`), the dog walker's mess (`fr_30_20`) and the shop's litter (`fr_16_7`). No L031 warning.
+- **Litter.** `gutterBias` 0.6 (the §8.5 example's value): a kerb-hugging lap of the first 447 m (Mangle Street, Soapsud, Gutter Row, Puddle Lane west and back, Drain Close, the back road, to the skip; 124 s at 3.6 m/s) passes about 47 LU of the expected litter at 0.6, against 36 LU at 0.4, so the Kerb Hugger lesson also fills the hopper. 60% in the gutter still leaves 40% for pavements, alleys and yards, where dog mess (pavement only), the frontages and the shop hotspot are.
+- **Hopper warning and the skip.** The skip stays at (38–39, 31): 1,254 of the 1,264 route tiles are within 150 m (path) of it; only the north-east tip of Puddle Lane (x 60–63, rows 3–6) is over, by 2–8 m. So wherever the first 80 LU warning comes, the skip is within 150 m of it. The same lap estimate passes only about 47 LU by 124 s, so the warning at 80–100 s probably comes later for a one-side kerb hug; M3's dynamic litter (+20) and the M6 par replay decide whether `litter.initial` or the route needs to change *(flagged for owner review)*.
+- **Power-up:** count 1, `pwr.flask_of_tea`, no fixed `at` (placement and behaviour are M3's, SSP-096/SSP-104). **Collectibles:** Lost Property `collect.false_teeth` at (34.5, 11.5) on the Pump Green path cross beside the bench (35, 10); Golden Crisp at (44.5, 30.5) in the alley's turning head, 12 m (path) past the skip. L041 passes. If the M6 par route dumps at the skip, the Crisp detour is shorter than §9.6's 15 s; that is checked with the par report (SSP-190).
+- **Compile report** (`npm run levels`; the NPC, vehicle and par lines need M3 and M6):
+
+  ```
+  district.puddle_lane  64x48  seed 1001
+    route area      1,264 tiles   grime 9,000 cells (gutter 15.0%)   litter 130 (+0 dyn until M3) ≈ 133 LU
+    dumps: depot 2 bays, skips 1   hydrants 2   max dump dist 158 m   max water dist 108 m
+    frontages 122   pledges 8
+    warnings: none
+  ```
+
 **Density and resources.**
 
 | Item | Value |
 |---|---|
-| Initial litter | 130 items, about 150 LU *(initial)* |
+| Initial litter | 130 items, about 150 LU *(initial)*: about 133 LU at shift start, the rest from M3's dynamic litter |
 | Litter table (weights) | crisp packet 30, cigarette butts 20, drink can 15, plastic bottle 15, newspaper 12, dog mess 8 |
-| Initial grime | 9,000 cells, about 15% of them gutter grime |
+| Litter placement | `gutterBias` 0.6; hotspots: litter bins ×2.0 within 3 tiles, shops (the parade and the corner shop) ×2.5 within 4, benches ×1.5 within 2; `minSpacingM` 0.5 *(initial)* |
+| Initial grime | 9,000 cells, 15% (1,350) of them gutter grime |
+| Grime zones | Mangle Street's first 30 m, kerb to kerb (x 1–5, rows 24–38) 0.85; litter bins (2 tiles) 0.75; shops (3 tiles) 0.7; the skip alley (x 25–44, rows 30–31) 0.6; speckle 0.03 *(initial)* |
 | Stains | None at start. `stain.splat` can be created by the player. |
 | Hazards | 8 `haz.puddle` (kerb-side, near drains), 3 speed-bump rows (`=`) |
 | Skips / hydrants | 1 / 2 |
 | Power-ups | 1 (`pwr.flask_of_tea`) |
-| Frontages / pledges | 46 / 8 |
+| Frontages / pledges | 122 / 8 *(as generated; the pre-build estimate was 46, see below)* |
 | Lost Property | `collect.false_teeth`, on the Pump Green path beside the bench |
 | Golden Crisp | At the dead end of the Gutter Row alley, behind the skip |
 
@@ -534,7 +554,7 @@ All values *(initial)*, tuned in M6 and recorded in each `level.json`.
 | Stains at start | 0 | 36 | 10 | 0 (chalk is dynamic) | 12 | 30 | 30 |
 | Skips / hydrants | 1 / 2 | 2 / 4 | 2 / 4 | 2 / 3 | 2 / 4 | 2 / 3 | 3 / 6 |
 | Power-ups | 1 | 2 | 2 | 2 | 3 | 2 | 3 |
-| Frontages / pledges | 46 / 8 | 64 / 12 | 34 / 10 | 72 / 16 | 52 / 12 | 58 / 14 | 84 / 20 |
+| Frontages / pledges | 122 / 8 | 64 / 12 | 34 / 10 | 72 / 16 | 52 / 12 | 58 / 14 | 84 / 20 |
 | Peak NPCs (budget 80) | 22 | 51 | 22 | 42 | 57 | 37 | 72 |
 | Peak vehicles, moving + parked (budget 30) | 6 + 14 | 12 + 14 | 10 + 16 | 7 + 20 | 10 + 12 | 16 + 12 | 12 + 16 |
 
@@ -977,7 +997,7 @@ Reading it:
 - **Pump Green** (x = 26–39, rows 8–15): a hedge-bounded park entered at x = 32–33 from row 7, with a paved path cross, four trees and a bench. The hydrant at (25, 7) is on the corner pavement where Bessie can stop beside it.
 - **Building `F`** (3-storey flats) faces Gutter Row's east pavement.
 
-The matching parts of `puddle_lane.level.json` (an excerpt: the real file also defines the rest of the map's buildings, anchors and pledges):
+The matching parts of `puddle_lane.level.json` (an excerpt: the real file also defines the rest of the map's buildings and anchors):
 
 ```json
 {
@@ -999,13 +1019,13 @@ The matching parts of `puddle_lane.level.json` (an excerpt: the real file also d
   "buildings": {
     "A": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick", "use": "house", "roofkit": ["chimney"] },
     "B": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick_bay", "use": "house", "roofkit": ["chimney"] },
-    "C": { "storeys": 3, "roof": "roof.slate", "wall": "facade.parade_brick", "use": "house", "roofkit": ["chimney", "vent"] },
+    "C": { "storeys": 3, "roof": "roof.slate", "wall": "facade.parade_brick", "use": "shop", "roofkit": ["chimney", "vent"] },
     "D": { "storeys": 3, "roof": "roof.felt", "wall": "facade.corner_shop", "use": "shop", "frontageWidth": 5 },
     "E": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick", "use": "house" },
     "F": { "storeys": 3, "roof": "roof.felt", "wall": "facade.flats_render", "use": "house", "frontageWidth": 4, "roofkit": ["water_tank", "vent"] }
   },
   "anchors": { "1": "doris_home", "2": "zebra_puddle_s", "3": "corner_shop_door" },
-  "pledges": ["fr_3_3", "fr_20_3", "fr_16_7", "fr_25_16"],
+  "pledges": ["fr_3_3", "fr_16_7", "fr_44_7", "fr_25_16", "fr_49_11", "fr_30_20", "fr_5_31", "fr_53_29"],
   "litter": {
     "initial": 130,
     "table": {
@@ -1024,9 +1044,10 @@ The matching parts of `puddle_lane.level.json` (an excerpt: the real file also d
     "cells": 9000,
     "gutterShare": 0.15,
     "zones": [
-      { "rect": [2, 20, 3, 18], "density": 0.85 },
+      { "rect": [1, 24, 5, 15], "density": 0.85 },
       { "near": "prop.litter_bin", "radius": 2, "density": 0.75 },
-      { "near": "use:shop", "radius": 3, "density": 0.7 }
+      { "near": "use:shop", "radius": 3, "density": 0.7 },
+      { "rect": [25, 30, 20, 2], "density": 0.6 }
     ],
     "speckle": 0.03
   },
@@ -1073,7 +1094,7 @@ The matching parts of `puddle_lane.level.json` (an excerpt: the real file also d
 
 The mobility scooter, the postie's round, the dog walker's anchors `4`–`7`, the skip, the Golden Crisp and the depot sit in parts of the map outside this excerpt.
 
-*As built (SSP-042):* the committed `assets-src/levels/puddle_lane.map.txt` contains this excerpt byte for byte (`tests/unit/puddleLane.test.ts` reads it from this section). The M1 `puddle_lane.level.json` carries only the fields the M1 compiler reads (identity, timer, seed, time of day, weather, music, ambience, start, depot, buildings `A`–`Z` and anchors `1`–`7`). The spawn-side values above (pledges, litter, grime, hazards, knockables, power-ups, collectibles, NPCs, traffic, events, par) stay here until SSP-056 (M2) and SSP-104 (M3) author them into the file. Anchors `4`–`7` are the corners of the dog walker's loop around Pump Green and the flats: `4` `pump_green_ne` (40, 7), `5` `pump_green_east_walk` (40, 14) on the bollarded footway east of the hedge, `6` `pump_green_se` (40, 20) and `7` `pump_green_sw` (25, 20).
+*As built (SSP-042):* the committed `assets-src/levels/puddle_lane.map.txt` contains this excerpt byte for byte (`tests/unit/puddleLane.test.ts` reads it from this section). The M1 `puddle_lane.level.json` carries only the fields the M1 compiler reads (identity, timer, seed, time of day, weather, music, ambience, start, depot, buildings `A`–`Z` and anchors `1`–`7`). The spawn-side values above (pledges, litter, grime, hazards, knockables, power-ups, collectibles, NPCs, traffic, events, par) stay here until SSP-056 (M2) and SSP-104 (M3) author them into the file. *As built (SSP-056):* the file now has `pledges`, `litter`, `grime` and `collectibles` exactly as above, `C` as `shop`, and `powerups` as `{ "count": 1, "table": { "pwr.flask_of_tea": 1 } }` (the fixed `at` above is SSP-104's call); the hazards, knockables, NPCs, traffic, events and par above are still M3/M6 ([§5.1](#51-mon-puddle-lane-districtpuddle_lane-tutorial)). Anchors `4`–`7` are the corners of the dog walker's loop around Pump Green and the flats: `4` `pump_green_ne` (40, 7), `5` `pump_green_east_walk` (40, 14) on the bollarded footway east of the hedge, `6` `pump_green_se` (40, 20) and `7` `pump_green_sw` (25, 20).
 
 ### 8.6 Worked example 2: the Depot Yard (complete)
 

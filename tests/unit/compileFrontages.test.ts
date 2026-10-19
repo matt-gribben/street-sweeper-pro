@@ -637,11 +637,15 @@ describe('frontage invariants on Puddle Lane (committed output)', () => {
     }
   });
 
-  it('keeps every zone tile on the route and lists no pledges before SSP-056 authors them', () => {
+  it('keeps every zone tile on the route and pledges exactly the level.json pledges (SSP-056)', () => {
+    const source = JSON.parse(
+      readFileSync(join(REPO_ROOT, 'assets-src/levels/puddle_lane.level.json'), 'utf8'),
+    ) as { pledges: string[] };
     for (const f of level.frontages) {
       for (const [x, y] of f.cells) expect(level.layers.route[y * w + x]).toBe(1);
-      expect(f.pledge).toBe(false);
     }
+    const pledged = level.frontages.filter((f) => f.pledge).map((f) => f.id);
+    expect(pledged.sort()).toEqual([...source.pledges].sort());
   });
 });
 

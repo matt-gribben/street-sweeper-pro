@@ -2,7 +2,7 @@
 id: SSP-056
 title: "Author Puddle Lane litter, grime, frontages, pledges and collectibles data"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:gameplay, area:assets, size:M, vertical-slice]

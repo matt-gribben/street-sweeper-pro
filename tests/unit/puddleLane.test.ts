@@ -1,13 +1,22 @@
 // Puddle Lane, the M1 street (SSP-042; LEVEL_DESIGN §5.1, §8.5, §12): the authored map.txt / level.json pair
 // compiles with no diagnostics, keeps the §8.5 excerpt byte for byte, places the depot, skip, hydrants and
-// anchors the later milestones rely on, and gives every raised-kerb cell a kerb blob autotile index.
+// anchors the later milestones rely on, and gives every raised-kerb cell a kerb blob autotile index. Since
+// SSP-056 it also carries the M2 sweeping content (litter, grime, uses, pledges, power-up, collectibles).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { TILE_M } from '../../src/sim/constants.ts';
-import { AUTOTILE_COUNT, AUTOTILE_NONE, COLLIDE, decodeLevel, Ground } from '../../src/sim/map.ts';
+import {
+  AUTOTILE_COUNT,
+  AUTOTILE_NONE,
+  COLLIDE,
+  decodeLevel,
+  Ground,
+  LITTER_PLACE,
+} from '../../src/sim/map.ts';
 import { compileLevel, readManifestIds } from '../../tools/levels/compile-level.ts';
+import { computeStreets, frontageStreet } from '../../tools/levels/frontages.ts';
 import { KERB_BLOB_PATH, readKerbBlob } from '../../tools/levels/kerbBlob.ts';
 import { carriagewayMask, pathSteps, squareCover } from '../../tools/levels/layoutChecks.ts';
 import { isRaisedKerbCell, isRoadCell } from '../../tools/levels/tileLayers.ts';
@@ -262,5 +271,113 @@ describe('kerbs (LEVEL_DESIGN §7.2, ROADMAP M1 level-compile check)', () => {
     // Mangle Street's first 30 m from the depot gate (row 38) is a straight kerb on both sides.
     expect(run(1, 24, 0, 1, 15, COLLIDE.KERB_EDGE_E)).toBe(15);
     expect(run(5, 24, 0, 1, 15, COLLIDE.KERB_EDGE_W)).toBe(15);
+  });
+});
+
+// SSP-056: Puddle Lane's M2 sweeping content (LEVEL_DESIGN §5.1): litter, grime, building uses, pledges,
+// power-up and collectibles. The level must still compile with no diagnostics at all (above), so L030, L031,
+// L040, L041, L050 and L051 pass.
+describe('the M2 sweeping content (SSP-056, LEVEL_DESIGN §5.1)', () => {
+  const doc = JSON.parse(LEVEL_TEXT) as {
+    powerups?: { count: number; table: Record<string, number>; at?: unknown };
+    collectibles?: {
+      lostProperty: { id: string; at: [number, number] };
+      goldenCrisp: { at: [number, number] };
+    };
+  };
+
+  it('places 130 litter items from the documented table, 60% of the weight in the road gutter', () => {
+    const litter = level.litter;
+    if (litter === null) throw new Error('no litter field');
+    expect(litter.initial).toBe(130);
+    expect(litter.minSpacingM).toBe(0.5);
+    expect(Object.fromEntries(litter.table.map((t) => [t.id, t.weight]))).toEqual({
+      'litter.crisp_packet': 30,
+      'litter.cigarette_butts': 20,
+      'litter.drink_can': 15,
+      'litter.plastic_bottle': 15,
+      'litter.newspaper': 12,
+      'litter.dog_mess': 8,
+    });
+    let total = 0;
+    let gutter = 0;
+    for (let i = 0; i < litter.weights.length; i += 1) {
+      const wt = litter.weights[i] ?? 0;
+      total += wt;
+      if (((litter.places[i] ?? 0) & LITTER_PLACE.GUTTER) !== 0) gutter += wt;
+    }
+    // gutterBias 0.6, up to the Uint16 quantisation.
+    expect(gutter / total).toBeCloseTo(0.6, 3);
+  });
+
+  it('selects exactly 9,000 grime cells, 15% (1,350) of them gutter grime', () => {
+    expect(level.grime).toEqual({ cells: 9000, gutterCells: 1350, speckle: 0.03 });
+  });
+
+  it('makes the first 30 m of Mangle Street the densest grime, kerb to kerb', () => {
+    const density = level.layers.grimeDensity;
+    const dense = Math.round(0.85 * 255);
+    for (let y = 24; y <= 38; y += 1) {
+      for (let x = 1; x <= 5; x += 1) expect(density[tile(x, y)], `(${x}, ${y})`).toBe(dense);
+    }
+    for (const d of density) expect(d).toBeLessThanOrEqual(dense);
+  });
+
+  it('pledges exactly 8 generated frontages, at most 2 (a third) on any one street', () => {
+    const pledged = level.frontages.filter((f) => f.pledge);
+    expect(pledged).toHaveLength(8);
+    // The generated count with the 1.0 widths (house 3, shop 4, corner shop 5, flats 4): see §5.1.
+    expect(level.frontages).toHaveLength(122);
+    const { street } = computeStreets(map);
+    const perStreet = new Map<number, number>();
+    for (const f of pledged) {
+      const gutter = f.cells.map(([x, y]) => tile(x, y)).filter((i) => isRoadCell(map, i));
+      const s = frontageStreet(street, gutter);
+      expect(s, f.id).toBeGreaterThanOrEqual(0);
+      perStreet.set(s, (perStreet.get(s) ?? 0) + 1);
+    }
+    for (const n of perStreet.values()) expect(n * 3).toBeLessThanOrEqual(pledged.length);
+    expect(perStreet.size).toBeGreaterThanOrEqual(6);
+  });
+
+  it('gives the parade and the corner shop shop frontages, and every other street building houses', () => {
+    const uses = Object.fromEntries(OUT.buildings.map((b) => [b.letter, b.use]));
+    expect(uses.C).toBe('shop');
+    expect(uses.D).toBe('shop');
+    expect(uses.P).toBe('depot');
+    const others = Object.entries(uses).filter(([letter]) => !['C', 'D', 'P'].includes(letter));
+    for (const [letter, use] of others) expect(use, letter).toBe('house');
+  });
+
+  it('puts the skip within 150 m (path) of almost every route tile, so the first hopper warning is near it', () => {
+    const skip = level.sites.filter((s) => s.id === 'site.skip').map((s) => tile(s.rect[0], s.rect[1]));
+    const dist = pathSteps(map, [skip[0] ?? 0, (skip[0] ?? 0) + 1]);
+    let route = 0;
+    const over: number[] = [];
+    for (let i = 0; i < W * H; i += 1) {
+      if (level.layers.route[i] !== 1) continue;
+      route += 1;
+      if ((dist[i] ?? 0) * TILE_M > 150) over.push(i);
+    }
+    expect(over.length / route).toBeLessThan(0.01);
+    // Only the north-east tip of Puddle Lane, the far end of the map from the skip, is over, by under 10 m.
+    for (const i of over) {
+      expect(i % W, `(${i % W}, ${Math.floor(i / W)})`).toBeGreaterThanOrEqual(58);
+      expect(Math.floor(i / W)).toBeLessThanOrEqual(7);
+      expect((dist[i] ?? 0) * TILE_M).toBeLessThan(160);
+    }
+  });
+
+  it('has one flask of tea and places Lost Property and the Golden Crisp where §5.1 says', () => {
+    expect(doc.powerups).toEqual({ count: 1, table: { 'pwr.flask_of_tea': 1 } });
+    const lost = doc.collectibles?.lostProperty;
+    expect(lost?.id).toBe('collect.false_teeth');
+    const [lx, ly] = lost?.at ?? [0, 0];
+    // On the Pump Green path (pavement), beside the bench.
+    expect(map.ground[tile(Math.floor(lx), Math.floor(ly))]).toBe(Ground.Pavement);
+    const bench = level.props.find((p) => p.id === 'prop.bench' && Math.abs(p.x / TILE_M - lx) <= 1.01);
+    expect(bench, 'a bench within 1 tile').toBeDefined();
+    expect(Math.abs((bench?.y ?? 0) / TILE_M - ly)).toBeLessThanOrEqual(1.01);
+    expect(doc.collectibles?.goldenCrisp.at).toEqual([44.5, 30.5]);
   });
 });

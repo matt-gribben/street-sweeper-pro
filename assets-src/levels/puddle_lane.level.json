@@ -33,7 +33,7 @@
       "storeys": 3,
       "roof": "roof.slate",
       "wall": "facade.parade_brick",
-      "use": "house",
+      "use": "shop",
       "roofkit": ["chimney", "vent"]
     },
     "D": {
@@ -188,5 +188,40 @@
     "5": "pump_green_east_walk",
     "6": "pump_green_se",
     "7": "pump_green_sw"
+  },
+  "pledges": ["fr_3_3", "fr_16_7", "fr_44_7", "fr_25_16", "fr_49_11", "fr_30_20", "fr_5_31", "fr_53_29"],
+  "litter": {
+    "initial": 130,
+    "table": {
+      "litter.crisp_packet": 30,
+      "litter.cigarette_butts": 20,
+      "litter.drink_can": 15,
+      "litter.plastic_bottle": 15,
+      "litter.newspaper": 12,
+      "litter.dog_mess": 8
+    },
+    "gutterBias": 0.6,
+    "minSpacingM": 0.5,
+    "hotspots": [
+      { "near": "prop.litter_bin", "radius": 3, "mult": 2.0 },
+      { "near": "use:shop", "radius": 4, "mult": 2.5 },
+      { "near": "prop.bench", "radius": 2, "mult": 1.5 }
+    ]
+  },
+  "grime": {
+    "cells": 9000,
+    "gutterShare": 0.15,
+    "zones": [
+      { "rect": [1, 24, 5, 15], "density": 0.85 },
+      { "near": "prop.litter_bin", "radius": 2, "density": 0.75 },
+      { "near": "use:shop", "radius": 3, "density": 0.7 },
+      { "rect": [25, 30, 20, 2], "density": 0.6 }
+    ],
+    "speckle": 0.03
+  },
+  "powerups": { "count": 1, "table": { "pwr.flask_of_tea": 1 } },
+  "collectibles": {
+    "lostProperty": { "id": "collect.false_teeth", "at": [34.5, 11.5] },
+    "goldenCrisp": { "at": [44.5, 30.5] }
   }
 }

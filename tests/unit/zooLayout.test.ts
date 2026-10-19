@@ -250,7 +250,10 @@ describe('zooLayout: paging', () => {
 describe('zooCellFrame', () => {
   it('cycles a cell within its state at 10 fps: frame floor(tick / 6) mod count', () => {
     expect(ZOO_TICKS_PER_FRAME).toBe(6);
-    const brush = zooLayout(FRAME_IDS, {}).cells.find((c) => c.asset === 'veh.sweeper_brush');
+    // Searched across the default view's pages: which page holds it depends on how many assets sort before it.
+    const brush = allPages(null)
+      .flat()
+      .find((c) => c.asset === 'veh.sweeper_brush');
     if (brush === undefined) throw new Error('no brush cell');
     const shown = [0, 5, 6, 11, 12, 18, 24, 30].map((tick) => zooCellFrame(brush, tick));
     expect(shown).toEqual([

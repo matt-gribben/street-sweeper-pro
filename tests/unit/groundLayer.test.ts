@@ -62,7 +62,7 @@ describe('ground id → tile', () => {
       [Ground.RoadOneWayN]: 'tile.asphalt',
       [Ground.RoadOneWayS]: 'tile.asphalt',
       [Ground.Pavement]: 'tile.pavement',
-      [Ground.Cobbles]: 'tile.setts',
+      [Ground.Cobbles]: 'tile.cobbles',
       [Ground.Alley]: 'tile.setts',
       [Ground.Grass]: 'tile.grass',
       [Ground.Yard]: 'tile.apron',

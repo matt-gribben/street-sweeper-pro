@@ -13,7 +13,7 @@ A procedural manifest entry's ``source`` is a params file under ``assets-src/pro
 ``variant``
     ``fn(params, rng, cell, variant) -> (h, w) uint8`` (the ASSET_PIPELINE §6.4 shape), used by
     surfaces and decals whose frames are seeded variants (``roofs.*``, ``tiles.*``,
-    ``stains.*``). Overlays (the road markings, stains and grime) return ``int16`` with
+    ``stains.*``, ``hazards.*``). Overlays (the road markings, stains and grime) return ``int16`` with
     ``TRANSPARENT`` (-1) for the pixels they leave clear.
     The params file needs an integer ``seed`` and ``variants``; the manifest entry must have the
     single state ``v`` with ``frames.v == variants``. One ``numpy.random.Generator(PCG64(seed))``
@@ -22,8 +22,10 @@ A procedural manifest entry's ``source`` is a params file under ``assets-src/pro
 ``frames``
     ``fn(params, ctx) -> {local frame id: (h, w) int16}``, used where frames are assembled
     rather than drawn at random (``facades.set``: module grids plus the lit/dark ramp shift;
-    ``tiles.kerb_blob``: the 47 kerb tiles ``blob:-:n`` drawn by rule over the pavement).
-    No ``seed`` or ``variants``; the generator reports every extra file it reads through
+    ``tiles.kerb_blob``: the 47 kerb tiles ``blob:-:n`` drawn by rule over the pavement), or
+    where every frame must show the same random draw (``hazards.broken_glass``: one shard layout,
+    a different glint per frame, drawn from its own ``params.seed``).
+    No top-level ``seed`` or ``variants``; the generator reports every extra file it reads through
     :meth:`Context.read_dependency` so the build cache can hash it.
 
 Generators are pure: no ``random``, no clock, no unordered iteration, randomness only from the
@@ -44,7 +46,7 @@ import numpy.typing as npt
 from numpy.random import PCG64, Generator
 
 from forge.palette import PALETTE_SIZE, TRANSPARENT, Palette
-from forge.procedural import facades, roofs, stains, tiles
+from forge.procedural import facades, hazards, roofs, stains, tiles
 from forge.procedural.common import Context, ProceduralError
 
 __all__ = [
@@ -87,6 +89,10 @@ class GeneratorSpec:
 
 GENERATORS: Mapping[str, GeneratorSpec] = {
     "facades.set": GeneratorSpec("frames", frames=facades.facade_set, deps=facades.set_dependencies),
+    "hazards.broken_glass": GeneratorSpec("frames", frames=hazards.broken_glass),
+    "hazards.pothole": GeneratorSpec("variant", variant=hazards.pothole),
+    "hazards.puddle": GeneratorSpec("variant", variant=hazards.puddle),
+    "hazards.wet_leaves": GeneratorSpec("variant", variant=hazards.wet_leaves),
     "roofs.depot_placeholder": GeneratorSpec("variant", variant=roofs.depot_placeholder),
     "roofs.felt": GeneratorSpec("variant", variant=roofs.felt),
     "roofs.slate": GeneratorSpec("variant", variant=roofs.slate),
@@ -98,9 +104,11 @@ GENERATORS: Mapping[str, GeneratorSpec] = {
     "stains.splat": GeneratorSpec("variant", variant=stains.splat),
     "tiles.apron": GeneratorSpec("variant", variant=tiles.apron),
     "tiles.asphalt": GeneratorSpec("variant", variant=tiles.asphalt),
+    "tiles.cobbles": GeneratorSpec("variant", variant=tiles.cobbles),
     "tiles.grass": GeneratorSpec("variant", variant=tiles.grass),
     "tiles.kerb_blob": GeneratorSpec("frames", frames=tiles.kerb_blob, deps=tiles.kerb_dependencies),
     "tiles.markings": GeneratorSpec("variant", variant=tiles.markings),
+    "tiles.open_manhole": GeneratorSpec("variant", variant=tiles.open_manhole),
     "tiles.pavement": GeneratorSpec("variant", variant=tiles.pavement),
     "tiles.setts": GeneratorSpec("variant", variant=tiles.setts),
     "tiles.speed_bump": GeneratorSpec("variant", variant=tiles.speed_bump),

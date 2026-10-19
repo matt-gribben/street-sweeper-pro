@@ -20,7 +20,7 @@
 // Grime (SSP-066, TECHNICAL_DESIGN §10.3, §12.4, ART_BIBLE §9.2). Every ground and marking quad of a cell carries
 // the cell's grime code (cityMesh.ts grimeCode): which pattern its dirty grime cells draw. Roads (one-way roads,
 // speed bumps and zebras over them included) draw `tile.grime_asphalt`; pavements, kerb blobs (their interior is
-// pavement), cobbles and alleys (both setts) draw `tile.grime_slab`; a cell with the gutter bit draws
+// pavement), cobbles and alleys (setts) draw `tile.grime_slab`; a cell with the gutter bit draws
 // `tile.grime_gutter` whatever its surface. Grass, yards, aprons and anything off route draw none (code 0), so
 // they never show grime even if a mask had some. The pattern variant is the stateless cell hash
 // (`VariantSalt.Grime`) modulo the family's frame count.
@@ -65,8 +65,8 @@ import { frameRect, worldFrame, worldFrameVariants } from './worldFrames.ts';
 export const GROUND_CHUNK_TILES = 16;
 
 /**
- * Ground id → tile family (ART_BIBLE §9.1 "Ground → tile"). Cobbles → setts and yard → apron are the M1
- * fallbacks until their M4 tiles exist; void, water and sand have no M1 tile (null) and fail the build if an
+ * Ground id → tile family (ART_BIBLE §9.1 "Ground → tile"). Cobbles have their own placeholder tile since
+ * SSP-101; yard → apron is the M1 fallback until its M4 tile exists (SSP-121); void, water and sand have no M1 tile (null) and fail the build if an
  * open cell uses them.
  */
 export const GROUND_TILE_ASSET: readonly (string | null)[] = [
@@ -77,7 +77,7 @@ export const GROUND_TILE_ASSET: readonly (string | null)[] = [
   'tile.asphalt', // RoadOneWayN
   'tile.asphalt', // RoadOneWayS
   'tile.pavement', // Pavement
-  'tile.setts', // Cobbles (fallback until SSP-121)
+  'tile.cobbles', // Cobbles (SSP-101 placeholder)
   'tile.setts', // Alley
   'tile.grass', // Grass
   'tile.apron', // Yard (fallback until SSP-121)
@@ -105,7 +105,7 @@ export const GROUND_GRIME_FAMILY: readonly (GrimeFamily | null)[] = [
   GrimeFamily.Asphalt, // RoadOneWayN
   GrimeFamily.Asphalt, // RoadOneWayS
   GrimeFamily.Slab, // Pavement
-  GrimeFamily.Slab, // Cobbles (setts)
+  GrimeFamily.Slab, // Cobbles
   GrimeFamily.Slab, // Alley (setts)
   null, // Grass
   null, // Yard

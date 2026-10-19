@@ -23,11 +23,14 @@ PALETTE = load_palette()
 MANIFEST = load_manifest()
 KERB_BLOB = REPO_ROOT / "assets-src" / "procedural" / "tiles" / "kerb_blob.json"
 
-# The tile asset IDs chosen in SSP-040: final from now on (CLAUDE.md §5.4). Value: state, frames.
+# The tile asset IDs chosen in SSP-040 (plus SSP-101's tile.cobbles and the haz.open_manhole tile variant): final
+# from now on (CLAUDE.md §5.4). Value: state, frames.
 TILE_IDS: dict[str, tuple[str, int]] = {
+    "haz.open_manhole": ("v", 1),
     "haz.speed_bump": ("v", 2),
     "tile.apron": ("v", 4),
     "tile.asphalt": ("v", 6),
+    "tile.cobbles": ("v", 4),
     "tile.double_yellow": ("v", 4),
     "tile.grass": ("v", 4),
     "tile.kerb": ("blob", 47),
@@ -48,9 +51,11 @@ ALLOWED = {
     "tile.pavement": {5, 4, 6},
     "tile.grass": {22, 21, 23},
     "tile.setts": {3, 2, 4},
+    "tile.cobbles": {4, 3, 5},
     "tile.apron": {4, 3, 5},
     "tile.zebra": {2, 1, 3, 7, 6},
     "haz.speed_bump": {2, 1, 3, 4, 7},
+    "haz.open_manhole": {2, 1, 3, 0, 4, 5},
     "tile.lane_marking": {TRANSPARENT, 7, 6},
     "tile.double_yellow": {TRANSPARENT, 15, 14},
     "tile.parking_bay": {TRANSPARENT, 7, 6},
@@ -123,7 +128,17 @@ def test_tiles_use_only_their_art_bible_indices(asset_id: str) -> None:
 
 
 def test_the_wrap_tiles_are_the_documented_ones() -> None:
-    assert set(WRAP_TILES) >= {"tile.asphalt", "tile.pavement", "tile.grass", "tile.setts", "tile.apron", "tile.zebra", "haz.speed_bump"}
+    assert set(WRAP_TILES) >= {
+        "tile.asphalt",
+        "tile.pavement",
+        "tile.grass",
+        "tile.setts",
+        "tile.cobbles",
+        "tile.apron",
+        "tile.zebra",
+        "haz.speed_bump",
+        "haz.open_manhole",
+    }
     assert not set(WRAP_TILES) & {*OVERLAYS, "tile.kerb"}
 
 
@@ -182,7 +197,7 @@ def test_appending_variants_keeps_the_earlier_ones(tmp_path: Path, asset_id: str
         np.testing.assert_array_equal(more[f"v:-:{k}"], repo_frames[f"v:-:{k}"])
 
 
-@pytest.mark.parametrize("asset_id", ["tile.asphalt", "tile.pavement", "tile.grass", "tile.setts", "tile.apron"])
+@pytest.mark.parametrize("asset_id", ["tile.asphalt", "tile.pavement", "tile.grass", "tile.setts", "tile.cobbles", "tile.apron"])
 def test_variants_differ_and_follow_the_seed(tmp_path: Path, asset_id: str) -> None:
     frames = built(asset_id)
     assert not np.array_equal(frames["v:-:0"], frames["v:-:1"])
@@ -250,6 +265,33 @@ def test_setts_are_running_bond_blocks_with_02_gaps() -> None:
     for arr in built("tile.setts").values():
         assert (arr[3::4, :] == 2).all(), "a gap row under every course"
         assert (arr[0:3, 7::8] == 2).all() and (arr[4:7, 3::8] == 2).all(), "courses offset by half a block"
+
+
+def test_cobbles_are_rounded_04_05_stones_in_courses_with_03_gaps() -> None:
+    """ART_BIBLE §9.1: cobbles are 04/05 rounded blocks with 03 gaps (SSP-101)."""
+    for arr in built("tile.cobbles").values():
+        assert (arr[3::4, :] == 3).all(), "a gap row under every 3 px course"
+        for y0 in range(0, 32, 4):
+            course = arr[y0 : y0 + 3]
+            stone = course != 3
+            # Every stone's corner pixels are gap: a stone pixel on the course's top row never has a stone pixel
+            # in the column just before it on the top row unless that column is also stone in the middle row.
+            starts = [x for x in range(32) if stone[1, x] and not stone[1, x - 1]]
+            assert len(starts) >= 4, "at least 4 stones per course"
+            for x in starts:
+                assert not stone[0, x] and not stone[2, x], "rounded: the corners are gap"
+        stones = arr[arr != 3]
+        assert 0.15 < float((stones == 5).mean()) < 0.5, "some stones tinted 05"
+
+
+def test_open_manhole_is_a_hole_with_the_lid_slid_south_east() -> None:
+    arr = built("haz.open_manhole")["v:-:0"]
+    hy, hx = np.nonzero(arr == 0)
+    ly, lx = np.nonzero(arr == 4)
+    assert len(hy) >= 60 and len(ly) >= 50, "a hole and a lid about 0.7 m across"
+    assert hx.mean() + 4 < lx.mean() and hy.mean() + 4 < ly.mean(), "the lid lies south-east of the hole"
+    assert (arr == 3).sum() >= 20, "an 03 rim"
+    assert set(np.unique(arr[[0, -1], :]).tolist()) <= {1, 2, 3}, "asphalt at the tile edges"
 
 
 def test_apron_has_one_expansion_joint_per_tile() -> None:
@@ -487,6 +529,10 @@ def write_tile(tmp_path: Path, doc: dict[str, Any], entry_over: dict[str, Any] |
         ("tile.zebra", lambda d: d["params"].update(bar_px=5), "a zebra bar every 10 px"),
         ("tile.zebra", lambda d: d["params"].update(layouts=["diagonal", "bars_along_x"]), "must be one of bars_along_y"),
         ("tile.setts", lambda d: d["params"].update(block_px=[7, 4]), "must be even"),
+        ("tile.cobbles", lambda d: d["params"].update(course_px=5), "a cobble course every 5 px"),
+        ("tile.cobbles", lambda d: d["params"].update(course_px=2), "leaves no stone"),
+        ("tile.cobbles", lambda d: d["params"].update(stone_px=[2, 6]), "stone_px must be"),
+        ("haz.open_manhole", lambda d: d["params"]["lid"].update(centre_px=[40, 19]), "lid.centre_px must be an"),
         ("tile.pavement", lambda d: d["params"].update(joints_px=[11, 0]), "joints_px must be ascending"),
         ("tile.asphalt", lambda d: d["params"]["speckle"].update(indices=[1, 40]), "palette index"),
         ("tile.asphalt", lambda d: d["params"].update(wrap="yes"), "params.wrap must be true or false"),

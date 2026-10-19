@@ -1,0 +1,18 @@
+{
+  "id": "haz.wet_leaves",
+  "generator": "hazards.wet_leaves",
+  "seed": 7107,
+  "cell": [32, 32],
+  "variants": 2,
+  "params": {
+    "patch": {
+      "index": 1,
+      "radius_px": [10, 12],
+      "rough_px": 2,
+      "centre_px": [15, 16],
+      "coverage": 0.7,
+      "smoothing_passes": 3
+    },
+    "leaves": { "indices": [14, 11, 13], "count": [12, 16], "gap_px": 1 }
+  }
+}

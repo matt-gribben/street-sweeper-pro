@@ -443,7 +443,7 @@ The blocking timer resets when the path clears. Each continuous block of more th
 
 ## 9. Props and obstacles (`prop.*`)
 
-**Common spec:** cell **32×32 per slice**, `flat` (1 frame) or `stack` (4 or 8 horizontal slices, leaned by the perspective camera). Atlas: `items`. Collision shape = the opaque bounding box of the lowest slice, as an OBB. Until the M4 art pass measures those slices, the static props (§9.2) collide with a **provisional** footprint table, a circle or a box per id, in `src/data/tuning.json` → `propFootprints` (SSP-036). It stays there until M4 measures the slices, then moves into the prop entries of `entities.json` (SSP-075 added those entries without it; see [TECHNICAL_DESIGN §9.1](TECHNICAL_DESIGN.md#91-static-world)). Slice counts were locked in M0 ([`assets-src/STYLE.md`](../assets-src/STYLE.md) v1 §8, [ART_BIBLE §8.6](ART_BIBLE.md#86-props)) and appear in the Render column as `stack (n)`: 8 for tall props with thin members, 4 for broad or short ones. Only the lowest and highest slices cast drop shadows.
+**Common spec:** cell **32×32 per slice**, `flat` (1 frame) or `stack` (4 or 8 horizontal slices, leaned by the perspective camera). Atlas: `items`. Collision shape = the opaque bounding box of the lowest slice, as an OBB. Until the M4 art pass measures those slices, the static props (§9.2) collide with a **provisional** footprint table, a circle or a box per id, in `src/data/tuning.json` → `propFootprints` (SSP-036). It stays there until M4 measures the slices, then moves into the prop entries of `entities.json` (SSP-075 added those entries without it; see [TECHNICAL_DESIGN §9.1](TECHNICAL_DESIGN.md#91-static-world)). Slice counts were locked in M0 ([`assets-src/STYLE.md`](../assets-src/STYLE.md) v1 §8, [ART_BIBLE §8.6](ART_BIBLE.md#86-props)) and appear in the Render column as `stack (n)`: 8 for tall props with thin members, 4 for broad or short ones. Only the lowest and highest slices cast drop shadows. **Placeholders (SSP-101):** every prop has a placeholder grid under its final ID and frame IDs (`prop.<id>:flat:-:0`, or `prop.<id>:slice:-:0`–`n−1` with the Render column's count; `prop.hydrant` since SSP-052, `prop.lamp_post` the M0 4-slice render); the techniques below are the final ones (M4). Looks in [ART_BIBLE §8.6](ART_BIBLE.md#86-props).
 
 ### 9.1 Knockable props
 
@@ -484,7 +484,7 @@ Solid. Hitting them uses the standard impact-damage rule ([§3.2](#32-collision-
 
 ## 10. Hazards (`haz.*`)
 
-Hazards are ground effects with no physical collision (except the open manhole's hard stop). Sprites: cell 32×32 ground decal *(proposed: `haz.*` is not in the §4.6 size sheet; it follows the stain cell)*, atlas `world`, technique `procedural` *(proposed)* unless noted.
+Hazards are ground effects with no physical collision (except the open manhole's hard stop). Sprites: cell 32×32 ground decal *(proposed: `haz.*` is not in the §4.6 size sheet; it follows the stain cell)*, atlas `world`, technique `procedural` *(proposed)* unless noted. **Placeholders (SSP-101):** every hazard with a sprite has a procedural placeholder under its final ID, frames `haz.<id>:v:-:n` (2 variants; `haz.open_manhole` 1 tile variant; `haz.broken_glass` `v:-:0`/`v:-:1` are its 2-frame glint, cycled, not chosen). Looks in [ART_BIBLE §8.7](ART_BIBLE.md#87-stains-and-hazards-ground-decals).
 
 | ID | Name | Effect | Score | SFX | Districts |
 |---|---|---|---|---|---|
@@ -524,7 +524,7 @@ Sites are level-authored regions and markers from `<district>.level.json`. Most 
 
 ## 12. Power-ups (`pwr.*`)
 
-**Common spec:** cell **16×16**, visible 12×12, `bob ×2`, technique `grid` (`assets-src/sprites/pickup/<name>.sprite.txt`), atlas `items`. **1–3 per shift, spawn on pavements.** Collected by body overlap with any brush state; SFX `powerup`. A timed power-up picked up while the same one is active restarts its timer (it does not stack). All districts except Yard. **Placeholders (SSP-052):** `pwr.flask_of_tea` has a placeholder grid with frames `bob:-:0`/`bob:-:1` (Puddle Lane's power-up); the other five arrive with SSP-149 (M4).
+**Common spec:** cell **16×16**, visible 12×12, `bob ×2`, technique `grid` (`assets-src/sprites/pickup/<name>.sprite.txt`), atlas `items`. **1–3 per shift, spawn on pavements.** Collected by body overlap with any brush state; SFX `powerup`. A timed power-up picked up while the same one is active restarts its timer (it does not stack). All districts except Yard. **Placeholders (SSP-052):** `pwr.flask_of_tea` has a placeholder grid with frames `bob:-:0`/`bob:-:1` (Puddle Lane's power-up); the other five have placeholder grids with the same frames since SSP-101; the final art for all six is SSP-149 (M4).
 
 | ID | Name | Effect | Duration | Numbers in practice |
 |---|---|---|---|---|

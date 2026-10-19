@@ -1,16 +1,17 @@
 """Determinism and acceptance checks over a real build of the committed M0 assets (SSP-009, SSP-010, SSP-014,
-SSP-020, SSP-024, SSP-040, SSP-041, SSP-051, SSP-052, SSP-068, SSP-070).
+SSP-020, SSP-024, SSP-040, SSP-041, SSP-051, SSP-052, SSP-068, SSP-070, SSP-101).
 
 Builds ``assets-src/manifest.json`` twice with the cache off, into two temp dirs, and checks
 that every output file has the same SHA-256 (frames, atlas PNG/JSON, ``src/gen/assets.ts``,
-``asset-hashes.json``, the font metrics); then inspects the built frames: 773 of them, 64x64 Bessie / 96x96
+``asset-hashes.json``, the font metrics); then inspects the built frames: 858 of them, 64x64 Bessie / 96x96
 brush / 24x24 npc.old_woman (8 idle directions, 3 of them mirrored) / 32x32 prop.lamp_post
 (4 sprite-stack slices) / the 15 16x16 litter items (SSP-051: idle x1 + wobble x2 in the
 h00/h08/h16/h24 rotations, 12 frames each, 180 in all; the banana skin is the D-07 sample) / the
 SSP-041 Puddle Lane facade sets (64x80 lit/base/dark bays) and roof surfaces (32x32 variants) /
 the SSP-040 ground tiles (32x32 variants, the 47 kerb blob tiles and the road-marking overlays),
 the SSP-052 stains, grime overlays (32x32 ``v`` variants, world), pickups (16x16 ``bob`` x2), the
-flat hydrant (32x32) and the site placeholders (64x96 depot bay, 64x32 skip) /
+flat hydrant (32x32) and the site placeholders (64x96 depot bay, 64x32 skip) / the SSP-101 prop
+grids (32x32 flats and slices), hazard decals and tile variants, cobbles and the other five power-ups /
 the SSP-068 Kerbside 5x7 font (100 glyph + 100 outline frames, 7x9), Kerbside-32 colours only
 with binary alpha, the outline rule, no metadata chunks, and a palette snap that changed 0
 pixels; and the packed ``world``, ``actors``, ``items`` and ``ui`` atlases.
@@ -43,9 +44,11 @@ FACADES = (
 )
 ROOF_VARIANTS = {"roof.depot": 1, "roof.felt": 4, "roof.slate": 4}
 TILE_FRAMES = {
+    "haz.open_manhole": 1,
     "haz.speed_bump": 2,
     "tile.apron": 4,
     "tile.asphalt": 6,
+    "tile.cobbles": 4,
     "tile.double_yellow": 4,
     "tile.grass": 4,
     "tile.kerb": 47,
@@ -58,8 +61,38 @@ TILE_FRAMES = {
 STAINS = {"stain.chalk_art": 3, "stain.gum": 3, "stain.milkshake": 2, "stain.oil": 2, "stain.splat": 2}
 GRIME = {"tile.grime_asphalt": 4, "tile.grime_gutter": 4, "tile.grime_slab": 4}
 """SSP-052: ground decals, transparent where the ground shows through (never outlined)."""
-PICKUPS = ("collect.false_teeth", "collect.golden_crisp", "pwr.flask_of_tea")
-"""SSP-052: 2 bob frames each, on a 1 px ground halo ring that is not outlined (ART_BIBLE §8.5)."""
+HAZARDS = {"haz.broken_glass": 2, "haz.oil_slick": 2, "haz.pothole": 2, "haz.puddle": 2, "haz.wet_leaves": 2}
+"""SSP-101: hazard ground decals (32x32 ``v`` frames, world, transparent where the ground shows through)."""
+PICKUPS = (
+    "collect.false_teeth",
+    "collect.golden_crisp",
+    "pwr.bacon_butty",
+    "pwr.flask_of_tea",
+    "pwr.hi_vis",
+    "pwr.super_suction",
+    "pwr.water_can",
+    "pwr.wrench",
+)
+"""SSP-052 (and SSP-101's five other power-ups): 2 bob frames each, on a 1 px ground halo ring that is not
+outlined (ART_BIBLE §8.5)."""
+PROPS = {
+    "prop.a_board": 4,
+    "prop.bench": 1,
+    "prop.bollard": 4,
+    "prop.bus_shelter": 8,
+    "prop.litter_bin": 4,
+    "prop.market_stall": 8,
+    "prop.phone_box": 4,
+    "prop.planter": 1,
+    "prop.post_box": 4,
+    "prop.recycling_box": 1,
+    "prop.roadworks_barrier": 4,
+    "prop.shopping_trolley": 1,
+    "prop.traffic_cone": 4,
+    "prop.tree": 8,
+    "prop.wheelie_bin": 4,
+}
+"""SSP-101: placeholder prop grids, 32x32 per frame (flat, or a stack of slices), items atlas, outlined."""
 SITES = {"site.depot_bay": (64, 96), "site.skip": (64, 32)}
 PANELS = ("ui.panel_council", "ui.panel_dark", "ui.panel_paper")
 """SSP-285: the placeholder 24x24 9-slice panels in the ui atlas, one frame each (sliced in code)."""
@@ -74,8 +107,8 @@ HUD_ART = {
 """SSP-070: the HUD's placeholder bar fill (1 frame) and dump-hold ring (9 fill steps) in the ui atlas; SSP-299:
 the Brush-o-meter zones (3), its needle (1), the brush state badges and spin-up ring (2 + 9) and the off-screen
 arrows (2 x 8 dirs)."""
-OVERLAYS = ("tile.double_yellow", "tile.lane_marking", "tile.parking_bay", *STAINS, *GRIME)
-"""World-atlas frames that are not opaque cells: road markings, stains and grime."""
+OVERLAYS = ("tile.double_yellow", "tile.lane_marking", "tile.parking_bay", *STAINS, *GRIME, *HAZARDS)
+"""World-atlas frames that are not opaque cells: road markings, stains, grime and hazard decals."""
 GROUND_MARKINGS = ("site.depot_bay",)
 """Items-atlas frames painted on the ground (no ink outline, ART_BIBLE §6.3)."""
 LITTER = tuple(
@@ -106,7 +139,7 @@ CELLS = {
     "font.kerbside5x7": (7, 9),
     **{p: (24, 24) for p in PANELS},
     **HUD_ART,
-    **{t: (32, 32) for t in (*STAINS, *GRIME)},
+    **{t: (32, 32) for t in (*STAINS, *GRIME, *HAZARDS, *PROPS)},
     **{p: (16, 16) for p in PICKUPS},
     **SITES,
     "prop.hydrant": (32, 32),
@@ -116,10 +149,10 @@ CELLS = {
     "veh.sweeper": (64, 64),
     "veh.sweeper_brush": (96, 96),
 }
-FRAME_COUNT = 773
+FRAME_COUNT = 858
 ATLAS_OF = {
-    **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES, *STAINS, *GRIME)},
-    **{a: "items" for a in (*PICKUPS, *SITES, "prop.hydrant")},
+    **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES, *STAINS, *GRIME, *HAZARDS)},
+    **{a: "items" for a in (*PICKUPS, *SITES, *PROPS, "prop.hydrant")},
     "font.kerbside5x7": "ui",
     **{p: "ui" for p in PANELS},
     **{h: "ui" for h in HUD_ART},
@@ -204,6 +237,8 @@ def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
         "ui.offscreen_arrow": 16,
         **STAINS,
         **GRIME,
+        **HAZARDS,
+        **PROPS,
         **{p: 2 for p in PICKUPS},
         **{s: 1 for s in SITES},
         "prop.hydrant": 1,
@@ -344,7 +379,7 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
     ]
 
 
-@pytest.mark.parametrize(("name", "count"), [("world", 136), ("actors", 200), ("items", 193), ("ui", 244)])
+@pytest.mark.parametrize(("name", "count"), [("world", 151), ("actors", 200), ("items", 263), ("ui", 244)])
 def test_atlas_holds_every_frame_at_its_rect(
     builds: tuple[BuildResult, Path, Path], name: str, count: int
 ) -> None:

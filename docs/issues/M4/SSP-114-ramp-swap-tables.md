@@ -27,7 +27,7 @@ Up to 8 swap tables per atlas. Slot 0 is identity, and each table is a single in
 - Write the 8 `actors` swap tables into `kerbside32.json`
 - Resolve the named-vs-slot table representation in ASSET_PIPELINE §6.1/§9.3 and ART_BIBLE §5.6, and update the runtime `swaps` parser from SSP-297 if the locked representation differs from its provisional `slot_0`..`slot_7` form
 - Forge: validate the tables (<= 8 per atlas, slot 0 identity, 25/27 never a source) and emit them into the atlas JSON
-- Add manifest `swaps` entries for veh.hatchback, veh.saloon, npc.shopper and the dog coat (the M3 placeholders ship with `swaps: []`)
+- Add manifest `swaps` entries for veh.hatchback, veh.saloon, npc.shopper and the dog coat (the M3 placeholders ship with `swaps: []`), plus the same list on veh.hatchback_parked and veh.saloon_parked: an `alias` entry must mirror its target's `swaps` or the manifest load fails (SSP-100, ASSET_PIPELINE §6.1)
 - Confirm that the existing R8 index texture + 32x8 swap texture path shows the real tables via the per-instance `swap` attribute
 - Beacon flash slot toggling for Bessie per ART_BIBLE §10.2 (timing as a tunable constant)
 - Lock ART_BIBLE §5.6 and §17 (remove 'proposed') and mirror the result in `assets-src/STYLE.md`

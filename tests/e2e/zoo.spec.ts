@@ -238,6 +238,41 @@ test('asset=<npc> shows every frame of each Monday person, drawn exactly', async
   expect(errors).toEqual([]);
 });
 
+/** The SSP-100 placeholder traffic renders, plus one parked alias (the same pixels as its moving vehicle). */
+const TRAFFIC = [
+  'veh.bicycle',
+  'veh.bus',
+  'veh.hatchback',
+  'veh.mobility_scooter',
+  'veh.saloon',
+  'veh.taxi',
+  'veh.van_white',
+  'veh.hatchback_parked',
+] as const;
+
+test('asset=<vehicle> shows all 32 headings of each traffic placeholder exactly, on every page', async ({
+  page,
+}, testInfo) => {
+  const errors = collectPageErrors(page);
+  for (const asset of TRAFFIC) {
+    const { pageCount } = zooLayout(FRAME_IDS, { asset });
+    let shown = 0;
+    for (let n = 0; n < pageCount; n++) {
+      await openTestScene(page, `/?test=1&seed=1&scene=zoo&freeze=1&asset=${asset}&page=${n}`);
+      const frame = await readTestFrame(page);
+      await capture(testInfo, `zoo_${asset}_p${n}.png`, frame);
+      const layout = zooLayout(FRAME_IDS, { asset, page: n });
+      expect(layout.errors, asset).toEqual([]);
+      expect(layout.cells[0]?.frame).toBe(ZOO_SCALE_FRAME);
+      shown += layout.cells.filter((c) => c.role === 'frame').length;
+      const diff = mismatches(referenceFrame(layout, 0), frame);
+      expect(diff.count, `${asset} page ${n}: first mismatches ${diff.first.join(' ')}`).toBe(0);
+    }
+    expect(shown, asset).toBe(32);
+  }
+  expect(errors).toEqual([]);
+});
+
 test('tick=<n> steps animations at 10 fps: the brush overlay spins one frame per 6 ticks', async ({
   page,
 }, testInfo) => {

@@ -2,7 +2,7 @@
 id: SSP-100
 title: "Render placeholder traffic vehicles in Blender as primitive boxes at 32 headings"
 milestone: M3
-status: todo
+status: done
 type: asset
 estimate: M
 labels: [type:asset, area:assets, area:tooling, size:M, vertical-slice]
@@ -24,7 +24,7 @@ From ENTITY_CATALOG §8.1, ART_BIBLE §7.1/§8.2 and ASSET_PIPELINE §7. Cell / 
 - veh.hatchback: 64×64 / 26×46 (1.63 × 2.88), paint key 21/22/23, 8 paint swaps.
 - veh.saloon: 64×64 / 28×54 (1.75 × 3.38), paint key 21/22/23, 8 paint swaps.
 - veh.taxi: 64×64 / 28×54. Black cab: body 01, roof 02, shade 00, sign 16.
-- veh.van_white: 64×64 / 30×60 (1.88 × 3.75). Box 07/06, windscreen 25.
+- veh.van_white: 64×64 / 30×60 (1.88 × 3.75). Box 07/06, windscreen 25. *(As built: 96×96, `--size 384`. The 30×60 body's half-diagonal is 33.5 px, so it spans 67 px at h06 and cannot fit a 64 px cell with its outline. Lead decision recorded in ART_BIBLE §7.1.)*
 - veh.bus: 128×128 / 38×116 (2.38 × 7.25). Red 18, roof band 07, window strips 25.
 - veh.bicycle: 32×32 / 8×26 (0.5 × 1.63). Frame 05, rider top 29, helmet 07 modelled in.
 - veh.mobility_scooter: 32×32 / 14×22 (0.88 × 1.38). Body 26, rider coat 30, hair 06 modelled in.

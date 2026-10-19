@@ -396,7 +396,7 @@ stateDiagram-v2
 | `veh.saloon` | 64×64 | 28×54 px (1.75 × 3.38 m) | 32 headings, 8 paint swaps |
 | `veh.taxi` | 64×64 | 28×54 px | 32 headings |
 | `veh.police` | 64×64 | 28×54 px | 32 headings; beacon flash by ramp swap |
-| `veh.van_white` | 64×64 | 30×60 px (1.88 × 3.75 m) | 32 headings |
+| `veh.van_white` | 96×96 (rendered `--size 384`; the 30×60 body does not fit 64 px at the near-diagonal headings, [ART_BIBLE §7.1](ART_BIBLE.md#71-size-sheet-locked), SSP-100) | 30×60 px (1.88 × 3.75 m) | 32 headings |
 | `veh.ice_cream_van` | 64×64 | 32×62 px (2.0 × 3.88 m) | 32 headings |
 | `veh.bin_lorry` | 96×96 | 36×84 px (2.25 × 5.25 m) | 32 headings |
 | `veh.bus` | 128×128 | 38×116 px (2.38 × 7.25 m) | 32 headings |

@@ -592,7 +592,7 @@ The camera's height above the ground: **31.5 m** with a 30° vertical FOV, givin
 ## T
 
 ### Technique
-The manifest field that says how an asset is built: `"grid"`, `"procedural"`, `"blender"`, `"ai-ingest"` or `"ai-art"`. Which technique each asset class uses, and why, is in [ASSET_PIPELINE.md](ASSET_PIPELINE.md).
+The manifest field that says how an asset is built: `"grid"`, `"procedural"`, `"blender"`, `"ai-ingest"` or `"ai-art"`, or `"alias"` for an entry whose frame IDs reuse another entry's atlas rects (the `veh.<type>_parked` variants; SSP-100). Which technique each asset class uses, and why, is in [ASSET_PIPELINE.md](ASSET_PIPELINE.md).
 
 ### Test hooks
 Debug entry points active **only** with the `?test=1` URL parameter. Parameters are `&seed=<n>&scene=<id>&tick=<n>&freeze=1`. They expose `window.__ssp = { ready, step(n), state(), readFrame(), setCamera(x,y,h) }`, where `readFrame()` returns the raw W×270 palette-mapped pixels (row 0 at the top) and `ready` turns true once assets are loaded and the first frame is rendered. Playwright visual and e2e tests drive the game through them. Implemented in `src/debug/testHooks.ts`.

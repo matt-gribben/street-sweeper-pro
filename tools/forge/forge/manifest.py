@@ -8,6 +8,14 @@ This module validates the *shape* of each entry (what the build needs to run) an
 entry into its expected frame IDs ``<asset-id>:<state>:<dir>:<n>`` (CLAUDE.md §5.4). Policy
 checks that do not stop a build (entries sorted by id, provenance) belong to ``forge lint``;
 :func:`unsorted_ids` exposes the sort check for it.
+
+An entry with ``technique: "alias"`` (SSP-100, ASSET_PIPELINE §7.5) has no source file: its
+``source`` is the ID of another entry, the *target*, and its frame IDs are the target's with the
+asset ID swapped (``veh.hatchback_parked:body:h07:0`` -> ``veh.hatchback:body:h07:0``). The forge
+packs nothing for it and gives every one of its frames the target's atlas rect and pivot. Its
+``class``, ``cell``, ``states``, ``dirs``, ``frames``, ``atlas``, ``outline``, ``swaps`` and
+``placeholder`` must equal the target's, and the target must not be an alias itself
+(:func:`alias_problems`).
 """
 
 from __future__ import annotations
@@ -21,6 +29,8 @@ from pathlib import Path
 from forge.palette import REPO_ROOT
 
 __all__ = [
+    "ALIAS_MIRRORED_FIELDS",
+    "ALIAS_TECHNIQUE",
     "ASSET_CLASSES",
     "ATLASES",
     "COMPASS_DIRS",
@@ -31,6 +41,7 @@ __all__ = [
     "TECHNIQUES",
     "AssetEntry",
     "ManifestError",
+    "alias_problems",
     "entry_from_data",
     "expand_dirs",
     "load_manifest",
@@ -46,7 +57,10 @@ ASSET_CLASSES = frozenset(
 )
 """Asset class prefixes (CLAUDE.md §5.4)."""
 
-TECHNIQUES = ("grid", "procedural", "blender", "ai-ingest", "ai-art")
+ALIAS_TECHNIQUE = "alias"
+"""Technique of an entry whose frames are another entry's atlas rects (``source`` = that entry's ID)."""
+
+TECHNIQUES = ("grid", "procedural", "blender", "ai-ingest", "ai-art", ALIAS_TECHNIQUE)
 ATLASES = ("world", "actors", "items", "ui", "fx")
 COMPASS_DIRS = ("s", "sw", "w", "nw", "n", "ne", "e", "se")
 """Actor directions (CLAUDE.md §5.4), in the canonical authoring order."""
@@ -95,6 +109,17 @@ class AssetEntry:
     @property
     def width(self) -> int:
         return self.cell[0]
+
+    @property
+    def is_alias(self) -> bool:
+        """True for a ``technique: "alias"`` entry, whose ``source`` is its target's asset ID."""
+        return self.technique == ALIAS_TECHNIQUE
+
+    def target_frame_id(self, frame_id: str) -> str:
+        """The target's frame ID behind one of this alias entry's frame IDs (same ``state:dir:n``)."""
+        if not self.is_alias or not frame_id.startswith(f"{self.id}:"):
+            raise ValueError(f"{frame_id!r} is not a frame of the alias entry {self.id}")
+        return f"{self.source}{frame_id[len(self.id) :]}"
 
     @property
     def rotated(self) -> bool:
@@ -185,7 +210,10 @@ def entry_from_data(data: object, index: int = 0) -> AssetEntry:
     if technique not in TECHNIQUES:
         raise ManifestError(f"{where}: technique must be one of {TECHNIQUES}, got {technique!r}")
     source = data["source"]
-    if not isinstance(source, str) or not source or source.startswith("/") or ".." in Path(source).parts:
+    if technique == ALIAS_TECHNIQUE:
+        if not isinstance(source, str) or not _ID_RE.match(source) or source == asset_id:
+            raise ManifestError(f"{where}: an alias entry's source must be another entry's asset ID, got {source!r}")
+    elif not isinstance(source, str) or not source or source.startswith("/") or ".." in Path(source).parts:
         raise ManifestError(f"{where}: source must be a repo-relative path, got {source!r}")
     cell = data["cell"]
     if (
@@ -234,8 +262,33 @@ def entry_from_data(data: object, index: int = 0) -> AssetEntry:
     )
 
 
+ALIAS_MIRRORED_FIELDS = ("class", "cell", "states", "dirs", "frames", "atlas", "outline", "swaps", "placeholder")
+"""Fields an alias entry must share with its target (an absent ``placeholder`` counts as ``false``)."""
+
+
+def alias_problems(entries: Sequence[AssetEntry]) -> list[tuple[str, str]]:
+    """``(alias id, problem)`` for every alias entry whose target is missing, is an alias itself, or
+    differs in one of :data:`ALIAS_MIRRORED_FIELDS`, sorted by alias id. Empty when all are sound."""
+    by_id = {e.id: e for e in entries}
+    problems: list[tuple[str, str]] = []
+    for e in sorted((e for e in entries if e.is_alias), key=lambda e: e.id):
+        target = by_id.get(e.source)
+        if target is None:
+            problems.append((e.id, f"alias target {e.source!r} is not a manifest entry"))
+            continue
+        if target.is_alias:
+            problems.append((e.id, f"alias target {e.source!r} is itself an alias (of {target.source!r})"))
+            continue
+        for name in ALIAS_MIRRORED_FIELDS:
+            mine, theirs = e.raw.get(name, False), target.raw.get(name, False)
+            if mine != theirs:
+                problems.append((e.id, f"{name} {mine!r} differs from its alias target {target.id}'s {theirs!r}"))
+    return problems
+
+
 def manifest_from_data(data: object) -> list[AssetEntry]:
-    """Validate parsed manifest JSON; returns the entries in file order. IDs must be unique."""
+    """Validate parsed manifest JSON; returns the entries in file order. IDs must be unique, and every
+    alias entry must match its target (:func:`alias_problems`)."""
     if not isinstance(data, dict) or set(data) != {"assets"} or not isinstance(data["assets"], list):
         raise ManifestError('manifest: top level must be exactly { "assets": [ ... ] }')
     entries = [entry_from_data(e, i) for i, e in enumerate(data["assets"])]
@@ -244,6 +297,10 @@ def manifest_from_data(data: object) -> list[AssetEntry]:
         if e.id in seen:
             raise ManifestError(f"manifest: duplicate id {e.id!r}")
         seen.add(e.id)
+    problems = alias_problems(entries)
+    if problems:
+        aid, msg = problems[0]
+        raise ManifestError(f"manifest: {aid}: {msg}")
     return entries
 
 

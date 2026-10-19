@@ -63,7 +63,8 @@ describe('loadAtlas: the committed actors atlas', () => {
     const source = sourceOf(ATLAS_PNG);
     const atlas = await loadAtlas('actors', source);
     expect(source.urls.sort()).toEqual([atlasUrl('actors', 'json'), atlasUrl('actors', 'png')].sort());
-    // 2048×2048 since SSP-099's animals pushed the actors atlas past 2048×1024 (ART_BIBLE §14.6 cap: 2048²).
+    // 2048×2048 since SSP-099's animals and SSP-100's 32-heading traffic placeholders pushed the actors atlas
+    // past 2048×1024 (ART_BIBLE §14.6 cap: 2048²).
     expect([atlas.width, atlas.height]).toEqual([2048, 2048]);
     expect(atlas.indices).toHaveLength(2048 * 2048);
     expect(atlas.indices.every((i) => i < PALETTE_SIZE || i === TRANSPARENT_INDEX)).toBe(true);

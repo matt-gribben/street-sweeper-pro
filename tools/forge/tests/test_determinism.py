@@ -1,9 +1,11 @@
 """Determinism and acceptance checks over a real build of the committed M0 assets (SSP-009, SSP-010, SSP-014,
-SSP-020, SSP-024, SSP-040, SSP-041, SSP-051, SSP-052, SSP-068, SSP-070, SSP-097, SSP-098, SSP-099, SSP-101).
+SSP-020, SSP-024, SSP-040, SSP-041, SSP-051, SSP-052, SSP-068, SSP-070, SSP-097, SSP-098, SSP-099, SSP-100,
+SSP-101).
 
 Builds ``assets-src/manifest.json`` twice with the cache off, into two temp dirs, and checks
 that every output file has the same SHA-256 (frames, atlas PNG/JSON, ``src/gen/assets.ts``,
-``asset-hashes.json``, the font metrics); then inspects the built frames: 1,958 of them, 64x64 Bessie / 96x96
+``asset-hashes.json``, the font metrics); then inspects the built frames: 2,182 of them (SSP-100 added the
+seven 32-heading traffic placeholders; its four parked aliases add atlas frame IDs only), 64x64 Bessie / 96x96
 brush / the nine 24x24 placeholder people, the SSP-097 Monday cast and the SSP-098 businessman, litterbug and
 market trader (104 frames each: 13 per direction, SE/E/NE mirrored) / the SSP-099 placeholder animals
 (16x16 cat x88, 20x20 dog_loose x64, 12x12 pigeon x20, outlined, feet on row h - 2) / 32x32 prop.lamp_post
@@ -151,6 +153,16 @@ ANIMALS = {"npc.cat": (16, 16), "npc.dog_loose": (20, 20), "npc.pigeon": (12, 12
 """SSP-099: the placeholder animal grids (ENTITY_CATALOG §7.1), outlined, in the actors atlas."""
 ANIMAL_FRAMES = {"npc.cat": 88, "npc.dog_loose": 64, "npc.pigeon": 20}
 """8 dirs x (walk 4, sit 2, dart 2, leap 3) / 8 dirs x (walk 4, sit 2, bark 2) / 4 dirs x (peck 2, fly 3)."""
+TRAFFIC = {
+    "veh.bicycle": 32,
+    "veh.bus": 128,
+    "veh.hatchback": 64,
+    "veh.mobility_scooter": 32,
+    "veh.saloon": 64,
+    "veh.taxi": 64,
+    "veh.van_white": 96,
+}
+"""SSP-100's seven M3 placeholder traffic renders and their square cells (32 headings each; the van at 96 px)."""
 CELLS = {
     **{f: (64, 80) for f in FACADES},
     **{r: (32, 32) for r in ROOF_VARIANTS},
@@ -168,8 +180,11 @@ CELLS = {
     "prop.lamp_post": (32, 32),
     "veh.sweeper": (64, 64),
     "veh.sweeper_brush": (96, 96),
+    **{v: (c, c) for v, c in TRAFFIC.items()},
 }
-FRAME_COUNT = 1958
+PARKED = {f"veh.{n}_parked": f"veh.{n}" for n in ("hatchback", "saloon", "taxi", "van_white")}
+"""SSP-100's alias entries: frame IDs on the target's atlas rects, no frames of their own."""
+FRAME_COUNT = 2182
 ATLAS_OF = {
     **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES, *STAINS, *GRIME, *HAZARDS)},
     **{a: "items" for a in (*PICKUPS, *SITES, *PROPS, "prop.hydrant")},
@@ -182,6 +197,7 @@ ATLAS_OF = {
     "prop.lamp_post": "items",
     "veh.sweeper": "actors",
     "veh.sweeper_brush": "actors",
+    **{v: "actors" for v in TRAFFIC},
 }
 
 
@@ -269,7 +285,10 @@ def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
         "prop.lamp_post": 4,
         "veh.sweeper": 64,
         "veh.sweeper_brush": 128,
+        **{v: 32 for v in TRAFFIC},
     }
+    assert not {f.asset_id for f in result.frames} & set(PARKED)  # aliases build nothing
+    assert not {p.name for p in (a / "frames").iterdir()} & set(PARKED)
     assert len(list((a / "frames").rglob("*.png"))) == FRAME_COUNT
     assert [f.frame_id for f in result.frames] == sorted(f.frame_id for f in result.frames)
     assert "veh.sweeper:body:h07:0" in {f.frame_id for f in result.frames}
@@ -410,22 +429,30 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
     ]
 
 
-@pytest.mark.parametrize(("name", "count"), [("world", 151), ("actors", 1300), ("items", 263), ("ui", 244)])
+@pytest.mark.parametrize(
+    ("name", "count", "aliased"), [("world", 151, 0), ("actors", 1524, 128), ("items", 263, 0), ("ui", 244, 0)]
+)
 def test_atlas_holds_every_frame_at_its_rect(
-    builds: tuple[BuildResult, Path, Path], name: str, count: int
+    builds: tuple[BuildResult, Path, Path], name: str, count: int, aliased: int
 ) -> None:
+    """Every built frame at its rect, plus (actors) the 4 x 32 parked-car alias frames on their targets' rects."""
     result, a, _ = builds
     assert [x.name for x in result.atlases] == ["world", "actors", "items", "ui"]
     atlas = next(x for x in result.atlases if x.name == name)
     frames = [f for f in result.frames if f.atlas == name]
-    assert len(atlas.frames) == len(frames) == count
+    assert len(frames) == count
+    assert len(atlas.frames) == count + aliased
     assert atlas.width <= 2048 and atlas.height <= 2048
     pixels = decode_indexed_png((a / ATLAS_DIR / f"{name}.png").read_bytes(), PALETTE)
     assert pixels.shape == (atlas.height, atlas.width)
     doc = json.loads((a / ATLAS_DIR / f"{name}.json").read_text(encoding="utf-8"))
     assert set(doc) == {"frames", "swaps"} and doc["swaps"] == {}
-    assert list(doc["frames"]) == sorted(f.frame_id for f in frames)
+    assert list(doc["frames"]) == sorted(af.frame_id for af in atlas.frames)
     by_id = {f.frame_id: f for f in frames}
+    for alias_id, target in PARKED.items():
+        for fid in [k for k in doc["frames"] if k.startswith(f"{alias_id}:")]:
+            assert doc["frames"][fid] == doc["frames"][f"{target}{fid[len(alias_id) :]}"], fid
+            by_id[fid] = by_id[f"{target}{fid[len(alias_id) :]}"]
     for fid, r in doc["frames"].items():
         f = by_id[fid]
         assert (r["w"], r["h"]) == (f.width, f.height)

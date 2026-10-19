@@ -3,7 +3,9 @@
 ``build/sheets/<atlas>.png`` shows every frame of every manifest entry in that atlas, built
 in memory from the sources exactly as ``forge build`` builds them (so a sheet never depends on
 the cache or on stale outputs). ``--only <id>`` writes ``build/sheets/only_<id>.png`` with just
-that asset (one sheet per ID).
+that asset (one sheet per ID). An alias entry (``veh.<type>_parked``, SSP-100) repeats its
+target's frames, so atlas sheets leave it out; ``--only <alias>`` shows the target's frames under
+the alias's frame IDs.
 
 Layout, top to bottom:
 
@@ -38,7 +40,7 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -432,7 +434,19 @@ def compose_sheet(
 # Driver
 
 
-def _built_frames(entry: AssetEntry, root: Path, palette: Palette) -> dict[str, Frame]:
+def _built_frames(
+    entry: AssetEntry, root: Path, palette: Palette, by_id: dict[str, AssetEntry] | None = None
+) -> dict[str, Frame]:
+    """The entry's frames, built in memory. An alias entry shows its target's frames under its own IDs."""
+    if entry.is_alias:
+        target = (by_id or {}).get(entry.source)
+        if target is None:
+            raise SheetError(f"{entry.id}: alias target {entry.source} is not in the manifest (run npm run assets:lint)")
+        frames = _built_frames(target, root, palette)
+        twins = [
+            replace(f, frame_id=f"{entry.id}{f.frame_id[len(target.id) :]}", asset_id=entry.id) for f in frames.values()
+        ]
+        return {f.frame_id: f for f in twins}
     try:
         built = build_asset(entry, root, palette)
     except BuildError as exc:
@@ -482,13 +496,14 @@ def write_sheets(
             jobs.append((f"only_{aid}", f"only {aid} (atlas {e.atlas})", [e]))
     else:
         for name in ATLASES:
-            group = [e for e in entries if e.atlas == name]
+            # An alias entry repeats its target's frames, so the atlas sheet shows the target only.
+            group = [e for e in entries if e.atlas == name and not e.is_alias]
             if (atlas is None or name == atlas) and group:
                 jobs.append((name, f"atlas {name}", group))
 
     written: list[tuple[Path, Sheet]] = []
     for name, label, group_entries in jobs:
-        groups = [(e, _built_frames(e, root, palette)) for e in group_entries]
+        groups = [(e, _built_frames(e, root, palette, by_id)) for e in group_entries]
         wrap_ids = frozenset(e.id for e in group_entries if e.technique == "procedural" and wrap_tile(root / e.source))
         specimens = {e.id: font_specimens(e, root) for e in group_entries if is_font(e)}
         n = sum(len(fr) for _, fr in groups)

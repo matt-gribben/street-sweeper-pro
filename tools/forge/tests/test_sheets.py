@@ -176,7 +176,8 @@ def test_repo_actors_sheet_and_only_sweeper(tmp_path: Path) -> None:
     written = write_sheets(REPO_ROOT, out_dir=tmp_path)
     assert [p.name for p, _ in written] == ["world.png", "actors.png", "items.png", "ui.png"]
     for (_, sheet), atlas in zip(written, ("world", "actors", "items", "ui"), strict=True):
-        n = sum(len(e.frame_ids()) for e in load_manifest() if e.atlas == atlas)
+        # Alias entries (the parked cars, SSP-100) repeat their target's frames, so atlas sheets leave them out.
+        n = sum(len(e.frame_ids()) for e in load_manifest() if e.atlas == atlas and not e.is_alias)
         assert len([t for t in sheet.tiles if not t.scale_ref and not t.preview and not t.specimen]) == n
     # The font gets specimen rows (SSP-068): glyph and outline, at 1x and at 4x.
     ui = written[3][1]
@@ -190,6 +191,11 @@ def test_repo_actors_sheet_and_only_sweeper(tmp_path: Path) -> None:
     (path, only), = write_sheets(REPO_ROOT, only=["veh.sweeper"], out_dir=tmp_path)
     assert path.name == "only_veh.sweeper.png"
     assert len([t for t in only.tiles if not t.scale_ref]) == 64
+    # --only on an alias shows its target's frames under the alias's own frame IDs.
+    (path, parked), = write_sheets(REPO_ROOT, only=["veh.taxi_parked"], out_dir=tmp_path)
+    assert path.name == "only_veh.taxi_parked.png"
+    labels = [t.frame_id for t in parked.tiles if not t.scale_ref]
+    assert labels == [f"veh.taxi_parked:body:h{i:02d}:0" for i in range(32)]
 
 
 # ---------------------------------------------------------------------------------------------

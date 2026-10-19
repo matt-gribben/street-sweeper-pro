@@ -1,0 +1,42 @@
+id: collect.lost_wallet
+cell: 16x16
+palette: kerbside32
+# SSP-105 placeholder (ART_BIBLE §8.5, SSP-149's 13 umber wallet): a 13 wallet with 14 stitching, an 08 clasp and
+# a 07 card peeking out of the top. bob 0: icon down, halo ring 16; bob 1: icon 1 px up, halo ring 07. The ring is
+# a ground marking and has no ink outline; the icon draws its own (manifest outline: false).
+
+frame bob:-:0
+.....gggggg.....
+...gg......gg...
+..g..........g..
+.g...000000...g.
+.g...077770...g.
+g.000000000000.g
+g.0dddddddddd0.g
+g.0deeeeeeeed0.g
+g.0ddddddddd80.g
+g.0dddddddd880.g
+g.0ddddddddd80.g
+.g0deeeeeeeed0g.
+.g000000000000g.
+..g..........g..
+...gg......gg...
+.....gggggg.....
+
+frame bob:-:1
+.....777777.....
+...77......77...
+..7..000000..7..
+.7...077770...7.
+.70000000000007.
+7.0dddddddddd0.7
+7.0deeeeeeeed0.7
+7.0ddddddddd80.7
+7.0dddddddd880.7
+7.0ddddddddd80.7
+7.0deeeeeeeed0.7
+.70000000000007.
+.7............7.
+..7..........7..
+...77......77...
+.....777777.....

@@ -1160,6 +1160,16 @@
     "districts": ["district.puddle_lane"],
     "milestone": "M3"
   },
+  "collect.lost_wallet": {
+    "class": "collect",
+    "name": "Lost wallet",
+    "kind": "lostProperty",
+    "pts": 250,
+    "sprite": "collect.lost_wallet",
+    "sfx": { "pickup": "powerup" },
+    "districts": ["district.high_street"],
+    "milestone": "M3"
+  },
   "collect.golden_crisp": {
     "class": "collect",
     "name": "Golden Crisp Packet",

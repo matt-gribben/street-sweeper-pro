@@ -64,6 +64,7 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     assert ids == [
         "collect.false_teeth",
         "collect.golden_crisp",
+        "collect.lost_wallet",
         "facade.corner_shop",
         "facade.depot_shed",
         "facade.flats_render",
@@ -244,7 +245,8 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     # + SSP-099: 172 placeholder animal frames (cat 88, dog_loose 64, pigeon 20)
     # + SSP-100: 7 traffic vehicles x 32 headings (224 built frames) and 4 parked aliases x 32 (128 frame IDs on
     # their targets' rects, no frames of their own).
-    assert sum(len(e.frame_ids()) for e in entries if not e.is_alias) == 2188
+    # + SSP-105: the 2 bob frames of collect.lost_wallet.
+    assert sum(len(e.frame_ids()) for e in entries if not e.is_alias) == 2190
     assert sum(len(e.frame_ids()) for e in entries if e.is_alias) == 128
     assert sum(len(e.frame_ids()) for e in entries if e.asset_class == "litter") == 180
     for e in raw["assets"]:

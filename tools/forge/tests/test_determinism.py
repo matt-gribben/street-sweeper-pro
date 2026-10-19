@@ -70,6 +70,7 @@ HAZARDS = {"haz.broken_glass": 2, "haz.oil_slick": 2, "haz.pothole": 2, "haz.pud
 PICKUPS = (
     "collect.false_teeth",
     "collect.golden_crisp",
+    "collect.lost_wallet",
     "pwr.bacon_butty",
     "pwr.flask_of_tea",
     "pwr.hi_vis",
@@ -185,7 +186,7 @@ CELLS = {
 }
 PARKED = {f"veh.{n}_parked": f"veh.{n}" for n in ("hatchback", "saloon", "taxi", "van_white")}
 """SSP-100's alias entries: frame IDs on the target's atlas rects, no frames of their own."""
-FRAME_COUNT = 2188
+FRAME_COUNT = 2190
 ATLAS_OF = {
     **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES, *STAINS, *GRIME, *HAZARDS)},
     **{a: "items" for a in (*PICKUPS, *SITES, *PROPS, "prop.hydrant")},
@@ -432,7 +433,7 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
 
 
 @pytest.mark.parametrize(
-    ("name", "count", "aliased"), [("world", 151, 0), ("actors", 1524, 128), ("items", 263, 0), ("ui", 250, 0)]
+    ("name", "count", "aliased"), [("world", 151, 0), ("actors", 1524, 128), ("items", 265, 0), ("ui", 250, 0)]
 )
 def test_atlas_holds_every_frame_at_its_rect(
     builds: tuple[BuildResult, Path, Path], name: str, count: int, aliased: int

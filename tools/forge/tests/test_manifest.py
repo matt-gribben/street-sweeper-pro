@@ -136,8 +136,19 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "ui.panel_council",
         "ui.panel_dark",
         "ui.panel_paper",
+        "veh.bicycle",
+        "veh.bus",
+        "veh.hatchback",
+        "veh.hatchback_parked",
+        "veh.mobility_scooter",
+        "veh.saloon",
+        "veh.saloon_parked",
         "veh.sweeper",
         "veh.sweeper_brush",
+        "veh.taxi",
+        "veh.taxi_parked",
+        "veh.van_white",
+        "veh.van_white_parked",
     ]
     raw = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     by_id = {a["id"]: a for a in raw["assets"]}
@@ -202,8 +213,11 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     # stain variants, 12 grime overlay variants, 3 pickups x 2 bob frames and 3 flat placeholders (33 frames);
     # + 200 SSP-068 font frames + the 3 SSP-285 placeholder 9-slice panels + the SSP-070 HUD bar fill (1) and
     # dump ring (9) + the SSP-299 Brush-o-meter (3), needle (1), brush state (11) and off-screen arrows (16)
-    # + SSP-101: 60 prop placeholder frames, 10 power-up bob frames, 11 hazard frames and 4 cobble tiles.
-    assert sum(len(e.frame_ids()) for e in entries) == 858
+    # + SSP-101: 60 prop placeholder frames, 10 power-up bob frames, 11 hazard frames and 4 cobble tiles
+    # + SSP-100: 7 traffic vehicles x 32 headings (224 built frames) and 4 parked aliases x 32 (128 frame IDs on
+    # their targets' rects, no frames of their own).
+    assert sum(len(e.frame_ids()) for e in entries if not e.is_alias) == 1082
+    assert sum(len(e.frame_ids()) for e in entries if e.is_alias) == 128
     assert sum(len(e.frame_ids()) for e in entries if e.asset_class == "litter") == 180
     for e in raw["assets"]:
         assert list(e) == list(FIELDS) + [k for k in OPTIONAL_FIELDS if k in e], "fields in the documented order"

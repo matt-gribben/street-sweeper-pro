@@ -4,12 +4,14 @@ Rules implemented here, each reported as a :class:`Finding` tagged with its rule
 
 ``manifest``
     Entries unsorted by id, duplicate ids, an unknown class prefix (CLAUDE.md §5.4), an entry
-    whose shape :mod:`forge.manifest` rejects, or a ``source`` inside ``assets-src/_probe/``.
+    whose shape :mod:`forge.manifest` rejects, a ``source`` inside ``assets-src/_probe/``, or an
+    alias entry that does not match its target (:func:`forge.manifest.alias_problems`).
 ``shape``
     The entry does not build (:func:`forge.build.build_asset`): a frame whose size mismatches
     the manifest cell, a frame list (count) that mismatches the manifest, an empty frame, a
     missing source. Also the committed atlas JSON: every manifest frame must be listed with
-    ``w``/``h`` equal to the cell.
+    ``w``/``h`` equal to the cell, and every frame of an alias entry (which builds nothing
+    itself) with exactly its target frame's rect.
 ``palette``
     Any pixel off Kerbside-32 or semi-transparent (0 < alpha < 255) in an image that is pixel
     art pixel for pixel: the Blender renders (the rig emits exact palette colours with binary
@@ -66,7 +68,7 @@ from PIL import Image
 
 from forge import palette as _palette_mod
 from forge.build import BuildError, build_asset, font_outputs, is_font
-from forge.manifest import ASSET_CLASSES, ROTATION_SPEC, AssetEntry, ManifestError, entry_from_data
+from forge.manifest import ASSET_CLASSES, ROTATION_SPEC, AssetEntry, ManifestError, alias_problems, entry_from_data
 from forge.palette import PALETTE_SIZE, TRANSPARENT, Palette, PaletteError, load_palette
 from forge.sprite import SpriteError, read_sprite
 
@@ -499,7 +501,11 @@ def _check_manifest(ctx: _Ctx) -> list[AssetEntry]:
             continue
         accepted.add(entry.id)
         entries.append(entry)
-    return entries
+    bad_aliases: set[str] = set()
+    for aid, msg in alias_problems(entries):
+        ctx.error("manifest", aid, msg)
+        bad_aliases.add(aid)
+    return [e for e in entries if e.id not in bad_aliases]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -559,6 +565,8 @@ def _check_atlas_json(ctx: _Ctx, entries: Sequence[AssetEntry]) -> None:
                 r = rects.get(fid)
                 if r is not None and (r["w"], r["h"]) != e.cell:
                     ctx.error("shape", fid, f"{rel} has it at {r['w']}x{r['h']}, manifest cell is {e.width}x{e.height}")
+                if r is not None and e.is_alias and r != rects.get(e.target_frame_id(fid)):
+                    ctx.error("shape", fid, f"{rel} rect is not its alias target {e.target_frame_id(fid)}'s; run npm run assets")
 
 
 def _check_font_metrics(ctx: _Ctx, entries: Sequence[AssetEntry]) -> None:
@@ -752,6 +760,8 @@ def lint(repo_root: Path | None = None, only: Iterable[str] | None = None) -> Li
 
     for entry in sorted(entries, key=lambda e: e.id):
         report.assets.append(entry.id)
+        if entry.is_alias:
+            continue  # no frames of its own: the manifest rule matched it to its target, the atlas JSON rule its rects
         _check_build(ctx, entry)
         if entry.technique == "blender":
             _check_render_palette(ctx, entry)

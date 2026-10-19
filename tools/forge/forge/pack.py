@@ -29,12 +29,16 @@ hazard :data:`EXTRUDED_IDS`) are packed with a
 sampler that strays past the cell edge reads the surface, never a transparent seam. The atlas
 rect ``{x, y, w, h}`` of an extruded frame is the **interior cell only**: the border lies
 outside it, and the 1 px padding lies outside the border.
+
+Aliases (SSP-100, ASSET_PIPELINE §7.5). :func:`add_aliases` gives the frames of a
+``technique: "alias"`` manifest entry (the parked cars) the rects and pivots of their target's
+frames after packing, so an alias adds frame IDs but no pixels.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -60,6 +64,7 @@ __all__ = [
     "PackItem",
     "PackableFrame",
     "Placement",
+    "add_aliases",
     "atlas_json",
     "atlas_png",
     "candidate_sizes",
@@ -349,6 +354,42 @@ def pack_atlases(frames: Sequence[PackableFrame], *, max_size: int = MAX_ATLAS_S
         group = sorted((f for f in frames if f.atlas == name), key=lambda f: f.frame_id)
         if group:
             out.append(compose_atlas(name, group, max_size=max_size))
+    return out
+
+
+def add_aliases(atlases: Sequence[Atlas], aliases: Mapping[str, str]) -> list[Atlas]:
+    """``atlases`` plus the frames of every alias entry (``alias id -> target id``, ASSET_PIPELINE §7.5).
+
+    Each frame of a target ``T`` gets a twin ``<alias>:<state>:<dir>:<n>`` with exactly the same
+    rect and pivot, in the same atlas: the pixels are packed once and the alias costs no atlas
+    space. Raises :class:`PackError` when a target has no packed frames or an alias frame ID is
+    already taken.
+    """
+    by_target: dict[str, list[str]] = {}
+    for alias_id in sorted(aliases):
+        by_target.setdefault(aliases[alias_id], []).append(alias_id)
+    found: set[str] = set()
+    out: list[Atlas] = []
+    for atlas in atlases:
+        extra: list[AtlasFrame] = []
+        for af in atlas.frames:
+            for alias_id in by_target.get(af.asset_id, ()):
+                found.add(alias_id)
+                twin_id = f"{alias_id}{af.frame_id[len(af.asset_id) :]}"
+                extra.append(AtlasFrame(twin_id, alias_id, af.x, af.y, af.w, af.h, af.px, af.py))
+        if not extra:
+            out.append(atlas)
+            continue
+        frames = sorted((*atlas.frames, *extra), key=lambda af: af.frame_id)
+        ids = [af.frame_id for af in frames]
+        if len(set(ids)) != len(ids):
+            raise PackError(f"atlas '{atlas.name}': an alias frame id is already a packed frame id")
+        out.append(Atlas(atlas.name, atlas.width, atlas.height, tuple(frames), atlas.indices))
+    missing = sorted(set(aliases) - found)
+    if missing:
+        raise PackError(
+            "alias target(s) with no packed frames: " + ", ".join(f"{a} -> {aliases[a]}" for a in missing)
+        )
     return out
 
 

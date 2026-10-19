@@ -403,7 +403,8 @@ One sun for every technique: **north-west, azimuth 315°, elevation 50°**. Hand
 | `veh.sweeper` (Bessie) | body/dented 64×64; brush overlay is a separate asset `veh.sweeper_brush`, cell 96×96 (rendered `--size 384`, `ortho_scale` 6 m), same centre pivot as the body | 28×52 px (1.75 × 3.25 m) | 32 headings. Brush overlay: 32 headings × 4 spin frames (the discs reach 2.40 m from the body centre at diagonals, beyond a 64 px cell). Dented variant below 40 HP. |
 | `veh.hatchback` | 64×64 | 26×46 | 32 headings, 8 paint swaps |
 | `veh.saloon`, `veh.taxi`, `veh.police` | 64×64 | 28×54 | 32 headings |
-| `veh.van_white`, `veh.ice_cream_van` | 64×64 | 30×60 / 32×62 | 32 headings |
+| `veh.van_white` | **96×96** (rendered `--size 384`, `ortho_scale` 6 m; SSP-100) | 30×60 | 32 headings |
+| `veh.ice_cream_van` | 64×64 *(does not fit, see the notes; SSP-222 decides)* | 32×62 | 32 headings |
 | `veh.bin_lorry` | 96×96 | 36×84 | 32 headings |
 | `veh.bus` | 128×128 | 38×116 | 32 headings |
 | `veh.rival_sweeper` | 64×64 | 28×52 | 32 headings (ramp swap of the Bessie model, green and white) |
@@ -426,7 +427,8 @@ One sun for every technique: **north-west, azimuth 315°, elevation 50°**. Hand
 Notes:
 
 - Hazards (`haz.*`) are not in the locked sheet; they use the stain cell, **32×32 ground decals** *(proposed, matching [ENTITY_CATALOG](ENTITY_CATALOG.md) §10)*.
-- Vehicle cells are sized for the **diagonal** headings. Bessie's 28×52 body rotated 45° has a bounding box of about 57×57 px including outline, inside 64×64. The bus (38×116) peaks at about 109 px in 128. Check diagonals on the contact sheet, not `h00`.
+- Vehicle cells are sized for the **diagonal** headings. Bessie's 28×52 body rotated 45° has a bounding box of about 57×57 px including outline, inside 64×64. The bus (38×116) is about 109 px at 45° and peaks at 122 px at the near-diagonal headings (h06, h10, …) in 128. Check diagonals on the contact sheet, not `h00`.
+- The test is the body's half-diagonal, √((w/2)² + (h/2)²): the widest heading spans about twice that, and with the 1 px outline on each side it must stay inside the cell, so the half-diagonal must be at most about cell/2 − 1. The saloon and taxi (30.4 px) just fit 64 px. **`veh.van_white` (30×60) has a half-diagonal of 33.5 px**, so at h06 it spans 67 px and cannot fit 64×64. Lead call in SSP-100: it moves to a **96×96** cell, as `veh.bin_lorry` uses, rather than shrinking the true-scale body or rounding its corners off. **`veh.ice_cream_van` (32×62, 34.9 px) has the same problem**; SSP-222 (M6) must choose its cell the same way.
 - Per-class frame totals and frame IDs are listed in [ENTITY_CATALOG](ENTITY_CATALOG.md).
 
 ### 7.2 Human proportions (24×24 cell)

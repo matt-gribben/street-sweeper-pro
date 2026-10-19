@@ -27,6 +27,10 @@ Techniques built here (M0):
 
 ``ai-art`` entries raise :class:`BuildError` until M4 implements them.
 
+``alias`` entries (SSP-100: ``veh.<type>_parked``, ASSET_PIPELINE §7.5) build no frames: after
+packing, :func:`forge.pack.add_aliases` gives each of their frame IDs the rect and pivot of the
+target's frame, so they appear in the atlas JSON and ``src/gen/assets.ts`` without new pixels.
+
 Blender reduction details. Each render pixel is keyed by its *exact* colour: a Kerbside-32
 colour gets its palette index (0-31) as key, any other colour gets ``32 + 0xRRGGBB``. Block
 mode (:func:`forge.pixelize.block_mode_keys_factor`) then takes the majority key over the
@@ -79,7 +83,7 @@ from forge.glyphs import (
 from forge.manifest import ROTATION_DIRS, AssetEntry, ManifestError, load_manifest
 from forge.outline import add_outline, outline_gaps
 from forge.outputs import generated_files, write_outputs
-from forge.pack import Atlas, PackError, pack_atlases
+from forge.pack import Atlas, PackError, add_aliases, pack_atlases
 from forge.palette import PALETTE_PATH, PALETTE_SIZE, REPO_ROOT, TRANSPARENT, Palette, load_palette, nearest_indices
 from forge.pixelize import ALPHA_THRESHOLD, block_mode_keys_factor
 from forge.pngio import PngError, decode_indexed_png, encode_indexed_png, write_bytes_if_changed
@@ -557,7 +561,12 @@ def _build_procedural(entry: AssetEntry, repo_root: Path, palette: Palette) -> A
 
 
 def build_asset(entry: AssetEntry, repo_root: Path = REPO_ROOT, palette: Palette | None = None) -> AssetBuild:
-    """Build one manifest entry (no cache, no file output)."""
+    """Build one manifest entry (no cache, no file output). An alias entry has no frames of its own."""
+    if entry.is_alias:
+        raise BuildError(
+            f"{entry.id}: an alias of {entry.source} builds no frames; its frame IDs get {entry.source}'s "
+            "atlas rects when the atlases are packed"
+        )
     if entry.technique not in BUILT_TECHNIQUES:
         raise BuildError(f"{entry.id}: technique {entry.technique!r} is not implemented yet (ai-art: M4)")
     if entry.technique == "blender":
@@ -768,6 +777,8 @@ def build(
     selected_ids = {e.id for e in selected}
     pack_frames: list[Frame] = []
     for entry in entries if publish else selected:
+        if entry.is_alias:
+            continue  # no frames of its own; add_aliases names its target's rects after packing
         cached = None
         key = ""
         entry_root = cache_dir / "entries" / entry.id
@@ -791,13 +802,13 @@ def build(
 
     if not only and frames_dir.is_dir():
         for stale in sorted(frames_dir.iterdir()):
-            if stale.is_dir() and stale.name not in by_id:
+            if stale.is_dir() and (stale.name not in by_id or by_id[stale.name].is_alias):
                 log.debug("forge build: removing stale %s", stale)
                 shutil.rmtree(stale)
 
     if publish:
         try:
-            result.atlases = pack_atlases(pack_frames)
+            result.atlases = add_aliases(pack_atlases(pack_frames), {e.id: e.source for e in entries if e.is_alias})
         except PackError as exc:
             raise BuildError(str(exc)) from None
         result.outputs = generated_files(

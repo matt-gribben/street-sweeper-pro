@@ -253,6 +253,9 @@ describe('NPC spawner (LEVEL_DESIGN §9.4)', () => {
       { id: 'npc.old_woman', count: 1, spawnAtS: 50, anchor, route: [anchor], loop: false },
     ];
     const world = createWorld(town.level, 99, DEFAULT_TUNING);
+    // The placement is under test: since SSP-088 the pigeons scatter from Bessie as she drives past, so they stand
+    // still here (their flight is tests/unit/behaviours/pigeon.test.ts's).
+    world.npcAi.behaviours[kind('npc.pigeon')] = noopBehaviour;
     const npc = world.npc;
     const sp = world.npcAi.spawner;
     const input = createInputFrame();

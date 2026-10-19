@@ -64,7 +64,7 @@ import type { World } from '../world.ts';
 import type { Behaviour } from './behaviour.ts';
 import { largestNpcRadiusM } from './footprint.ts';
 import { PERCEPTION_PATH_S } from './perception.ts';
-import { NPC_PATH_NODES, queryNpcs, updateNpcCell } from './store.ts';
+import { NPC_FLAG, NPC_PATH_NODES, queryNpcs, updateNpcCell } from './store.ts';
 
 /** Where an NPC is on its path (store `navState`). Hashed: append, never renumber. */
 export const NavState = {
@@ -773,7 +773,7 @@ export function steerSeparate(w: World, i: number): void {
   const fy = -cos(h);
   for (let k = 0; k < n; k += 1) {
     const j = st.neighbours[k] as number;
-    if (j === i) continue;
+    if (j === i || ((npc.flags[j] as number) & NPC_FLAG.GHOST) !== 0) continue;
     const range = r + (npc.radius[j] as number) + gap;
     let dx = x - (npc.x[j] as number);
     let dy = y - (npc.y[j] as number);
@@ -1167,7 +1167,7 @@ function resolveCandidate(w: World, i: number): void {
   const n = queryNpcs(npc, box, st.neighbours);
   for (let k = 0; k < n; k += 1) {
     const j = st.neighbours[k] as number;
-    if (j === i) continue;
+    if (j === i || ((npc.flags[j] as number) & NPC_FLAG.GHOST) !== 0) continue;
     const min = r + (npc.radius[j] as number);
     let dx = cx - (npc.x[j] as number);
     let dy = cy - (npc.y[j] as number);
@@ -1401,7 +1401,10 @@ export function walkNpc(w: World, i: number, sidestep: boolean): number {
   return state;
 }
 
-/** Phase 7, after the behaviours: count the NPCs whose centre is on each zebra (world.zebras.occupancy). */
+/**
+ * Phase 7, after the behaviours: count the NPCs whose centre is on each zebra (world.zebras.occupancy), ghosts
+ * (NPC_FLAG.GHOST, the pigeons; SSP-088) excepted.
+ */
 export function updateZebraOccupancy(w: World): void {
   const z = w.zebras;
   const occ = z.occupancy;
@@ -1409,6 +1412,8 @@ export function updateZebraOccupancy(w: World): void {
   if (z.count === 0) return;
   const npc = w.npc;
   for (let i = 0; i < npc.count; i += 1) {
+    // A ghost (a pigeon, SSP-088) is nobody crossing: it never holds a zebra.
+    if (((npc.flags[i] as number) & NPC_FLAG.GHOST) !== 0) continue;
     const x = npc.x[i] as number;
     const y = npc.y[i] as number;
     for (let k = 0; k < z.count; k += 1) {

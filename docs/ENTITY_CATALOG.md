@@ -301,6 +301,10 @@ All hits also play `complaint_stamp` for each complaint and reset the combo chai
 - **Hitting the dog** (unspecified above) is the walker's animal hit, −300 and 1 C, and shares one contact episode with the walker: hitting both costs one hit.
 - **Dog mess:** the first is due 40–60 s after the pair spawns, then every 40–60 s after each drop; a due mess waits until the dog stands on a pavement or grass tile ([LEVEL_DESIGN §9.1](LEVEL_DESIGN.md#91-litter) rule 5) and lands under it.
 
+*As built (SSP-088, `src/sim/npc/behaviours/marketTrader.ts`; the pitches and the closing pile in `src/sim/shift.ts`, [LEVEL_DESIGN §4.3](LEVEL_DESIGN.md#43-event-catalogue)):*
+
+- **Market trader.** The generic pedestrian's stationary twin. The spawner adds one per pitch of the level's `market` event once it opens (origin `market`, `group` = the pitch), on the tile in front of his `prop.market_stall` (the side with the most open floor, south first on a tie), facing out into the aisle. He mans it all shift, the closing pile included (he packs up but does not leave). Idle is calling out. He never moves: the horn, a bump and a spray startle him on the spot, `pwr.hi_vis` leaves him where he is, and a hit (−250, 1 C) knocks him down where he stands; after the fist shake he turns back to his aisle. Other people step round him.
+
 ### 6.3 Doris (`npc.old_woman`)
 
 Doris is the game's mascot antagonist. She is never knocked aside, never yields, and turns every confrontation into a scene.
@@ -389,6 +393,8 @@ stateDiagram-v2
 - Spawned in flocks of **6–12**. **Gathers around chips** (`litter.chip_wrapper`), pecking.
 - **Scatters at 4 m and lands 10 m away** (`fly ×3`, `pigeon_flap`).
 - **Cannot be hit.** Driving through a flock awards **+25 "Pigeon Scatter"** once per flock per scatter.
+
+*As built (SSP-088, `src/sim/npc/behaviours/pigeon.ts`; the file header is the full rule set):* every bird is its own NPC (a flock of 12 is 12 of the 80) carrying its flock's number, and a flock acts as one (its first bird to tick runs the flock's step). A bird pecks (still) or flies (straight to its landing spot at 8 m/s; 10 m takes 1.25 s). It is a **ghost**: no `hit`, so Bessie's contact never touches it (no hit, bump, penalty or complaint), people walk through it, it never holds a zebra, and it ignores the horn, the spray and hi-vis. The flock **scatters** when Bessie's body outline comes within `rules.scatterM` (4 m, edge included) of any bird: every bird flies `rules.landM` (10 m) along one direction, away from her, turned by 30° steps when that would land the flock off the map, on a building or inside its own scatter range (a bird whose own spot is blocked lands on the flock's centre). It **gathers** at the nearest chip wrapper within `rules.gatherM` (10 m) of its centre, checked once a second after 3 s on the ground, unless the wrapper is within 6 m (scatterM + 2) of Bessie's body: the birds fly to it, keeping their places round the flock's centre. **"Driving through a flock"** is read as Bessie's body OBB overlapping the circle the flock covered as it took off (its birds' centres plus a bird's radius) at any time while that scatter is in the air; the first such tick awards the +25 (`EV.PigeonScatter`, a style bonus: not multiplied, the chain untouched), once per scatter. So the bonus needs a run at the flock: from 4 m away Bessie reaches the circle before the birds land only above about 3 m/s. The flight speed `rules.flyMps` 8 m/s and the gather reach `rules.gatherM` 10 m were chosen in M3 tuning by SSP-088, as was this reading of "drive through" (owner to review).
 
 ### 7.5 Seagull (`npc.seagull`)
 

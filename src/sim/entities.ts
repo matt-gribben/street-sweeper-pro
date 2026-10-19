@@ -321,13 +321,19 @@ const NPC_RULES = {
     dartChance: 'fraction',
     rideS: 'positive',
   },
-  /** Flocks of flockMin–Max; scatters at scatterM and lands landM away; driving through scores scatterPts. */
+  /**
+   * Flocks of flockMin–Max; scatters at scatterM and lands landM away; driving through scores scatterPts. It
+   * flies at flyMps and gathers at a litter.chip_wrapper within gatherM of the flock (both proposed in SSP-088,
+   * owner to review).
+   */
   'npc.pigeon': {
     flockMin: 'positiveInteger',
     flockMax: 'positiveInteger',
     scatterM: 'positive',
     landM: 'positive',
     scatterPts: 'positiveInteger',
+    flyMps: 'positive',
+    gatherM: 'positive',
   },
 } as const satisfies Record<NpcId, RuleSpec>;
 

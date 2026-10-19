@@ -25,6 +25,7 @@ import type { Tuning } from '../tuning.ts';
 import type { World } from '../world.ts';
 import type { Behaviour } from './behaviour.ts';
 import { createOldWomanParams, type OldWomanParams } from './behaviours/oldWoman.ts';
+import { createPigeonFlocks, type PigeonFlocks } from './behaviours/pigeon.ts';
 import { createDoorRound, type DoorRound } from './doorRound.ts';
 import { createReactions, type Reactions } from './reactions.ts';
 import { behavioursByKind } from './registry.ts';
@@ -56,6 +57,8 @@ export type NpcAi = {
   readonly doorRound: DoorRound;
   /** The puddle-splash rules' state: the crossing, the shift's splash count (splash.ts, SSP-094). */
   readonly splash: PuddleSplash;
+  /** The pigeon flocks' shared state, one slot per flock the level can place (behaviours/pigeon.ts, SSP-088). */
+  readonly flocks: PigeonFlocks;
 };
 
 /**
@@ -83,6 +86,7 @@ export function createNpcAi(
     oldWoman: createOldWomanParams(entities),
     doorRound: createDoorRound(level, steering),
     splash: createPuddleSplash(tuning, entities, capacity),
+    flocks: createPigeonFlocks(level, entities),
   };
 }
 

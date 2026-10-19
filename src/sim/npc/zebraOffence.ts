@@ -28,6 +28,7 @@ import { Offence } from '../complaints.ts';
 import { pushPenalty } from '../penalties.ts';
 import type { World } from '../world.ts';
 import { updateZebraOccupancy } from './steering.ts';
+import { NPC_FLAG } from './store.ts';
 
 /** Phase 7, after the behaviours: the zebras' occupancy, then the occupied-zebra offence (see the header). */
 export function stepZebras(w: World): void {
@@ -81,6 +82,7 @@ function runZebra(w: World, k: number): void {
   log.y[p] = v.yM;
   let bestD2 = Number.POSITIVE_INFINITY;
   for (let i = 0; i < npc.count; i += 1) {
+    if (((npc.flags[i] as number) & NPC_FLAG.GHOST) !== 0) continue;
     const x = npc.x[i] as number;
     const y = npc.y[i] as number;
     if (!(x >= minX && x < maxX && y >= minY && y < maxY)) continue;

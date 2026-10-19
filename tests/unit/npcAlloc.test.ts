@@ -111,9 +111,10 @@ function putInPath(world: World, i: number, aheadM: number, rightM: number): voi
 /**
  * The rig: `generic` keeps the registry's behaviours (the SSP-082 generic pedestrian for the people, the SSP-084
  * shopper, businessman and litterbug, the SSP-085 old man, mum and postie, the SSP-086 dog walker and its dog, the
- * no-op for the animals) instead of the test walker, so the reaction model's states run in the window, with the
- * shoppers' sidesteps, the businessmen's 2 m startles, the litterbugs' drops and, under the harness's horn, their
- * Caught! (EV.Caught, the bonus in phase 9) and slinking off, and the dog walkers' Lead Tangles and dog mess. `doris`
+ * SSP-088 pigeons, the no-op for the cats) instead of the test walker, so the reaction model's states run in the
+ * window, with the shoppers' sidesteps, the businessmen's 2 m startles, the litterbugs' drops and, under the
+ * harness's horn, their Caught! (EV.Caught, the bonus in phase 9) and slinking off, and the dog walkers' Lead
+ * Tangles and dog mess. `doris`
  * adds Doris (SSP-083) to the mix and sprays for 2 s of every 4 (the tank topped up), so her glare, fist shake,
  * chase and handbag whacks run too; Bessie's HP is restored every tick so the whacks never get her TOWED. As each
  * spray ends it also puts a litterbug not yet caught 3 m to her right, so the harness's horn catches him there and

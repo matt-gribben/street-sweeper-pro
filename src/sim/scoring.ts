@@ -10,9 +10,10 @@
 //      isShiftDraining, GDD §20 Q4).
 //   2. Pickups, in emission order. EV.LitterCollected scores the kind's entities.json `pts` and EV.StainCleaned
 //      its event `c` (the stain's `pts`), each × the multiplier after that pickup's chain increment (GDD §10.4).
-//      Interleaved with them, each EV.Caught (a litterbug caught by a honk in phase 7, SSP-084) and EV.NearMiss
-//      (a pedestrian passed within 0.5 m above 3 m/s, phase 7, SSP-095) awards its event `c` (+100, +25) through
-//      the bonus API: a style bonus, so not multiplied and no chain change.
+//      Interleaved with them, each EV.Caught (a litterbug caught by a honk in phase 7, SSP-084), EV.NearMiss
+//      (a pedestrian passed within 0.5 m above 3 m/s, phase 7, SSP-095) and EV.PigeonScatter (Bessie through a
+//      scattering flock in phase 7, SSP-088) awards its event `c` (+100, +25, +25) through the bonus API: a style
+//      bonus, so not multiplied and no chain change.
 //      Every pickup counts for the chain, including the 0-point ones (litter.spilled_shopping, stain.splat).
 //      Stain cleans take the multiplier and extend the chain (ENTITY_CATALOG §17 Q5, resolved in SSP-063).
 //      EV.GlassSwept (haz.broken_glass swept up, SSP-094) scores its event `c` (rules.sweepPts, 20) the same way,
@@ -26,7 +27,7 @@
 //      are added (they are negative) and the chain resets to 0, after the tick's pickups, so a tick with any
 //      penalty always ends with chain 0 and ×1 (GDD §10.2 "any penalty resets the chain").
 // Style bonuses (awardBonus: Kerb Hugger here, Clean Sweep from SSP-064, Caught! from SSP-084, near miss from
-// SSP-095, the rest in M3) are added as they are awarded, are never multiplied and never touch the chain (GDD §10.3, §20 Q3,
+// SSP-095, Pigeon Scatter from SSP-088, the rest in M3) are added as they are awarded, are never multiplied and never touch the chain (GDD §10.3, §20 Q3,
 // resolved in SSP-063).
 //
 // Points are integers throughout (entities.json and tuning.json hold integer points; the multiplier is an
@@ -219,7 +220,7 @@ export function stepScoring(
       const mul = addComboPickup(combo, events);
       scoring.stainPts += pts * mul;
       scoring.score += pts * mul;
-    } else if (t === EV.Caught || t === EV.NearMiss) {
+    } else if (t === EV.Caught || t === EV.NearMiss || t === EV.PigeonScatter) {
       awardBonus(scoring, (events.c[i] as number) | 0);
     } else if (t === EV.GlassSwept) {
       const pts = (events.c[i] as number) | 0;

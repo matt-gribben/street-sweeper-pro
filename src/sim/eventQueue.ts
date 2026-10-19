@@ -125,6 +125,12 @@ export const EVENTS_PER_TICK = 512;
  *   live dust cloud for dust.everyS × 60 (120) ticks in a row coughs, then again every 120 ticks it stays in
  *   range; its −10 penalty fact (Offence.Dust, no complaint) is recorded with it. fx.cough (SSP-155) and
  *   sfx.ped_oi:cough (M5) read it.
+ * - PigeonScatter: entity = the flock's number (the birds' NpcStore `group`), a = x, b = y (the centre of the
+ *   circle the flock covered as it took off, m), c = the style bonus's points (entities.json npc.pigeon
+ *   rules.scatterPts, +25). Phase 7 (npc/behaviours/pigeon.ts, SSP-088), at most once per flock per scatter: on
+ *   the first tick of a scatter that Bessie's body OBB overlaps that circle. Phase 9 (scoring.ts stepScoring)
+ *   awards it through the bonus API like Caught!: never multiplied, never touching the chain (GDD §10.3). The
+ *   "Pigeon Scatter" popup and the bonus sparkle read it (the flap, sfx.pigeon_flap, reads the birds' Fly state).
  */
 export const EV = {
   Impact: 1,
@@ -157,6 +163,7 @@ export const EV = {
   NearMiss: 28,
   DustCloud: 29,
   Cough: 30,
+  PigeonScatter: 31,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

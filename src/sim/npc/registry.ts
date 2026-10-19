@@ -4,23 +4,23 @@
 // Doris has hers (behaviours/oldWoman.ts, SSP-083); SSP-084 adds the shopper (behaviours/shopper.ts), the
 // businessman (businessman.ts, an M3 jaywalker) and the litterbug (litterbug.ts); SSP-085 the old man
 // (oldManFrame.ts), the mum (mumPushchair.ts) and the postie (postie.ts); SSP-086 the dog walker and the dog
-// on its lead (dogWalker.ts). Until a kind's own module lands (SSP-087 cat, SSP-088 market trader and
-// pigeon):
-// - since SSP-086 every person kind but the market trader has its own module (each built on the generic
-//   pedestrian, behaviours/pedestrian.ts, the shared reaction model of SSP-082); the trader maps to its
-//   stationary twin;
-// - the animals keep the no-op behaviour (SSP-080): they have their own reactions (ENTITY_CATALOG §7); the cat,
-//   the other M3 jaywalker, has the jaywalking no-op (SSP-081).
+// on its lead (dogWalker.ts); SSP-088 the market trader (marketTrader.ts) and the pigeon (pigeon.ts). Until a
+// kind's own module lands (SSP-087 cat):
+// - since SSP-088 every person kind has its own module (each built on the generic pedestrian,
+//   behaviours/pedestrian.ts, the shared reaction model of SSP-082);
+// - the cat keeps the no-op behaviour (SSP-080; it has its own reactions, ENTITY_CATALOG §7): the jaywalking no-op
+//   (SSP-081), as the other M3 jaywalker.
 import { type Entities, NPC_IDS, type NpcBehaviour } from '../entities.ts';
 import type { Behaviour } from './behaviour.ts';
 import { businessmanBehaviour } from './behaviours/businessman.ts';
 import { dogWalkerBehaviour } from './behaviours/dogWalker.ts';
 import { litterbugBehaviour } from './behaviours/litterbug.ts';
+import { marketTraderBehaviour } from './behaviours/marketTrader.ts';
 import { mumPushchairBehaviour } from './behaviours/mumPushchair.ts';
-import { noopBehaviour, noopJaywalkBehaviour } from './behaviours/noop.ts';
+import { noopJaywalkBehaviour } from './behaviours/noop.ts';
 import { oldManFrameBehaviour } from './behaviours/oldManFrame.ts';
 import { oldWomanBehaviour } from './behaviours/oldWoman.ts';
-import { stationaryPedestrianBehaviour } from './behaviours/pedestrian.ts';
+import { pigeonBehaviour } from './behaviours/pigeon.ts';
 import { postieBehaviour } from './behaviours/postie.ts';
 import { shopperBehaviour } from './behaviours/shopper.ts';
 
@@ -34,9 +34,9 @@ export const BEHAVIOUR_REGISTRY: { readonly [K in NpcBehaviour]: Behaviour } = {
   businessman: businessmanBehaviour,
   mum_pushchair: mumPushchairBehaviour,
   postie: postieBehaviour,
-  market_trader: stationaryPedestrianBehaviour,
+  market_trader: marketTraderBehaviour,
   cat: noopJaywalkBehaviour,
-  pigeon: noopBehaviour,
+  pigeon: pigeonBehaviour,
 };
 
 /**

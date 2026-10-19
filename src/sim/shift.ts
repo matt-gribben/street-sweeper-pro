@@ -1,6 +1,7 @@
 // The shift (TECHNICAL_DESIGN §5.1, §5.2 phase 10, §10.5; GDD §5.3, §8.7, §11.3; LEVEL_DESIGN §4.1; SSP-062,
 // SSP-079): the 240 s integer-tick timer and its rollout start, the depot-bay and skip dump FSM, the knock-off,
-// the fail states and the end-of-shift event the scenes turn into the tally.
+// the fail states and the end-of-shift event the scenes turn into the tally. Since SSP-088 also the level's
+// event runner for the market and the market close (LEVEL_DESIGN §4.3; the section at the end of the file).
 //
 // Phases (ShiftPhase). Rollout → Running → KnockOff → Ended; Rollout or Running → Ended directly on SACKED or
 // TOWED.
@@ -71,11 +72,15 @@
 // between ticks.
 
 import { SIM_HZ, TILE_M } from './constants.ts';
+import { LITTER_IDS } from './entities.ts';
 import { EV, type EventQueue, emitEvent, ShiftEndReason } from './eventQueue.ts';
 import { cos, sin } from './fmath.ts';
+import type { SpillTable } from './hazards.ts';
 import { cancelHopperDrain, DumpSite, type Hopper, startHopperDrain, stepHopperDrain } from './hopper.ts';
 import { BRAKE_MAX, BUTTON, type InputFrame, PRESSED } from './inputFrame.ts';
-import type { Level } from './map.ts';
+import { addLitterAt, LITTER_ROTATIONS, type LitterField } from './litter.ts';
+import { COLLIDE, type JsonValue, type Level } from './map.ts';
+import { nextFloat, nextInt, type Sfc32 } from './rng.ts';
 import type { Tuning, WaterTuning } from './tuning.ts';
 import { Gear, type VehicleState } from './vehicle.ts';
 import { refillWater } from './water.ts';
@@ -670,4 +675,417 @@ function writeAxes(shift: Shift): void {
   shift.rightY = sn;
   shift.forwardX = sn;
   shift.forwardY = -c;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Level events: the market and the market close (LEVEL_DESIGN §4.3, §4.5, §7.6; SSP-088)
+// ---------------------------------------------------------------------------------------------------------
+//
+// The event runner of LEVEL_DESIGN §4.3 for the two Tuesday events, on the fixed tick in phase 10 right after
+// stepShift (stepShiftEvents), keyed to elapsed timer seconds (shiftElapsedTicks: 0 through the rollout, then
+// one more per timer tick), drawing on the `events` stream (world.eventsRng; LEVEL_DESIGN §9.1 rule 7). The other
+// event types belong to their own issues (the dawn, tutorial beats and population waves of M3's level work; the
+// rest are M6's).
+//
+// Pitches. A pitch is one `m` map tile, the prop.market_stall on it (its footprint, tuning.json propFootprints,
+// is 2.0 × 1.5 m inside the 2 m tile), plus the tile in front for its trader (§7.6). "In front" is the side of
+// the stall facing the most open floor: of the four neighbours, in the order south, north, east, west, the one
+// with the most free tiles in a straight line out from the stall, counting up to PITCH_FRONT_LOOK_TILES (3, the
+// §7.6 aisle; a free tile is on the map, not SOLID and holds no prop); the first wins a tie. The trader stands
+// on that tile's centre, facing out along it, so a stall with its back to a wall or to another row faces its
+// aisle. A stall with no free neighbour is an authoring error: createShiftEvents throws. The market's pitches
+// are its `pitches` param (level.json: an array of [col, row] tiles, each an `m`), default every stall in
+// level.props order; a market_close with no market event piles at every stall.
+//
+// market: the stalls open at its `at` (at shift start without one: the §4.5 "cont."), and the spawner
+// (spawner.ts) then adds one npc.market_trader per pitch, origin Market, `group` = the pitch, whatever the view
+// (the stalls opening, like a named NPC's arrival); ambient spawns keep room for the traders still to come.
+// The §4.3 "litter and shopper bias around pitches": the litter bias is the level's litter hotspots
+// (`near: "prop.market_stall"`, ×3, §9.1 rule 3), compiled with the map; no shopper bias is built (left to the
+// High Street's authoring, SSP-105; owner to review). One market event per level.
+//
+// market_close: from each of its `at` (one or more elapsed seconds), a litter pile builds round every pitch:
+// `itemsPerPitch` (default MARKET_CLOSE_DEFAULT_ITEMS) items per pitch over `buildS` (default
+// MARKET_CLOSE_DEFAULT_BUILD_S) seconds, in rounds of one item per pitch (pitch order): round r of N lands on
+// elapsed tick start + floor(r × buildS × 60 / N), so the first round on the close's own tick and the last
+// before buildS is up (all at once for buildS 0). Each item takes five draws: its kind by weight over `table`
+// (a level.json litter id → weight table; default the district's small-litter table, hazards.ts
+// createSpillTable, as for the other dynamic drops), one of the pitch's pile tiles (nextInt), its x and y inside
+// the tile (inset PILE_INSET_M from the edges), and its rotation. A pitch's pile tiles are the free tiles within
+// PILE_REACH_TILES (Chebyshev) of its stall that are no pitch's trader tile, row-major (its trader's tile alone
+// when there are none). Items go through litter.ts addLitterAt, so they count toward litter spawned (the Tidy %
+// denominator and their frontage's zone) and respect the 2,000 cap (a full field takes nothing; the draws are
+// made all the same). Closes run one at a time, in `at` order (level order on a tie): one due while another
+// builds starts when that one ends. The traders stay at their pitches. Free Sweep, which skips one-off events
+// (§4.3), does not exist yet.
+//
+// Hot path: stepShiftEvents allocates nothing and passes no doubles across calls (addLitterAt takes a scratch
+// array). createShiftEvents is setup only.
+
+/** A market close's default build time, seconds (LEVEL_DESIGN §4.5, Tuesday: about 40 items over 20 s). */
+export const MARKET_CLOSE_DEFAULT_BUILD_S = 20;
+/**
+ * A market close's default items per pitch: 3, so the High Street's 12 pitches build 36, "about 40" (LEVEL_DESIGN
+ * §4.5; chosen in SSP-088, TBD (M3 tuning), owner to review). A level sets itemsPerPitch itself.
+ */
+export const MARKET_CLOSE_DEFAULT_ITEMS = 3;
+/** Pile tiles lie within this many tiles (Chebyshev) of their stall's tile. */
+export const PILE_REACH_TILES = 2;
+/** Pile items keep this far inside their tile's edges, metres. */
+export const PILE_INSET_M = 0.25;
+/** The open floor counted out from a stall when picking its front, tiles (LEVEL_DESIGN §7.6's 3-tile aisle). */
+export const PITCH_FRONT_LOOK_TILES = 3;
+
+/** The four sides of a stall, in the order tried: south, north, east, west (tile steps and the heading out). */
+const SIDE_DX = [0, 0, 1, -1] as const;
+const SIDE_DY = [1, -1, 0, 0] as const;
+const SIDE_HEADING = [Math.PI, 0, Math.PI / 2, (3 * Math.PI) / 2] as const;
+
+/** The level's market and market closes, compiled for the shift. Create with createShiftEvents. */
+export type ShiftEvents = {
+  /** False when the level has neither event: stepShiftEvents does nothing (and the replay hash skips it). */
+  readonly active: boolean;
+  /** True when the level has a `market` event. */
+  readonly hasMarket: boolean;
+  /** Elapsed ticks the market opens at (0: at shift start). */
+  readonly marketOpenTicks: number;
+  /** The stalls are open: the spawner mans the pitches. */
+  marketOpen: boolean;
+  /** Pitches, in market `pitches` order (default level.props order). */
+  readonly pitchCount: number;
+  /** The pitch's stall: its tile and centre, metres. */
+  readonly pitchCol: Int32Array;
+  readonly pitchRow: Int32Array;
+  readonly pitchX: Float64Array;
+  readonly pitchY: Float64Array;
+  /** Where its trader stands (the front tile's centre, metres) and faces (radians, 0 = north, clockwise). */
+  readonly traderX: Float64Array;
+  readonly traderY: Float64Array;
+  readonly traderHeading: Float64Array;
+  /** 1 once the spawner has added the pitch's trader. */
+  readonly pitchManned: Uint8Array;
+  /** The market's pitches still without their trader (the spawner holds store room for them). */
+  tradersPending: number;
+  /** Each pitch's pile tiles (row · width + col): pileTile[pileStart[p] .. pileStart[p + 1]). */
+  readonly pileStart: Int32Array;
+  readonly pileTile: Int32Array;
+  /** Map width in tiles. */
+  readonly widthTiles: number;
+  /** Market closes (one per `at` of every market_close), in start order. */
+  readonly closeCount: number;
+  readonly closeAtTicks: Int32Array;
+  readonly closeBuildTicks: Int32Array;
+  readonly closeItems: Int32Array;
+  /** Each close's kind table, tableKind/tableWeight[tableStart[c] .. tableStart[c + 1]), weights summing to closeTotal[c]. */
+  readonly tableStart: Int32Array;
+  readonly tableKind: Uint8Array;
+  readonly tableWeight: Float64Array;
+  readonly closeTotal: Float64Array;
+  /** The next close to start, the one building (−1 for none), its start (elapsed ticks) and its rounds done. */
+  closeNext: number;
+  closeActive: number;
+  closeStartTick: number;
+  closeRound: number;
+  /** Close items placed and refused (the field was full) this shift. */
+  itemsSpawned: number;
+  itemsRefused: number;
+  /** addLitterAt's position scratch. */
+  readonly at: Float64Array;
+};
+
+/** The parts of the World stepShiftEvents works on (world.ts World satisfies it). */
+export type ShiftEventsWorld = {
+  readonly shiftEvents: ShiftEvents;
+  readonly shift: ShiftView;
+  readonly litter: LitterField;
+  readonly eventsRng: Sfc32;
+};
+
+/** What render, audio and UI may see. */
+export type ShiftEventsView = {
+  readonly active: boolean;
+  readonly hasMarket: boolean;
+  readonly marketOpen: boolean;
+  readonly pitchCount: number;
+  readonly pitchX: ArrayLike<number>;
+  readonly pitchY: ArrayLike<number>;
+  readonly traderX: ArrayLike<number>;
+  readonly traderY: ArrayLike<number>;
+  readonly traderHeading: ArrayLike<number>;
+  readonly closeCount: number;
+  readonly closeActive: number;
+  readonly itemsSpawned: number;
+};
+
+/** A non-negative number param, or `fallback` when absent. Throws otherwise. */
+function eventNumber(value: JsonValue | undefined, fallback: number, where: string): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+    throw new Error(`${where} must be a non-negative number, got ${JSON.stringify(value)}`);
+  return value;
+}
+
+/**
+ * The market and market closes of `level` (see the section comment), with the close tables from `spill` (the
+ * district's small-litter table, hazards.ts) unless a close names its own `table`. Throws on a malformed event
+ * or a pitch with no stall or no free tile in front. Setup only.
+ */
+export function createShiftEvents(level: Level, spill: SpillTable): ShiftEvents {
+  const where = `createShiftEvents(${level.id})`;
+  const [w, h] = level.size;
+  const markets = level.schedules.filter((e) => e.type === 'market');
+  const closes = level.schedules.filter((e) => e.type === 'market_close');
+  if (markets.length > 1)
+    throw new Error(`${where}: a level has at most one market event, got ${markets.length}`);
+  const market = markets[0];
+  const propTile = new Uint8Array(w * h);
+  const stalls: number[] = [];
+  level.props.forEach((p, k) => {
+    const c = Math.floor(p.x / TILE_M);
+    const r = Math.floor(p.y / TILE_M);
+    if (c < 0 || r < 0 || c >= w || r >= h) return;
+    propTile[r * w + c] = 1;
+    if (p.id === 'prop.market_stall') stalls.push(k);
+  });
+  const free = (c: number, r: number): boolean =>
+    c >= 0 &&
+    r >= 0 &&
+    c < w &&
+    r < h &&
+    ((level.layers.collide[r * w + c] as number) & COLLIDE.SOLID) === 0 &&
+    propTile[r * w + c] === 0;
+  // The pitches: the market's `pitches` tiles, or every stall.
+  let pitchProps = stalls;
+  const pitchesParam = market?.params.pitches;
+  if (pitchesParam !== undefined) {
+    if (!Array.isArray(pitchesParam) || pitchesParam.length === 0)
+      throw new Error(`${where}: market pitches must be a non-empty array of [col, row] stall tiles`);
+    pitchProps = pitchesParam.map((t, k) => {
+      const tile = Array.isArray(t) && t.length === 2 ? t : null;
+      const prop =
+        tile === null
+          ? undefined
+          : stalls.find((s) => {
+              const p = level.props[s];
+              return (
+                p !== undefined &&
+                Math.floor(p.x / TILE_M) === tile[0] &&
+                Math.floor(p.y / TILE_M) === tile[1]
+              );
+            });
+      if (prop === undefined)
+        throw new Error(
+          `${where}: market pitches[${k}] ${JSON.stringify(t)} is not the tile of a prop.market_stall`,
+        );
+      return prop;
+    });
+    if (new Set(pitchProps).size !== pitchProps.length)
+      throw new Error(`${where}: market pitches repeat a stall`);
+  }
+  const n = market === undefined && closes.length === 0 ? 0 : pitchProps.length;
+  const pitchCol = new Int32Array(n);
+  const pitchRow = new Int32Array(n);
+  const pitchX = new Float64Array(n);
+  const pitchY = new Float64Array(n);
+  const traderX = new Float64Array(n);
+  const traderY = new Float64Array(n);
+  const traderHeading = new Float64Array(n);
+  const traderTile = new Set<number>();
+  for (let p = 0; p < n; p += 1) {
+    const prop = level.props[pitchProps[p] as number];
+    if (prop === undefined) continue;
+    const c = Math.floor(prop.x / TILE_M);
+    const r = Math.floor(prop.y / TILE_M);
+    pitchCol[p] = c;
+    pitchRow[p] = r;
+    pitchX[p] = prop.x;
+    pitchY[p] = prop.y;
+    let side = -1;
+    let bestOpen = 0;
+    for (let s = 0; s < 4; s += 1) {
+      const sx = SIDE_DX[s] as number;
+      const sy = SIDE_DY[s] as number;
+      let open = 0;
+      while (open < PITCH_FRONT_LOOK_TILES && free(c + sx * (open + 1), r + sy * (open + 1))) open += 1;
+      if (open > bestOpen) {
+        bestOpen = open;
+        side = s;
+      }
+    }
+    if (side < 0)
+      throw new Error(`${where}: the market stall at tile (${c}, ${r}) has no free tile in front`);
+    const fc = c + (SIDE_DX[side] as number);
+    const fr = r + (SIDE_DY[side] as number);
+    traderX[p] = (fc + 0.5) * TILE_M;
+    traderY[p] = (fr + 0.5) * TILE_M;
+    traderHeading[p] = SIDE_HEADING[side] as number;
+    traderTile.add(fr * w + fc);
+  }
+  // Pile tiles.
+  const pileStart = new Int32Array(n + 1);
+  const piles: number[] = [];
+  for (let p = 0; p < n; p += 1) {
+    const c = pitchCol[p] as number;
+    const r = pitchRow[p] as number;
+    const before = piles.length;
+    for (let rr = r - PILE_REACH_TILES; rr <= r + PILE_REACH_TILES; rr += 1) {
+      for (let cc = c - PILE_REACH_TILES; cc <= c + PILE_REACH_TILES; cc += 1) {
+        if (free(cc, rr) && !traderTile.has(rr * w + cc)) piles.push(rr * w + cc);
+      }
+    }
+    if (piles.length === before) {
+      piles.push(
+        Math.floor((traderY[p] as number) / TILE_M) * w + Math.floor((traderX[p] as number) / TILE_M),
+      );
+    }
+    pileStart[p + 1] = piles.length;
+  }
+  // The market's opening.
+  const openAt = market?.atS[0];
+  const openTicks = openAt === undefined ? 0 : Math.round(openAt * SIM_HZ);
+  // The closes, one per `at`, in start order.
+  type Close = {
+    at: number;
+    order: number;
+    build: number;
+    items: number;
+    kinds: number[];
+    weights: number[];
+  };
+  const list: Close[] = [];
+  closes.forEach((e, k) => {
+    const label = `${where}: market_close ${k}`;
+    if (e.atS.length === 0) throw new Error(`${label} needs an at (elapsed seconds)`);
+    const buildS = eventNumber(e.params.buildS, MARKET_CLOSE_DEFAULT_BUILD_S, `${label} buildS`);
+    const items = eventNumber(e.params.itemsPerPitch, MARKET_CLOSE_DEFAULT_ITEMS, `${label} itemsPerPitch`);
+    if (!Number.isInteger(items)) throw new Error(`${label} itemsPerPitch must be an integer, got ${items}`);
+    const kinds: number[] = [];
+    const weights: number[] = [];
+    const table = e.params.table;
+    if (table === undefined) {
+      for (let t = 0; t < spill.count; t += 1) {
+        kinds.push(spill.kind[t] as number);
+        weights.push(spill.weight[t] as number);
+      }
+    } else {
+      if (table === null || typeof table !== 'object' || Array.isArray(table))
+        throw new Error(`${label} table must be an object of litter id → weight`);
+      for (const id of Object.keys(table).sort()) {
+        const kind = (LITTER_IDS as readonly string[]).indexOf(id);
+        const weight = table[id];
+        if (kind < 0) throw new Error(`${label} table: ${id} is not a litter id`);
+        if (typeof weight !== 'number' || !(weight > 0))
+          throw new Error(`${label} table: ${id} weight must be a positive number`);
+        kinds.push(kind);
+        weights.push(weight);
+      }
+      if (kinds.length === 0) throw new Error(`${label} table is empty`);
+    }
+    const build = Math.round(buildS * SIM_HZ);
+    for (const at of e.atS)
+      list.push({ at: Math.round(at * SIM_HZ), order: list.length, build, items, kinds, weights });
+  });
+  list.sort((a, b) => a.at - b.at || a.order - b.order);
+  const tableStart = new Int32Array(list.length + 1);
+  list.forEach((c, k) => {
+    tableStart[k + 1] = (tableStart[k] as number) + c.kinds.length;
+  });
+  return {
+    active: market !== undefined || list.length > 0,
+    hasMarket: market !== undefined,
+    marketOpenTicks: openTicks,
+    marketOpen: market !== undefined && openTicks === 0,
+    pitchCount: n,
+    pitchCol,
+    pitchRow,
+    pitchX,
+    pitchY,
+    traderX,
+    traderY,
+    traderHeading,
+    pitchManned: new Uint8Array(n),
+    tradersPending: market !== undefined ? n : 0,
+    pileStart,
+    pileTile: Int32Array.from(piles),
+    widthTiles: w,
+    closeCount: list.length,
+    closeAtTicks: Int32Array.from(list, (c) => c.at),
+    closeBuildTicks: Int32Array.from(list, (c) => c.build),
+    closeItems: Int32Array.from(list, (c) => c.items),
+    tableStart,
+    tableKind: Uint8Array.from(list.flatMap((c) => c.kinds)),
+    tableWeight: Float64Array.from(list.flatMap((c) => c.weights)),
+    closeTotal: Float64Array.from(list, (c) => c.weights.reduce((a, b) => a + b, 0)),
+    closeNext: 0,
+    closeActive: -1,
+    closeStartTick: 0,
+    closeRound: 0,
+    itemsSpawned: 0,
+    itemsRefused: 0,
+    at: new Float64Array(2),
+  };
+}
+
+/** The read-only view of `ev`. No copy: it is the same object. */
+export function viewShiftEvents(ev: ShiftEvents): ShiftEventsView {
+  return ev;
+}
+
+/**
+ * Phase 10, after stepShift: open the market when its time comes, start the next market close when it is due,
+ * and place the rounds of the building pile that are due (see the section comment). Nothing once the shift has
+ * ended. Allocation-free.
+ */
+export function stepShiftEvents(w: ShiftEventsWorld): void {
+  const ev = w.shiftEvents;
+  if (!ev.active || w.shift.phase === ShiftPhase.Ended) return;
+  const elapsed = shiftElapsedTicks(w.shift);
+  if (ev.hasMarket && !ev.marketOpen && elapsed >= ev.marketOpenTicks) ev.marketOpen = true;
+  if (
+    ev.closeActive < 0 &&
+    ev.closeNext < ev.closeCount &&
+    elapsed >= (ev.closeAtTicks[ev.closeNext] as number)
+  ) {
+    ev.closeActive = ev.closeNext;
+    ev.closeNext += 1;
+    ev.closeStartTick = elapsed;
+    ev.closeRound = 0;
+  }
+  const c = ev.closeActive;
+  if (c < 0) return;
+  const rounds = ev.closeItems[c] as number;
+  const build = ev.closeBuildTicks[c] as number;
+  while (
+    ev.closeRound < rounds &&
+    elapsed - ev.closeStartTick >= Math.floor((ev.closeRound * build) / rounds)
+  ) {
+    for (let p = 0; p < ev.pitchCount; p += 1) pileItem(w, c, p);
+    ev.closeRound += 1;
+  }
+  if (ev.closeRound >= rounds) ev.closeActive = -1;
+}
+
+/** One item of close `c`'s pile at pitch `p`: kind, tile, x, y and rotation from the `events` stream. */
+function pileItem(w: ShiftEventsWorld, c: number, p: number): void {
+  const ev = w.shiftEvents;
+  const rng = w.eventsRng;
+  const t0 = ev.tableStart[c] as number;
+  const t1 = ev.tableStart[c + 1] as number;
+  let r = nextFloat(rng) * (ev.closeTotal[c] as number);
+  let kind = ev.tableKind[t0] as number;
+  for (let t = t0; t < t1; t += 1) {
+    kind = ev.tableKind[t] as number;
+    r -= ev.tableWeight[t] as number;
+    if (r < 0) break;
+  }
+  const s0 = ev.pileStart[p] as number;
+  const tile = ev.pileTile[s0 + nextInt(rng, (ev.pileStart[p + 1] as number) - s0)] as number;
+  const col = tile % ev.widthTiles;
+  const row = (tile - col) / ev.widthTiles;
+  const span = TILE_M - 2 * PILE_INSET_M;
+  ev.at[0] = col * TILE_M + PILE_INSET_M + nextFloat(rng) * span;
+  ev.at[1] = row * TILE_M + PILE_INSET_M + nextFloat(rng) * span;
+  const rot = nextInt(rng, LITTER_ROTATIONS);
+  if (addLitterAt(w.litter, kind, ev.at, rot) < 0) ev.itemsRefused += 1;
+  else ev.itemsSpawned += 1;
 }

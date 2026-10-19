@@ -462,6 +462,11 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *   SSP-095 appends the dust and the street-life rules: I dust.count, cloudsEmitted, waitLeft, waitRight, then
  *     per live cloud oldest first F x, y; I bornTick; I reactions.nearMisses, coughs; then per NPC: I nearMiss;
  *     F nearMissD2; I dustTicks
+ *   SSP-088 appends, only for a level that has them (so a level with neither hashes as before):
+ *   the market events (shift.ts ShiftEvents, when `active`): B marketOpen; I tradersPending, closeNext,
+ *     closeActive, closeStartTick, closeRound, itemsSpawned, itemsRefused, then per pitch B pitchManned
+ *   the pigeon flocks (npc/behaviours/pigeon.ts, when the level can place any): I flocks.bonuses, then per flock
+ *     I mode, stepTick, landedTick; F circleX, circleY, circleR; B bonusPaid; I scatters, gathers
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -527,6 +532,8 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbPickups(hasher, world);
   absorbSplashGlass(hasher, world);
   absorbStreetLife(hasher, world);
+  if (world.shiftEvents.active) absorbShiftEvents(hasher, world);
+  if (world.npcAi.flocks.count > 0) absorbFlocks(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -1261,6 +1268,56 @@ function absorbBehaviourWords(hasher: StateHasher, world: World): void {
     w[k] = (npc.dueTick[i] as number) | 0;
     w[k + 1] = (npc.routeAt[i] as number) | 0;
     k += 2;
+  }
+  mixWords(hasher, k);
+}
+
+/** SSP-088: the market and the market close (shift.ts ShiftEvents), for a level that has either. */
+function absorbShiftEvents(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const ev = world.shiftEvents;
+  w[0] = ev.marketOpen ? 1 : 0;
+  w[1] = ev.tradersPending | 0;
+  w[2] = ev.closeNext | 0;
+  w[3] = ev.closeActive | 0;
+  w[4] = ev.closeStartTick | 0;
+  w[5] = ev.closeRound | 0;
+  w[6] = ev.itemsSpawned | 0;
+  w[7] = ev.itemsRefused | 0;
+  let k = 8;
+  for (let p = 0; p < ev.pitchCount; p += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (ev.pitchManned[p] as number) | 0;
+    k += 1;
+  }
+  mixWords(hasher, k);
+}
+
+/** SSP-088: the pigeon flocks' shared state (npc/behaviours/pigeon.ts), for a level that can place a flock. */
+function absorbFlocks(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const q = HASH_QUANTUM;
+  const fl = world.npcAi.flocks;
+  w[0] = fl.bonuses | 0;
+  let k = 1;
+  for (let f = 0; f < fl.count; f += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (fl.mode[f] as number) | 0;
+    w[k + 1] = (fl.stepTick[f] as number) | 0;
+    w[k + 2] = (fl.landedTick[f] as number) | 0;
+    w[k + 3] = Math.round((fl.circleX[f] as number) * q) | 0;
+    w[k + 4] = Math.round((fl.circleY[f] as number) * q) | 0;
+    w[k + 5] = Math.round((fl.circleR[f] as number) * q) | 0;
+    w[k + 6] = (fl.bonusPaid[f] as number) | 0;
+    w[k + 7] = (fl.scatters[f] as number) | 0;
+    w[k + 8] = (fl.gathers[f] as number) | 0;
+    k += 9;
   }
   mixWords(hasher, k);
 }

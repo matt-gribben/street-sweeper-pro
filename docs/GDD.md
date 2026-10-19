@@ -568,7 +568,7 @@ Item point values are in [ENTITY_CATALOG.md](ENTITY_CATALOG.md). For calibration
 | Bonus | Points | Notes |
 |---|---|---|
 | Near miss | +25 | Pass within 0.5 m of a pedestrian at > 3 m/s without contact. Joggers are the classic source. |
-| Pigeon Scatter | +25 | Drive through a pigeon flock (pigeons cannot be hit) |
+| Pigeon Scatter | +25 | Drive through a pigeon flock (pigeons cannot be hit). Once per flock per scatter; "through" is Bessie's body crossing the spot the flock took off from while it is in the air (proposed in SSP-088, owner to review; [ENTITY_CATALOG §7.4](ENTITY_CATALOG.md#74-pigeon-npcpigeon)) |
 | Kerb Hugger | +50 | Per 3 s of continuous kerb contact |
 | Clean Sweep | +100 | A frontage reaches 100% |
 | Caught! | +100 | Honk within 6 m of a `npc.litterbug`; he slinks off |

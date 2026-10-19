@@ -7,6 +7,11 @@
 //   1. Named NPCs (Doris, dog walkers on loops, later the Inspector): on the tick `spawnAtS × 60` (or the first
 //      tick after it with room in the store) all `count` of them appear at their anchor's nav node, whatever
 //      the view: they are authored arrivals at a door, not pop-in. They persist for the shift.
+//   1b. Market traders (SSP-088): once the level's `market` event has opened (shift.ts ShiftEvents, phase 10;
+//      from shift start for a market with no `at`), one npc.market_trader per pitch still unmanned, on the tile
+//      in front of its stall, whatever the view (the stalls opening), origin Market, `group` = the pitch, room
+//      allowing after the named NPCs still to come. They persist for the shift. This step runs even for a level
+//      without `spawns.npc`.
 // Then, on every NPC_SPAWN_EVERY_TICKS-th tick (tick mod 60 == 0, so once in every 60-tick window):
 //   2. Placed NPCs still waiting: each perched cat on a free wall perch (`perches.walls`) that does not touch
 //      the view (on a nav spawn point when the level lists no wall perches; car roofs and road grooming spots
@@ -32,8 +37,9 @@
 // is added, before the next one.
 // A dog walker always comes with its dog: a Companion NPC at the same spot, linked both ways by handle; they
 // spawn and retire together and take two store slots. Ambient spawns leave room for every named NPC (and dog)
-// not yet spawned and every cat and bird not yet placed, so the store's NPC_CAPACITY (80, flock birds counted
-// one by one) is never what stops an authored NPC; nothing ever pushes the store past its capacity.
+// not yet spawned, every cat and bird not yet placed and every market trader not yet at his pitch, so the
+// store's NPC_CAPACITY (80, flock birds counted one by one) is never what stops an authored NPC; nothing ever
+// pushes the store past its capacity.
 //
 // "Touches the view" is circleTouchesViewRect on the NPC's radius (footprint.ts: tuning.json →
 // streetLife.npcRadius humanM for people, the mum's wider pushchair footprint from entities.json since SSP-085,
@@ -116,6 +122,8 @@ export type NpcSpawner = {
   flocksPlaced: number;
   /** NPC_IDS index of npc.dog_walker (whose spawns bring a dog). */
   readonly dogWalkerKind: number;
+  /** NPC_IDS index of npc.market_trader (one per market pitch, SSP-088). */
+  readonly traderKind: number;
   /** Circle radius per NPC kind, metres. */
   readonly radiusByKind: Float64Array;
   /** Walking speed per NPC kind (entities.json `speed`), m/s: each spawn's walkMps (steering.ts). */
@@ -217,6 +225,7 @@ export function createNpcSpawner(level: Level, tuning: Tuning, entities: Entitie
     flockY: Float64Array.from(flockPoints, (p) => p[1]),
     flocksPlaced: 0,
     dogWalkerKind: kindIndex('npc.dog_walker', where),
+    traderKind: kindIndex('npc.market_trader', where),
     radiusByKind: new Float64Array(NPC_IDS.length),
     speedByKind: Float64Array.from(NPC_IDS, (id) => entities.npcs[id].speedMps),
     radii: new Float64Array(3),
@@ -269,9 +278,12 @@ function namedReserve(sp: NpcSpawner): number {
   return n;
 }
 
-/** Slots held back for cats and flock birds not yet placed (each flock at its largest size). */
-function placedReserve(sp: NpcSpawner): number {
-  let n = sp.perchPending;
+/**
+ * Slots held back for cats and flock birds not yet placed (each flock at its largest size) and market traders
+ * not yet at their pitches.
+ */
+function placedReserve(w: World, sp: NpcSpawner): number {
+  let n = sp.perchPending + w.shiftEvents.tradersPending;
   for (let f = 0; f < sp.flockSpecCount; f += 1)
     n += (sp.flockRemaining[f] as number) * (sp.flockMax[f] as number);
   return n;
@@ -355,6 +367,8 @@ function retire(w: World, i: number): void {
 /** Phase 7: the spawner's tick (see the file comment). */
 export function stepNpcSpawner(w: World): void {
   const sp = w.npcAi.spawner;
+  const ev = w.shiftEvents;
+  if (ev.marketOpen && ev.tradersPending > 0) spawnMarketTraders(w, sp);
   if (!sp.active) return;
   const tick = w.tick;
   spawnDueNamed(w, sp, tick);
@@ -375,6 +389,19 @@ function spawnDueNamed(w: World, sp: NpcSpawner, tick: number): void {
       spawnAt(w, kind, NpcOrigin.Named, k, sp.namedX, sp.namedY, k, sp.namedNode[k] as number);
       sp.namedRemaining[k] = (sp.namedRemaining[k] as number) - 1;
     }
+  }
+}
+
+/** Step 1b: a trader for every open pitch still unmanned, while the store has room after the named NPCs. */
+function spawnMarketTraders(w: World, sp: NpcSpawner): void {
+  const npc = w.npc;
+  const ev = w.shiftEvents;
+  for (let p = 0; p < ev.pitchCount; p += 1) {
+    if ((ev.pitchManned[p] as number) !== 0) continue;
+    if (npc.count + 1 + namedReserve(sp) > npc.capacity) return;
+    spawnAt(w, sp.traderKind, NpcOrigin.Market, p, ev.traderX, ev.traderY, p, -1);
+    ev.pitchManned[p] = 1;
+    ev.tradersPending -= 1;
   }
 }
 
@@ -521,7 +548,7 @@ function spawnAmbient(w: World, sp: NpcSpawner): boolean {
     n += 1;
   }
   if (n === 0) return false;
-  const free = npc.capacity - npc.count - namedReserve(sp) - placedReserve(sp);
+  const free = npc.capacity - npc.count - namedReserve(sp) - placedReserve(w, sp);
   let total = 0;
   for (let m = 0; m < sp.mixCount; m += 1) {
     if (mixAllows(sp, m, free)) total += sp.mixWeight[m] as number;

@@ -49,6 +49,10 @@ export const NPC_PATH_NODES = 32;
  * off), and the spawner retires it on its next run with its circle off the view, whatever its origin. SSP-086
  * appends LEAD_CROSSED, on a dog walker: Bessie's body overlaps its lead this tick (behaviours/dogWalker.ts). A
  * Lead Tangle counts only on the tick it is set, so Bessie must clear the whole lead before another one counts.
+ * SSP-088 appends GHOST: nothing collides with the NPC (ENTITY_CATALOG §3.2's ghost response; the pigeons, set as
+ * each bird spawns): steering's NPC-vs-NPC separation and constraints skip it, and it never counts as someone on
+ * a zebra (steering.ts updateZebraOccupancy, zebraOffence.ts). Bessie's actor contact already skips every kind
+ * without an entities.json `hit`.
  */
 export const NPC_FLAG = {
   FALLEN: 1,
@@ -59,16 +63,18 @@ export const NPC_FLAG = {
   DODGED: 32,
   LEAVING: 64,
   LEAD_CROSSED: 128,
+  GHOST: 256,
 } as const;
 export type NpcFlagBit = (typeof NPC_FLAG)[keyof typeof NPC_FLAG];
 
 /**
  * Where an NPC came from (`origin`, Uint8; LEVEL_DESIGN §9.4). Only Ambient NPCs count towards the
  * population target and its caps and are ever retired; Named NPCs persist for the shift, and so do the
- * placed Perch cats and Flock birds; a Companion is the dog on a dog walker's lead (the walker's `link`).
- * Hashed: append, never renumber.
+ * placed Perch cats and Flock birds; a Companion is the dog on a dog walker's lead (the walker's `link`). A Market
+ * NPC (SSP-088) is the market trader manning one pitch while the level's `market` event runs (shift.ts
+ * ShiftEvents; its `group` is the pitch index); it persists for the shift too. Hashed: append, never renumber.
  */
-export const NpcOrigin = { Ambient: 0, Named: 1, Perch: 2, Flock: 3, Companion: 4 } as const;
+export const NpcOrigin = { Ambient: 0, Named: 1, Perch: 2, Flock: 3, Companion: 4, Market: 5 } as const;
 export type NpcOrigin = (typeof NpcOrigin)[keyof typeof NpcOrigin];
 
 /** All live NPCs. Create with createNpcStore. */
@@ -105,7 +111,10 @@ export type NpcStore = {
   readonly radius: Float64Array;
   /** NpcOrigin. */
   readonly origin: Uint8Array;
-  /** The spec entry it was spawned from: the named NPC's or flock's index in spawns.npc, else −1. */
+  /**
+   * The spec entry it was spawned from: the named NPC's index in spawns.npc.named, a flock bird's flock number
+   * (the spawner's count of flocks placed), a market trader's pitch (shift.ts ShiftEvents), else −1.
+   */
   readonly group: Int16Array;
   /** A handle of the NPC it is tied to (walker ↔ dog), or NO_NPC_HANDLE. */
   readonly link: Int32Array;
@@ -142,7 +151,9 @@ export type NpcStore = {
    * Two tick counters a kind's behaviour module owns (SSP-083), 0 at spawn; each module documents its use. Doris
    * (behaviours/oldWoman.ts): timerA = slowed-walk ticks left after a fist shake; timerB = the Glare's
    * clear-path ticks, or the Chase's ticks until her handbag can whack again. The litterbug
-   * (behaviours/litterbug.ts, SSP-084): timerA = ticks to his next drop; timerB unused.
+   * (behaviours/litterbug.ts, SSP-084): timerA = ticks to his next drop; timerB unused. A pigeon
+   * (behaviours/pigeon.ts, SSP-088): timerA, timerB = the x, y of its landing spot in whole millimetres while it
+   * flies.
    */
   readonly timerA: Int32Array;
   readonly timerB: Int32Array;

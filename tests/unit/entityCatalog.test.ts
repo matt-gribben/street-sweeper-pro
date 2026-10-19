@@ -353,6 +353,8 @@ const RULE_MIRRORS: readonly (readonly [string, string, string, string | null, R
     1,
   ],
   ['npc.pigeon', 'landM', '### 7.4 Pigeon (`npc.pigeon`)', null, /Scatters at (\d+) m and lands (\d+) m/, 2],
+  ['npc.pigeon', 'flyMps', '### 7.4 Pigeon (`npc.pigeon`)', null, /speed `rules.flyMps` (\d+) m\/s/, 1],
+  ['npc.pigeon', 'gatherM', '### 7.4 Pigeon (`npc.pigeon`)', null, /gather reach `rules.gatherM` (\d+) m/, 1],
   ['veh.bus', 'stopDwellS', '### 8.2 Behaviour, collision and districts', 'veh.bus', /for (\d+) s/, 1],
 ];
 

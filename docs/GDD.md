@@ -1132,7 +1132,7 @@ Tracked here until resolved; resolutions go into the relevant section and data f
 | 5 | Does the Shift map overlay pause? | M3 | No (§6.2); revisit if playtests show frustration |
 | 6 | Trophy threshold and exact Inspection Score formula | M6 | 0.5 × mean best Tidy % Mon–Sat + 0.5 × Inspection pass rate; Trophy at ≥ 80 (§12.8) |
 | 7 | Speed zoom on or off | M0 | **Resolved in M0: On** ([ROADMAP D-01](ROADMAP.md#8-m0-spike-decision-log), SSP-024; `SPEED_ZOOM_DEFAULT = true`). Transit driving zooms out to H = 37.8 m as in §7.5. Re-judged with real driving and procedural asphalt in M1 (SSP-047): **kept on**, so [LEVEL_DESIGN §7.9](LEVEL_DESIGN.md#79-sight-lines-and-the-camera) keeps the 20 m telegraph |
-| 8 | Is dust coughing a "penalty" that resets the chain? | M2 | Yes, for consistency with "any penalty resets the chain" |
+| 8 | Is dust coughing a "penalty" that resets the chain? | M3 *(moved from M2 at the M2 close, SSP-074: dust and the pedestrians who cough arrive in M3; SSP-095 confirms it)* | Yes, for consistency with "any penalty resets the chain". M2 built the hook: any call to the penalty API resets the chain (§10.2, SSP-063) |
 | 9 | Free Sweep: collectibles allowed? HP floor at 1? | M6 | Yes and yes (§13.2) |
 | 10 | Undumped hopper contents at shift end: any pay-out? | M2 | **Resolved in M2 (SSP-062): none.** The tipping fee is paid only on LU drained at a depot bay (`hopper.luDumpedDepot`); a drain cut short by the knock-off counts only what had drained (§5.3, §8.7) |
 | 11 | Pedestrian yield radius 6 m (10 m with LED beacon) vs shopper sidestep at 4 m: confirm that 6 m is "aware and slowing", with per-NPC dodge distances inside it | M3 | Yes |

@@ -2,7 +2,7 @@
 id: SSP-074
 title: "Close M2: verify exit criteria, record decisions and tag m2"
 milestone: M2
-status: todo
+status: done
 type: release
 estimate: S
 labels: [type:release, area:release, area:docs, area:test, size:S, vertical-slice]
@@ -44,12 +44,12 @@ Doc discrepancy to raise with the lead: AUDIO_DESIGN §15.1 lists placeholder M2
 
 ## Acceptance criteria
 
-- [ ] `npm run ci` exits 0 on the dev Mac
-- [ ] The close PR lists every canonical exit criterion and measurable check with a link to its evidence
-- [ ] Lead playtest notes for at least one full 240 s shift are recorded in the PR
-- [ ] All M2-owned open questions are marked resolved (or re-assigned with a reason) in their owning docs
-- [ ] Risk register rows R-07, R-08, R-10 are re-scored with a note
-- [ ] `npm run build` produces `dist/` and git tag `m2` exists on the merge commit after lead approval
+- [x] `npm run ci` exits 0 on the dev Mac
+- [x] The close PR lists every canonical exit criterion and measurable check with a link to its evidence
+- [x] Lead playtest notes for at least one full 240 s shift are recorded in the PR
+- [x] All M2-owned open questions are marked resolved (or re-assigned with a reason) in their owning docs
+- [x] Risk register rows R-07, R-08, R-10 are re-scored with a note
+- [ ] `npm run build` produces `dist/` and git tag `m2` exists on the merge commit after lead approval *(the build part is done: `dist/`, 1.6 MB. The tag waits for the owner: it goes on the merge commit of this branch, which does not exist until the branch is merged; see the SSP-074 commit message.)*
 
 ## Verification
 

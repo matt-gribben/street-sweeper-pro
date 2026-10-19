@@ -194,6 +194,25 @@ export type ShiftView = {
   readonly siteCount: number;
   readonly siteKind: ArrayLike<number>;
   readonly siteLevelIndex: ArrayLike<number>;
+  // What availableDumpSite reads (the same tests stepDump runs), read-only (SSP-070's dump prompt).
+  readonly vehicle: Readonly<VehicleState>;
+  readonly tank: { readonly vehicle: Readonly<VehicleState>; readonly tuning: WaterTuning };
+  readonly dumpNeedsRelease: boolean;
+  readonly depotHoldTicks: number;
+  readonly depotMaxSpeedMps: number;
+  readonly skipHoldTicks: number;
+  readonly skipMaxSpeedMps: number;
+  readonly skipReachM: number;
+  readonly halfWidthM: number;
+  readonly halfLengthM: number;
+  readonly rightX: number;
+  readonly rightY: number;
+  readonly forwardX: number;
+  readonly forwardY: number;
+  readonly siteMinX: ArrayLike<number>;
+  readonly siteMinY: ArrayLike<number>;
+  readonly siteMaxX: ArrayLike<number>;
+  readonly siteMaxY: ArrayLike<number>;
 };
 
 /** Seconds × SIM_HZ as whole ticks (tuning.ts has already checked that they are whole). */
@@ -329,6 +348,27 @@ export function shiftIgnoresInput(shift: ShiftView): boolean {
 /** True while the timer counts down. */
 export function isShiftTimerRunning(shift: ShiftView): boolean {
   return shift.phase === ShiftPhase.Running;
+}
+
+/**
+ * The dump site a hold of INTERACT dumps at (an index into the shift's site arrays), or −1 (SSP-070: the HUD's
+ * dump prompt and hold ring read it, never the sim). While Holding it is the held site; while Draining, or once
+ * the timer has run out, −1 (no hold can start); otherwise the site an INTERACT press would start a hold at on
+ * the next tick if nothing moved: the first site in level order where Bessie is stopped (speed below the site's
+ * maxSpeedMps) with something to dump, by the very tests stepDump runs. It ignores whether INTERACT is held or
+ * still needs releasing after a drain. Reads the axes stepDump wrote last tick (Bessie's heading has not changed
+ * since: phase 10 runs last). Read-only and allocation-free.
+ */
+export function availableDumpSite(shift: ShiftView): number {
+  if (shift.phase === ShiftPhase.KnockOff || shift.phase === ShiftPhase.Ended) return -1;
+  if (shift.dumpState === DumpState.Draining) return -1;
+  if (shift.dumpState === DumpState.Holding) return shift.dumpSite;
+  return findDumpSite(shift);
+}
+
+/** Hold ticks a dump at site `s` needs (dumping.*.holdS × 60: 60 at both kinds). */
+export function dumpHoldTicksAt(shift: ShiftView, s: number): number {
+  return shift.siteKind[s] === DumpSite.Depot ? shift.depotHoldTicks : shift.skipHoldTicks;
 }
 
 /**
@@ -491,7 +531,7 @@ function stopDump(shift: Shift, events: EventQueue): void {
 }
 
 /** The first site in level order where Bessie is stopped with something to dump, or −1. */
-function findDumpSite(shift: Shift): number {
+function findDumpSite(shift: ShiftView): number {
   for (let s = 0; s < shift.siteCount; s += 1) {
     if (isStoppedAtSite(shift, s) && hasSomethingToDump(shift, s)) return s;
   }
@@ -499,14 +539,14 @@ function findDumpSite(shift: Shift): number {
 }
 
 /** LU in the hopper, or (at a depot bay) a tank below full. */
-function hasSomethingToDump(shift: Shift, s: number): boolean {
+function hasSomethingToDump(shift: ShiftView, s: number): boolean {
   const v = shift.vehicle;
   if (v.hopperLU > 0) return true;
   return shift.siteKind[s] === DumpSite.Depot && v.water < shift.tank.tuning.tankUnits;
 }
 
 /** At site `s` with speed below its maxSpeedMps. */
-function isStoppedAtSite(shift: Shift, s: number): boolean {
+function isStoppedAtSite(shift: ShiftView, s: number): boolean {
   const v = shift.vehicle;
   const max = shift.siteKind[s] === DumpSite.Depot ? shift.depotMaxSpeedMps : shift.skipMaxSpeedMps;
   if (!(v.vLongMps * v.vLongMps + v.vLatMps * v.vLatMps < max * max)) return false;
@@ -518,7 +558,7 @@ function isStoppedAtSite(shift: Shift, s: number): boolean {
  * skipReachM overlaps her body OBB (separating-axis test on the box's two axes and the OBB's two axes, touching
  * counts). Uses the axes stepDump wrote this tick.
  */
-function isAtSite(shift: Shift, s: number): boolean {
+function isAtSite(shift: ShiftView, s: number): boolean {
   const v = shift.vehicle;
   const x = v.xM;
   const y = v.yM;

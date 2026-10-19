@@ -435,7 +435,7 @@ Each milestone has the same shape:
 - [ ] Ground shader samples the grime mask texture. The upload is incremental: only dirty chunks are re-uploaded each frame.
 - [ ] `src/render/spriteBatch.ts`: an `items` atlas instance batch for litter. Per-instance 4 rotations and the 2-frame wobble.
 - [x] `src/ui/bitmapText.ts` with a first draft of `assets-src/fonts/kerbside5x7.glyphs.txt` (ASCII 32–126 plus £ ★ → ← ↑ ↓). *(Glyphs, forge font builder and `ui` atlas: SSP-068. Runtime: SSP-069, `bitmapText.ts` plus the UI pass and `UiSpriteBatch`, text coloured by a per-quad recolour pair, TECHNICAL_DESIGN §12.3/§12.5. Narrow advances wait for SSP-141.)*
-- [ ] `src/ui/hud.ts`: timer, score, combo tier popup text, hopper bar with 80% warning, water, HP.
+- [x] `src/ui/hud.ts`: timer, score, combo tier popup text, hopper bar with 80% warning, water, HP. *(SSP-070: the pure `src/ui/hudModel.ts` (texts, palette indices, fills, visibility) drawn by `hud.ts` in Kerbside 5×7 outlined, as quads of the one UI draw; a score roll, tier popups from `EV.ComboTier` on the event bus, text labels standing in for the M4 icons, and the hold-to-dump prompt with its 8-step ring read from the dump FSM through `shift.ts availableDumpSite`; placeholder `ui.bar_fill` and `ui.dump_ring` grids; positions confirmed in ART_BIBLE §12.2 for W = 432..640; evidence scene `hud_sample`, `tests/e2e/hud.spec.ts`.)*
 - [ ] `TallyScene` (numbers only): Tidy %, items collected, grime cleaned, score, would-be stars.
 - [ ] `ShiftIntroScene` placeholder card (text only).
 

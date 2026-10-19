@@ -4,7 +4,7 @@
 //
 // - `?test=1&scene=district.puddle_lane&freeze=1` renders deterministically: two page loads read back the same
 //   frame, byte for byte, within the draw-call budget (city, building shadows, Bessie's drop shadow, actors,
-//   palette pass, blit: 6 of 10, §12.7);
+//   the HUD's UI batch since SSP-070, palette pass, blit: 7 of 10, §12.7);
 // - `__ssp.step(n)` advances exactly n World ticks and renders exactly once (Renderer.renderCount via
 //   `perf().renders`, read inside one evaluate so no animation frame can interleave), also with freeze=1;
 // - `__ssp.state()` is the JSON-safe SimSnapshot (tick, bessie x/y/heading/speed, hp; since SSP-065 the sweeping
@@ -29,8 +29,8 @@ const SHIFT_URL = '/?test=1&seed=1&scene=district.puddle_lane&freeze=1';
 /** Puddle Lane's depot start (public/assets/levels/puddle_lane.json `player`): body centre, facing north. */
 const DEPOT_START = { x: 7, y: 89, heading: 0 } as const;
 
-/** City + building shadows + Bessie's drop shadow + actors batch + palette pass + blit. */
-const EXPECTED_DRAW_CALLS = 6;
+/** City + building shadows + Bessie's drop shadow + actors batch + the HUD's UI batch (SSP-070) + palette pass + blit. */
+const EXPECTED_DRAW_CALLS = 7;
 
 /** TECHNICAL_DESIGN §12.7. */
 const DRAW_CALL_BUDGET = 10;

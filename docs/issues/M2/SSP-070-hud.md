@@ -2,7 +2,7 @@
 id: SSP-070
 title: "Build the basic HUD: timer, score, combo popups, hopper, water and HP"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:ui, area:gameplay, size:M, vertical-slice]

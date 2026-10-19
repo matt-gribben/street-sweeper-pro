@@ -757,6 +757,8 @@ Style rules:
 
 **Score popups** are not sprites: they are Kerbside text (§12.5) spawned at the pickup, rising 12 px over 36 ticks with ease-out, holding 12 ticks, then blinking out (3 × 3 ticks). Colour by combo tier:
 
+*As built for the HUD's tier popups (SSP-070, `src/ui/hudModel.ts`).* At age a ticks the rise is round(12 × (1 − (1 − a/36)²)) px, held at 12 from a = 36; the blink-out is three blinks of 3 ticks hidden and 3 shown (hidden at a = 48–50, 54–56 and 60–62, shown 51–53, 57–59 and 63–65), gone from a = 66. Only rises spawn one (the multiplier going up); the ×5 cycle steps every 5 ticks of the world tick. The per-pickup world-space popups (SSP-288) reuse the same timing.
+
 | Chain multiplier | Popup | Colour |
 |---|---|---|
 | ×1 | points only | 07 |
@@ -809,8 +811,25 @@ x=4                                                                   x=W-4
 | Brush state | right of the Brush-o-meter, 16×16 | ▲ raised / ▼ lowered icon, with a 15 spin-up ring |
 | Power-up | right of the brush state, 16×16 | Power-up icon plus countdown in 5×7 |
 | Minimap | bottom-right, 64×64 *(proposed)*, rendered at runtime from map data | Roads 03, pavement 05, buildings 01, grime 08, clean frontages 23, dirty 18, Bessie arrow 15 with ink outline |
+| Dump prompt | bottom-centre, above the gauges (as built, below) | The interact key label (`E` in 5×7, 07) on a 26 disc inside `ui.dump_ring`, whose ring fills in 15 over the 60-tick hold (GDD §6.2, §8.7) |
 
 Safe margin: 4 px from every edge at all widths (432–640).
+
+**As built for M2 (SSP-070, `src/ui/hud.ts`; confirmed at every even W = 432..640).** Positions are boxes in internal pixels (x right, y down), each element's full extent including the 1 px ink ring of outlined text; every box is inside the 4 px margin and none overlaps another at any width (`tests/unit/hud.test.ts`). All text is **Kerbside 5×7 outlined** for now (Kerbside Bold is M4), so it reads over asphalt, slab and shadow alike.
+
+| Element | Box | Art (M2 placeholder) |
+|---|---|---|
+| Shift timer | (4, 4), 28×9 | `m:ss`, 07; 16 under 60 s; under 30 s alternating 18 and 16 every 30 ticks (starting on 18), 18 at 0:00 |
+| Score | top y = 4, centred on W/2, up to 70×9 (`-9,999,999`) | 07, commas every three digits; it rolls towards the real score, closing 1/8 of the gap per tick |
+| Combo | 4 px right of the score's box, same baseline | `x2 TIDY!` … `x5 SWEEPING BEAUTY!` in the §11 tier colour (×5 cycling); hidden at ×1. The font has no `×`, so a lowercase `x` |
+| Chain-timer bar | centred on W/2, y = 14: the 48×2 fill (17) in a 1 px 00 frame, 50×4 at full | Shrinks towards the middle with the chain timer; hidden without a chain |
+| Tier popup | centred on W/2, box top y = 39 rising to 27 | The tier word in its colour, §11 timing |
+| Dump prompt | centred on W/2, 20×20 at y = 224 | `ui.dump_ring` (9 frames: 0 = empty, n = n of 8 eighths filled clockwise from 12 o'clock) with `E` (07) at (7, 6) inside; shown while a dump is available, ring filled only while holding |
+| Hopper gauge | (4, 248): label `HOPPER` (07) over the 64×6 bar in a 1 px 00 frame (66×8 at y = 258); text box at x = 72 | Fill 15 on a 03 track; 17 with `!` at ≥ 80% (the text turns 17 too); at full `FULL`, bar and text flashing 18/17 every 15 ticks; text `n%` (floored) |
+| Water gauge | label `WATER` and bar, 6 px right of the hopper's box (x = 107) | Fill 27 with its top pixel row 28, on 03 |
+| Dignity (HP) | label `DIGNITY` and bar, 6 px right of the water's box (x = 179) | 23 above 60 HP, 15 from 40 to 60, 18 below 40, on 03 |
+
+The text labels stand in for the 16×16 icons until SSP-156 (M4), and the bars are cut from one solid placeholder frame, `ui.bar_fill` (66×8 of 07, recoloured per quad). The dump prompt sits above the gauges rather than on their row because at W = 432 the three gauges reach x = 245, past W/2; it only shows while Bessie is stopped, when the look-ahead zone is empty. Later M3/M4 elements (complaints, district and Tidy % bar, radio panel, Brush-o-meter, minimap) keep the proposed positions above and must stay clear of these boxes.
 
 ### 12.3 Panels, buttons and icons
 
@@ -1197,5 +1216,5 @@ An asset passes only if every applicable item passes.
 | Whether ramp lint ignores index 00 used as outline | M4 (forge lint) | Assumed in §5.4. |
 | Atlas trimming and the actor/item/fx gutter | M4 (forge pack, SSP-113) | Proposed in §14.6. The 1 px extrusion of tiles, facades and roofs is in force from M1 (SSP-039). |
 | Animation timings | M3–M4 | Proposed in §10.2; gameplay timings in the [GDD](GDD.md) win. |
-| VFX IDs and HUD layout details | M2 (HUD), M4 (art) | Proposed in §11 and §12.2. |
+| VFX IDs and HUD layout details | M2 (HUD), M4 (art) | **HUD layout decided for M2** (SSP-070): the as-built table in §12.2, popup timing in §11. VFX IDs and the HUD's final art (Kerbside Bold, icons, panels) stay proposed until M4. |
 | Font metrics, descender treatment and kerning set | M4 | Proposed in §12.5. |

@@ -5,6 +5,7 @@
 import { Game } from './app/Game.ts';
 import type { Scene, SceneParams } from './app/SceneManager.ts';
 import { installTestHooks, readTestParams } from './debug/testHooks.ts';
+import { HudSampleScene } from './scenes/HudSampleScene.ts';
 import { LevelPreviewScene } from './scenes/LevelPreviewScene.ts';
 import { PanelSampleScene } from './scenes/PanelSampleScene.ts';
 import { DEFAULT_DISTRICT, ShiftScene } from './scenes/ShiftScene.ts';
@@ -27,6 +28,9 @@ const TEXT_SAMPLE_SCENE = 'text_sample';
 
 /** `?test=1&scene=panel_sample`: the SSP-285 9-slice panel and button-state test scene. */
 const PANEL_SAMPLE_SCENE = 'panel_sample';
+
+/** `?test=1&scene=hud_sample`: the SSP-070 HUD layout test scene. */
+const HUD_SAMPLE_SCENE = 'hud_sample';
 
 /** `?test=1&scene=spike_city`: the M0 spike city with its actors (the default world before SSP-046). */
 const SPIKE_CITY_SCENE = 'spike_city';
@@ -68,7 +72,8 @@ const game = new Game(canvas, {
 
 // Scene choice. `?test=1&scene=<id>` boots a district shift (`district.puddle_lane`: ShiftScene on that compiled
 // level), `level_preview` (compiled Puddle Lane from a pinned camera, SSP-045), `text_sample` (bitmap text over a
-// shadowed street, SSP-069), `panel_sample` (9-slice panels and button states, SSP-285), `spike_city` or a spike test scene;
+// shadowed street, SSP-069), `panel_sample` (9-slice panels and button states, SSP-285), `hud_sample` (the HUD at its widest, SSP-070),
+// `spike_city` or a spike test scene;
 // an unknown ID throws. Without a scene every build boots the drive-only ShiftScene on Puddle Lane (SSP-046,
 // ROADMAP §1 principle 5), seeded with `seed` (0 when absent). Dev builds keep the M0 spike city for the spike
 // scripts: `?world=spike_city`, `?world=palette_test` (the SSP-016 palette test world for
@@ -93,6 +98,8 @@ function createFirstScene(): { scene: Scene; params: SceneParams } {
       return { scene: new TextSampleScene(game.sceneContext), params: { seed } };
     if (sceneId === PANEL_SAMPLE_SCENE)
       return { scene: new PanelSampleScene(game.sceneContext), params: { seed } };
+    if (sceneId === HUD_SAMPLE_SCENE)
+      return { scene: new HudSampleScene(game.sceneContext), params: { seed } };
     if (sceneId === SPIKE_CITY_SCENE) {
       return { scene: createSpikeCityScene(game.sceneContext, true, null), params: { seed } };
     }
@@ -104,6 +111,7 @@ function createFirstScene(): { scene: Scene; params: SceneParams } {
         LEVEL_PREVIEW_SCENE,
         TEXT_SAMPLE_SCENE,
         PANEL_SAMPLE_SCENE,
+        HUD_SAMPLE_SCENE,
       ].join(', ');
       throw new Error(`?test=1: unknown scene '${sceneId}' (known: ${known})`);
     }

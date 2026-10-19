@@ -677,6 +677,34 @@
       "swaps": []
     },
     {
+      "id": "ui.bar_fill",
+      "class": "ui",
+      "technique": "grid",
+      "source": "assets-src/sprites/ui/bar_fill.sprite.txt",
+      "cell": [66, 8],
+      "states": ["bar"],
+      "dirs": "-",
+      "frames": { "bar": 1 },
+      "atlas": "ui",
+      "outline": false,
+      "swaps": [],
+      "placeholder": true
+    },
+    {
+      "id": "ui.dump_ring",
+      "class": "ui",
+      "technique": "grid",
+      "source": "assets-src/sprites/ui/dump_ring.sprite.txt",
+      "cell": [20, 20],
+      "states": ["fill"],
+      "dirs": "-",
+      "frames": { "fill": 9 },
+      "atlas": "ui",
+      "outline": false,
+      "swaps": [],
+      "placeholder": true
+    },
+    {
       "id": "ui.panel_council",
       "class": "ui",
       "technique": "grid",

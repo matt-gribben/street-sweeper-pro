@@ -5,7 +5,8 @@
 //
 // - 1:1 ground at <= 6.0 m/s: brush down (top speed 6.0 m/s), 4 s of throttle, frozen. H must be exactly 31.5 m,
 //   the camera must lead Bessie by up to 3.0 m along her velocity, and every 2 m ground tile wholly on screen
-//   and clear of Bessie, building walls/roofs (projected at the frame's camera) and building shadows must equal
+//   and clear of Bessie, the HUD's reserved boxes (src/ui/hud.ts hudLayout, SSP-070), building walls/roofs
+//   (projected at the frame's camera) and building shadows must equal
 //   its `world` atlas frame(s) pixel for pixel (base tile, then any marking overlay, as groundLayer.ts draws
 //   them). The atlas pixels are Kerbside-32 colours and the day palette pass maps each to itself, so "after
 //   palette mapping" is the atlas pixel. A review capture (`camera_1to1.png`) is written to test-results/.
@@ -26,9 +27,12 @@ import { CELL_M, type CityBox, type CityGrid, mergeBoxes } from '../../src/rende
 import { cellGroundFrames, groundFrameTables } from '../../src/render/groundLayer.ts';
 import { buildShadowPolygons } from '../../src/render/shadows.ts';
 import { INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
+import { HUD_FONT } from '../../src/scenes/ShiftScene.ts';
 import { PX_PER_M } from '../../src/sim/constants.ts';
 import { decodeLevel, type Level } from '../../src/sim/map.ts';
+import { hudLayout } from '../../src/ui/hud.ts';
 import { decodePng } from '../support/png.ts';
+import { readBitmapFont } from '../support/textRaster.ts';
 import {
   collectPageErrors,
   encodeFramePng,
@@ -188,6 +192,8 @@ test('at <= 6.0 m/s the live camera leads Bessie and the ground is exactly 1 tex
       y1: bessie.y + BESSIE_CLEAR_M,
     },
   ];
+  // The HUD draws over the ground: tiles under any of its boxes (in screen pixels) are left out.
+  const hudBoxes = Object.values(hudLayout(readBitmapFont(HUD_FONT), frame.width).reserved);
   const tables = groundFrameTables(level);
   let checked = 0;
   const mismatches: string[] = [];
@@ -199,6 +205,11 @@ test('at <= 6.0 m/s the live camera leads Bessie and the ground is exactly 1 tex
       expect(Number.isInteger(left) && Number.isInteger(top), 'tile edges on whole pixels').toBe(true);
       const cell: Rect = { x0: cx * CELL_M, y0: cy * CELL_M, x1: (cx + 1) * CELL_M, y1: (cy + 1) * CELL_M };
       if (blocked.some((r) => overlaps(cell, r))) continue;
+      const screen: Rect = { x0: left, y0: top, x1: left + TILE_PX, y1: top + TILE_PX };
+      const underHud = hudBoxes.some((b) =>
+        overlaps(screen, { x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h }),
+      );
+      if (underHud) continue;
       const { base, overlays } = cellGroundFrames(level, tables, cx, cy);
       if (base === null) continue;
       const want = expectedTile(base, overlays);

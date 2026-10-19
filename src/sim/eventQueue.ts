@@ -20,7 +20,7 @@ export const EVENTS_PER_TICK = 512;
 /**
  * Event type ids (`type`, Uint16). 0 is never a valid type. The values are hashed into replays: append new
  * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
- * Fling, SSP-061 StainCleaned; later issues append the rest of the §7.2 list (NpcHit, Complaint, ComboTier, DumpStart, Horn, ...).
+ * Fling, SSP-061 StainCleaned, SSP-093 HazardJolt and HazardStop; later issues append the rest of the §7.2 list (NpcHit, Complaint, ComboTier, DumpStart, Horn, ...).
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036).
@@ -37,6 +37,11 @@ export const EVENTS_PER_TICK = 512;
  * - StainCleaned: entity = the stain's kind (STAIN_IDS index: the stain is swap-removed as it is emitted, so its
  *   store index would name nothing), a = x, b = y (the stain's position, m), c = its points (entities.json
  *   `pts`, before the combo; splat 0). Phase 6, cleanStainsInCone (water.ts, SSP-061), once per stain.
+ * - HazardJolt: entity = the hazard's store index (HazardStore), a = x, b = y (Bessie's body centre, m),
+ *   c = LU spilled out of the hopper (0 when it was empty). Phase 2, §8.2 step 10 (hazards.ts, SSP-093): once
+ *   per crossing episode of a haz.pothole, or of a haz.speed_bump entered above its minSpeedMps (6 m/s).
+ * - HazardStop: entity = the hazard's store index, a = x, b = y (Bessie's body centre, m), c = |vLong| just
+ *   before the stop (m/s). Phase 2, step 10: once per episode of driving into a haz.open_manhole (SSP-093).
  */
 export const EV = {
   Impact: 1,
@@ -47,6 +52,8 @@ export const EV = {
   LitterCollected: 6,
   Fling: 7,
   StainCleaned: 8,
+  HazardJolt: 9,
+  HazardStop: 10,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

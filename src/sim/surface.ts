@@ -10,9 +10,11 @@
 // (±wheelTrackM / 2, frontAxleOffsetM) and (±wheelTrackM / 2, rearAxleOffsetM). Points outside the map read as
 // void, which takes asphalt grip (map.ts GROUND_SURFACE); static collision keeps Bessie inside anyway.
 //
-// Hazard overrides (puddle, oil, wet leaves) are an M3 hook (SSP-093): it replaces the per-wheel surface id
-// lookup in surfaceAt with one that checks hazard footprints first. The rain switch (asphalt → rainAsphalt)
-// is a later hook on the table. Everything here is allocation-free per tick.
+// Hazard overrides (SSP-093): sampleSurface takes the hazard store's per-tile `surfaceOverride` layer
+// (hazards.ts) and, per wheel, reads it before the tile's compiled surface, so a wheel on haz.puddle, haz.oil_slick
+// or haz.wet_leaves takes Surface.Puddle, Oil or WetLeaves (grip wet 4.0, oil 1.2, wet leaves 3.0). The grip
+// numbers come from the same table as every other surface, so upg.tyres (M6) scales them with the rest. The
+// rain switch (asphalt → rainAsphalt) is a later hook on the table. Everything here is allocation-free per tick.
 import { TILE_M } from './constants.ts';
 import { cos, sin } from './fmath.ts';
 import { type Level, SURFACE_COUNT, Surface } from './map.ts';
@@ -66,12 +68,38 @@ export function surfaceAt(level: Level, xM: number, yM: number): number {
   return surfaceAtTile(level, Math.floor(xM / TILE_M), Math.floor(yM / TILE_M));
 }
 
+/** A `surfaceOverride` value meaning "no hazard here: use the tile's own surface". */
+export const NO_SURFACE = 255;
+
+/**
+ * The surface a wheel at tile (col, row) runs on: the hazard override when `override` (a w·h layer, NO_SURFACE
+ * where no grip hazard lies) has one, else the tile's compiled surface; void (asphalt) outside the map.
+ * Integer arguments only (see surfaceAtTile).
+ */
+export function wheelSurfaceAtTile(
+  level: Level,
+  override: Uint8Array | null,
+  col: number,
+  row: number,
+): number {
+  const w = level.size[0];
+  if (col < 0 || row < 0 || col >= w || row >= level.size[1]) return Surface.Asphalt;
+  const t = row * w + col;
+  if (override !== null) {
+    // In range: the override layer is w·h like the surface layer.
+    const o = override[t] as number;
+    if (o !== NO_SURFACE) return o;
+  }
+  return level.layers.surface[t] as number;
+}
+
 /** A body pose: centre in sim metres, heading in radians (VehicleState satisfies it). */
 export type Pose = { readonly xM: number; readonly yM: number; readonly headingRad: number };
 
 /**
  * Sample the surface under the four wheel contact points of a body at `pose`, and write the average grip k
- * and average rolling-drag multiplier into `out`. The pose travels as an object, not three doubles, because
+ * and average rolling-drag multiplier into `out`. `override` is the hazard store's per-tile surface override
+ * (HazardStore.surfaceOverride), read before the tile surface; null (the default) samples the tiles only. The pose travels as an object, not three doubles, because
  * V8 boxes double arguments of calls it does not inline.
  *
  * Hot-path rule found here (SSP-035): helpers called per tick take objects or integers, never metre doubles,
@@ -83,6 +111,7 @@ export function sampleSurface(
   tuning: SweeperTuning,
   pose: Pose,
   out: VehicleSurface,
+  override: Uint8Array | null = null,
 ): VehicleSurface {
   const body = tuning.body;
   const xM = pose.xM;
@@ -101,10 +130,30 @@ export function sampleSurface(
   const rearX = xM + fx * body.rearAxleOffsetM;
   const rearY = yM + fy * body.rearAxleOffsetM;
 
-  const fl = surfaceAtTile(level, Math.floor((frontX - rx) / TILE_M), Math.floor((frontY - ry) / TILE_M));
-  const fr = surfaceAtTile(level, Math.floor((frontX + rx) / TILE_M), Math.floor((frontY + ry) / TILE_M));
-  const rl = surfaceAtTile(level, Math.floor((rearX - rx) / TILE_M), Math.floor((rearY - ry) / TILE_M));
-  const rr = surfaceAtTile(level, Math.floor((rearX + rx) / TILE_M), Math.floor((rearY + ry) / TILE_M));
+  const fl = wheelSurfaceAtTile(
+    level,
+    override,
+    Math.floor((frontX - rx) / TILE_M),
+    Math.floor((frontY - ry) / TILE_M),
+  );
+  const fr = wheelSurfaceAtTile(
+    level,
+    override,
+    Math.floor((frontX + rx) / TILE_M),
+    Math.floor((frontY + ry) / TILE_M),
+  );
+  const rl = wheelSurfaceAtTile(
+    level,
+    override,
+    Math.floor((rearX - rx) / TILE_M),
+    Math.floor((rearY - ry) / TILE_M),
+  );
+  const rr = wheelSurfaceAtTile(
+    level,
+    override,
+    Math.floor((rearX + rx) / TILE_M),
+    Math.floor((rearY + ry) / TILE_M),
+  );
 
   // Surface ids are always < SURFACE_COUNT (decodeLevel range-checks the layer), so the reads are in range.
   const g = table.gripPerSById;

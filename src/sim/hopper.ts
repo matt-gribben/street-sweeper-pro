@@ -152,6 +152,20 @@ export function addToHopper(hopper: Hopper, lu: number, events: EventQueue): boo
 }
 
 /**
+ * Take `lu` litter units (> 0) out of the hopper: a pothole or speed-bump spill (hazards.ts, SSP-093), which
+ * puts them back on the street as litter items. Never takes more than the hopper holds (hopperLU stays ≥ 0).
+ * Spilled LU are not dumped, so the dump counters do not change. Clears the bulldozer state once LU is below
+ * capacity, which re-arms EV.HopperFull for the next fill. Allocation-free.
+ */
+export function spillFromHopper(hopper: Hopper, lu: number): void {
+  if (!(lu > 0) || lu === Number.POSITIVE_INFINITY) throwBadLu(lu);
+  const v = hopper.vehicle;
+  const next = v.hopperLU - lu;
+  v.hopperLU = next > 0 ? next : 0;
+  if (hopper.full && v.hopperLU < hopper.params.hopperCapacityLU) hopper.full = false;
+}
+
+/**
  * Start draining everything now in the hopper over `drainTicks` ticks (an integer ≥ 1: the site's drainS × 60,
  * 120 at a depot bay and 180 at a skip). shift.ts (SSP-062) calls it when a dump's hold completes, then
  * stepHopperDrain once per tick. Throws if a drain is already running.

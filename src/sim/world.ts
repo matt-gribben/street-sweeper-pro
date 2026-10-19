@@ -4,12 +4,13 @@
 //
 //   1 Input             copy the InputFrame into the sim; hand it to the replay recorder (SSP-038)
 //   2 Vehicle (+hopper) brush state machine (the BRUSH edge, lower/raise and spin timers; brush.ts) → surface
-//                       sample → stepVehicle (handling scaled by the hopper fill, top speed by the brush state)
-//                       → EV.ReverseBeeper → kerb crossing (§8.2 steps 1–9)
+//                       sample, hazard grip overrides included → stepVehicle (handling scaled by the hopper
+//                       fill, top speed by the brush state) → EV.ReverseBeeper → kerb crossing → hazard
+//                       contacts: jolts, LU spills, the open-manhole hard stop (§8.2 steps 1–10; hazards.ts)
 //   3 Static collision  Bessie vs merged solids, map boundary and props: SAT/MTV, restitution, damage, EV.Impact
 //                       (collision/resolveStatic.ts over collision/grid.ts, SSP-036)
 //   4 Bodies            empty until M3
-//   5 Brush/litter/water empty until M2 (SSP-065)
+//   5 Brush/litter/water the leaf-pile brush-up hook (hazards.ts, SSP-093); the rest is SSP-065
 //   6 Dirt              empty until M2 (SSP-065)
 //   7 NPC               empty until M3 (SSP-080)
 //   8 Traffic           empty until M3 (SSP-089)
@@ -31,6 +32,7 @@ import {
   resolveStatic,
   type StaticResolver,
 } from './collision/resolveStatic.ts';
+import type { Entities } from './entities.ts';
 import {
   createEventQueue,
   EV,
@@ -42,12 +44,22 @@ import {
   sealEvents,
 } from './eventQueue.ts';
 import { cos, sin } from './fmath.ts';
+import {
+  createHazardStore,
+  type HazardStore,
+  type HazardStoreView,
+  spawnHazards,
+  stepBrushUpLeaves,
+  stepHazardContacts,
+} from './hazards.ts';
 import { createHopper, type Hopper, type HopperView, setHopperCapacity } from './hopper.ts';
 import { createInputFrame, type InputFrame } from './inputFrame.ts';
 import { createKerbCrossings, findKerbCrossings, type KerbCrossings } from './kerb.ts';
+import { createLitterField, type LitterField, type LitterFieldView } from './litter.ts';
 import type { Level } from './map.ts';
+import { createStream, type Sfc32 } from './rng.ts';
 import { createSurfaceTable, type SurfaceTable, sampleSurface } from './surface.ts';
-import { type SweeperTuning, type Tuning, tuningsEqual } from './tuning.ts';
+import { DEFAULT_ENTITIES, type SweeperTuning, type Tuning, tuningsEqual } from './tuning.ts';
 import {
   createVehicleParams,
   createVehicleState,
@@ -106,6 +118,21 @@ export type World = {
    * litter step (gutter, suction, fling, inlet, bulldozer) joins phase 5 with the LitterField in SSP-065.
    */
   readonly brush: Brush;
+  /**
+   * The LitterField (litter.ts). Until SSP-065 spawns the shift's litter into it and wires the brush, it holds
+   * only the litter hazard jolts spill out of the hopper (SSP-093).
+   */
+  readonly litter: LitterField;
+  /**
+   * The hazard store (hazards.ts, SSP-093), spawned at shift start from the level's speed bumps and compiled
+   * `hazards` spec. Phase 2 reads its grip overrides and applies its jolts and hard stop.
+   */
+  readonly hazards: HazardStore;
+  /**
+   * The `events` stream, sfc32(seed ^ hash32('events')): dynamic litter (LEVEL_DESIGN §9.1 rule 7), so far
+   * the hazard spills. Later event systems draw from this same object.
+   */
+  readonly eventsRng: Sfc32;
   /** The surface sample phase 2 used this tick (average grip k and rolling-drag multiplier). */
   readonly surface: VehicleSurface;
   readonly events: EventQueue;
@@ -138,6 +165,8 @@ export type WorldView = {
   readonly vehicle: Readonly<VehicleState>;
   readonly hopper: HopperView;
   readonly brush: BrushView;
+  readonly litter: LitterFieldView;
+  readonly hazards: HazardStoreView;
   readonly surface: Readonly<VehicleSurface>;
   readonly events: ReadonlyEventQueue;
   readonly staticGrid: StaticGrid;
@@ -148,15 +177,26 @@ export type WorldView = {
 
 /**
  * A World for one shift on `level`, seeded with `seed` (an integer, taken as uint32), using `tuning`. The
- * tuning is passed in, never imported, so the dev panel can supply an edited copy (§8). Bessie spawns at the
- * level's player start (body centre, heading), stationary. The event queue starts empty and sealed.
+ * tuning is passed in, never imported, so the dev panel can supply an edited copy (§8). `entities` is the
+ * validated entities.json; it defaults to the committed file (DEFAULT_ENTITIES), which no caller edits.
+ * Bessie spawns at the level's player start (body centre, heading), stationary. The hazards are spawned
+ * (spawnHazards: speed bumps, placed, random on the `hazards` stream). The event queue starts empty and sealed.
  */
-export function createWorld(level: Level, seed: number, tuning: Tuning): World {
+export function createWorld(
+  level: Level,
+  seed: number,
+  tuning: Tuning,
+  entities: Entities = DEFAULT_ENTITIES,
+): World {
   if (!Number.isInteger(seed)) throw new Error(`createWorld: seed must be an integer, got ${seed}`);
   const sweeper = tuning.vehicle.sweeper;
   const { x, y, heading } = level.player;
   const vehicle = createVehicleState(sweeper, x, y, heading);
   const vehicleParams = createVehicleParams(sweeper, tuning.hopper.capacityLu);
+  const litter = createLitterField(level, tuning, entities);
+  const eventsRng = createStream(seed >>> 0, 'events');
+  const hazards = createHazardStore(level, entities, eventsRng, undefined, litter.capacity);
+  spawnHazards(hazards, level, seed >>> 0);
   const world: World = {
     level,
     tuning,
@@ -167,6 +207,9 @@ export function createWorld(level: Level, seed: number, tuning: Tuning): World {
     vehicleParams,
     hopper: createHopper(vehicle, vehicleParams, tuning.hopper),
     brush: createBrush(tuning, seed >>> 0),
+    litter,
+    hazards,
+    eventsRng,
     surface: { gripPerS: sweeper.lateralGripPerS.asphalt, rollMult: 1 },
     events: createEventQueue(),
     staticGrid: createStaticGrid(level, tuning.propFootprints),
@@ -214,6 +257,7 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   world.hopper.tuning = tuning.hopper;
   setHopperCapacity(world.hopper, tuning.hopper.capacityLu);
   world.brush.tuning = tuning;
+  world.litter.flingTuning = tuning.sweeping.fling;
 }
 
 /** Advance the world by one tick (DT_S) under `input`, running the 11 phases of §5.2 in order. */
@@ -276,16 +320,18 @@ function phaseInput(world: World, input: Readonly<InputFrame>): void {
 /**
  * Phase 2 (§8.2): run the brush state machine (the BRUSH pressed edge and the lower/raise and spin timers, which
  * set vehicle.brushDown and so the top speed; the hopper's full flag moves it between Collecting and
- * Bulldozing), sample the surface under the wheels at the pose the tick starts from, integrate the vehicle
- * (steps 1–8, with step 1 scaling the handling by the hopper's fill fraction through hopperFillFraction), turn
- * the reverse-engage flag into EV.ReverseBeeper, then apply kerb crossings (step 9). The hopper changes only
- * in phases 5 (collection) and 10 (dump drain), so this phase sees last tick's fill.
+ * Bulldozing), sample the surface under the wheels at the pose the tick starts from (hazard grip overrides
+ * first, SSP-093), integrate the vehicle (steps 1–8, with step 1 scaling the handling by the hopper's fill
+ * fraction through hopperFillFraction), turn the reverse-engage flag into EV.ReverseBeeper, apply kerb
+ * crossings (step 9), then the hazard contacts at the integrated pose (step 10: pothole and speed-bump jolts
+ * with their HP and LU spills, the open manhole's hard stop; hazards.ts). Apart from those spills, the hopper
+ * changes only in phases 5 (collection) and 10 (dump drain), so this phase sees last tick's fill.
  */
 function phaseVehicle(world: World): void {
   const v = world.vehicle;
   const sweeper = world.tuning.vehicle.sweeper;
   stepBrushState(world.brush, v, world.input, world.hopper.full);
-  sampleSurface(world.level, world.surfaceTable, sweeper, v, world.surface);
+  sampleSurface(world.level, world.surfaceTable, sweeper, v, world.surface, world.hazards.surfaceOverride);
   stepVehicle(v, world.input, world.surface, world.vehicleParams);
   if (v.reverseEngaged) {
     const e = emitEvent(world.events, EV.ReverseBeeper, -1);
@@ -293,6 +339,7 @@ function phaseVehicle(world: World): void {
     world.events.b[e] = v.yM;
   }
   applyKerbCrossings(world, sweeper);
+  stepHazardContacts(world.hazards, v, sweeper, world.hopper, world.litter, world.events);
 }
 
 /**
@@ -361,11 +408,13 @@ function phaseBodies(_world: World): void {
 }
 
 /**
- * Phase 5: brush, litter and water. SSP-065 wires in beginLitterTick → stepBrushLitter (brush.ts) → stepLitter
- * (litter.ts), and water.ts.
+ * Phase 5: brush, litter and water. SSP-093 runs the leaf-pile brush-up hook (stepBrushUpLeaves: a leaf pile
+ * driven through with the brush Raised becomes haz.wet_leaves). SSP-065 wires in beginLitterTick →
+ * stepBrushLitter (brush.ts) → the brush-up rules (this one and stains.ts's splats) → stepLitter (litter.ts),
+ * and water.ts.
  */
-function phaseBrushLitter(_world: World): void {
-  // Filled by SSP-065.
+function phaseBrushLitter(world: World): void {
+  stepBrushUpLeaves(world.hazards, world.litter, world.brush, world.vehicle, world.tuning.vehicle.sweeper);
 }
 
 /** Phase 6: dirt (grime footprint erase, stain cleaning, dust). SSP-065. */

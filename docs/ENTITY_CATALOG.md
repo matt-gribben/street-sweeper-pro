@@ -496,6 +496,8 @@ Hazards are ground effects with no physical collision (except the open manhole's
 
 Grip values are multiplied by 1.15 with `upg.tyres` (oil 1.2 → 1.38, puddle 4.0 → 4.6, wet leaves 3.0 → 3.45, asphalt 9.0 → 10.35).
 
+*As built (SSP-093, `src/sim/hazards.ts`; the rules in [TECHNICAL_DESIGN §8.2](TECHNICAL_DESIGN.md#82-per-tick-integration-phase-2) steps 7 and 10):* every hazard covers whole 2 m tiles (one tile, or a speed bump's `=` site rectangle). Grip hazards switch the surface under each wheel on them. Jolts and the hard stop act **once per crossing episode**: from the first tick Bessie's wheel rectangle overlaps the hazard until the first tick it does not, judged at her speed on the first tick. The speed bump compares \|vLong\| with its `minSpeedMps` (strictly above 6.0 m/s spills; the brush-down cap never does). A spill moves whole **small-litter** items out of the hopper: the district's `litter.table` kinds of at most 1 LU with no brush-up rule (crisp packets, cans, bottles, butts, wrappers…), by weight, or crisp packets when the level has no table; exactly the LU of the items placed leaves the hopper, never more than it holds. The items land in a strip 0.3–1.3 m behind the rear bumper, ±0.8 m across. A `litter.leaf_pile` driven through brush-up is removed (it stays in Tidy %'s spawned count, like a splatted dog mess) and leaves `haz.wet_leaves` on its tile, unless a hazard already covers the tile.
+
 ---
 
 ## 11. Sites (`site.*`)

@@ -109,6 +109,29 @@ export type StainCleanedEvent = SimEventBase & {
   readonly pts: number;
 };
 
+/**
+ * Bessie jolted over a pothole, or over a speed bump above its speed limit (phase 2, SSP-093). `entity` is the
+ * hazard's store index. Sound: bump_kerb.
+ */
+export type HazardJoltEvent = SimEventBase & {
+  readonly type: typeof EV.HazardJolt;
+  /** Bessie's body centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** LU the jolt spilled out of the hopper behind her (0 when it was empty). */
+  readonly spilledLU: number;
+};
+
+/** Bessie drove into an open manhole and stopped dead (phase 2, SSP-093). Sound: crash. */
+export type HazardStopEvent = SimEventBase & {
+  readonly type: typeof EV.HazardStop;
+  /** Bessie's body centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** |vLong| just before the stop, m/s. */
+  readonly speedMps: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -119,6 +142,8 @@ export type SimEventByType = {
   [EV.LitterCollected]: LitterCollectedEvent;
   [EV.Fling]: FlingEvent;
   [EV.StainCleaned]: StainCleanedEvent;
+  [EV.HazardJolt]: HazardJoltEvent;
+  [EV.HazardStop]: HazardStopEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -166,6 +191,8 @@ function createPayloads(): Payloads {
       kind: 'stain.gum',
       pts: 0,
     },
+    [EV.HazardJolt]: { type: EV.HazardJolt, tick: 0, entity: -1, x: 0, y: 0, spilledLU: 0 },
+    [EV.HazardStop]: { type: EV.HazardStop, tick: 0, entity: -1, x: 0, y: 0, speedMps: 0 },
   };
 }
 
@@ -196,7 +223,9 @@ function isEventType(type: number): type is EventType {
     type === EV.HopperFull ||
     type === EV.LitterCollected ||
     type === EV.Fling ||
-    type === EV.StainCleaned
+    type === EV.StainCleaned ||
+    type === EV.HazardJolt ||
+    type === EV.HazardStop
   );
 }
 
@@ -215,6 +244,8 @@ export class EventBus {
     [EV.LitterCollected]: [],
     [EV.Fling]: [],
     [EV.StainCleaned]: [],
+    [EV.HazardJolt]: [],
+    [EV.HazardStop]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -354,6 +385,26 @@ export class EventBus {
         e.kind = stainKindOf(entity, tick);
         e.pts = c;
         this.emit(EV.StainCleaned, e);
+        return;
+      }
+      case EV.HazardJolt: {
+        const e = this.payloads[EV.HazardJolt];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.spilledLU = c;
+        this.emit(EV.HazardJolt, e);
+        return;
+      }
+      case EV.HazardStop: {
+        const e = this.payloads[EV.HazardStop];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.speedMps = c;
+        this.emit(EV.HazardStop, e);
         return;
       }
     }

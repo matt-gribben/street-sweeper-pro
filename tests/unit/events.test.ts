@@ -35,7 +35,7 @@ function copy(event: SimEvent): SimEvent {
 }
 
 describe('EventBus', () => {
-  it('decodes every M1 and M2 event type into its typed payload', () => {
+  it('decodes every M1, M2 and M3 event type into its typed payload', () => {
     const bus = new EventBus();
     const seen: SimEvent[] = [];
     bus.onAny((e) => seen.push(copy(e)));
@@ -48,8 +48,10 @@ describe('EventBus', () => {
       [EV.LitterCollected, 17, 40.5, 12.25, LITTER_IDS.indexOf('litter.bin_bag')],
       [EV.Fling, 3, 41, 13, LITTER_IDS.indexOf('litter.drink_can')],
       [EV.StainCleaned, STAIN_IDS.indexOf('stain.milkshake'), 20.5, 6.75, 20],
+      [EV.HazardJolt, 4, 22.5, 7.25, 2],
+      [EV.HazardStop, 9, 61, 7, 5.5],
     ]);
-    expect(bus.drain(queue)).toBe(8);
+    expect(bus.drain(queue)).toBe(10);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -67,6 +69,8 @@ describe('EventBus', () => {
         kind: 'stain.milkshake',
         pts: 20,
       },
+      { type: EV.HazardJolt, tick: 42, entity: 4, x: 22.5, y: 7.25, spilledLU: 2 },
+      { type: EV.HazardStop, tick: 42, entity: 9, x: 61, y: 7, speedMps: 5.5 },
     ]);
   });
 

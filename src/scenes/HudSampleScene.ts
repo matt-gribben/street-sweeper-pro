@@ -19,11 +19,9 @@ import { SWEEP_HEIGHT_M } from '../render/camera.ts';
 import { mergeBoxes } from '../render/cityMesh.ts';
 import { createPlaceholderCityMesh, parseCityGrid } from '../render/placeholderCity.ts';
 import { createBuildingShadows } from '../render/shadows.ts';
-import type { SpriteAtlas } from '../render/spriteAtlas.ts';
 import { UiSpriteBatch } from '../render/spriteBatch.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
 import { DumpState } from '../sim/shift.ts';
-import { type BitmapFont, loadBitmapFont } from '../ui/bitmapText.ts';
 import { Hud } from '../ui/hud.ts';
 import { createHudModel, type HudModel, type HudSnapshot, hudModel } from '../ui/hudModel.ts';
 import { HUD_CAPACITY, HUD_FONT } from './ShiftScene.ts';
@@ -87,7 +85,6 @@ export class HudSampleScene implements Scene {
   readonly simEvents = null;
   private readonly context: SceneContext;
   private readonly world: Group;
-  private atlas: SpriteAtlas | null = null;
   private batch: UiSpriteBatch | null = null;
   private hud: Hud | null = null;
   private readonly model = createHudModel();
@@ -110,16 +107,12 @@ export class HudSampleScene implements Scene {
   }
 
   async enter(_params: SceneParams): Promise<void> {
-    const [atlas, font]: [SpriteAtlas, BitmapFont] = await Promise.all([
-      this.context.loadAtlas('ui'),
-      loadBitmapFont(HUD_FONT),
-    ]);
+    // The atlas and the font are the asset registry's (BootScene, SSP-284): never loaded or released here.
+    const atlas = this.context.assets.atlas('ui');
+    const font = this.context.assets.font(HUD_FONT);
     if (font.metrics.atlas !== atlas.name) {
-      atlas.texture.dispose();
-      atlas.swapTexture.dispose();
       throw new Error(`hud_sample: ${font.metrics.id} draws from atlas '${font.metrics.atlas}', not 'ui'`);
     }
-    this.atlas = atlas;
     const batch = new UiSpriteBatch(atlas, HUD_CAPACITY);
     this.batch = batch;
     this.hud = new Hud(batch, font);
@@ -135,11 +128,6 @@ export class HudSampleScene implements Scene {
       this.context.ui.remove(this.batch.mesh);
       this.batch.dispose();
       this.batch = null;
-    }
-    if (this.atlas !== null) {
-      this.atlas.texture.dispose();
-      this.atlas.swapTexture.dispose();
-      this.atlas = null;
     }
     this.hud = null;
   }

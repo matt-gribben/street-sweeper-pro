@@ -28,11 +28,11 @@ import { browserPadSource, GamepadDevice } from '../input/gamepad.ts';
 import { KeyboardDevice } from '../input/keyboard.ts';
 import { pinCameraRig, resetCameraSprings, updateCameraRig } from '../render/camera.ts';
 import { Renderer } from '../render/Renderer.ts';
-import { type AtlasName, loadAtlas, type SpriteAtlas } from '../render/spriteAtlas.ts';
 import { attachUpscaler } from '../render/upscale.ts';
 import { DT_S } from '../sim/constants.ts';
 import { EV } from '../sim/eventQueue.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
+import type { Assets } from './assetRegistry.ts';
 import { EventBus } from './events.ts';
 import { createLoop, type Loop } from './loop.ts';
 import { SceneManager } from './SceneManager.ts';
@@ -53,8 +53,12 @@ export type SceneContext = {
    * subscribes here (ShiftScene's HUD listens for EV.ComboTier, SSP-070) and unsubscribes in exit().
    */
   readonly events: EventBus;
-  /** Loads one sprite atlas (spriteAtlas.ts loadAtlas). */
-  loadAtlas(name: AtlasName): Promise<SpriteAtlas>;
+  /**
+   * The shared, read-only asset registry BootScene loaded (src/app/assetRegistry.ts, SSP-284): every atlas, font
+   * and the palette tables. Scenes read their atlases and fonts here in enter() and never dispose them. Reading
+   * it before BootScene has finished throws.
+   */
+  readonly assets: Assets;
   /**
    * Pins the camera at (x, y) sim metres and height h metres, springs off for good (Game.pinCamera). Test
    * scenes with a fixed view use it (`level_preview`, SSP-045); `__ssp.setCamera` can still move it after.
@@ -123,6 +127,8 @@ export class Game {
   private readonly root: Group;
   private readonly uiRoot: Group;
   private readonly input: TickInputSource;
+  /** The registry BootScene installed (installAssets), or null before. */
+  private registry: Assets | null = null;
   private cameraPinned = false;
   /** True while a scene drives the camera through followCamera. */
   private cameraFollowed = false;
@@ -158,12 +164,15 @@ export class Game {
       lookAheadEnabled: springsOff ? false : this.renderer.rig.lookAheadEnabled,
       night: options.night,
     };
+    const game = this;
     this.sceneContext = {
       renderer: this.renderer,
       root: this.root,
       ui: this.uiRoot,
       events: this.events,
-      loadAtlas: (name) => loadAtlas(name),
+      get assets(): Assets {
+        return game.assets;
+      },
       pinCamera: (x, y, h) => this.pinCamera(x, y, h),
       followCamera: (x, y, vx, vy, speedMps) => this.followCamera(x, y, vx, vy, speedMps),
       releaseCamera: () => {
@@ -196,6 +205,24 @@ export class Game {
       this.loop.handleVisibilityChange(document.hidden);
     });
     this.loop.start();
+  }
+
+  /** The asset registry (SceneContext.assets). Throws until BootScene has installed it. */
+  get assets(): Assets {
+    const assets = this.registry;
+    if (assets === null) throw new Error('Game.assets: BootScene has not loaded the asset registry yet');
+    return assets;
+  }
+
+  /**
+   * Installs the registry BootScene loaded (once per page): scenes read it through SceneContext.assets, and the
+   * renderer's palette pass is built over its palette tables. Throws on a second call.
+   */
+  installAssets(assets: Assets): void {
+    if (this.registry !== null)
+      throw new Error('Game.installAssets: the asset registry is already installed');
+    this.renderer.installPalette(assets.palette);
+    this.registry = assets;
   }
 
   /** True once pinCamera() ran: the camera no longer moves by itself. */

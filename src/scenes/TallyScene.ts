@@ -2,8 +2,9 @@
 // The shift flow (src/app/shiftFlow.ts) enters it on EV.ShiftEnd, after the knock-off coast or on TOWED, with the
 // SimSnapshot the shift ended in; src/ui/tallyPage.ts lays the figures out.
 //
-//   enter()        loads the `ui` atlas and the font (uiScreen.ts) and drops the menu edges latched during the
-//                  shift (Space is the brush too, so a press made while driving must never pick a button).
+//   enter()        takes the `ui` atlas and the font from the asset registry (uiScreen.ts, SSP-284) and drops
+//                  the menu edges latched during the shift (Space is the brush too, so a press made while
+//                  driving must never pick a button).
 //   fixedUpdate()  ignores menu input for TALLY_INPUT_LOCK_TICKS (0.5 s, so a brush or horn press made as the
 //                  shift ended cannot pick a button either), then takes the tick's menu edges: W/↑, S/↓, D-pad and
 //                  left stick move the focus (wrapping), Space / Enter / pad A / Start pick the focused button,
@@ -20,7 +21,6 @@ import { ACTION, type MenuInputSource } from '../input/actions.ts';
 import { INTERNAL_HEIGHT_PX } from '../render/upscale.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
-import type { FontJsonSource } from '../ui/bitmapText.ts';
 import { districtDisplayName } from '../ui/introCard.ts';
 import {
   stepTallyFocus,
@@ -53,8 +53,6 @@ export type TallySceneOptions = {
   readonly onRetry: () => void;
   /** Back to Briefing: called once. */
   readonly onBack: () => void;
-  /** Fetches the font metrics (default: the browser's fetch). Tests inject a file reader. */
-  readonly fontSource?: FontJsonSource;
 };
 
 /** The numbers-only tally page. */
@@ -68,7 +66,6 @@ export class TallyScene implements Scene {
   private readonly menu: MenuInputSource;
   private readonly onRetry: () => void;
   private readonly onBack: () => void;
-  private readonly fontSource: FontJsonSource | undefined;
   private screen: UiScreen | null = null;
   private lockTicks = TALLY_INPUT_LOCK_TICKS;
   private focused: TallyButton = TallyButton.TryAgain;
@@ -84,7 +81,6 @@ export class TallyScene implements Scene {
     this.menu = options.menu;
     this.onRetry = options.onRetry;
     this.onBack = options.onBack;
-    this.fontSource = options.fontSource;
   }
 
   /** The focused button. */
@@ -108,7 +104,7 @@ export class TallyScene implements Scene {
   }
 
   async enter(_params: SceneParams): Promise<void> {
-    this.screen = await UiScreen.load(this.context, 'tally', this.fontSource);
+    this.screen = UiScreen.open(this.context, 'tally');
     this.menu.takeMenuEdges();
   }
 

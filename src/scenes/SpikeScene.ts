@@ -23,14 +23,14 @@ import type { InputFrame } from '../sim/inputFrame.ts';
 import { LeanQuadrantsScene } from './LeanQuadrantsScene.ts';
 import { ScaleSheetScene } from './ScaleSheetScene.ts';
 
-/** Loads one sprite atlas. */
-export type AtlasLoader = (name: AtlasName) => Promise<SpriteAtlas>;
+/** Looks one sprite atlas up in the asset registry BootScene loaded (SceneContext.assets, SSP-284). */
+export type AtlasLookup = (name: AtlasName) => SpriteAtlas;
 
-/** What a spike scene draws: world-pass content, plus sprites attached once their atlases load. */
+/** What a spike scene draws: world-pass content, plus sprites over the registry's atlases. */
 export type SpikeContent = {
   readonly world: Object3D;
-  /** Loads the atlases the content needs through `load` and attaches its sprites; null for none. */
-  readonly attachSprites: ((load: AtlasLoader) => Promise<void>) | null;
+  /** Takes the atlases the content needs through `atlas` and attaches its sprites; null for none. */
+  readonly attachSprites: ((atlas: AtlasLookup) => void) | null;
   /** Poses the content for frame counter `frameCount`; `camYSimM` is the camera's sim y (sprite sorting). */
   update(frameCount: number, camYSimM: number): void;
   /** Night on or off: the content shows or hides its light pools (the renderer owns the night remap). */
@@ -80,19 +80,16 @@ export class SpikeScene implements Scene {
   }
 
   /**
-   * Adds the world content to the world pass at once (it draws alone while the atlases load), then loads the
-   * atlases and attaches the sprites. A bad atlas (a non-palette pixel, a stale FRAME table) rejects here.
+   * Attaches the sprites over the registry's atlases (BootScene checked them at boot: a bad atlas never gets
+   * this far), then adds the world content to the world pass.
    */
   async enter(_params: SceneParams): Promise<void> {
-    this.context.root.add(this.content.world);
     const attach = this.content.attachSprites;
-    if (attach === null) return;
-    try {
-      await attach(this.context.loadAtlas);
-    } catch (error: unknown) {
-      this.context.root.remove(this.content.world);
-      throw error;
+    if (attach !== null) {
+      const assets = this.context.assets;
+      attach((name) => assets.atlas(name));
     }
+    this.context.root.add(this.content.world);
   }
 
   /**
@@ -118,10 +115,7 @@ function leanQuadrants(): SpikeContent {
   const scene = new LeanQuadrantsScene();
   return {
     world: scene.world,
-    attachSprites: async (load) => {
-      const [actors, items] = await Promise.all([load('actors'), load('items')]);
-      scene.attachSprites(actors, items);
-    },
+    attachSprites: (atlas) => scene.attachSprites(atlas('actors'), atlas('items')),
     update: (frameCount, camYSimM) => scene.update(frameCount, camYSimM),
     setNight: (on) => scene.setNight(on),
   };
@@ -131,10 +125,7 @@ function scaleSheet(): SpikeContent {
   const scene = new ScaleSheetScene();
   return {
     world: scene.world,
-    attachSprites: async (load) => {
-      const [actors, items] = await Promise.all([load('actors'), load('items')]);
-      scene.attachSprites(actors, items);
-    },
+    attachSprites: (atlas) => scene.attachSprites(atlas('actors'), atlas('items')),
     update: (frameCount, camYSimM) => scene.update(frameCount, camYSimM),
     setNight: () => {},
   };
@@ -147,8 +138,8 @@ function spikeCity(withActors: boolean): SpikeContent {
   return {
     world,
     attachSprites: withActors
-      ? async (load) => {
-          actors = createSpikeActors(await load('actors'));
+      ? (atlas) => {
+          actors = createSpikeActors(atlas('actors'));
           world.add(actors.group);
         }
       : null,

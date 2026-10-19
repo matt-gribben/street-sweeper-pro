@@ -235,6 +235,7 @@ export function lutRepresentative(cell: number): number {
  * share a cell (the override would then be ambiguous).
  */
 export function buildLut(palette: Kerbside32 = KERBSIDE32): Uint8Array {
+  lutBuilds += 1;
   const lab = palette === KERBSIDE32 ? KERBSIDE32_OKLAB : paletteOklab(palette);
   // srgbToLinear depends on one channel only, so each representative is decoded once rather than per cell.
   const linear = new Float64Array(LUT_SIZE);
@@ -271,6 +272,14 @@ export function buildLut(palette: Kerbside32 = KERBSIDE32): Uint8Array {
 }
 
 let cachedLut: Uint8Array | null = null;
+
+/** buildLut calls since the module loaded (SSP-284: a page builds the LUT exactly once, in BootScene). */
+let lutBuilds = 0;
+
+/** How many times buildLut has run on this page (`__ssp.boot().lutBuilds`, SSP-284). Observation only. */
+export function lutBuildCount(): number {
+  return lutBuilds;
+}
 
 /** The Kerbside-32 LUT, built on first use (~30 ms) and cached in memory for the session. */
 export function kerbside32Lut(): Uint8Array {
@@ -422,28 +431,65 @@ export function createPaletteTexture(palette: Kerbside32 = KERBSIDE32): DataText
   );
 }
 
+/**
+ * The palette pass's lookup tables on the GPU (SSP-284): the 64³ LUT, the 32×2 night/shadow remap and the 32×1
+ * palette, uploaded once. BootScene builds them, the asset registry (src/app/assetRegistry.ts) holds them for the
+ * page's lifetime, and the renderer's palette pass samples them (Renderer.installPalette).
+ */
+export type PaletteTables = {
+  readonly palette: Kerbside32;
+  /** The 64³ RGB → index LUT ({@link lutCell} order). */
+  readonly lut: Uint8Array;
+  readonly lutTexture: Data3DTexture;
+  /** Row 0 night, row 1 shadow (createRemapTexture). */
+  readonly remapTexture: DataTexture;
+  readonly paletteTexture: DataTexture;
+};
+
+/**
+ * Builds the palette pass's tables for `palette`: the Kerbside-32 LUT through the {@link kerbside32Lut} cache (so
+ * a page builds it at most once), any other palette's with a fresh {@link buildLut}.
+ */
+export function createPaletteTables(palette: Kerbside32 = KERBSIDE32): PaletteTables {
+  const lut = palette === KERBSIDE32 ? kerbside32Lut() : buildLut(palette);
+  return {
+    palette,
+    lut,
+    lutTexture: createLutTexture(lut),
+    remapTexture: createRemapTexture(palette),
+    paletteTexture: createPaletteTexture(palette),
+  };
+}
+
+/** Releases the tables' GPU textures (a failed boot; the game otherwise keeps them for the page's lifetime). */
+export function disposePaletteTables(tables: PaletteTables): void {
+  tables.lutTexture.dispose();
+  tables.remapTexture.dispose();
+  tables.paletteTexture.dispose();
+}
+
 /** The full-screen palette pass: RT_world (colour + mask) -> RT_final. */
 export type PalettePass = {
   /** Night remap on or off (outside the light mask). */
   night: boolean;
   /** Draws the pass into `target` (one draw call). */
   render(webgl: WebGLRenderer, target: WebGLRenderTarget): void;
+  /** Releases the pass's material. The tables belong to the asset registry and stay. */
   dispose(): void;
 };
 
 /**
- * Creates the pass over RT_world's colour (attachment 0) and mask (attachment 1) textures. `triangle` is a
- * clip-space full-screen triangle shared with the upscale blit.
+ * Creates the pass over RT_world's colour (attachment 0) and mask (attachment 1) textures, sampling `tables`
+ * (createPaletteTables, built once at boot). `triangle` is a clip-space full-screen triangle shared with the
+ * upscale blit.
  */
 export function createPalettePass(
   colour: Texture,
   mask: Texture,
   triangle: BufferGeometry,
-  palette: Kerbside32 = KERBSIDE32,
+  tables: PaletteTables,
 ): PalettePass {
-  const lutTexture = createLutTexture(palette === KERBSIDE32 ? kerbside32Lut() : buildLut(palette));
-  const remapTexture = createRemapTexture(palette);
-  const paletteTexture = createPaletteTexture(palette);
+  const { lutTexture, remapTexture, paletteTexture } = tables;
   const nightUniform = { value: false };
   const material = new ShaderMaterial({
     glslVersion: GLSL3,
@@ -479,9 +525,6 @@ export function createPalettePass(
     },
     dispose(): void {
       material.dispose();
-      lutTexture.dispose();
-      remapTexture.dispose();
-      paletteTexture.dispose();
     },
   };
 }

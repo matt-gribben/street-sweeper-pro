@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Group } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
+import type { Assets } from '../../src/app/assetRegistry.ts';
 import { EventBus } from '../../src/app/events.ts';
 import type { SceneContext } from '../../src/app/Game.ts';
 import { createLoop, type LoopClock } from '../../src/app/loop.ts';
@@ -22,7 +23,6 @@ import { GamepadDevice } from '../../src/input/gamepad.ts';
 import { KeyboardDevice } from '../../src/input/keyboard.ts';
 import { createDirtyRect, mergeDirtyRect, type TextureRegionUploader } from '../../src/render/groundLayer.ts';
 import type { Renderer } from '../../src/render/Renderer.ts';
-import { type AtlasName, loadAtlas, type RgbaImage } from '../../src/render/spriteAtlas.ts';
 import {
   DEFAULT_DISTRICT,
   districtLevelName,
@@ -34,8 +34,8 @@ import { createInputFrame, PRESSED } from '../../src/sim/inputFrame.ts';
 import { decodeLevel, type Level } from '../../src/sim/map.ts';
 import { readInput } from '../../src/sim/replay.ts';
 import { DEFAULT_TUNING, loadTuning, type Tuning, tuningSourceCopy } from '../../src/sim/tuning.ts';
+import { checkoutAssets, recordingAssets } from '../support/checkoutAssets.ts';
 import { fakePad, keyEvent, padSource, setTrigger } from '../support/fakeInput.ts';
-import { decodePng } from '../support/png.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const read = (rel: string): string => readFileSync(`${REPO_ROOT}${rel}`, 'utf8');
@@ -44,19 +44,13 @@ const LEVEL_JSON = read('public/assets/levels/puddle_lane.json');
 /** Serves compiled levels from the checkout (`/assets/levels/<name>.json` under base `/`). */
 const checkoutLevels = async (url: string): Promise<string> => read(`public/${url.replace(/^\//, '')}`);
 
-/** Serves font metrics from the checkout (`/assets/fonts/<name>.json` under base `/`). */
-const checkoutFonts = async (url: string): Promise<unknown> =>
-  JSON.parse(read(`public/${url.replace(/^\//, '')}`));
+/** What a ShiftScene takes from the registry, sorted: four atlases and the HUD font, nothing loaded itself. */
+const REGISTRY_LOOKUPS = ['atlas:actors', 'atlas:items', 'atlas:ui', 'atlas:world', 'font:kerbside5x7'];
 
-const atlasFiles = new Map<AtlasName, { json: unknown; image: RgbaImage }>();
-
-beforeAll(() => {
-  for (const name of ['world', 'actors', 'items', 'ui'] as const) {
-    atlasFiles.set(name, {
-      json: JSON.parse(read(`public/assets/atlas/${name}.json`)),
-      image: decodePng(readFileSync(`${REPO_ROOT}public/assets/atlas/${name}.png`)),
-    });
-  }
+/** The asset registry BootScene would have loaded (SSP-284): the scene takes its atlases and font here. */
+let assets: Assets;
+beforeAll(async () => {
+  assets = await checkoutAssets();
 });
 
 let level: Level;
@@ -70,7 +64,8 @@ beforeAll(() => {
  */
 function context() {
   const follows: [x: number, y: number, vx: number, vy: number, speed: number][] = [];
-  const loaded: AtlasName[] = [];
+  /** What the scene took from the registry (`atlas:<name>`, `font:<name>`). */
+  const loaded: string[] = [];
   const rig = { snappedX: 0, snappedZ: 0, height: { value: 31.5, velocity: 0 }, internalWidth: 480 };
   // The grime uploads (SSP-066): copyTextureToTexture regions, as [minX, minY, maxX, maxY) cells.
   const uploads: [number, number, number, number][] = [];
@@ -86,12 +81,7 @@ function context() {
     root: new Group(),
     ui: new Group(),
     events: new EventBus(),
-    loadAtlas: async (name) => {
-      loaded.push(name);
-      const files = atlasFiles.get(name);
-      if (files === undefined) throw new Error(`test serves no '${name}' atlas`);
-      return loadAtlas(name, { fetchJson: async () => files.json, fetchImage: async () => files.image });
-    },
+    assets: recordingAssets(assets, loaded),
     pinCamera: () => {
       throw new Error('ShiftScene never pins the camera');
     },
@@ -111,7 +101,7 @@ function scene(options: ShiftSceneOptions = {}) {
   const c = context();
   return {
     ...c,
-    scene: new ShiftScene(c.ctx, { levelSource: checkoutLevels, fontSource: checkoutFonts, ...options }),
+    scene: new ShiftScene(c.ctx, { levelSource: checkoutLevels, ...options }),
   };
 }
 
@@ -177,6 +167,7 @@ async function browserLike(search: string, options: ShiftSceneOptions = {}) {
     renders: () => renders,
     sceneId: () => scenes.top?.id ?? null,
     sceneHistory: () => scenes.ids(),
+    boot: () => ({ status: 'loaded', error: null, lutBuilds: 1 }),
   });
   if (hooks === null) throw new Error('hooks not installed');
   loop.start();
@@ -220,7 +211,7 @@ describe('ShiftScene', () => {
     expect(shift.snapshot()).toBeNull();
     expect(shift.simEvents).toBeNull();
     await shift.enter({ seed: 1, district: 'district.puddle_lane' });
-    expect(loaded.sort()).toEqual(['actors', 'items', 'ui', 'world']);
+    expect(loaded.sort()).toEqual(REGISTRY_LOOKUPS);
     expect(shift.district).toBe('district.puddle_lane');
     const world = shift.worldView;
     if (world === null) throw new Error('no world');
@@ -448,12 +439,11 @@ describe('ShiftScene', () => {
       levelSource: async () => {
         throw new Error('fetched the level');
       },
-      fontSource: checkoutFonts,
     });
     await shift.enter({ seed: 4, district: DEFAULT_DISTRICT });
     expect(shift.level).toBe(level);
-    expect(c.loaded.sort()).toEqual(['actors', 'items', 'ui', 'world']);
-    const other = new ShiftScene(context().ctx, { level, fontSource: checkoutFonts });
+    expect(c.loaded.sort()).toEqual(REGISTRY_LOOKUPS);
+    const other = new ShiftScene(context().ctx, { level });
     await expect(other.enter({ seed: 4, district: 'district.high_street' })).rejects.toThrow(
       /holds 'district.puddle_lane'/,
     );
@@ -478,7 +468,7 @@ describe('ShiftScene', () => {
     await expect(a.scene.enter({ seed: 1 })).rejects.toThrow(/without a district/);
     await expect(a.scene.enter({ seed: 1, district: 'puddle_lane' })).rejects.toThrow(/not a district ID/);
     const b = context();
-    const wrong = new ShiftScene(b.ctx, { levelSource: async () => LEVEL_JSON, fontSource: checkoutFonts });
+    const wrong = new ShiftScene(b.ctx, { levelSource: async () => LEVEL_JSON });
     await expect(wrong.enter({ seed: 1, district: 'district.kebab_mile' })).rejects.toThrow(
       /kebab_mile\.json holds 'district\.puddle_lane'/,
     );

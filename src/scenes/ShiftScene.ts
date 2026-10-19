@@ -5,8 +5,9 @@
 //
 //   enter(params)       takes the level ShiftIntroScene preloaded (options.level, §6.3), or fetches
 //                       `assets/levels/<name>.json` relative to import.meta.env.BASE_URL (levelLoader.ts) and
-//                       decodes it with map.ts; loads the
-//                       `world` and `actors` atlases, calls createWorld(level, seed, tuning), builds the level city
+//                       decodes it with map.ts; takes the `world`, `actors`, `items` and `ui` atlases and the HUD
+//                       font from the asset registry BootScene loaded (SceneContext.assets, SSP-284: it loads and
+//                       releases none itself), calls createWorld(level, seed, tuning), builds the level city
 //                       and Bessie's sprites and places the follow camera over her start pose;
 //   fixedUpdate(input)  world.step(input): one tick of the canonical tick order (§5.2), then merges the tick's
 //                       grime dirty rectangle into the city's GroundGrime (SSP-066), until the shift has ended
@@ -23,7 +24,7 @@
 // the HUD's UI batch (1), then the palette pass and the blit: 8 of the 10 budgeted (§12.7). The items draw is
 // skipped (7) only when no item is in view.
 //
-// HUD (SSP-070, src/ui/hud.ts): enter() also loads the `ui` atlas and Kerbside 5×7 and builds the HUD over one
+// HUD (SSP-070, src/ui/hud.ts): enter() also takes the `ui` atlas and Kerbside 5×7 and builds the HUD over one
 // UiSpriteBatch on the UI pass (SceneContext.ui); it subscribes to EV.ComboTier on the event bus for the tier
 // popups (unsubscribed in exit()). fixedUpdate() rolls the HUD's shown score after each World tick, and render()
 // draws the HUD from the WorldView at the current internal width. The HUD only reads the World.
@@ -44,6 +45,7 @@
 // the dev panel's Save replay refuses (or asks twice) when it does.
 //
 // The shift end's scene change (the tally) is the shift flow's (src/app/shiftFlow.ts, SSP-071); no audio (M5).
+import type { FontName } from '../app/assetRegistry.ts';
 import type { Unsubscribe } from '../app/events.ts';
 import type { SceneContext } from '../app/Game.ts';
 import { type LevelSource, loadLevel } from '../app/levelLoader.ts';
@@ -66,11 +68,11 @@ import { ShiftPhase } from '../sim/shift.ts';
 import { type SimSnapshot, snapshotWorld } from '../sim/snapshot.ts';
 import { DEFAULT_TUNING, type Tuning, tuningsEqual } from '../sim/tuning.ts';
 import { createWorld, setWorldTuning, viewWorld, type World, type WorldView } from '../sim/world.ts';
-import { type BitmapFont, type FontJsonSource, loadBitmapFont } from '../ui/bitmapText.ts';
+import type { BitmapFont } from '../ui/bitmapText.ts';
 import { Hud } from '../ui/hud.ts';
 
 /** The HUD's font (`public/assets/fonts/kerbside5x7.json`). */
-export const HUD_FONT = 'kerbside5x7';
+export const HUD_FONT: FontName = 'kerbside5x7';
 
 /** UI quads the HUD batch holds (the M2 HUD draws under 200). */
 export const HUD_CAPACITY = 512;
@@ -83,15 +85,14 @@ export type ShiftSceneOptions = {
   readonly levelSource?: LevelSource;
   /**
    * The decoded level, already loaded (ShiftIntroScene's preload, or the previous run's on Try Again, SSP-071).
-   * enter() then fetches nothing but the atlases; it still refuses a level whose id is another district.
+   * enter() then fetches nothing (the atlases are the registry's); it still refuses a level whose id is another
+   * district.
    */
   readonly level?: Level;
   /** The tuning the World runs on (default: tuning.json). The dev panel (SSP-048) passes an edited copy. */
   readonly tuning?: Tuning;
   /** Record the shift's input log through the World's replay hook (dev builds). Default false. */
   readonly recordInputs?: boolean;
-  /** Fetches the HUD font's metrics JSON (default: the browser's fetch, bitmapText.ts). Tests inject a reader. */
-  readonly fontSource?: FontJsonSource;
 };
 
 /** `district.<name>` → `<name>`, the compiled level's file name; throws on anything else. */
@@ -118,7 +119,6 @@ export class ShiftScene implements Scene {
   readonly blocksUpdateBelow = false;
   private readonly context: SceneContext;
   private readonly levelSource: LevelSource | undefined;
-  private readonly fontSource: FontJsonSource | undefined;
   private readonly preloadedLevel: Level | null;
   private currentTuning: Tuning;
   /** The tick from which the World has run on a tuning that differs from tuning.json, or null while it does not. */
@@ -133,7 +133,6 @@ export class ShiftScene implements Scene {
   private hud: Hud | null = null;
   private hudBatch: UiSpriteBatch | null = null;
   private unsubscribeHud: Unsubscribe | null = null;
-  private atlases: SpriteAtlas[] = [];
   /** The brush overlay's spin phase (render-side, brushSpin.ts). */
   private readonly brushSpin = createBrushSpin();
   /** The camera's ground rect this frame (the items batch's cull rect before its margin), reused every frame. */
@@ -149,7 +148,6 @@ export class ShiftScene implements Scene {
   constructor(context: SceneContext, options: ShiftSceneOptions = {}) {
     this.context = context;
     this.levelSource = options.levelSource;
-    this.fontSource = options.fontSource;
     this.preloadedLevel = options.level ?? null;
     this.currentTuning = options.tuning ?? DEFAULT_TUNING;
     this.offTuningSinceTick = tuningsEqual(this.currentTuning, DEFAULT_TUNING) ? null : 0;
@@ -265,25 +263,20 @@ export class ShiftScene implements Scene {
     if (district === undefined) throw new Error('ShiftScene: entered without a district');
     const levelName = districtLevelName(district);
     const preloaded = this.preloadedLevel;
-    const [level, world, actors, items, ui, font] = await Promise.all([
-      preloaded ?? loadLevel(levelName, this.levelSource),
-      this.context.loadAtlas('world'),
-      this.context.loadAtlas('actors'),
-      this.context.loadAtlas('items'),
-      this.context.loadAtlas('ui'),
-      loadBitmapFont(HUD_FONT, this.fontSource),
-    ]);
-    const atlases = [world, actors, items, ui];
-    let built: Built;
-    try {
-      if (level.id !== district) {
-        throw new Error(`ShiftScene: ${levelName}.json holds '${level.id}', not '${district}'`);
-      }
-      built = this.build(level, params.seed, world, actors, items, ui, font);
-    } catch (error: unknown) {
-      for (const atlas of atlases) disposeAtlas(atlas);
-      throw error;
+    const assets = this.context.assets;
+    const level = preloaded ?? (await loadLevel(levelName, this.levelSource));
+    if (level.id !== district) {
+      throw new Error(`ShiftScene: ${levelName}.json holds '${level.id}', not '${district}'`);
     }
+    const built = this.build(
+      level,
+      params.seed,
+      assets.atlas('world'),
+      assets.atlas('actors'),
+      assets.atlas('items'),
+      assets.atlas('ui'),
+      assets.font(HUD_FONT),
+    );
     const { sim, city, bessie, hud, hudBatch } = built;
     this.items = built.items;
     if (this.recordInputs) {
@@ -300,7 +293,6 @@ export class ShiftScene implements Scene {
     this.hud = hud;
     this.hudBatch = hudBatch;
     this.unsubscribeHud = hud.attach(this.context.events);
-    this.atlases = atlases;
     this.districtId = district;
     this.context.root.add(city.group, bessie.group, built.items.mesh);
     this.context.ui.add(hudBatch.mesh);
@@ -371,8 +363,6 @@ export class ShiftScene implements Scene {
       this.hudBatch = null;
     }
     this.hud = null;
-    for (const atlas of this.atlases) disposeAtlas(atlas);
-    this.atlases = [];
     if (this.world !== null) {
       this.world.recordInput = null;
       this.world = null;
@@ -416,9 +406,4 @@ export class ShiftScene implements Scene {
     }
     this.frames += 1;
   }
-}
-
-function disposeAtlas(atlas: SpriteAtlas): void {
-  atlas.texture.dispose();
-  atlas.swapTexture.dispose();
 }

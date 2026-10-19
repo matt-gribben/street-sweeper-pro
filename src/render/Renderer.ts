@@ -5,7 +5,9 @@
 //      root's instanced draws (spriteBatch.ts UiSpriteBatch), each texel writing mask (0, 1, 1): never shadowed,
 //      lit (night never remaps it) and flagged as UI;
 //   3. palette pass into RT_final, (W+2)×272: RGB -> Kerbside-32 index via the 64³ OKLab LUT, night and
-//      shadow remaps, index -> palette RGB (palettePass.ts);
+//      shadow remaps, index -> palette RGB (palettePass.ts). Its tables (LUT, remaps, palette) are built once by
+//      BootScene and installed with installPalette() (SSP-284); until then each frame only clears the canvas to
+//      palette index 00;
 //   4. integer-scale nearest blit of RT_final's inner W×270 window, shifted by the camera's sub-pixel
 //      remainder, into the letterboxed canvas. UI pixels are exempt from the shift: where the unshifted or the
 //      shifted RT texel carries the UI flag, the blit samples the unshifted texel, so the HUD stays on the whole
@@ -14,6 +16,7 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  Color,
   GLSL3,
   LinearSRGBColorSpace,
   Mesh,
@@ -22,12 +25,13 @@ import {
   OrthographicCamera,
   Scene,
   ShaderMaterial,
+  type Texture,
   Vector2,
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
 import { type CameraRig, createCameraRig, setCameraFrame } from './camera.ts';
-import { createPalettePass, type PalettePass } from './palettePass.ts';
+import { createPalettePass, KERBSIDE32, type PalettePass, type PaletteTables } from './palettePass.ts';
 import { flipRgbaRows, RGBA_BYTES } from './readback.ts';
 import {
   blitOffsetDevicePx,
@@ -99,7 +103,17 @@ export class Renderer {
   private readonly worldTarget: WebGLRenderTarget;
   /** RT_final: the palette-mapped frame the blit samples. */
   private readonly finalTarget: WebGLRenderTarget;
-  private readonly palettePass: PalettePass;
+  /** The palette pass, built when BootScene installs the palette tables (installPalette); null until then. */
+  private palettePass: PalettePass | null = null;
+  /** Kept for the pass while it does not exist yet (Game sets the night switch every frame from the start). */
+  private nightOn = false;
+  /** Palette index 00, the colour of the canvas before the palette pass exists (read from kerbside32.json). */
+  private readonly index00 = new Color();
+  /** Scratch for the clear colour the pre-boot clear restores. */
+  private readonly savedClear = new Color();
+  private readonly colourTexture: Texture;
+  private readonly maskTexture: Texture;
+  private readonly triangle: BufferGeometry;
   private readonly blitScene: Scene;
   private readonly blitCamera: OrthographicCamera;
   private readonly blitMaterial: ShaderMaterial;
@@ -167,7 +181,11 @@ export class Renderer {
     if (colourTexture === undefined || maskTexture === undefined) {
       throw new Error('RT_world must have two colour attachments');
     }
-    this.palettePass = createPalettePass(colourTexture, maskTexture, triangle);
+    this.colourTexture = colourTexture;
+    this.maskTexture = maskTexture;
+    this.triangle = triangle;
+    const rgb = KERBSIDE32.rgb;
+    this.index00.setRGB((rgb[0] ?? 0) / 255, (rgb[1] ?? 0) / 255, (rgb[2] ?? 0) / 255, LinearSRGBColorSpace);
 
     this.blitOffset = new Vector2(0, 0);
     this.blitMaterial = new ShaderMaterial({
@@ -207,10 +225,36 @@ export class Renderer {
     if (uniforms.uCanvasHeight !== undefined) uniforms.uCanvasHeight.value = layout.canvasDeviceHeight;
   }
 
-  /** Draws one frame from the camera rig's current (already updated) state. */
+  /**
+   * Builds the palette pass over `tables` (BootScene, once the asset registry is loaded, SSP-284). The tables
+   * stay the registry's: the renderer never disposes them. Throws if a palette is already installed.
+   */
+  installPalette(tables: PaletteTables): void {
+    if (this.palettePass !== null)
+      throw new Error('Renderer.installPalette: the palette is already installed');
+    const pass = createPalettePass(this.colourTexture, this.maskTexture, this.triangle, tables);
+    pass.night = this.nightOn;
+    this.palettePass = pass;
+  }
+
+  /**
+   * Draws one frame from the camera rig's current (already updated) state. Until BootScene has installed the
+   * palette (installPalette) nothing can pass through the palette pass, so the canvas is cleared to palette
+   * index 00 instead (the colour an empty world maps to) with no draw call, and the frame is not counted.
+   */
   render(): void {
     const webgl = this.webgl;
     webgl.info.reset();
+    const pass = this.palettePass;
+    if (pass === null) {
+      webgl.getClearColor(this.savedClear);
+      const alpha = webgl.getClearAlpha();
+      webgl.setRenderTarget(null);
+      webgl.setClearColor(this.index00, 1);
+      webgl.clear(true, false, false);
+      webgl.setClearColor(this.savedClear, alpha);
+      return;
+    }
     this.framesRendered += 1;
 
     // Clearing RT_world clears both attachments: mask (0, 0) is unshadowed and unlit.
@@ -223,7 +267,7 @@ export class Renderer {
     webgl.render(this.ui, this.uiCamera);
     webgl.autoClear = true;
 
-    this.palettePass.render(webgl, this.finalTarget);
+    pass.render(webgl, this.finalTarget);
 
     this.blitOffset.set(
       blitOffsetDevicePx(this.rig.fractionX, this.scale),
@@ -255,7 +299,10 @@ export class Renderer {
     return flipRgbaRows(raw, width, INTERNAL_HEIGHT_PX);
   }
 
-  /** Frames drawn by render() since the renderer was built (`__ssp.perf().renders`, SSP-046). */
+  /**
+   * Complete frames drawn by render() since the renderer was built (`__ssp.perf().renders`, SSP-046); the
+   * index-00 clears before the palette is installed do not count.
+   */
   get renderCount(): number {
     return this.framesRendered;
   }
@@ -267,11 +314,12 @@ export class Renderer {
 
   /** Night remap (outside the light mask) on or off. */
   get night(): boolean {
-    return this.palettePass.night;
+    return this.nightOn;
   }
 
   set night(on: boolean) {
-    this.palettePass.night = on;
+    this.nightOn = on;
+    if (this.palettePass !== null) this.palettePass.night = on;
   }
 
   /** Current integer upscale factor. */

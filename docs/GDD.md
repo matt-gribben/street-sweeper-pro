@@ -850,7 +850,7 @@ flowchart LR
 
 Scene names match `src/scenes/` (see [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md), whose §6.2 mirrors this diagram). `ZooScene` is a test-only scene and never reachable from menus.
 
-**M2 stand-in (SSP-071, until TitleScene and WeekMapScene exist):** the game boots straight to the intro card for Puddle Lane, and the numbers-only tally offers **Try Again** (default focus: the same shift and seed, intro card skipped) and **Back to Briefing**, which returns to the intro card and stands in for 'quit' (to the Week Map). The tally ignores menu input for its first **0.5 s** (proposed), so a brush or horn press made as the shift ends cannot pick a button by accident.
+**M2 stand-in (SSP-071, until TitleScene and WeekMapScene exist):** BootScene (SSP-284) loads the game's art once and hands off straight to the intro card for Puddle Lane, and the numbers-only tally offers **Try Again** (default focus: the same shift and seed, intro card skipped) and **Back to Briefing**, which returns to the intro card and stands in for 'quit' (to the Week Map). The tally ignores menu input for its first **0.5 s** (proposed), so a brush or horn press made as the shift ends cannot pick a button by accident.
 
 **Flow targets (proposed, M7):**
 

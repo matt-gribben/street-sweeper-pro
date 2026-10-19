@@ -2,7 +2,8 @@
 // Text only (src/ui/introCard.ts): the district name, a one-line briefing placeholder and 'Press Space to start'.
 // It is the first scene of the shift flow (src/app/shiftFlow.ts) and what `npm run dev` boots into.
 //
-//   enter()             loads the `ui` atlas and the font (uiScreen.ts), then starts loading the compiled level
+//   enter()             takes the `ui` atlas and the font from the asset registry (uiScreen.ts, BootScene,
+//                       SSP-284), then starts loading the compiled level
 //                       (levelLoader.ts) without waiting for it, so the card is on screen while the level loads
 //                       (§6.3). With options.level (Back to Briefing, or a level loaded before) there is nothing
 //                       to load. Menu edges latched before the card showed are dropped.
@@ -20,7 +21,6 @@ import { ACTION, type MenuInputSource } from '../input/actions.ts';
 import { INTERNAL_HEIGHT_PX } from '../render/upscale.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
 import type { Level } from '../sim/map.ts';
-import type { FontJsonSource } from '../ui/bitmapText.ts';
 import { IntroStatus, introCardLayout } from '../ui/introCard.ts';
 import { type UiItem, uiItemStrings } from '../ui/uiItems.ts';
 import { districtLevelName } from './ShiftScene.ts';
@@ -37,8 +37,6 @@ export type ShiftIntroOptions = {
   readonly level?: Level;
   /** Fetches the compiled level JSON (default: the browser's fetch). Tests inject a file reader. */
   readonly levelSource?: LevelSource;
-  /** Fetches the font metrics (default: the browser's fetch). Tests inject a file reader. */
-  readonly fontSource?: FontJsonSource;
 };
 
 /** The intro card. */
@@ -51,7 +49,6 @@ export class ShiftIntroScene implements Scene {
   private readonly menu: MenuInputSource;
   private readonly onStart: (level: Level) => void;
   private readonly levelSource: LevelSource | undefined;
-  private readonly fontSource: FontJsonSource | undefined;
   private loaded: Level | null;
   private failed = false;
   private screen: UiScreen | null = null;
@@ -71,7 +68,6 @@ export class ShiftIntroScene implements Scene {
     this.onStart = options.onStart;
     this.loaded = options.level ?? null;
     this.levelSource = options.levelSource;
-    this.fontSource = options.fontSource;
   }
 
   /** The level once it has loaded (null while loading, or if it failed). */
@@ -96,7 +92,7 @@ export class ShiftIntroScene implements Scene {
   }
 
   async enter(_params: SceneParams): Promise<void> {
-    this.screen = await UiScreen.load(this.context, 'shift_intro', this.fontSource);
+    this.screen = UiScreen.open(this.context, 'shift_intro');
     this.menu.takeMenuEdges();
     if (this.loaded !== null) return;
     const name = districtLevelName(this.district);

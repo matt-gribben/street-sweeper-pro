@@ -13,9 +13,12 @@
 // - Try Again restarts the same seed with the intro skipped: `__ssp.state().tick` is back to 0, the start state
 //   equals the first shift's, `__ssp.sceneHistory()` never shows a second intro, and the shift scene is active
 //   within 3 s of the key press;
-// - the card and the tally draw in 3 calls (UI batch, palette pass, blit), and nothing logs an error.
+// - the card and the tally draw in 3 calls (UI batch, palette pass, blit), and nothing logs an error;
+// - BootScene (SSP-284) loaded everything once: across the boot, intro, shift, tally and Try Again the request log
+//   holds each atlas PNG and JSON and the font metrics exactly once, and the palette LUT was built once.
 // Frames are saved to test-results/ as review captures (open them with Read).
 import { expect, type Page, test } from '@playwright/test';
+import { ATLAS_NAMES, FONT_NAMES } from '../../src/app/assetRegistry.ts';
 import type { ShiftTestState } from '../../src/debug/testHooks.ts';
 import { KERBSIDE32 } from '../../src/render/palettePass.ts';
 import { INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
@@ -122,6 +125,12 @@ test('intro → Space → full shift → tally matching state() → Try Again re
 }, testInfo) => {
   test.setTimeout(120_000);
   const errors = collectPageErrors(page);
+  // Every asset request the page makes, as paths (`/assets/atlas/ui.png`), for the load-once check at the end.
+  const requests: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith('/assets/')) requests.push(path);
+  });
   await openTestScene(page, FLOW_URL);
   expect(await sceneId(page)).toBe('shift_intro');
 
@@ -219,6 +228,7 @@ test('intro → Space → full shift → tally matching state() → Try Again re
   const again = await shiftState(page);
   expect(sim(again)).toEqual(sim(start));
   expect(await page.evaluate(() => window.__ssp?.sceneHistory())).toEqual([
+    'boot',
     'shift_intro',
     'shift',
     'tally',
@@ -227,5 +237,26 @@ test('intro → Space → full shift → tally matching state() → Try Again re
   await step(page, 30);
   expect((await shiftState(page)).tick).toBe(30);
   await saveFrame(testInfo, 'flow_retry.png', await readTestFrame(page));
+
+  // BootScene loaded every atlas and font once for the whole flow (SSP-284), and built the LUT once.
+  const bootFiles = [
+    ...ATLAS_NAMES.flatMap((name) => [`/assets/atlas/${name}.png`, `/assets/atlas/${name}.json`]),
+    ...FONT_NAMES.map((name) => `/assets/fonts/${name}.json`),
+  ];
+  for (const file of bootFiles) {
+    expect(
+      requests.filter((path) => path === file),
+      file,
+    ).toHaveLength(1);
+  }
+  expect(
+    requests.filter((path) => path.startsWith('/assets/atlas/') || path.startsWith('/assets/fonts/')).sort(),
+  ).toEqual([...bootFiles].sort());
+  console.log(`[flow] asset requests: ${requests.join(', ')}`);
+  expect(await page.evaluate(() => window.__ssp?.boot())).toEqual({
+    status: 'loaded',
+    error: null,
+    lutBuilds: 1,
+  });
   expect(errors).toEqual([]);
 });

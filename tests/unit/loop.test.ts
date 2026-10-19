@@ -209,6 +209,32 @@ describe('createLoop with an injected clock', () => {
     expect(loop.ticks).toBe(2);
   });
 
+  it('calls beginFrame once at the start of every frame, before its ticks, frozen or not (SSP-044)', () => {
+    const clock = fakeClock();
+    const target = recordingTarget();
+    const loop = createLoop({ ...target, beginFrame: () => target.log.push('begin') }, { clock });
+    loop.start();
+    clock.runFrame(1000 / 30 + 0.001);
+    clock.runFrame(1000 / 30 + 0.002); // no tick owed
+    expect(target.log).toEqual([
+      'begin',
+      'input',
+      'update',
+      'drain',
+      'input',
+      'update',
+      'drain',
+      'render',
+      'begin',
+      'render',
+    ]);
+    target.log.length = 0;
+    loop.setFrozen(true);
+    clock.runFrame(1000);
+    loop.runTicks(2); // __ssp.step(n) runs ticks without a frame: no poll
+    expect(target.log).toEqual(['begin', 'render', 'input', 'update', 'drain', 'input', 'update', 'drain']);
+  });
+
   it('clamps a 1 s hitch to 5 ticks and passes the clamped frame time to render', () => {
     const clock = fakeClock();
     const target = recordingTarget();

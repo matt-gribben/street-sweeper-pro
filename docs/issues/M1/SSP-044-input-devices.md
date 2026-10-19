@@ -2,7 +2,7 @@
 id: SSP-044
 title: "Implement keyboard and gamepad input producing quantised per-tick InputFrames"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:input, area:test, size:M, vertical-slice]

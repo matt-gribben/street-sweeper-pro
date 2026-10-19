@@ -42,9 +42,10 @@
 // blit: 7 of the 10 allowed (TECHNICAL_DESIGN §12.7); at night the light pools add the fx draw (8).
 import { Group, type Mesh } from 'three';
 import type { FrameId } from '../gen/assets.ts';
-import { createCityMesh, mergeBoxes, parseCityGrid } from '../render/cityMesh.ts';
+import { mergeBoxes } from '../render/cityMesh.ts';
 import { bessieBodyFrame, bessieBrushFrame, HEADING_COUNT } from '../render/headings.ts';
 import { createLightPools } from '../render/lightPools.ts';
+import { createPlaceholderCityMesh, parseCityGrid } from '../render/placeholderCity.ts';
 import { createBuildingShadows } from '../render/shadows.ts';
 import { spikeBrushSpin, spikeHeading } from '../render/spikeActors.ts';
 import type { SpriteAtlas } from '../render/spriteAtlas.ts';
@@ -148,7 +149,7 @@ export class LeanQuadrantsScene {
 
   constructor() {
     const grid = parseCityGrid(LEAN_QUADRANTS_ROWS, LEAN_QUADRANTS_ORIGIN_M[0], LEAN_QUADRANTS_ORIGIN_M[1]);
-    const city = createCityMesh(grid);
+    const city = createPlaceholderCityMesh(grid);
     city.renderOrder = 0;
     const shadows = createBuildingShadows(mergeBoxes(grid));
     // Building shadows follow the city so roofs and walls are already in the depth buffer.

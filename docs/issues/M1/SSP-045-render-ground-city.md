@@ -2,7 +2,7 @@
 id: SSP-045
 title: "Render compiled levels: chunked ground layer and full cityMesh cell merge"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:render, area:test, size:L, vertical-slice]

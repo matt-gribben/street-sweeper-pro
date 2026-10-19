@@ -6,7 +6,8 @@ import type { InstancedMesh } from 'three';
 import { describe, expect, it } from 'vitest';
 import { FRAME, type FrameId } from '../../src/gen/assets.ts';
 import { groundPxPerMetre, SWEEP_HEIGHT_M } from '../../src/render/camera.ts';
-import { CELL_M, GroundType, parseCityGrid } from '../../src/render/cityMesh.ts';
+import { CELL_M } from '../../src/render/cityMesh.ts';
+import { GroundType, parseCityGrid } from '../../src/render/placeholderCity.ts';
 import {
   type AtlasName,
   indexAtlasPixels,

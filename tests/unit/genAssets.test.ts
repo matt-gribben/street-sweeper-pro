@@ -149,6 +149,8 @@ describe('src/gen/assets.ts', () => {
       'public/assets/atlas/items.png',
       'public/assets/atlas/world.json',
       'public/assets/atlas/world.png',
+      // Listed by the level compiler after forge build (SSP-042).
+      'public/assets/levels/puddle_lane.json',
       'src/gen/assets.ts',
     ]);
     for (const hash of Object.values(parsed as Record<string, string>))

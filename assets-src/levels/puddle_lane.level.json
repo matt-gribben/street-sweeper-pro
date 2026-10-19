@@ -1,0 +1,192 @@
+{
+  "schema": 1,
+  "id": "district.puddle_lane",
+  "name": "Puddle Lane",
+  "day": "mon",
+  "mode": "shift",
+  "map": "puddle_lane.map.txt",
+  "size": [64, 48],
+  "timer": 240,
+  "seed": 1001,
+  "timeOfDay": "dawn",
+  "weather": "clear",
+  "music": "mus.puddle_lane",
+  "ambience": "amb.town_morning",
+  "start": { "heading": 0 },
+  "depot": { "rect": [0, 38, 14, 10] },
+  "buildings": {
+    "A": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "B": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "C": {
+      "storeys": 3,
+      "roof": "roof.slate",
+      "wall": "facade.parade_brick",
+      "use": "house",
+      "roofkit": ["chimney", "vent"]
+    },
+    "D": {
+      "storeys": 3,
+      "roof": "roof.felt",
+      "wall": "facade.corner_shop",
+      "use": "shop",
+      "frontageWidth": 5
+    },
+    "E": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick", "use": "house" },
+    "F": {
+      "storeys": 3,
+      "roof": "roof.felt",
+      "wall": "facade.flats_render",
+      "use": "house",
+      "frontageWidth": 4,
+      "roofkit": ["water_tank", "vent"]
+    },
+    "G": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "H": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "J": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "K": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "L": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "M": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "N": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "P": {
+      "storeys": 2,
+      "roof": "roof.depot",
+      "wall": "facade.depot_shed",
+      "use": "depot",
+      "landmark": true
+    },
+    "Q": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "R": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "S": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "T": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "U": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "V": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "W": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "X": {
+      "storeys": 3,
+      "roof": "roof.felt",
+      "wall": "facade.flats_render",
+      "use": "house",
+      "frontageWidth": 4,
+      "roofkit": ["water_tank", "vent"]
+    },
+    "Y": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "Z": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "roofkit": ["chimney"]
+    }
+  },
+  "anchors": {
+    "1": "doris_home",
+    "2": "zebra_puddle_s",
+    "3": "corner_shop_door",
+    "4": "pump_green_ne",
+    "5": "pump_green_east_walk",
+    "6": "pump_green_se",
+    "7": "pump_green_sw"
+  }
+}

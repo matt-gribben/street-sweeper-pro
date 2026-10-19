@@ -10,10 +10,12 @@
 //   --src <dir>       directory of map/level pairs (default assets-src/levels)
 //   --manifest <file> asset manifest for the roof and facade id check (default assets-src/manifest.json)
 // Relative paths resolve against the working directory. Exit status: 0 ok, 1 a level has errors, 2 usage.
-// The kerb blob table is always assets-src/procedural/tiles/kerb_blob.json (KERB_BLOB_PATH).
+// The kerb blob table is always assets-src/procedural/tiles/kerb_blob.json (KERB_BLOB_PATH). After compiling,
+// the compiled levels are listed in the output root's public/assets/asset-hashes.json (syncLevelHashes, SSP-042).
 //
 // Runs on plain Node 24 type stripping (no tsx): erasable syntax only, explicit `.ts` imports, Node built-ins
 // and src/sim/** only (never three or src/render). Output is byte-deterministic: no timestamps, fixed order.
+import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1246,8 +1248,53 @@ export function runCompileLevel(
     io.log(`compile-level: ${level.id} ${level.size[0]}x${level.size[1]} → ${shown(target)}`);
     compiled += 1;
   }
+  const listed = syncLevelHashes(outRoot);
+  if (listed !== null)
+    io.log(`compile-level: ${listed} level(s) listed in ${shown(join(outRoot, HASHES_JSON))}`);
   io.log(`compile-level: ${compiled} compiled, ${failed} failed`);
   return failed > 0 ? 1 : 0;
+}
+
+/** The generated-file hash listing under an output root (written by `forge build`, ASSET_PIPELINE §9.3). */
+export const HASHES_JSON = 'public/assets/asset-hashes.json';
+
+/**
+ * List every compiled level in the root's asset-hashes.json, so `forge verify` sees them as listed generated
+ * files (SSP-042). `forge build` writes the file first with its own outputs, and `npm run assets` runs this
+ * compiler after it, so the entries under `public/assets/levels/` are replaced by the SHA-256 of every
+ * `*.json` file there now; every other entry is kept. The format matches the forge's (keys sorted, two-space
+ * indent, final newline). The file is rewritten only when its bytes change. Returns the number of levels
+ * listed, or null when the root has no hash listing (a fixture `--out` root), which is then left alone.
+ */
+export function syncLevelHashes(outRoot: string): number | null {
+  const hashesPath = join(outRoot, HASHES_JSON);
+  let before: string;
+  try {
+    before = readFileSync(hashesPath, 'utf8');
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return null;
+    throw err;
+  }
+  const doc: unknown = JSON.parse(before);
+  if (!isObject(doc)) throw new Error(`${hashesPath}: expected an object of path → sha256`);
+  const prefix = `${LEVELS_OUT_DIR}/`;
+  const entries: [string, unknown][] = Object.entries(doc).filter(([k]) => !k.startsWith(prefix));
+  let levels: string[] = [];
+  try {
+    levels = readdirSync(join(outRoot, LEVELS_OUT_DIR), { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith('.json'))
+      .map((e) => e.name);
+  } catch (err) {
+    if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err;
+  }
+  for (const name of levels) {
+    const bytes = readFileSync(join(outRoot, LEVELS_OUT_DIR, name));
+    entries.push([prefix + name, createHash('sha256').update(bytes).digest('hex')]);
+  }
+  entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  const after = `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`;
+  if (after !== before) writeFileSync(hashesPath, after);
+  return levels.length;
 }
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));

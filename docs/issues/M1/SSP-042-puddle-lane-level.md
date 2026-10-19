@@ -2,7 +2,7 @@
 id: SSP-042
 title: "Author Puddle Lane map.txt and level.json (64\u00d748) and commit compiled output"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:gameplay, area:assets, area:test, size:M, vertical-slice]

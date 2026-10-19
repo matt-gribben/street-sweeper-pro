@@ -13,8 +13,8 @@ ingest or review any asset.
 - **Locked means locked.** After M0 closes, changing the scale, the palette or a remap table needs an ADR under
   `docs/adr/` and a whole-class regeneration ([ROADMAP §1](../docs/ROADMAP.md#1-planning-principles) principle 2,
   [ADR 0002 §3.4](../docs/adr/0002-ai-authored-asset-pipeline.md#34-locks-that-come-before-any-asset-is-generated-m0)).
-  The D-xx calls below were made by Claude under the owner's delegation and are **pending owner review** at the
-  Close M0 PR (SSP-027). Until then the owner may overturn one without an ADR.
+  The D-xx calls below were made by Claude under the owner's delegation and were approved by the owner when M0
+  closed (2026-10-19, tag `m0`). Changing one now needs an ADR.
 - **Evidence.** Each decision's measurements and the frames that were read are in the
   [ROADMAP §8 decision log](../docs/ROADMAP.md#8-m0-spike-decision-log). This file records outcomes only.
 

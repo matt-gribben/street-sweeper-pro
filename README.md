@@ -14,7 +14,7 @@ A top-down pixel-art arcade driving game about the most underappreciated job in 
 
 ---
 
-## Status: pre-alpha, M1 complete (pending lead approval)
+## Status: pre-alpha, M1 complete (approved and tagged `m1`, 2026-10-19)
 
 Milestone **M1, Drivable Bessie**, is done (2026-10-19). `npm run dev` opens Puddle Lane, compiled from its ASCII map and drawn with procedural placeholder tiles and facades. You can drive Bessie there with the keyboard or a gamepad. Under her is the deterministic sim: a kinematic bicycle model, OBB/SAT collision with impact damage, kerb jolts and surface grip. The camera adds look-ahead and speed zoom, and the F1 dev panel tunes the handling live. The first 3,600-tick replay hash is committed. The evidence is in [docs/ROADMAP.md](docs/ROADMAP.md#m1-drivable-bessie). Milestone **M0, Foundations & Look Spike** (pinned scaffold, forge, Blender and Codex wrappers, the locked Kerbside-32 palette in [assets-src/STYLE.md](assets-src/STYLE.md)) closed earlier the same day, and the decisions it settled are in the [M0 decision log](docs/ROADMAP.md#8-m0-spike-decision-log). There is **no game loop yet**: no brush, litter, timer, HUD or audio. The next milestone is **M2, Sweeping Core**.
 

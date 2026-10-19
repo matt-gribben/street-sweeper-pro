@@ -8,7 +8,7 @@ Read this file first in every session. It is short on purpose: it tells you **wh
 
 **Street Sweeper Pro** is a top-down pixel-art arcade driving game. You drive **Bessie**, a council road sweeper (a *Dustmaster 3000*), through a week of 240 s shifts in the British seaside town of **Muckleford**. You collect litter, paint grime clean and avoid cats, grannies, joggers and dogs. It is built with **three.js 0.186.1 + TypeScript 7.0.2 + Vite 8.3.4**: a perspective camera looks straight down into a 480×270 palette-mapped render target. **Every asset is authored by AI agents** (that means you) from sources committed to this repo, through a deterministic pipeline. There is no human artist or composer. Release target is web 1.0 on itch.io (milestone **M7**).
 
-**Repo status (2026-10-19):** M0 (**Foundations & Look Spike**) is complete, pending the lead's approval and the `m0` tag. The scaffold, the forge, every npm script in §4, the render spike and its visual goldens exist, and `npm run ci` is green on the dev Mac. There is no sim, game loop or audio yet (M1+). Some layout and commands below are still plans for later milestones (`npm run audio` and `npm run levels` are 0-source guards, there are no replays before M1, no zoo scene before M3, SSP-298). Until a command exists, do not pretend it ran.
+**Repo status (2026-10-19):** M0 (**Foundations & Look Spike**) and M1 (**Drivable Bessie**) are complete and approved by the owner (git tags `m0` and `m1`). The scaffold, the forge, every npm script in §4, the locked look (`assets-src/STYLE.md` v1), the deterministic sim (vehicle model, static collision, kerbs, surface grip, replays with committed hashes), the level compiler and Puddle Lane, the 60 Hz loop, keyboard and gamepad input, camera look-ahead and speed zoom, and the F1 dev panel all exist, and `npm run ci` is green on the dev Mac. There is no brush, litter, timer, HUD or audio yet (M2+). Some layout and commands below are still plans for later milestones (`npm run audio` is a 0-source guard until M5, and there is no zoo scene before M3, SSP-298). Until a command exists, do not pretend it ran.
 
 ---
 
@@ -164,7 +164,7 @@ Do not call these by hand for production assets. Go through the forge wrappers, 
 | AI folder | full asset ID | `assets-src/ai/litter.sheet_01/` |
 | Blender renders | full asset ID | `assets-src/rendered/veh.sweeper/h00.png` |
 
-- **IDs are canonical and stable.** Use only IDs listed in [docs/ENTITY_CATALOG.md](docs/ENTITY_CATALOG.md). Adding an ID means updating `entities.json`, the catalog and `assets-src/manifest.json` in one change. Renaming an ID needs an explicit request.
+- **IDs are canonical and stable.** Use only IDs listed in [docs/ENTITY_CATALOG.md](docs/ENTITY_CATALOG.md). Exception: world-art IDs (`tile.*`, `facade.*`, `roof.*`) are owned by `assets-src/manifest.json` and [docs/ART_BIBLE.md §9](docs/ART_BIBLE.md), not the catalog (decided in SSP-040/SSP-041). Adding an ID means updating `entities.json`, the catalog and `assets-src/manifest.json` in one change. Renaming an ID needs an explicit request.
 - **Placeholder first.** A new asset ships as a code-defined placeholder under its final ID and frame IDs, then gets upgraded behind the same IDs.
 
 ---

@@ -1284,7 +1284,7 @@ Every recipe starts and ends the same way:
 2. Reference it from a facade set in `assets-src/procedural/facades/<set>.json`. The forge derives `lit` (N/W faces) and `dark` (E/S faces) by ramp shift ([ART_BIBLE §9.4](ART_BIBLE.md#94-facades)).
 3. Run the common end steps, then check `level_preview` (`?test=1&scene=level_preview&freeze=1`, compiled Puddle Lane; SSP-045). `lean_quadrants` draws the M0 placeholder module, not the facade sets.
 
-**IDs: sets are assets, modules are sources** (SSP-041, lead decision, pending owner review). The manifest lists **facade sets**, the `facade.*` IDs that a `level.json` building names as its `wall` ([LEVEL_DESIGN §8.5](LEVEL_DESIGN.md#85-worked-example-1-a-puddle-lane-excerpt)): `technique: "procedural"`, `source: assets-src/procedural/facades/<set>.json`, generator `facades.set`, atlas `world`, `outline: false`. Modules are never manifest entries and have no frames of their own; a module name must not equal a set's name (pytest checks this, and that every module is used by some set).
+**IDs: sets are assets, modules are sources** (SSP-041, lead decision, approved by the owner at the M0/M1 close, 2026-10-19). The manifest lists **facade sets**, the `facade.*` IDs that a `level.json` building names as its `wall` ([LEVEL_DESIGN §8.5](LEVEL_DESIGN.md#85-worked-example-1-a-puddle-lane-excerpt)): `technique: "procedural"`, `source: assets-src/procedural/facades/<set>.json`, generator `facades.set`, atlas `world`, `outline: false`. Modules are never manifest entries and have no frames of their own; a module name must not equal a set's name (pytest checks this, and that every module is used by some set).
 
 **Set params:**
 

@@ -2,7 +2,7 @@
 id: SSP-035
 title: "Add World, EventQueue and fixed tick order with surface grip and kerb jolts"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:physics, area:test, size:M, vertical-slice]
@@ -73,12 +73,12 @@ The sim never reads the render camera (§7.4). Zero allocations per tick.
 
 ## Acceptance criteria
 
-- [ ] Driving at 5 m/s across a raised kerb leaves vLong at 3.5 m/s ± 1e-9 immediately after the front-axle crossing (isolating drag, or accounting for it explicitly), with exactly one EV.KerbJolt, and the rear-axle crossing adds one jolt with no speed change
-- [ ] Crossing a dropped kerb changes neither speed nor events
-- [ ] With all four wheels on grass, k = 5.0 and rollMult = 2.5; with two on asphalt and two on pavement, k = 8.5
-- [ ] The phases run in the documented order (verified via an optional phase-trace callback that is null by default)
-- [ ] The EventQueue is empty at the start of every tick, and pushing a 513th event in one tick throws
-- [ ] Two Worlds stepped with the same 3,600-tick input sequence end in bit-identical state
+- [x] Driving at 5 m/s across a raised kerb leaves vLong at 3.5 m/s ± 1e-9 immediately after the front-axle crossing (isolating drag, or accounting for it explicitly), with exactly one EV.KerbJolt, and the rear-axle crossing adds one jolt with no speed change
+- [x] Crossing a dropped kerb changes neither speed nor events
+- [x] With all four wheels on grass, k = 5.0 and rollMult = 2.5; with two on asphalt and two on pavement, k = 8.5
+- [x] The phases run in the documented order (verified via an optional phase-trace callback that is null by default)
+- [x] The EventQueue is empty at the start of every tick, and pushing a 513th event in one tick throws
+- [x] Two Worlds stepped with the same 3,600-tick input sequence end in bit-identical state
 
 ## Verification
 

@@ -465,6 +465,8 @@ type CheckedCollectibles = {
 /** The level.json fields the compiler consumes, after the guards. */
 type CheckedLevel = {
   id: string;
+  /** The display name (level.json `name`), copied to the compiled level for the HUD (SSP-299). */
+  name: string;
   mode: Mode;
   seed: number;
   /**
@@ -1295,6 +1297,7 @@ function checkLevelFile(
   if (!headingOk || depotRect === null) return null;
   return {
     id,
+    name: typeof root.name === 'string' ? root.name : '',
     mode,
     seed: isInt(root.seed) ? root.seed : 0,
     coreErrors,
@@ -1780,6 +1783,7 @@ export function compileLevel(input: CompileInput): CompileResult {
     (a, b) => a.rect[1] - b.rect[1] || a.rect[0] - b.rect[0] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   );
 
+  if (lvl.name.length > 0) level.name = lvl.name;
   level.props = props;
   level.sites = sites;
   level.weather = lvl.weather;

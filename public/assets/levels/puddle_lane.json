@@ -2,6 +2,7 @@
   "format": "ssp.level",
   "version": 1,
   "id": "district.puddle_lane",
+  "name": "Puddle Lane",
   "size": [64,48],
   "roofIds": ["roof.depot","roof.felt","roof.slate"],
   "wallIds": ["facade.corner_shop","facade.depot_shed","facade.flats_render","facade.parade_brick","facade.terrace_brick","facade.terrace_brick_bay"],

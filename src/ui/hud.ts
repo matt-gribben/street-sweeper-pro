@@ -21,6 +21,19 @@
 //               ink frame (66×8 at y = 258) on a 03 track: HOPPER at x = 4 with its percentage, 'FULL' or '!'
 //               to the right of the bar (x = 72), then WATER and DIGNITY, 6 px apart. The labels stand in for the
 //               16×16 icons until M4 (SSP-156).
+// M3 widgets (SSP-299; the model's rules are in hudModel.ts):
+//   district    box (4, 16): the district name, outlined, 07 (room for DISTRICT_NAME_MAX_CHARS characters);
+//   Tidy % bar  the 64×4 fill in a 1 px ink frame (66×6 at (4, 26)) on a 03 track, 07 tick columns over the
+//               frame's full height at x = 5 + floor(star × 64), and the value outlined, its box at (72, 25);
+//   brush row   bottom-left, above the gauges (y = 230..245; GDD/ART_BIBLE draw it below the gauges, but those
+//               already reach the bottom margin, so it takes the row above them): the Brush-o-meter's 64×6
+//               zones in a 1 px ink frame (66×8 at (4, 234)) with the 3×10 needle at x = 5 + needle, y = 233; the
+//               speed outlined, box at (72, 233); the 16×16 brush state badge and ring 4 px right of the speed's
+//               box; then the reserved 16×16 + countdown power-up slot (SSP-096) 4 px further right;
+//   slots       reserved for later widgets, so nothing here lands on them: the one-line radio panel (SSP-289),
+//               200×22 at (4, 206), left of the dump prompt at every width; the 64×64 minimap (SSP-291) in the
+//               bottom-right corner;
+//   arrows      the 11×11 off-screen arrows (hudModel placeArrow), kept 1 px clear of every reserved box.
 // Bars are sub-rectangles of the solid ui.bar_fill frame recoloured 07 → the wanted index (addRegion), so they need
 // no frame per length and cost no extra draw call.
 //
@@ -36,22 +49,34 @@ import { EV } from '../sim/eventQueue.ts';
 import type { WorldView } from '../sim/world.ts';
 import { type BitmapFont, TextVariant } from './bitmapText.ts';
 import {
+  BrushIcon,
   CHAIN_BAR_H_PX,
   CHAIN_BAR_PX,
   COMBO_TEXTS,
   createHudModel,
   createHudSnapshot,
+  DISTRICT_NAME_MAX_CHARS,
   DUMP_KEY_TEXT,
   GAUGE_FILL_H_PX,
   GAUGE_FILL_PX,
   HOPPER_FULL_TEXT,
   HOPPER_WARN_TEXT,
+  type HudArrow,
+  type HudArrowFrame,
+  type HudCamera,
   HudColour,
   type HudModel,
+  type HudRect,
   type HudSnapshot,
   hudModel,
+  METER_H_PX,
+  METER_PX,
+  MPH_WIDEST_TEXT,
   POPUP_RISE_PX,
   readHudSnapshot,
+  SAFE_MARGIN_PX,
+  TIDY_BAR_H_PX,
+  TIDY_BAR_PX,
   TIER_WORDS,
 } from './hudModel.ts';
 import { BUTTON_NO_RECOLOUR, type PanelSink } from './panels.ts';
@@ -73,8 +98,55 @@ export const DUMP_RING_FRAMES: readonly FrameId[] = Object.freeze([
   'ui.dump_ring:fill:-:8',
 ] satisfies FrameId[]);
 
+/** The Brush-o-meter's zone patterns (ui.brush_meter, 64×6 each) and its needle. */
+export const METER_FRAMES = Object.freeze({
+  clean: 'ui.brush_meter:clean:-:0',
+  fling: 'ui.brush_meter:fling:-:0',
+  transit: 'ui.brush_meter:transit:-:0',
+} as const satisfies Record<string, FrameId>);
+export const NEEDLE_FRAME: FrameId = 'ui.brush_needle:needle:-:0';
+
+/** The brush state badges (▲ raised, ▼ lowered) by BrushIcon, and the spin-up ring by step 0..8. */
+export const BRUSH_ICON_FRAMES: readonly FrameId[] = Object.freeze([
+  'ui.brush_state:raised:-:0',
+  'ui.brush_state:lowered:-:0',
+] satisfies FrameId[]);
+export const BRUSH_RING_FRAMES: readonly FrameId[] = Object.freeze([
+  'ui.brush_state:ring:-:0',
+  'ui.brush_state:ring:-:1',
+  'ui.brush_state:ring:-:2',
+  'ui.brush_state:ring:-:3',
+  'ui.brush_state:ring:-:4',
+  'ui.brush_state:ring:-:5',
+  'ui.brush_state:ring:-:6',
+  'ui.brush_state:ring:-:7',
+  'ui.brush_state:ring:-:8',
+] satisfies FrameId[]);
+
+/** The off-screen arrow frames by ARROW_DIRS index: to the depot bay, and to a hydrant. */
+export const DEPOT_ARROW_FRAMES: readonly FrameId[] = Object.freeze([
+  'ui.offscreen_arrow:depot:e:0',
+  'ui.offscreen_arrow:depot:se:0',
+  'ui.offscreen_arrow:depot:s:0',
+  'ui.offscreen_arrow:depot:sw:0',
+  'ui.offscreen_arrow:depot:w:0',
+  'ui.offscreen_arrow:depot:nw:0',
+  'ui.offscreen_arrow:depot:n:0',
+  'ui.offscreen_arrow:depot:ne:0',
+] satisfies FrameId[]);
+export const HYDRANT_ARROW_FRAMES: readonly FrameId[] = Object.freeze([
+  'ui.offscreen_arrow:hydrant:e:0',
+  'ui.offscreen_arrow:hydrant:se:0',
+  'ui.offscreen_arrow:hydrant:s:0',
+  'ui.offscreen_arrow:hydrant:sw:0',
+  'ui.offscreen_arrow:hydrant:w:0',
+  'ui.offscreen_arrow:hydrant:nw:0',
+  'ui.offscreen_arrow:hydrant:n:0',
+  'ui.offscreen_arrow:hydrant:ne:0',
+] satisfies FrameId[]);
+
 /** The safe margin from every edge (GDD §15.2, ART_BIBLE §12.2). */
-export const HUD_MARGIN_PX = 4;
+export const HUD_MARGIN_PX = SAFE_MARGIN_PX;
 /** Internal height (TECHNICAL_DESIGN §12.1). */
 export const HUD_HEIGHT_PX = 270;
 /** The internal widths the HUD must fit (TECHNICAL_DESIGN §12.1). */
@@ -117,8 +189,36 @@ export const SCORE_MAX_CHARS = 10;
 /** Ticks of the score roll: each tick closes 1/SCORE_ROLL_DIVISOR of the gap (at least 1 point). */
 export const SCORE_ROLL_DIVISOR = 8;
 
-/** A whole-pixel rectangle. */
-export type HudRect = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
+export type { HudRect } from './hudModel.ts';
+
+/** District name: box top (left at the margin). */
+export const DISTRICT_Y = 16;
+/** Tidy % bar: its frame's top (66×6: the 64×4 fill and a 1 px ink border), and its value's box top. */
+export const TIDY_BAR_Y = 26;
+export const TIDY_BAR_W_PX = TIDY_BAR_PX + 2;
+export const TIDY_BAR_FRAME_H_PX = TIDY_BAR_H_PX + 2;
+export const TIDY_TEXT_Y = 25;
+/** Gap between a bar's frame and the text beside it. */
+export const BAR_TEXT_GAP_PX = 2;
+/** Brush row: its top (the 16×16 brush state), the meter frame's top, the needle's top and the speed's box top. */
+export const BRUSH_ROW_Y = 230;
+export const METER_BAR_Y = 234;
+export const METER_BAR_W_PX = METER_PX + 2;
+export const METER_BAR_H_PX = METER_H_PX + 2;
+export const NEEDLE_Y = 233;
+export const NEEDLE_W_PX = 3;
+export const NEEDLE_H_PX = 10;
+export const SPEED_TEXT_Y = 233;
+/** The brush state badge and ring, and the power-up slot's icon. */
+export const ICON_PX = 16;
+/** Gap between the widgets of the brush row. */
+export const BRUSH_ROW_GAP_PX = 4;
+/** Gap between the power-up slot's icon and its countdown. */
+export const POWER_UP_TEXT_GAP_PX = 2;
+/** The radio panel slot (SSP-289): bottom-left, above the brush row and left of the dump prompt at W = 432. */
+export const RADIO_SLOT = Object.freeze({ x: 4, y: 206, w: 200, h: 22 });
+/** The minimap slot (SSP-291): 64×64 in the bottom-right corner. */
+export const MINIMAP_PX = 64;
 
 /**
  * Where everything sits at one width: fixed anchors, plus each element's reserved box (its largest extent over
@@ -135,6 +235,12 @@ export type HudLayout = {
   };
   /** x of the hopper's side text box. */
   readonly hopperTextX: number;
+  /** x of the Tidy % value's box, the speed's box and the brush state badge. */
+  readonly tidyTextX: number;
+  readonly speedTextX: number;
+  readonly brushStateX: number;
+  /** The frame the off-screen arrows are placed in: this width, and every reserved box as a blocker. */
+  readonly arrowFrame: HudArrowFrame;
   /**
    * Reserved boxes by element. The score and the combo share one (`scoreCombo`): the combo follows the score's
    * right edge, so their boxes would overlap; tests check that their pixels never touch.
@@ -151,7 +257,14 @@ export type HudElement =
   | 'dump'
   | 'hopper'
   | 'water'
-  | 'dignity';
+  | 'dignity'
+  | 'district'
+  | 'tidy'
+  | 'brushMeter'
+  | 'brushState'
+  | 'powerUpSlot'
+  | 'radioSlot'
+  | 'minimapSlot';
 
 /** Width of outlined text: the sum of its advances (a box 1 px left of the first pen). */
 function outlinedWidth(font: BitmapFont, text: string): number {
@@ -226,13 +339,70 @@ export function hudLayout(font: BitmapFont, widthPx: number): HudLayout {
     w: DUMP_RING_PX,
     h: DUMP_RING_PX,
   };
+  // M3 widgets (SSP-299).
+  const district: HudRect = {
+    x: m,
+    y: DISTRICT_Y,
+    w: DISTRICT_NAME_MAX_CHARS * outlinedWidth(font, 'W'),
+    h: textH,
+  };
+  const tidyTextX = m + TIDY_BAR_W_PX + BAR_TEXT_GAP_PX;
+  const tidy: HudRect = {
+    x: m,
+    y: TIDY_TEXT_Y,
+    w: tidyTextX + outlinedWidth(font, '100%') - m,
+    h: Math.max(textH, TIDY_BAR_Y + TIDY_BAR_FRAME_H_PX - TIDY_TEXT_Y),
+  };
+  const speedTextX = m + METER_BAR_W_PX + BAR_TEXT_GAP_PX;
+  const brushMeter: HudRect = {
+    x: m,
+    y: NEEDLE_Y,
+    w: speedTextX + outlinedWidth(font, MPH_WIDEST_TEXT) - m,
+    h: Math.max(NEEDLE_H_PX, SPEED_TEXT_Y + textH - NEEDLE_Y),
+  };
+  const brushStateX = brushMeter.x + brushMeter.w + BRUSH_ROW_GAP_PX;
+  const brushState: HudRect = { x: brushStateX, y: BRUSH_ROW_Y, w: ICON_PX, h: ICON_PX };
+  const powerUpSlot: HudRect = {
+    x: brushStateX + ICON_PX + BRUSH_ROW_GAP_PX,
+    y: BRUSH_ROW_Y,
+    w: ICON_PX + POWER_UP_TEXT_GAP_PX + outlinedWidth(font, '0:00'),
+    h: ICON_PX,
+  };
+  const radioSlot: HudRect = RADIO_SLOT;
+  const minimapSlot: HudRect = {
+    x: widthPx - m - MINIMAP_PX,
+    y: HUD_HEIGHT_PX - m - MINIMAP_PX,
+    w: MINIMAP_PX,
+    h: MINIMAP_PX,
+  };
+  const reserved = {
+    timer,
+    scoreCombo,
+    chainBar,
+    popup,
+    dump,
+    hopper,
+    water,
+    dignity,
+    district,
+    tidy,
+    brushMeter,
+    brushState,
+    powerUpSlot,
+    radioSlot,
+    minimapSlot,
+  };
   return {
     widthPx,
     centreX,
     timer,
     gauges: { hopper, water, dignity },
     hopperTextX,
-    reserved: { timer, scoreCombo, chainBar, popup, dump, hopper, water, dignity },
+    tidyTextX,
+    speedTextX,
+    brushStateX,
+    arrowFrame: { widthPx, heightPx: HUD_HEIGHT_PX, blockers: Object.freeze(Object.values(reserved)) },
+    reserved,
   };
 }
 
@@ -321,11 +491,20 @@ export class Hud {
     });
   }
 
-  /** Forgets the score roll and any popup (a new shift). */
+  /**
+   * Highlights the Brush-o-meter's clean zone until World tick `untilTick` (exclusive): the hook GDD §16.2 beat 3
+   * ("keep it under 9 mph") uses (SSP-290). A later call replaces the deadline; −1 ends it now.
+   */
+  highlightCleanZone(untilTick: number): void {
+    this.snapshot.cleanHighlightUntilTick = untilTick;
+  }
+
+  /** Forgets the score roll, any popup and any clean-zone highlight (a new shift). */
   reset(): void {
     this.shownScore = 0;
     this.snapshot.popupStartTick = -1;
     this.snapshot.popupMultiplier = 1;
+    this.snapshot.cleanHighlightUntilTick = -1;
   }
 
   // per-frame draw path: begin
@@ -341,11 +520,19 @@ export class Hud {
     this.shownScore += gap > 0 ? (step < gap ? step : gap) : step < -gap ? -step : gap;
   }
 
-  /** Reads `view`, builds the model and draws it at internal width `widthPx` (one frame). Allocates nothing. */
-  draw(view: WorldView, widthPx: number): void {
+  /**
+   * Reads `view`, builds the model and draws it at internal width `widthPx` (one frame). `camera` is where the
+   * render camera looks this frame (the off-screen arrows project their targets with it); without one the arrows
+   * stay hidden. Allocates nothing (once the shift's district name and depot list are read, on the first frame).
+   */
+  draw(view: WorldView, widthPx: number, camera: Readonly<HudCamera> | null = null): void {
     const snapshot = readHudSnapshot(view, this.snapshot);
     snapshot.score = this.shownScore;
-    this.drawModel(hudModel(snapshot, view.tick, this.model), widthPx);
+    snapshot.cameraXM = camera === null ? 0 : camera.xM;
+    snapshot.cameraYM = camera === null ? 0 : camera.yM;
+    snapshot.cameraPxPerM = camera === null ? 0 : camera.pxPerM;
+    const layout = this.layout(widthPx);
+    this.drawModel(hudModel(snapshot, view.tick, this.model, layout.arrowFrame), widthPx);
   }
 
   /** Draws `model` at internal width `widthPx`. Allocates nothing once the layout for the width is cached. */
@@ -420,6 +607,90 @@ export class Hud {
       sink.add(frame, x0 + (DUMP_RING_PX >> 1), DUMP_RING_Y + (DUMP_RING_PX >> 1), BUTTON_NO_RECOLOUR, 0);
       font.draw(sink, DUMP_KEY_TEXT, x0 + DUMP_KEY_DX, DUMP_RING_Y + DUMP_KEY_DY, HudColour.Chalk);
     }
+
+    // District name and the Tidy % bar.
+    const m = HUD_MARGIN_PX;
+    const district = model.district;
+    if (district.visible) font.draw(sink, district.text, m + 1, DISTRICT_Y + 1, district.colour, outline);
+    const tidy = model.tidy;
+    if (tidy.visible) {
+      this.box(m, TIDY_BAR_Y, TIDY_BAR_W_PX, TIDY_BAR_FRAME_H_PX, HudColour.Ink);
+      this.box(m + 1, TIDY_BAR_Y + 1, TIDY_BAR_PX, TIDY_BAR_H_PX, HudColour.AsphaltLt);
+      if (tidy.fillPx > 0) this.box(m + 1, TIDY_BAR_Y + 1, tidy.fillPx, TIDY_BAR_H_PX, HudColour.GrassLt);
+      for (let i = 0; i < tidy.ticksPx.length; i++) {
+        const tx = tidy.ticksPx[i] ?? -1;
+        if (tx >= 0 && tx < TIDY_BAR_PX)
+          this.box(m + 1 + tx, TIDY_BAR_Y, 1, TIDY_BAR_FRAME_H_PX, HudColour.Chalk);
+      }
+      const value = tidy.value;
+      if (value.visible)
+        font.draw(sink, value.text, layout.tidyTextX + 1, TIDY_TEXT_Y + 1, value.colour, outline);
+    }
+
+    // Brush-o-meter: the frame (16 lemon round the clean zone while it is highlighted), the zones, the needle.
+    const meter = model.meter;
+    if (meter.visible) {
+      const zoneX = m + 1;
+      const zoneY = METER_BAR_Y + 1;
+      this.box(m, METER_BAR_Y, METER_BAR_W_PX, METER_BAR_H_PX, HudColour.Ink);
+      if (meter.transit) {
+        sink.addRegion(METER_FRAMES.transit, 0, 0, METER_PX, METER_H_PX, zoneX, zoneY, BUTTON_NO_RECOLOUR, 0);
+      } else {
+        const lit = meter.highlightLit;
+        if (lit) this.box(m, METER_BAR_Y, meter.cleanPx + 2, METER_BAR_H_PX, HudColour.Lemon);
+        if (meter.cleanPx > 0) {
+          sink.addRegion(
+            METER_FRAMES.clean,
+            0,
+            0,
+            meter.cleanPx,
+            METER_H_PX,
+            zoneX,
+            zoneY,
+            lit ? HudColour.GrassLt : BUTTON_NO_RECOLOUR,
+            lit ? HudColour.Lime : 0,
+          );
+        }
+        if (meter.flingPx > 0) {
+          sink.addRegion(
+            METER_FRAMES.fling,
+            meter.cleanPx,
+            0,
+            meter.flingPx,
+            METER_H_PX,
+            zoneX + meter.cleanPx,
+            zoneY,
+            BUTTON_NO_RECOLOUR,
+            0,
+          );
+        }
+      }
+      // The needle's pivot (1, 5) on its column, its top 1 px above the frame.
+      sink.add(NEEDLE_FRAME, zoneX + meter.needlePx, NEEDLE_Y + (NEEDLE_H_PX >> 1), BUTTON_NO_RECOLOUR, 0);
+      font.draw(sink, meter.speedText, layout.speedTextX + 1, SPEED_TEXT_Y + 1, HudColour.Chalk, outline);
+    }
+
+    // Brush state: the badge, then the ring over it (its hole is transparent).
+    const brush = model.brush;
+    if (brush.visible) {
+      const cx = layout.brushStateX + (ICON_PX >> 1);
+      const cy = BRUSH_ROW_Y + (ICON_PX >> 1);
+      const icon = BRUSH_ICON_FRAMES[brush.icon === BrushIcon.Lowered ? 1 : 0] ?? BAR_FRAME;
+      sink.add(icon, cx, cy, BUTTON_NO_RECOLOUR, 0);
+      if (brush.ringVisible)
+        sink.add(BRUSH_RING_FRAMES[brush.ringStep] ?? BAR_FRAME, cx, cy, BUTTON_NO_RECOLOUR, 0);
+    }
+
+    // Off-screen arrows (last, so nothing covers them; they never overlap a HUD box).
+    this.arrow(model.depotArrow, DEPOT_ARROW_FRAMES);
+    this.arrow(model.hydrantArrow, HYDRANT_ARROW_FRAMES);
+  }
+
+  /** An off-screen arrow, centred on its position, from `frames` by direction. */
+  private arrow(a: HudArrow, frames: readonly FrameId[]): void {
+    if (!a.visible) return;
+    const frame = frames[a.dir] ?? frames[0];
+    if (frame !== undefined) this.sink.add(frame, a.xPx, a.yPx, BUTTON_NO_RECOLOUR, 0);
   }
 
   /** A gauge bar at (x, GAUGE_BAR_Y): ink frame, 03 track, fill, and optionally a top fill row in `topColour`. */

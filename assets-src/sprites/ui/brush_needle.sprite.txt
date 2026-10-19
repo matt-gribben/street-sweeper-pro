@@ -1,0 +1,17 @@
+id: ui.brush_needle
+cell: 3x10
+palette: kerbside32
+# SSP-299 placeholder (ART_BIBLE §12.2): the Brush-o-meter needle, a 1x8 07 chalk line in a 1 px 00 ink outline.
+# Its pivot (1, 5) goes on the needle column, 1 px above the bar frame to 1 px below it. SSP-156 replaces it.
+
+frame needle:-:0
+000
+070
+070
+070
+070
+070
+070
+070
+070
+000

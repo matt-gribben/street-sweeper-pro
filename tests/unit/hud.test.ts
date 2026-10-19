@@ -9,18 +9,21 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { EventBus } from '../../src/app/events.ts';
 import type { FrameId } from '../../src/gen/assets.ts';
-import { hudSampleModel } from '../../src/scenes/HudSampleScene.ts';
+import { HUD_SAMPLE_SNAPSHOT, hudSampleModel as sampleModel } from '../../src/scenes/HudSampleScene.ts';
 import { HUD_FONT } from '../../src/scenes/ShiftScene.ts';
+import { BrushState } from '../../src/sim/brush.ts';
 import { createEventQueue, EV, emitEvent, resetEvents, sealEvents } from '../../src/sim/eventQueue.ts';
 import { BUTTON, createInputFrame, type InputFrame, THROTTLE_MAX } from '../../src/sim/inputFrame.ts';
-import { createBlankLevel, Ground, type Level } from '../../src/sim/map.ts';
+import { createBlankLevel, decodeLevel, Ground, type Level } from '../../src/sim/map.ts';
 import { availableDumpSite, DumpState, dumpHoldTicksAt, ShiftPhase } from '../../src/sim/shift.ts';
 import { snapshotWorld } from '../../src/sim/snapshot.ts';
 import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import { createWorld, type World } from '../../src/sim/world.ts';
 import { TextVariant } from '../../src/ui/bitmapText.ts';
 import {
+  BRUSH_RING_FRAMES,
   COMBO_GAP_PX,
+  DEPOT_ARROW_FRAMES,
   DUMP_RING_FRAMES,
   HUD_HEIGHT_PX,
   HUD_MARGIN_PX,
@@ -29,17 +32,32 @@ import {
   Hud,
   type HudElement,
   type HudRect,
+  HYDRANT_ARROW_FRAMES,
   hudLayout,
+  METER_FRAMES,
   writeScoreChars,
 } from '../../src/ui/hud.ts';
 import {
+  ARROW_DIRS,
+  ARROW_HALF_PX,
+  BrushIcon,
   createHudModel,
   createHudSnapshot,
+  DEFAULT_ARROW_FRAME,
   DUMP_RING_STEPS,
+  districtDisplayName,
+  type HudArrow,
+  type HudArrowFrame,
   type HudModel,
   type HudSnapshot,
   hudModel,
+  METER_H_PX,
+  METER_PX,
+  MeterZone,
+  meterPatternIndex,
+  nearestPoint,
   POPUP_LIFE_TICKS,
+  placeArrow,
   popupRisePx,
   readHudSnapshot,
   SWEEPING_BEAUTY_CYCLE,
@@ -532,7 +550,24 @@ describe('layout at every width 432..640 (GDD §15.2: 4 px safe margin, anchored
     for (const w of WIDTHS) {
       const boxes = Object.entries(hudLayout(font, w).reserved) as [HudElement, HudRect][];
       expect(boxes.map(([name]) => name).sort()).toEqual(
-        ['chainBar', 'dignity', 'dump', 'hopper', 'popup', 'scoreCombo', 'timer', 'water'].sort(),
+        [
+          'chainBar',
+          'dignity',
+          'dump',
+          'hopper',
+          'popup',
+          'scoreCombo',
+          'timer',
+          'water',
+          // SSP-299: the M3 widgets and the slots reserved for the radio panel, minimap and power-up.
+          'district',
+          'tidy',
+          'brushMeter',
+          'brushState',
+          'powerUpSlot',
+          'radioSlot',
+          'minimapSlot',
+        ].sort(),
       );
       for (const [name, r] of boxes) {
         expect(r.x, `${name} at W = ${w}`).toBeGreaterThanOrEqual(HUD_MARGIN_PX);
@@ -558,6 +593,12 @@ describe('layout at every width 432..640 (GDD §15.2: 4 px safe margin, anchored
       m.chainBar.visible = false;
       m.popup.visible = false;
       m.dump.visible = false;
+      m.district.visible = false;
+      m.tidy.visible = false;
+      m.meter.visible = false;
+      m.brush.visible = false;
+      m.depotArrow.visible = false;
+      m.hydrantArrow.visible = false;
       return m;
     };
     const toggles: [HudElement, (m: HudModel) => void][] = [
@@ -566,9 +607,15 @@ describe('layout at every width 432..640 (GDD §15.2: 4 px safe margin, anchored
       ['chainBar', (m) => (m.chainBar.visible = true)],
       ['popup', (m) => (m.popup.visible = true)],
       ['dump', (m) => (m.dump.visible = true)],
+      ['district', (m) => (m.district.visible = true)],
+      ['tidy', (m) => (m.tidy.visible = true)],
+      ['brushMeter', (m) => (m.meter.visible = true)],
+      ['brushState', (m) => (m.brush.visible = true)],
     ];
     for (const w of PIXEL_WIDTHS) {
-      const r = hudLayout(font, w).reserved;
+      const layout = hudLayout(font, w);
+      const r = layout.reserved;
+      const hudSampleModel = (): HudModel => sampleModel(createHudModel(), layout.arrowFrame);
       for (const [score, risePx] of [
         [0, 0],
         [-9_999_999, 12],
@@ -652,6 +699,461 @@ describe('layout at every width 432..640 (GDD §15.2: 4 px safe margin, anchored
       expect(l.gauges.hopper.x).toBe(4);
       expect(l.gauges.hopper.y + l.gauges.hopper.h).toBe(266);
       expect(l.reserved.dump.x + l.reserved.dump.w / 2).toBe(w / 2);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// SSP-299: the Brush-o-meter, brush state, district name with Tidy % bar, and the off-screen arrows
+// ---------------------------------------------------------------------------------------------------------
+
+const LIME = 24;
+const COUNCIL_BLUE = 26;
+const ASPHALT_LT = 3;
+
+describe('hudModel: the Brush-o-meter (GDD §15.2, §8.3)', () => {
+  const meterAt = (speedMps: number, brushState: BrushState, fields: Partial<HudSnapshot> = {}) =>
+    model({ speedMps, brushState, rpm: 1, ...fields }).meter;
+
+  it('brush down at 3.9 m/s is clean and "9 mph"; 4.5 m/s is fling and "10 mph"', () => {
+    expect(meterAt(3.9, BrushState.Collecting)).toMatchObject({ zone: MeterZone.Clean, speedText: '9 mph' });
+    expect(meterAt(4.5, BrushState.Collecting)).toMatchObject({ zone: MeterZone.Fling, speedText: '10 mph' });
+    // 4.0 m/s is the last clean speed (p_fling(4.0) = 0) and reads 9 mph; just above it is fling.
+    expect(meterAt(4.0, BrushState.Collecting)).toMatchObject({ zone: MeterZone.Clean, speedText: '9 mph' });
+    expect(meterAt(4.01, BrushState.SpinningUp).zone).toBe(MeterZone.Fling);
+  });
+
+  it('brush raised at 8.0 m/s is transit and "18 mph"; Raising is transit too', () => {
+    expect(meterAt(8.0, BrushState.Raised)).toMatchObject({
+      zone: MeterZone.Transit,
+      transit: true,
+      speedText: '18 mph',
+      cleanPx: 0,
+      flingPx: 0,
+    });
+    expect(meterAt(3.0, BrushState.Raising).zone).toBe(MeterZone.Transit);
+    expect(meterAt(3.0, BrushState.Lowering).zone).toBe(MeterZone.Clean);
+  });
+
+  it('with the fling threshold at 6.0 m/s (super suction) 5.5 m/s brush down reads clean, the whole bar clean', () => {
+    expect(meterAt(5.5, BrushState.Collecting, { flingThresholdMps: 6 })).toMatchObject({
+      zone: MeterZone.Clean,
+      cleanPx: 64,
+      flingPx: 0,
+    });
+  });
+
+  it('splits the brush-down bar at floor(t0 / top × 64) = 42 px and moves the needle over 0..top', () => {
+    const at = (v: number) => meterAt(v, BrushState.Collecting);
+    expect([at(0).cleanPx, at(0).flingPx]).toEqual([42, 22]);
+    expect([0, 1.5, 3, 3.99, 4, 4.01, 5, 6, 7].map((v) => at(v).needlePx)).toEqual([
+      0, 16, 32, 41, 41, 42, 53, 63, 63,
+    ]);
+    // Transit spans 0..11 m/s.
+    expect([0, 5.5, 11, 14].map((v) => meterAt(v, BrushState.Raised).needlePx)).toEqual([0, 32, 63, 63]);
+    // A bacon-butty top speed (×1.3) stretches the scale: 4.0 / 7.8 × 64 = 32.8 → 32 px clean.
+    expect(meterAt(5, BrushState.Collecting, { meterDownMaxMps: 7.8 }).cleanPx).toBe(32);
+  });
+
+  it('keeps the needle inside its zone and clamps mph to 99', () => {
+    for (let i = 0; i <= 600; i++) {
+      const v = i / 100;
+      const m = meterAt(v, BrushState.Collecting);
+      if (m.zone === MeterZone.Clean) expect(m.needlePx, `${v}`).toBeLessThan(m.cleanPx);
+      else expect(m.needlePx, `${v}`).toBeGreaterThanOrEqual(m.cleanPx);
+      expect(m.speedText).toBe(`${Math.round(v * 2.237)} mph`);
+    }
+    expect(meterAt(60, BrushState.Raised).speedText).toBe('99 mph');
+  });
+
+  it('uses three different pixel patterns, not only three colours (GDD §17.2)', () => {
+    const zones = [MeterZone.Clean, MeterZone.Fling, MeterZone.Transit];
+    const canonical = zones.map((zone) => {
+      // Each pixel's colour replaced by the order in which that colour first appears: two zones match only if
+      // they are the same pattern in different colours.
+      const seen: number[] = [];
+      const out: number[] = [];
+      for (let y = 0; y < METER_H_PX; y++) {
+        for (let x = 0; x < METER_PX; x++) {
+          const c = meterPatternIndex(zone, x, y);
+          if (!seen.includes(c)) seen.push(c);
+          out.push(seen.indexOf(c));
+        }
+      }
+      return { colours: seen, shape: out.join('') };
+    });
+    expect(new Set(canonical.map((c) => c.shape)).size).toBe(3);
+    expect(canonical.map((c) => [...c.colours].sort((a, b) => a - b))).toEqual([
+      [GRASS_LT],
+      [ASPHALT_LT, HIVIS],
+      [ASPHALT_LT, COUNCIL_BLUE],
+    ]);
+  });
+
+  it('ui.brush_meter frames are exactly meterPatternIndex', () => {
+    const raster = new TextRaster(80, 30, uiAtlas);
+    const zones = [
+      [MeterZone.Clean, METER_FRAMES.clean],
+      [MeterZone.Fling, METER_FRAMES.fling],
+      [MeterZone.Transit, METER_FRAMES.transit],
+    ] as const;
+    zones.forEach(([zone, frame], i) => {
+      raster.addRegion(frame, 0, 0, METER_PX, METER_H_PX, 0, i * 8, 255, 0);
+      for (let y = 0; y < METER_H_PX; y++) {
+        for (let x = 0; x < METER_PX; x++) {
+          expect(raster.at(x, i * 8 + y), `${frame} (${x}, ${y})`).toBe(meterPatternIndex(zone, x, y));
+        }
+      }
+    });
+  });
+
+  it('draws the brush-down bar as 42 px of solid 23 then hatching, transit dotted, the needle in 07', () => {
+    const w = 480;
+    const r = hudLayout(font, w).reserved.brushMeter;
+    const at = (m: HudModel) => {
+      const raster = new TextRaster(w, HUD_HEIGHT_PX, uiAtlas);
+      new Hud(raster, font).drawModel(m, w);
+      return raster;
+    };
+    const down = at(model({ speedMps: 4.5, brushState: BrushState.Collecting, rpm: 1 }));
+    const needleX = r.x + 1 + 48; // floor(4.5 / 6 × 64) = 48
+    for (let x = 0; x < METER_PX; x++) {
+      const px = r.x + 1 + x;
+      if (Math.abs(px - needleX) <= 1) continue;
+      for (let y = 0; y < METER_H_PX; y++) {
+        const want = meterPatternIndex(x < 42 ? MeterZone.Clean : MeterZone.Fling, x, y);
+        expect(down.at(px, 235 + y), `(${x}, ${y})`).toBe(want);
+      }
+    }
+    expect([233, 234, 240, 242].map((y) => down.at(needleX, y))).toEqual([0, CHALK, CHALK, 0]);
+    expect(down.at(needleX - 1, 238)).toBe(0);
+    const up = at(model({ speedMps: 0, brushState: BrushState.Raised }));
+    for (let x = 2; x < METER_PX; x++) {
+      for (let y = 0; y < METER_H_PX; y++) {
+        expect(up.at(r.x + 1 + x, 235 + y)).toBe(meterPatternIndex(MeterZone.Transit, x, y));
+      }
+    }
+  });
+
+  it('highlightCleanZone (beat 3) blinks the clean zone 23 ↔ 24 in a 16 frame until its tick, brush down only', () => {
+    const hud = new Hud(new TextRaster(480, 270, uiAtlas), font);
+    hud.highlightCleanZone(100);
+    const s = snap({ speedMps: 2, brushState: BrushState.Collecting, rpm: 1 });
+    s.cleanHighlightUntilTick = hud.snapshot.cleanHighlightUntilTick;
+    expect(s.cleanHighlightUntilTick).toBe(100);
+    expect(hudModel(s, 0).meter).toMatchObject({ highlight: true, highlightLit: true });
+    expect(hudModel(s, 8).meter).toMatchObject({ highlight: true, highlightLit: false });
+    expect(hudModel(s, 99).meter.highlight).toBe(true);
+    expect(hudModel(s, 100).meter).toMatchObject({ highlight: false, highlightLit: false });
+    expect(hudModel({ ...s, brushState: BrushState.Raised }, 0).meter.highlight).toBe(false);
+    const raster = new TextRaster(480, 270, uiAtlas);
+    new Hud(raster, font).drawModel(hudModel(s, 0), 480);
+    // Lime fill, the lemon frame round the 42 px clean zone (x 4..47), ink beyond it.
+    expect([raster.at(6, 236), raster.at(4, 234), raster.at(47, 234), raster.at(48, 234)]).toEqual([
+      LIME,
+      LEMON,
+      LEMON,
+      0,
+    ]);
+    hud.reset();
+    expect(hud.snapshot.cleanHighlightUntilTick).toBe(-1);
+  });
+});
+
+describe('hudModel: the brush state icon and spin-up ring (GDD §8.2)', () => {
+  const brushOf = (brushState: BrushState, rpm: number) => model({ brushState, rpm }).brush;
+
+  it('Raised → ▲ with no ring; SpinningUp at rpm 0.5 → ▼ with ring step 4 of 8; Collecting → ▼, full ring', () => {
+    expect(brushOf(BrushState.Raised, 0)).toEqual({
+      visible: true,
+      icon: BrushIcon.Raised,
+      ringVisible: false,
+      ringStep: 0,
+    });
+    expect(brushOf(BrushState.SpinningUp, 0.5)).toEqual({
+      visible: true,
+      icon: BrushIcon.Lowered,
+      ringVisible: true,
+      ringStep: 4,
+    });
+    expect(brushOf(BrushState.Collecting, 0.8)).toMatchObject({ icon: BrushIcon.Lowered, ringStep: 8 });
+    expect(brushOf(BrushState.Collecting, 1)).toMatchObject({ icon: BrushIcon.Lowered, ringStep: 8 });
+  });
+
+  it('Lowering → ▼ with an empty ring, Bulldozing full, Raising ▲ without a ring; steps floor(rpm × 8)', () => {
+    expect(brushOf(BrushState.Lowering, 0)).toMatchObject({
+      icon: BrushIcon.Lowered,
+      ringVisible: true,
+      ringStep: 0,
+    });
+    expect(brushOf(BrushState.Bulldozing, 1)).toMatchObject({ ringVisible: true, ringStep: 8 });
+    expect(brushOf(BrushState.Raising, 0)).toMatchObject({ icon: BrushIcon.Raised, ringVisible: false });
+    for (let k = 0; k <= 36; k++) {
+      expect(brushOf(BrushState.SpinningUp, k / 36).ringStep, `spin-up tick ${k}`).toBe(
+        Math.floor((k / 36) * 8),
+      );
+    }
+  });
+
+  it('draws the badge, then the ring frame of its step over it, inside the brush state box', () => {
+    const r = hudLayout(font, 480).reserved.brushState;
+    const raster = new TextRaster(480, 270, uiAtlas);
+    new Hud(raster, font).drawModel(model({ brushState: BrushState.SpinningUp, rpm: 0.5 }), 480);
+    const want = new TextRaster(480, 270, uiAtlas);
+    want.add('ui.brush_state:lowered:-:0', r.x + 8, r.y + 8, 255, 0);
+    want.add(BRUSH_RING_FRAMES[4] ?? 'ui.brush_state:ring:-:0', r.x + 8, r.y + 8, 255, 0);
+    for (let y = r.y; y < r.y + r.h; y++) {
+      for (let x = r.x; x < r.x + r.w; x++) expect(raster.at(x, y), `(${x}, ${y})`).toBe(want.at(x, y));
+    }
+    // Half the ring is filled in 15 (clockwise from 12 o'clock to 6) and the other half is still the 03 track.
+    expect(raster.at(r.x + 14, r.y + 7)).toBe(SWEEPER_YELLOW);
+    expect(raster.at(r.x + 1, r.y + 7)).toBe(ASPHALT_LT);
+  });
+});
+
+describe('hudModel: district name and Tidy % (GDD §9.2, §15.2)', () => {
+  it('Tidy 0.599 → "59%" and 38 px of fill; tick marks at x = 38, 51 and 58', () => {
+    const tidy = model({ tidyPpm: 599_000 }).tidy;
+    expect(tidy.value.text).toBe('59%');
+    expect(tidy.fillPx).toBe(38);
+    expect(tidy.ticksPx).toEqual([38, 51, 58]);
+  });
+
+  it('floors both, so a star threshold never shows before it is reached', () => {
+    const at = (ppm: number) => model({ tidyPpm: ppm }).tidy;
+    expect([at(0).value.text, at(0).fillPx]).toEqual(['0%', 0]);
+    expect([at(599_999).value.text, at(599_999).fillPx]).toEqual(['59%', 38]);
+    expect([at(600_000).value.text, at(600_000).fillPx]).toEqual(['60%', 38]);
+    expect([at(919_999).value.text, at(920_000).value.text]).toEqual(['91%', '92%']);
+    expect([at(1_000_000).value.text, at(1_000_000).fillPx]).toEqual(['100%', 64]);
+    const thresholds = [600_000, 800_000, 920_000];
+    for (let ppm = 0; ppm <= 1_000_000; ppm += 997) {
+      const t = at(ppm);
+      const pct = Number.parseInt(t.value.text, 10);
+      thresholds.forEach((threshold, i) => {
+        if (ppm >= threshold) return;
+        expect(pct, `${ppm} ppm`).toBeLessThan(threshold / 10_000);
+        expect(t.fillPx, `${ppm} ppm`).toBeLessThanOrEqual(t.ticksPx[i] ?? 0);
+      });
+    }
+  });
+
+  it('shows the compiled display name upper-cased, falling back to the id', () => {
+    expect(districtDisplayName({ id: 'district.puddle_lane', name: 'Puddle Lane' })).toBe('PUDDLE LANE');
+    expect(districtDisplayName({ id: 'district.depot_yard' })).toBe('DEPOT YARD');
+    expect(districtDisplayName({ id: 'district.x', name: 'A name far longer than twenty' })).toBe(
+      'A NAME FAR LONGER TH',
+    );
+    expect(model({ districtName: 'PUDDLE LANE' }).district).toEqual({
+      visible: true,
+      text: 'PUDDLE LANE',
+      colour: CHALK,
+    });
+  });
+
+  it('reads the name, Tidy %, thresholds, brush, speed scale and sites from a real Puddle Lane World', () => {
+    const level = decodeLevel(readFileSync(`${REPO_ROOT}public/assets/levels/puddle_lane.json`, 'utf8'));
+    expect(level.name).toBe('Puddle Lane');
+    const world = createWorld(level, 1, DEFAULT_TUNING);
+    world.step(createInputFrame());
+    const s = readHudSnapshot(world, createHudSnapshot());
+    expect(s.districtName).toBe('PUDDLE LANE');
+    expect([s.star1Ppm, s.star2Ppm, s.star3Ppm]).toEqual([600_000, 800_000, 920_000]);
+    expect(s.tidyPpm).toBe(world.tidy.tidyPpm);
+    expect([s.brushState, s.flingThresholdMps, s.meterDownMaxMps, s.meterTransitMaxMps]).toEqual([
+      BrushState.Raised,
+      4,
+      6,
+      11,
+    ]);
+    // Two depot bays (tiles [6, 42, 8, 45] and [9, 42, 11, 45]: centres (14, 87) and (20, 87) m) and the two
+    // hydrants, in level order.
+    expect([s.depotCount, Array.from(s.depotX), Array.from(s.depotY)]).toEqual([2, [14, 20], [87, 87]]);
+    expect([s.hydrantCount, Array.from(s.hydrantX), Array.from(s.hydrantY)]).toEqual([2, [77, 51], [7, 15]]);
+    // Made once per shift: a second read keeps the same name and depot list.
+    const name = s.districtName;
+    const depots = s.depotX;
+    readHudSnapshot(world, s);
+    expect(s.districtName).toBe(name);
+    expect(s.depotX).toBe(depots);
+  });
+});
+
+/** The arrow's 11×11 box. */
+function arrowBox(a: HudArrow): HudRect {
+  const size = 2 * ARROW_HALF_PX + 1;
+  return { x: a.xPx - ARROW_HALF_PX, y: a.yPx - ARROW_HALF_PX, w: size, h: size };
+}
+
+/** Degrees between the arrow's direction and the direction from (bx, by) to (tx, ty), on screen. */
+function arrowError(a: HudArrow, bx: number, by: number, tx: number, ty: number): number {
+  const want = Math.atan2(ty - by, tx - bx);
+  const got = (a.dir * Math.PI) / 4;
+  let d = Math.abs(want - got) % (2 * Math.PI);
+  if (d > Math.PI) d = 2 * Math.PI - d;
+  return (d * 180) / Math.PI;
+}
+
+describe('hudModel: off-screen arrows (GDD §15.2)', () => {
+  /** Camera on Bessie at the origin, 16 px/m: Bessie at screen (W / 2, 135). */
+  const CAMERA = { cameraXM: 0, cameraYM: 0, cameraPxPerM: 16, bessieXM: 0, bessieYM: 0 } as const;
+  /** A depot bay far to the south-west (screen (−1360, 1095) at W = 480), and one on screen. */
+  const OFF = { depotCount: 1, depotX: [-100], depotY: [60] } as const;
+  const ON = { depotCount: 1, depotX: [5], depotY: [3] } as const;
+
+  it('hopper 79% → no depot arrow; 80% with the bay off-screen → inside the margin, within 22.5°; on-screen → hidden', () => {
+    expect(model({ ...CAMERA, ...OFF, hopperLu: 79 }).depotArrow.visible).toBe(false);
+    const a = model({ ...CAMERA, ...OFF, hopperLu: 80 }).depotArrow;
+    expect(a.visible).toBe(true);
+    expect(a.target).toBe(0);
+    expect(a.colour).toBe(SWEEPER_YELLOW);
+    const box = arrowBox(a);
+    expect(box.x).toBeGreaterThanOrEqual(HUD_MARGIN_PX);
+    expect(box.y).toBeGreaterThanOrEqual(HUD_MARGIN_PX);
+    expect(box.x + box.w).toBeLessThanOrEqual(480 - HUD_MARGIN_PX);
+    expect(box.y + box.h).toBeLessThanOrEqual(270 - HUD_MARGIN_PX);
+    expect(arrowError(a, 240, 135, 240 - 1600, 135 + 960)).toBeLessThanOrEqual(22.5);
+    expect(ARROW_DIRS[a.dir]).toBe('sw');
+    // A full hopper keeps it (it is also the GDD hopper row's dump-site arrow at 100%).
+    expect(model({ ...CAMERA, ...OFF, hopperLu: 100 }).depotArrow.visible).toBe(true);
+    expect(model({ ...CAMERA, ...ON, hopperLu: 80 }).depotArrow.visible).toBe(false);
+    // No camera (pxPerM 0): no arrows.
+    expect(model({ ...CAMERA, ...OFF, hopperLu: 80, cameraPxPerM: 0 }).depotArrow.visible).toBe(false);
+  });
+
+  it('water 20% → no hydrant arrow; 19% → an arrow to the nearer of two hydrants (ties to the lower index)', () => {
+    const hydrants = { hydrantCount: 2, hydrantX: [80, -50], hydrantY: [-80, -30] } as const;
+    expect(model({ ...CAMERA, ...hydrants, water: 20 }).hydrantArrow.visible).toBe(false);
+    const a = model({ ...CAMERA, ...hydrants, water: 19 }).hydrantArrow;
+    expect(a.visible).toBe(true);
+    expect(a.target).toBe(1);
+    expect(a.colour).toBe(SKY);
+    expect(arrowError(a, 240, 135, 240 - 800, 135 - 480)).toBeLessThanOrEqual(22.5);
+    expect(ARROW_DIRS[a.dir]).toBe('nw');
+    expect(nearestPoint([3, -3, 3], [4, 4, -4], 3, 0, 0)).toBe(0);
+    expect(nearestPoint([9, 3, -3], [9, 4, 4], 3, 0, 0)).toBe(1);
+    expect(nearestPoint([], [], 0, 0, 0)).toBe(-1);
+  });
+
+  it('every direction at W = 432, 480 and 640: inside the margin, 1 px clear of every HUD box, within 22.5°', () => {
+    for (const w of [432, 480, 640]) {
+      const frame: HudArrowFrame = hudLayout(font, w).arrowFrame;
+      const a = createHudModel().depotArrow;
+      for (const [bx, by] of [
+        [w / 2, 135],
+        [w / 2 + 37, 135 - 29],
+        [w / 2 - 41, 135 + 33],
+      ] as const) {
+        for (let deg = 0; deg < 360; deg += 1) {
+          const rad = (deg * Math.PI) / 180;
+          const tx = bx + Math.cos(rad) * 2000;
+          const ty = by + Math.sin(rad) * 2000;
+          placeArrow(a, bx, by, tx, ty, frame);
+          const where = `${deg}° from (${bx}, ${by}) at W = ${w}: (${a.xPx}, ${a.yPx})`;
+          expect(a.visible, where).toBe(true);
+          const box = arrowBox(a);
+          expect(box.x, where).toBeGreaterThanOrEqual(HUD_MARGIN_PX);
+          expect(box.y, where).toBeGreaterThanOrEqual(HUD_MARGIN_PX);
+          expect(box.x + box.w, where).toBeLessThanOrEqual(w - HUD_MARGIN_PX);
+          expect(box.y + box.h, where).toBeLessThanOrEqual(270 - HUD_MARGIN_PX);
+          for (const b of frame.blockers) {
+            const near =
+              box.x < b.x + b.w + 1 &&
+              b.x < box.x + box.w + 1 &&
+              box.y < b.y + b.h + 1 &&
+              b.y < box.y + box.h + 1;
+            expect(near, `${where} touches (${b.x}, ${b.y}, ${b.w}, ${b.h})`).toBe(false);
+          }
+          expect(arrowError(a, bx, by, tx, ty), where).toBeLessThanOrEqual(22.5);
+          // On the ray (to within the rounding).
+          const cross = (a.xPx - bx) * Math.sin(rad) - (a.yPx - by) * Math.cos(rad);
+          expect(Math.abs(cross), where).toBeLessThan(1);
+        }
+      }
+    }
+  });
+
+  it('hides an arrow whose target is inside the frame, and when Bessie is under a HUD box', () => {
+    const a = createHudModel().depotArrow;
+    placeArrow(a, 240, 135, 479, 269, DEFAULT_ARROW_FRAME);
+    expect(a.visible).toBe(false);
+    placeArrow(a, 240, 135, 480, 135, DEFAULT_ARROW_FRAME);
+    expect(a.visible).toBe(true);
+    expect(ARROW_DIRS[a.dir]).toBe('e');
+    placeArrow(a, 30, 260, 30, 2000, hudLayout(font, 480).arrowFrame);
+    expect(a.visible).toBe(false);
+  });
+
+  it('draws each arrow as its direction frame at its position', () => {
+    const w = 480;
+    const layout = hudLayout(font, w);
+    const s = snap({ ...CAMERA, ...OFF, hopperLu: 90, water: 10 });
+    Object.assign(s, { hydrantCount: 1, hydrantX: [90], hydrantY: [-70] });
+    const m = hudModel(s, 0, createHudModel(), layout.arrowFrame);
+    expect([m.depotArrow.visible, m.hydrantArrow.visible]).toEqual([true, true]);
+    const raster = new TextRaster(w, 270, uiAtlas);
+    new Hud(raster, font).drawModel(m, w);
+    for (const [a, frames] of [
+      [m.depotArrow, DEPOT_ARROW_FRAMES],
+      [m.hydrantArrow, HYDRANT_ARROW_FRAMES],
+    ] as const) {
+      const want = new TextRaster(w, 270, uiAtlas);
+      want.add(frames[a.dir] ?? 'ui.offscreen_arrow:depot:e:0', a.xPx, a.yPx, 255, 0);
+      const box = arrowBox(a);
+      let drawn = 0;
+      for (let y = box.y; y < box.y + box.h; y++) {
+        for (let x = box.x; x < box.x + box.w; x++) {
+          if (want.at(x, y) >= 0) drawn++;
+          expect(raster.at(x, y), `(${x}, ${y})`).toBe(want.at(x, y));
+        }
+      }
+      expect(drawn).toBeGreaterThan(30);
+    }
+  });
+
+  it('against a real World: water below 20% points at the nearer Puddle Lane hydrant; bays on screen hide', () => {
+    const level = decodeLevel(readFileSync(`${REPO_ROOT}public/assets/levels/puddle_lane.json`, 'utf8'));
+    const world = createWorld(level, 1, DEFAULT_TUNING);
+    world.step(createInputFrame());
+    world.vehicle.water = 19;
+    world.vehicle.hopperLU = 85;
+    const s = readHudSnapshot(world, createHudSnapshot());
+    Object.assign(s, { cameraXM: world.vehicle.xM, cameraYM: world.vehicle.yM, cameraPxPerM: 16 });
+    const m = hudModel(s, world.tick, createHudModel(), hudLayout(font, 480).arrowFrame);
+    // Bessie starts in the depot at (7, 89): the bays are on screen, so no depot arrow.
+    expect(m.depotArrow.visible).toBe(false);
+    // Hydrants (77, 7) and (51, 15): the second is nearer.
+    expect(m.hydrantArrow).toMatchObject({ visible: true, target: 1 });
+    const tx = 240 + (51 - world.vehicle.xM) * 16;
+    const ty = 135 + (15 - world.vehicle.yM) * 16;
+    expect(arrowError(m.hydrantArrow, 240, 135, tx, ty)).toBeLessThanOrEqual(22.5);
+  });
+});
+
+describe('the sample frame (hud_sample) shows every SSP-299 widget at every width', () => {
+  it('meter, ring, district, Tidy bar and both arrows are visible, each inside its box or arrow box', () => {
+    expect(HUD_SAMPLE_SNAPSHOT.brushState).toBe(BrushState.Collecting);
+    for (const w of PIXEL_WIDTHS) {
+      const layout = hudLayout(font, w);
+      const m = sampleModel(createHudModel(), layout.arrowFrame);
+      expect([m.meter.visible, m.brush.ringVisible, m.district.visible, m.tidy.visible]).toEqual([
+        true,
+        true,
+        true,
+        true,
+      ]);
+      expect([m.depotArrow.visible, m.hydrantArrow.visible], `W = ${w}`).toEqual([true, true]);
+      expect(m.hydrantArrow.target).toBe(0);
+      const boxes = [...Object.values(layout.reserved), arrowBox(m.depotArrow), arrowBox(m.hydrantArrow)];
+      const pixels = drawnPixels(m, w);
+      for (let i = 0; i < pixels.length; i += 2) {
+        const x = pixels[i] ?? -1;
+        const y = pixels[i + 1] ?? -1;
+        expect(
+          boxes.some((b) => inRect(b, x, y)),
+          `(${x}, ${y}) at W = ${w}`,
+        ).toBe(true);
+      }
     }
   });
 });

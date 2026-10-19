@@ -682,6 +682,11 @@ export type PlayerStart = { x: number; y: number; heading: number };
 /** A decoded compiled level: the JSON header and lists as-is, the grid layers as typed arrays. */
 export type Level = {
   id: string;
+  /**
+   * Display name (level.json `name`, e.g. 'Puddle Lane'; SSP-299: the HUD shows it upper-cased). Absent in a
+   * level built in code (createBlankLevel), where the HUD falls back to the id.
+   */
+  name?: string;
   /** [w, h] in tiles. */
   size: [w: number, h: number];
   /** Roof asset ids (`roof.*`) named by the `roof` layer (value n → roofIds[n − 1]). */
@@ -1193,6 +1198,13 @@ function formatJson(value: JsonValue, indent: string, insideArray: boolean): str
 }
 
 /** `{ [key]: id }` for a present audio id (shape-checked), `{}` for an absent one, so the key is omitted. */
+/** A level's display name for encoding: a non-empty string (SSP-299). */
+function displayName(name: string, key: string): string {
+  if (typeof name !== 'string' || name.length === 0)
+    throw new Error(`encodeLevel: ${key} must be a non-empty string`);
+  return name;
+}
+
 function audioIdOut(id: string | undefined, key: string, pattern: RegExp): { [key: string]: JsonValue } {
   if (id === undefined) return {};
   if (!pattern.test(id))
@@ -1605,6 +1617,7 @@ export function encodeLevel(level: Level): string {
     format: LEVEL_FORMAT,
     version: LEVEL_VERSION,
     id: level.id,
+    ...(level.name === undefined ? {} : { name: displayName(level.name, 'name') }),
     size: [w, h],
     roofIds: [...level.roofIds],
     wallIds: [...level.wallIds],
@@ -1731,6 +1744,13 @@ function stylesIn(value: unknown, path: string): string[] {
   const list = arr(value, path).map((v, i) => str(v, `${path}[${i}]`));
   if (list.length > MAX_STYLES) fail(path, `has ${list.length} entries (max ${MAX_STYLES})`);
   return list;
+}
+
+/** A level's display name: a non-empty string (SSP-299). */
+function nameIn(value: unknown, path: string): string {
+  const name = str(value, path);
+  if (name.length === 0) fail(path, 'must be a non-empty string');
+  return name;
 }
 
 function audioIdIn(value: unknown, path: string, pattern: RegExp): string {
@@ -2057,6 +2077,7 @@ export function decodeLevel(input: unknown): Level {
 
   const level: Level = {
     id,
+    ...(root.name === undefined ? {} : { name: nameIn(root.name, 'name') }),
     size: [w, h],
     roofIds,
     wallIds,

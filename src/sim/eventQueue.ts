@@ -20,14 +20,16 @@ export const EVENTS_PER_TICK = 512;
 /**
  * Event type ids (`type`, Uint16). 0 is never a valid type. The values are hashed into replays: append new
  * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
- * Fling, SSP-061 StainCleaned; later issues append the rest of the §7.2 list (NpcHit, Complaint, ComboTier, DumpStart, Horn, ...).
+ * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd; later issues append the rest of the §7.2 list
+ * (NpcHit, Complaint, ComboTier, Horn, ...).
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036).
  * - KerbJolt: a = x, b = y (where the axle midpoint crossed the kerb edge, m), c = |vLong| just before the
  *   crossing (m/s). The front axle also loses speed; the rear axle only jolts.
  * - ReverseBeeper: a = x, b = y (Bessie's body centre, m), c = 0. Once per engagement of REV.
- * - ShiftEnd: a = reason (ShiftEndReason), b = 0, c = 0. In M1 only the TOWED stub (SSP-036) emits it.
+ * - ShiftEnd: a = reason (ShiftEndReason), b = 0, c = 0. Phase 10 (shift.ts, SSP-062), once per shift: TIME_UP
+ *   on the first tick Bessie is at rest after the timer reaches 0, TOWED on the first tick that ends with HP 0.
  * - HopperFull: a = x, b = y (Bessie's body centre, m), c = capacity (LU). Once per fill, on the add that
  *   reaches capacity (hopper.ts, SSP-058); again only after LU has dropped below capacity.
  * - LitterCollected: entity = the item's LitterField index at collection (it is swap-removed straight after),
@@ -37,6 +39,12 @@ export const EVENTS_PER_TICK = 512;
  * - StainCleaned: entity = the stain's kind (STAIN_IDS index: the stain is swap-removed as it is emitted, so its
  *   store index would name nothing), a = x, b = y (the stain's position, m), c = its points (entities.json
  *   `pts`, before the combo; splat 0). Phase 6, cleanStainsInCone (water.ts, SSP-061), once per stain.
+ * - DumpStart: entity = the dump site's index in level.sites, a = the site kind (DumpSite: 1 depot bay,
+ *   2 skip), b = LU in the hopper as the drain starts, c = the drain length in ticks. Phase 10 (shift.ts,
+ *   SSP-062), on the tick the 1.0 s hold completes; the drain runs from the next tick.
+ * - DumpEnd: entity = the site's index in level.sites, a = the site kind (DumpSite), b = LU this drain removed,
+ *   c = 1 if the drain completed, 0 if it was cut short (Bessie left the site, the timer ran out, or TOWED).
+ *   Phase 10 (shift.ts, SSP-062), once per DumpStart.
  */
 export const EV = {
   Impact: 1,
@@ -47,14 +55,17 @@ export const EV = {
   LitterCollected: 6,
   Fling: 7,
   StainCleaned: 8,
+  DumpStart: 9,
+  DumpEnd: 10,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 
 /**
- * Why a shift ended, carried in EV.ShiftEnd's `a`. M1 has only the TOWED stub (HP reached 0, SSP-036); the
- * shift timer (SSP-062) appends time-up and SACKED. Hashed into replays: append, never renumber.
+ * Why a shift ended, carried in EV.ShiftEnd's `a`: TOWED (HP reached 0, SSP-036) and TIME_UP (the knock-off
+ * after the 240 s timer, SSP-062). SACKED (5 complaints) is appended in M3 (SSP-079). Hashed into replays:
+ * append, never renumber.
  */
-export const ShiftEndReason = { Towed: 1 } as const;
+export const ShiftEndReason = { Towed: 1, TimeUp: 2 } as const;
 export type ShiftEndReason = (typeof ShiftEndReason)[keyof typeof ShiftEndReason];
 
 /** The mutable queue. Only the sim writes it, through the functions below. */

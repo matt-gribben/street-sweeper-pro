@@ -14,6 +14,7 @@ import {
   ShiftEndReason,
   sealEvents,
 } from '../../src/sim/eventQueue.ts';
+import { DumpSite } from '../../src/sim/hopper.ts';
 
 /** A sealed queue for `tick` holding `events` ([type, entity, a, b, c]). */
 function sealedQueue(
@@ -48,8 +49,11 @@ describe('EventBus', () => {
       [EV.LitterCollected, 17, 40.5, 12.25, LITTER_IDS.indexOf('litter.bin_bag')],
       [EV.Fling, 3, 41, 13, LITTER_IDS.indexOf('litter.drink_can')],
       [EV.StainCleaned, STAIN_IDS.indexOf('stain.milkshake'), 20.5, 6.75, 20],
+      [EV.DumpStart, 6, DumpSite.Depot, 37.5, 120],
+      [EV.DumpEnd, 5, DumpSite.Skip, 12.25, 0],
+      [EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0],
     ]);
-    expect(bus.drain(queue)).toBe(8);
+    expect(bus.drain(queue)).toBe(11);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -67,6 +71,9 @@ describe('EventBus', () => {
         kind: 'stain.milkshake',
         pts: 20,
       },
+      { type: EV.DumpStart, tick: 42, entity: 6, site: DumpSite.Depot, lu: 37.5, drainTicks: 120 },
+      { type: EV.DumpEnd, tick: 42, entity: 5, site: DumpSite.Skip, luDumped: 12.25, completed: false },
+      { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.TimeUp },
     ]);
   });
 
@@ -179,6 +186,8 @@ describe('EventBus', () => {
     expect(() => bus.drain(sealedQueue(12, [[EV.Fling, 0, 0, 0, 1.5]]))).toThrow(/litter kind 1.5/);
     expect(() => bus.drain(sealedQueue(13, [[EV.StainCleaned, 5, 0, 0, 10]]))).toThrow(/stain kind 5/);
     expect(() => bus.drain(sealedQueue(14, [[EV.StainCleaned, -1, 0, 0, 10]]))).toThrow(/stain kind -1/);
+    expect(() => bus.drain(sealedQueue(15, [[EV.DumpStart, 0, 3, 10, 120]]))).toThrow(/dump site 3/);
+    expect(() => bus.drain(sealedQueue(16, [[EV.DumpEnd, 0, 0, 10, 1]]))).toThrow(/dump site 0/);
   });
 
   it('decodes every EV id the sim defines (a new EV type must be wired into the bus)', () => {
@@ -195,7 +204,11 @@ describe('EventBus', () => {
               type,
               // StainCleaned carries the stain kind (a STAIN_IDS index) in `entity`.
               type === EV.StainCleaned ? 0 : -1,
-              type === EV.ShiftEnd ? ShiftEndReason.Towed : 0,
+              type === EV.ShiftEnd
+                ? ShiftEndReason.Towed
+                : type === EV.DumpStart || type === EV.DumpEnd
+                  ? DumpSite.Depot
+                  : 0,
               0,
               0,
             ] as const,

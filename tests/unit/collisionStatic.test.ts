@@ -55,6 +55,7 @@ import { nextInt, sfc32 } from '../../src/sim/rng.ts';
 import { DEFAULT_TUNING, loadTuning, type Tuning } from '../../src/sim/tuning.ts';
 import { createVehicleParams, createVehicleState } from '../../src/sim/vehicle.ts';
 import { createWorld, Phase, stepWorld, type World } from '../../src/sim/world.ts';
+import { endlessShiftTuning } from '../support/endlessShift.ts';
 import { assertHeapDeltaWithinThresholds, measureHeapDelta } from '../support/heapDelta.ts';
 import { type BodyBox, solidOverlapM } from '../support/solidOverlap.ts';
 
@@ -387,7 +388,7 @@ describe('TOWED stub (TECHNICAL_DESIGN §9.2 step 6)', () => {
         expect(world.events.entity[i]).toBe(-1);
       }
     }
-    expect(world.shiftEndReason).toBe(ShiftEndReason.Towed);
+    expect(world.shift.endReason).toBe(ShiftEndReason.Towed);
 
     // Back off and hit again, twice: impacts still happen, HP stays at 0, no second ShiftEnd.
     let shiftEnds = 0;
@@ -404,7 +405,7 @@ describe('TOWED stub (TECHNICAL_DESIGN §9.2 step 6)', () => {
     }
     expect(impacts).toBeGreaterThanOrEqual(2);
     expect(shiftEnds).toBe(0);
-    expect(world.shiftEndReason).toBe(ShiftEndReason.Towed);
+    expect(world.shift.endReason).toBe(ShiftEndReason.Towed);
   });
 
   it('a hit bigger than the HP left clamps HP to 0, never below', () => {
@@ -423,7 +424,7 @@ describe('TOWED stub (TECHNICAL_DESIGN §9.2 step 6)', () => {
     stepToImpact(world, NEUTRAL, 120);
     expect(world.vehicle.hp).toBeCloseTo(64, 9);
     expect(countEvents(world.events, EV.ShiftEnd)).toBe(0);
-    expect(world.shiftEndReason).toBe(0);
+    expect(world.shift.endReason).toBe(0);
   });
 
   it('over a long random drive in a walled yard, HP stays in [0, 100] and ShiftEnd fires at most once', () => {
@@ -751,7 +752,7 @@ describe('static grid (collision/grid.ts)', () => {
   it('World builds its grid from the level and the tuning it is given', () => {
     const world = createWorld(lvl, 1, DEFAULT_TUNING);
     expect(world.staticGrid.shapeCount).toBe(7);
-    expect(world.shiftEndReason).toBe(0);
+    expect(world.shift.endReason).toBe(0);
   });
 });
 
@@ -1004,6 +1005,9 @@ describe('SSP-037 regressions (found by the collision properties)', () => {
 });
 
 describe('allocation', () => {
+  // An endless shift: the 240 s timer would knock off (and ignore the input) inside the 30,000-tick pre-warm.
+  const ENDLESS = endlessShiftTuning();
+
   it('stepWorld allocates nothing per tick with Bessie pressed into walls and props (§17 heap-delta check)', () => {
     // Three Worlds stepped together, each in a steady state that resolves contacts on every tick: wedged at
     // full throttle into an inside corner (two merged rects, two MTV iterations and two impacts a tick), and
@@ -1014,21 +1018,21 @@ describe('allocation', () => {
     const corner = createWorld(
       level(12, 12, (col, row) => row <= 1 || col >= 10, { x: 14, y: 10, heading: Math.PI / 4 }),
       7,
-      DEFAULT_TUNING,
+      ENDLESS,
     );
     const lamp = createWorld(
       level(12, 12, () => false, { x: 12, y: 12, heading: NORTH }, [
         { id: 'prop.lamp_post', x: 12, y: 6, rot: 0 },
       ]),
       7,
-      DEFAULT_TUNING,
+      ENDLESS,
     );
     const bench = createWorld(
       level(12, 12, () => false, { x: 12, y: 12, heading: NORTH }, [
         { id: 'prop.bench', x: 12, y: 6, rot: 0 },
       ]),
       7,
-      DEFAULT_TUNING,
+      ENDLESS,
     );
     const full = frame(THROTTLE_MAX, 0, 0);
     const step = (): void => {
@@ -1056,11 +1060,7 @@ describe('allocation', () => {
   it('the SSP-037 fallbacks allocate nothing: wedged in a pocket, every tick is undone twice and stops short', () => {
     // Full throttle on full left lock in the L-shaped pocket: every tick the turn fails, the heading-held
     // retry fails, and Bessie stops short by bisection, so all three paths run on every tick (steady state).
-    const wedged = createWorld(
-      pocket(['0,0', '0,1', '1,1'], { x: 1.1, y: 2.2, heading: -0.1 }),
-      7,
-      DEFAULT_TUNING,
-    );
+    const wedged = createWorld(pocket(['0,0', '0,1', '1,1'], { x: 1.1, y: 2.2, heading: -0.1 }), 7, ENDLESS);
     const input = frame(THROTTLE_MAX, 0, -STEER_MAX);
     const step = (): void => stepWorld(wedged, input);
     for (let tick = 0; tick < 30_000; tick++) step();

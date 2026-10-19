@@ -165,8 +165,14 @@ export function waterFill(water: WaterView): number {
   return water.vehicle.water / water.tuning.tankUnits;
 }
 
+/**
+ * What refillWater needs: the vehicle holding the tank and the water tuning giving its capacity. A Water is
+ * one; shift.ts keeps its own (the World holds no Water until SSP-065 wires phase 5).
+ */
+export type WaterTank = { readonly vehicle: VehicleState; readonly tuning: WaterTuning };
+
 /** Fill the tank to capacity: the depot bay on a dump (shift.ts, SSP-062) and shift setup (SSP-065). */
-export function refillWater(water: Water): void {
+export function refillWater(water: WaterTank): void {
   water.vehicle.water = water.tuning.tankUnits;
 }
 

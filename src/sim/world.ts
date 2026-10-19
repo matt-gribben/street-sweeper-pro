@@ -2,7 +2,8 @@
 // SSP-035). `world.step(input)` (or stepWorld(world, input)) runs the 11 phases below, in this order, every tick. The order is
 // canonical: changing it changes replay hashes and must be called out in the commit (§5.2).
 //
-//   1 Input             copy the InputFrame into the sim; hand it to the replay recorder (SSP-038)
+//   1 Input             copy the InputFrame into the sim; hand it to the replay recorder (SSP-038); once the
+//                       shift is over, replace it with the knock-off brake (gateShiftInput, shift.ts)
 //   2 Vehicle (+hopper) brush state machine (the BRUSH edge, lower/raise and spin timers; brush.ts) → surface
 //                       sample → stepVehicle (handling scaled by the hopper fill, top speed by the brush state)
 //                       → EV.ReverseBeeper → kerb crossing (§8.2 steps 1–9)
@@ -14,7 +15,8 @@
 //   7 NPC               empty until M3 (SSP-080)
 //   8 Traffic           empty until M3 (SSP-089)
 //   9 Scoring/combo/complaints empty until M2 (SSP-065)
-//  10 Shift timer       M1: the TOWED stub only (HP 0 → EV.ShiftEnd once, SSP-036); the timer is SSP-062
+//  10 Shift timer       shift.ts (SSP-062): TOWED, the rollout start, the dump FSM (hopper drain, depot water
+//                       refill, EV.DumpStart/DumpEnd), the 240 s countdown, the knock-off and EV.ShiftEnd
 //  11 Emit events       seal the EventQueue
 //
 // The EventQueue is reset before phase 1, so every tick starts with it empty. Renderers, audio and UI read
@@ -38,7 +40,6 @@ import {
   emitEvent,
   type ReadonlyEventQueue,
   resetEvents,
-  ShiftEndReason,
   sealEvents,
 } from './eventQueue.ts';
 import { cos, sin } from './fmath.ts';
@@ -46,6 +47,15 @@ import { createHopper, type Hopper, type HopperView, setHopperCapacity } from '.
 import { createInputFrame, type InputFrame } from './inputFrame.ts';
 import { createKerbCrossings, findKerbCrossings, type KerbCrossings } from './kerb.ts';
 import type { Level } from './map.ts';
+import {
+  createShift,
+  gateShiftInput,
+  type Shift,
+  type ShiftOptions,
+  type ShiftView,
+  setShiftTuning,
+  stepShift,
+} from './shift.ts';
 import { createSurfaceTable, type SurfaceTable, sampleSurface } from './surface.ts';
 import { type SweeperTuning, type Tuning, tuningsEqual } from './tuning.ts';
 import {
@@ -97,8 +107,8 @@ export type World = {
   readonly vehicleParams: VehicleParams;
   /**
    * Bessie's hopper (hopper.ts, SSP-058): bulldozer state, drain and LU-dumped counters over
-   * vehicle.hopperLU and vehicleParams.hopperCapacityLU. Brush collection (phase 5) adds to it and dumping
-   * (phase 10) drains it once SSP-065 wires those systems in.
+   * vehicle.hopperLU and vehicleParams.hopperCapacityLU. Dumping (phase 10, shift.ts, SSP-062) drains it;
+   * brush collection (phase 5) adds to it once SSP-065 wires the brush in.
    */
   readonly hopper: Hopper;
   /**
@@ -114,11 +124,11 @@ export type World = {
   /** Phase-3 scratch; its `log` lists this tick's contacts. */
   readonly staticResolver: StaticResolver;
   /**
-   * Why the shift ended (ShiftEndReason), or 0 while it runs. In M1 only the TOWED stub sets it, when HP
-   * reaches 0, and EV.ShiftEnd is emitted on that tick only. The sim keeps running (the end-of-shift flow is
-   * M2/M3: SSP-062, SSP-079).
+   * The shift (shift.ts, SSP-062): timer, dump FSM and end of shift, run in phase 10. `shift.endReason` says why
+   * the shift ended (0 while it runs); EV.ShiftEnd fires once, on that tick. The World keeps stepping after it
+   * (the scene moves to the tally) with the input gated to the knock-off brake.
    */
-  shiftEndReason: ShiftEndReason | 0;
+  readonly shift: Shift;
   /** Phase-1 hook for the replay log (SSP-038). Null until a recorder is attached. */
   recordInput: InputRecorder | null;
   /** Optional phase-order trace. Null by default. */
@@ -143,20 +153,23 @@ export type WorldView = {
   readonly staticGrid: StaticGrid;
   /** This tick's phase-3 contacts. */
   readonly staticResolver: { readonly log: ReadonlyContactLog };
-  readonly shiftEndReason: ShiftEndReason | 0;
+  readonly shift: ShiftView;
 };
 
 /**
  * A World for one shift on `level`, seeded with `seed` (an integer, taken as uint32), using `tuning`. The
  * tuning is passed in, never imported, so the dev panel can supply an edited copy (§8). Bessie spawns at the
- * level's player start (body centre, heading), stationary. The event queue starts empty and sealed.
+ * level's player start (body centre, heading), stationary. The event queue starts empty and sealed. `shift`
+ * holds the shift start parameters (ShiftOptions: `firstPlay`, default false); the shift starts in its
+ * rollout.
  */
-export function createWorld(level: Level, seed: number, tuning: Tuning): World {
+export function createWorld(level: Level, seed: number, tuning: Tuning, shift: ShiftOptions = {}): World {
   if (!Number.isInteger(seed)) throw new Error(`createWorld: seed must be an integer, got ${seed}`);
   const sweeper = tuning.vehicle.sweeper;
   const { x, y, heading } = level.player;
   const vehicle = createVehicleState(sweeper, x, y, heading);
   const vehicleParams = createVehicleParams(sweeper, tuning.hopper.capacityLu);
+  const hopper = createHopper(vehicle, vehicleParams, tuning.hopper);
   const world: World = {
     level,
     tuning,
@@ -165,13 +178,13 @@ export function createWorld(level: Level, seed: number, tuning: Tuning): World {
     input: createInputFrame(),
     vehicle,
     vehicleParams,
-    hopper: createHopper(vehicle, vehicleParams, tuning.hopper),
+    hopper,
     brush: createBrush(tuning, seed >>> 0),
     surface: { gripPerS: sweeper.lateralGripPerS.asphalt, rollMult: 1 },
     events: createEventQueue(),
     staticGrid: createStaticGrid(level, tuning.propFootprints),
     staticResolver: createStaticResolver(),
-    shiftEndReason: 0,
+    shift: createShift(level, vehicle, hopper, { vehicle, tuning: tuning.water }, tuning, shift),
     recordInput: null,
     phaseTrace: null,
     surfaceTable: createSurfaceTable(sweeper),
@@ -214,6 +227,7 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   world.hopper.tuning = tuning.hopper;
   setHopperCapacity(world.hopper, tuning.hopper.capacityLu);
   world.brush.tuning = tuning;
+  setShiftTuning(world.shift, tuning);
 }
 
 /** Advance the world by one tick (DT_S) under `input`, running the 11 phases of §5.2 in order. */
@@ -261,7 +275,11 @@ export function stepWorld(world: World, input: Readonly<InputFrame>): void {
 // Phases
 // ---------------------------------------------------------------------------------------------------------
 
-/** Phase 1: copy the frame field by field (the caller may reuse its object) and hand it to the recorder. */
+/**
+ * Phase 1: copy the frame field by field (the caller may reuse its object) and hand it to the recorder. Then,
+ * once the shift is over (knock-off or ended), replace it with the knock-off brake (shift.ts): the log keeps
+ * what the player pressed, and every later phase sees the gated frame.
+ */
 function phaseInput(world: World, input: Readonly<InputFrame>): void {
   const own = world.input;
   own.throttle = input.throttle;
@@ -271,6 +289,7 @@ function phaseInput(world: World, input: Readonly<InputFrame>): void {
   own.pressed = input.pressed;
   const recorder = world.recordInput;
   if (recorder !== null) recorder(world.tick, own);
+  gateShiftInput(world.shift, own);
 }
 
 /**
@@ -389,14 +408,10 @@ function phaseScoring(_world: World): void {
 }
 
 /**
- * Phase 10: shift timer and SACKED/TOWED/time-up transitions. In M1 only the TOWED stub (§9.2 step 6,
- * SSP-036): the first tick that ends with HP at 0 emits EV.ShiftEnd (a = ShiftEndReason.Towed) and records
- * the reason, so it never fires again. SSP-062 adds the timer, SSP-079 the real end-of-shift rules.
+ * Phase 10 (shift.ts, SSP-062): TOWED (the first tick that ends with HP at 0, §9.2 step 6), the timer's rollout
+ * start, the dump FSM (depot bays and skips: hopper drain, depot water refill, EV.DumpStart/EV.DumpEnd), the
+ * countdown and the knock-off, ending in EV.ShiftEnd (TOWED or TIME_UP) once. SACKED is SSP-079 (M3).
  */
 function phaseShiftTimer(world: World): void {
-  if (world.shiftEndReason === 0 && world.vehicle.hp <= 0) {
-    world.shiftEndReason = ShiftEndReason.Towed;
-    const e = emitEvent(world.events, EV.ShiftEnd, -1);
-    world.events.a[e] = ShiftEndReason.Towed;
-  }
+  stepShift(world.shift, world.input, world.events);
 }

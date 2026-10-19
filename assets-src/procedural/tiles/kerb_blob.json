@@ -1,0 +1,13 @@
+{
+  "id": "tile.kerb",
+  "generator": "tiles.kerb_blob",
+  "cell": [32, 32],
+  "params": {
+    "mask_rule": "A kerb tile sits on a raised cell (pavement, cobbles or grass) that has a road cell among its 8 neighbours. Bit set = that neighbour is NOT road (out of map counts as not road); a clear edge bit is a kerb on that edge. A corner bit counts only when both adjacent edge bits are set (a clear corner with both edges set is an inner corner). blob_masks[i] is the reduced mask drawn by frame tile.kerb:blob:-:i, ascending; 255 (index 46, no road neighbour) is never written by the compiler, which writes autotile 255 instead.",
+    "mask_bits": { "n": 1, "ne": 2, "e": 4, "se": 8, "s": 16, "sw": 32, "w": 64, "nw": 128 },
+    "blob_masks": [
+      0, 1, 4, 5, 7, 16, 17, 20, 21, 23, 28, 29, 31, 64, 65, 68, 69, 71, 80, 81, 84, 85, 87, 92, 93, 95, 112,
+      113, 116, 117, 119, 124, 125, 127, 193, 197, 199, 209, 213, 215, 221, 223, 241, 245, 247, 253, 255
+    ]
+  }
+}

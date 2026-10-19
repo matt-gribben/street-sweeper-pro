@@ -66,9 +66,9 @@ export const SURFACE_COUNT = 6;
 
 /**
  * Ground → surface, indexed by ground id (LEVEL_DESIGN §8.3). Cobbles and apron take asphalt grip; yard takes
- * pavement grip. Alley setts take pavement grip (proposal; SSP-034 records the decision in LEVEL_DESIGN
- * §8.3). Water, sand and void are solid, so their surface is never driven on: they read as asphalt, which is
- * also what the sim uses for points outside the map.
+ * pavement grip. Alley setts take pavement grip, 8.0 (decided in SSP-034, recorded in LEVEL_DESIGN §8.3).
+ * Water, sand and void are solid, so their surface is never driven on: they read as asphalt, which is also
+ * what the sim uses for points outside the map.
  */
 export const GROUND_SURFACE: readonly Surface[] = [
   Surface.Asphalt, // Void
@@ -111,6 +111,37 @@ export type CollideBit = (typeof COLLIDE)[keyof typeof COLLIDE];
 /** Every defined collide bit; a `collide` value with any other bit set is rejected. */
 export const COLLIDE_ALL_BITS =
   COLLIDE.SOLID | COLLIDE.KERB_EDGE_N | COLLIDE.KERB_EDGE_E | COLLIDE.KERB_EDGE_S | COLLIDE.KERB_EDGE_W;
+
+/**
+ * Bits of the `markings` layer (TECHNICAL_DESIGN §15.2; the representation decided in SSP-034): the road
+ * markings the compiler derives from the map (LEVEL_DESIGN §7.1) and the procedural tile set draws. Sites
+ * already carry zebras, school crossings, bus boxes and depot bays, so they are not repeated here.
+ * - PARKING_BAY: a `p` cell (bay outline; parked-car candidates in M3).
+ * - DOUBLE_YELLOW: a road cell with a raised kerb edge, drawn along each KERB_EDGE side of its `collide`
+ *   value; not on bays, sites or speed bumps.
+ * - CENTRE_NS / CENTRE_EW: a two-way road's centre line runs through the middle of the cell (odd widths).
+ * - CENTRE_E_EDGE / CENTRE_S_EDGE: it runs along the cell's east / south edge (even widths).
+ * Bits 6–7 are free for the give-way lines and one-way arrows that need the M3 lane graph (SSP-076).
+ * The values are written into compiled files: append new bits, never renumber.
+ */
+export const MARKING = {
+  PARKING_BAY: 1 << 0,
+  DOUBLE_YELLOW: 1 << 1,
+  CENTRE_NS: 1 << 2,
+  CENTRE_EW: 1 << 3,
+  CENTRE_E_EDGE: 1 << 4,
+  CENTRE_S_EDGE: 1 << 5,
+} as const;
+export type MarkingBit = (typeof MARKING)[keyof typeof MARKING];
+
+/** Every defined marking bit; a `markings` value with any other bit set is rejected. */
+export const MARKING_ALL_BITS =
+  MARKING.PARKING_BAY |
+  MARKING.DOUBLE_YELLOW |
+  MARKING.CENTRE_NS |
+  MARKING.CENTRE_EW |
+  MARKING.CENTRE_E_EDGE |
+  MARKING.CENTRE_S_EDGE;
 
 /** `autotile` value for a cell with no kerb blob tile (TECHNICAL_DESIGN §15.2). */
 export const AUTOTILE_NONE = 255;
@@ -158,6 +189,8 @@ export type LevelLayers = {
   ground: Uint8Array;
   /** Kerb blob index 0..46, or AUTOTILE_NONE. */
   autotile: Uint8Array;
+  /** MARKING bits (road markings derived by the compiler). */
+  markings: Uint8Array;
   /** Surface id per tile (Surface). */
   surface: Uint8Array;
   /** Building height in storeys, 0 = none, 1..MAX_STOREYS. */
@@ -180,6 +213,7 @@ export type LevelLayers = {
 export const LAYER_NAMES = [
   'ground',
   'autotile',
+  'markings',
   'surface',
   'storeys',
   'roof',
@@ -270,9 +304,9 @@ export function layerLength(name: LayerName, w: number, h: number): number {
 }
 
 /**
- * A level of the given size with empty layers (void ground, no autotile, nothing solid), no styles, empty
- * lists, clear weather, the campaign timer and Bessie at the origin facing north. The compiler fills it in;
- * tests build worlds from it directly.
+ * A level of the given size with empty layers (void ground, no autotile or markings, nothing solid), no
+ * styles, empty lists, clear weather, the campaign timer and Bessie at the origin facing north. The compiler
+ * fills it in; tests build worlds from it directly.
  */
 export function createBlankLevel(id: string, w: number, h: number): Level {
   assertSize(w, h, 'createBlankLevel');
@@ -285,6 +319,7 @@ export function createBlankLevel(id: string, w: number, h: number): Level {
     layers: {
       ground: layer('ground'),
       autotile: layer('autotile').fill(AUTOTILE_NONE),
+      markings: layer('markings'),
       surface: layer('surface'),
       storeys: layer('storeys'),
       roof: layer('roof'),
@@ -378,7 +413,10 @@ function checkLayer(
   }
 }
 
-/** Range-check the id layers: known ground/surface ids, autotile 0..46 or 255, styles inside their tables. */
+/**
+ * Range-check the id layers: known ground/surface ids, autotile 0..46 or 255, known marking and collide bits,
+ * styles inside their tables.
+ */
 function checkLayerValues(
   where: string,
   layers: LevelLayers,
@@ -394,6 +432,14 @@ function checkLayerValues(
     w,
     (v) => v < AUTOTILE_COUNT || v === AUTOTILE_NONE,
     'not 0..46 or 255',
+  );
+  checkLayer(
+    where,
+    'markings',
+    layers.markings,
+    w,
+    (v) => (v & ~MARKING_ALL_BITS) === 0,
+    'unknown marking bits',
   );
   checkLayer(where, 'surface', layers.surface, w, (v) => v < SURFACE_COUNT, 'not a Surface id');
   checkLayer(where, 'storeys', layers.storeys, w, (v) => v <= MAX_STOREYS, `over ${MAX_STOREYS} storeys`);
@@ -687,6 +733,7 @@ export function decodeLevel(input: unknown): Level {
   const layers: LevelLayers = {
     ground: layer('ground'),
     autotile: layer('autotile'),
+    markings: layer('markings'),
     surface: layer('surface'),
     storeys: layer('storeys'),
     roof: layer('roof'),

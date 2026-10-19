@@ -351,7 +351,7 @@ The size of the game's logical frame, in which the world, HUD and UI are all dra
 ## K
 
 ### Kerb blob autotile
-The **47-tile** set of kerb and pavement edge tiles (a "blob" autotile covering every edge and corner combination). The forge generates it by rule from procedural parameters, and the level compiler picks tiles automatically from neighbouring cells.
+The **47-tile** set of kerb and pavement edge tiles (a "blob" autotile covering every edge and corner combination). The forge generates it by rule from procedural parameters, and the level compiler picks tiles automatically from neighbouring cells. Both read the one index ↔ neighbour-mask table in `assets-src/procedural/tiles/kerb_blob.json`.
 
 ### Kerb Hugger
 Keeping a gutter brush within 0.2 m of a kerb collects [gutter grime](#gutter-grime). Holding continuous kerb contact also pays a style bonus of **+50 per 3 s**.

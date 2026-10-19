@@ -21,6 +21,8 @@ import {
   LEVEL_VERSION,
   type Level,
   layerLength,
+  MARKING,
+  MARKING_ALL_BITS,
   MAX_STYLES,
   MUSIC_ID_PATTERN,
   mergeSolids,
@@ -91,6 +93,7 @@ function handBuiltLevel(): Level {
     level.layers.collide[1 * w + x] = COLLIDE.KERB_EDGE_S;
     level.layers.collide[2 * w + x] = COLLIDE.KERB_EDGE_N;
     level.layers.autotile[1 * w + x] = x % 47;
+    level.layers.markings[2 * w + x] = x === 5 ? MARKING.PARKING_BAY : MARKING.DOUBLE_YELLOW;
     level.layers.route[1 * w + x] = 1;
     level.layers.route[2 * w + x] = 1;
     level.layers.grimeDensity[2 * w + x] = 40 + x;
@@ -190,6 +193,20 @@ describe('id tables', () => {
     for (const bit of bits) expect(bit & (bit - 1)).toBe(0);
     expect(bits.reduce((a, b) => a | b, 0)).toBe(COLLIDE_ALL_BITS);
     expect(bits.reduce((a, b) => a + b, 0)).toBe(COLLIDE_ALL_BITS);
+  });
+
+  it('marking bits are distinct single bits, appended in their pinned order (SSP-034)', () => {
+    const bits = Object.values(MARKING);
+    expect(Object.keys(MARKING)).toEqual([
+      'PARKING_BAY',
+      'DOUBLE_YELLOW',
+      'CENTRE_NS',
+      'CENTRE_EW',
+      'CENTRE_E_EDGE',
+      'CENTRE_S_EDGE',
+    ]);
+    expect(bits).toEqual([1, 2, 4, 8, 16, 32]);
+    expect(bits.reduce((a, b) => a | b, 0)).toBe(MARKING_ALL_BITS);
   });
 
   it('resolves roof/wall layer values through the header string tables', () => {
@@ -312,6 +329,7 @@ describe('encodeLevel / decodeLevel', () => {
         '  "layers": {',
         '    "ground": "AQY=",',
         '    "autotile": "//8=",',
+        '    "markings": "AAA=",',
         '    "surface": "AAE=",',
         '    "storeys": "AAA=",',
         '    "roof": "AAA=",',
@@ -352,10 +370,11 @@ describe('encodeLevel / decodeLevel', () => {
     );
   });
 
-  it('starts a blank level empty: void ground, no autotile, nothing solid, campaign timer', () => {
+  it('starts a blank level empty: void ground, no autotile or markings, nothing solid, campaign timer', () => {
     const level = createBlankLevel('district.blank', 3, 2);
     expect(level.layers.ground.every((v) => v === Ground.Void)).toBe(true);
     expect(level.layers.autotile.every((v) => v === AUTOTILE_NONE)).toBe(true);
+    expect(level.layers.markings.every((v) => v === 0)).toBe(true);
     expect(level.layers.gutter).toHaveLength(24 * 16);
     expect(level.timerS).toBe(240);
     expect(() => createBlankLevel('district.bad', 0, 2)).toThrow(/invalid size/);
@@ -415,6 +434,9 @@ describe('encodeLevel / decodeLevel', () => {
     expect(() =>
       decodeLevel(edit((r) => (layers(r).collide = encodeBase64(new Uint8Array(24).fill(1 << 5))))),
     ).toThrow(/unknown collide bits/);
+    expect(() =>
+      decodeLevel(edit((r) => (layers(r).markings = encodeBase64(new Uint8Array(24).fill(1 << 6))))),
+    ).toThrow(/layers\.markings has 64 at tile \(0, 0\); unknown marking bits/);
     expect(() => decodeLevel(edit((r) => (r.solids = [[0, 0, 1]])))).toThrow(
       /solids\[0\] must have 4 entries/,
     );

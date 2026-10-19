@@ -1,11 +1,19 @@
 // Level compiler round trip (TECHNICAL_DESIGN §18.2; SSP-033): random legal ASCII maps compile without
 // diagnostics, the compiled text decodes and re-encodes byte-identically, and compiling twice gives the same
 // bytes. Maps are legal by construction (below), so every run exercises the compiler rather than being
-// filtered out. Fixed seed so a failure always reproduces.
+// filtered out. Fixed seed so a failure always reproduces. SSP-034: the derived tile layers (collide, kerb
+// blob autotile, markings, merged solids) hold their invariants on every map; the layout checks
+// (L014–L022), which random rows of props cannot satisfy, are skipped here and covered by fixtures.
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { decodeLevel, encodeLevel } from '../../src/sim/map.ts';
 import { compileLevel, DEFAULT_LEGEND, formatDiagnostic } from '../../tools/levels/compile-level.ts';
+import { KERB_BLOB_PATH, readKerbBlob } from '../../tools/levels/kerbBlob.ts';
+import { tileLayerViolations } from '../support/levelInvariants.ts';
+
+const KERB_BLOB = readKerbBlob(join(fileURLToPath(new URL('../../', import.meta.url)), KERB_BLOB_PATH));
 
 const SEED = 0x55_03_3a;
 const RUNS = 300;
@@ -160,6 +168,8 @@ describe('level compiler round trip (TECHNICAL_DESIGN §18.2)', () => {
           mapText: rows.map((r) => `${r}\n`).join(''),
           levelText,
           knownAssetIds: KNOWN,
+          kerbBlob: KERB_BLOB,
+          skipCodes: ['L014', 'L015', 'L020', 'L021', 'L022'] as const,
         };
         const result = compileLevel(input);
         expect(result.diagnostics.map(formatDiagnostic)).toEqual([]);
@@ -180,6 +190,7 @@ describe('level compiler round trip (TECHNICAL_DESIGN §18.2)', () => {
           if (layers.route[i] === 1) expect(output.map.drivable[i]).toBe(1);
         }
         expect(decoded.props).toHaveLength(props);
+        expect(tileLayerViolations(decoded, output.map, KERB_BLOB)).toEqual([]);
         expect(decoded.music === undefined).toBe(!spec.audio);
       }),
       { seed: SEED, numRuns: RUNS },

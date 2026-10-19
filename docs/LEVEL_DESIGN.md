@@ -640,6 +640,7 @@ All dimensions are in tiles (1 tile = 2 m). Bessie's body is 1.75 × 3.25 m, her
 - **UK rule:** traffic drives on the **left**. On an east–west road with north up, eastbound traffic uses the northern lane. Bus stops and taxi ranks go on the left-hand kerb of the traffic they serve.
 - Roads narrower than 3 tiles are one-way or have no traffic. The compiler rejects a two-way lane graph on a 2-tile road.
 - Markings (centre lines, double yellows, give-way lines, zebra stripes, bus boxes) are **generated** by the compiler from the road geometry and drawn by the procedural tile set ([ASSET_PIPELINE](ASSET_PIPELINE.md)). Authors never paint them by hand.
+- *As built (SSP-034, decision pending owner review):* the compiler writes a per-tile **`markings` layer** of bits ([TECHNICAL_DESIGN §15.2](TECHNICAL_DESIGN.md#152-compiled-schema-v1), `MARKING` in `src/sim/map.ts`) rather than leaving the renderer to infer markings from the ground. Why: the compiler already knows what the compiled ground cannot say (a `p` bay is plain road once compiled), road-width analysis belongs with the other map rules that are tested on fixtures, and the renderer stays a lookup from bits to tile frames. Bits: `PARKING_BAY` (`p`), `DOUBLE_YELLOW` (a road cell with a raised kerb edge, drawn along each kerb side; not on bays, sites or speed bumps), and the centre line of a two-way road 3–6 tiles wide that is longer than it is wide (`CENTRE_NS`/`CENTRE_EW` through the middle of the cell for odd widths, `CENTRE_E_EDGE`/`CENTRE_S_EDGE` along its east/south edge for even widths; junction boxes and plazas get none). Zebras, school crossings, bus boxes and depot bays stay `sites`. Give-way lines and one-way arrows need the lane graph and arrive with it in M3 (SSP-076), in the two free bits. The dash phase (one tile on, one off) is the tile set's choice.
 
 ### 7.2 Pavements and kerbs
 
@@ -652,6 +653,7 @@ All dimensions are in tiles (1 tile = 2 m). Bessie's body is 1.75 × 3.25 m, her
 
 - Pavements are drivable everywhere (grip 8.0), but crossing a raised kerb costs 30% speed and a jolt. Dropped kerbs are how a level invites Bessie onto a pavement on purpose.
 - The **47-tile kerb blob autotile** is computed by the compiler from road/non-road adjacency. Authors only place ground characters.
+- *As built (SSP-034):* a **raised kerb** stands between a road cell (any drivable road ground, including the `z k b p =` features) and a drivable **pavement, cobbles or grass** cell that is not a dropped kerb `d`. Alley setts, yards and aprons meet the road flush, with no kerb (use them, or `d`, where vehicles cross). Both cells of each raised edge carry the matching `KERB_EDGE_N/E/S/W` collide bit. The kerb tile is drawn on the raised side: every raised-kerb cell with a road cell among its 8 neighbours gets the blob index of its neighbour mask (bit set = that neighbour is not road; outside the map counts as not road; a corner bit counts only when both of its edge bits are set). Dropped kerbs, roads and everything else get autotile 255. The index ↔ mask table exists once, in `assets-src/procedural/tiles/kerb_blob.json` → `params.blob_masks` (47 masks, ascending, with the bit order in `params.mask_bits`); the compiler and the forge kerb generator (SSP-040) both read it, so autotile *n* is frame `tile.kerb:blob:-:n`.
 - **Gutter grime** forms in a 0.5 m band (2 grime cells) on the road side of every raised kerb. Long, straight, unobstructed kerb runs (≥ 15 tiles) are the Kerb Hugger showcase; every district needs at least three.
 
 ### 7.3 Alleys and ginnels
@@ -660,6 +662,8 @@ All dimensions are in tiles (1 tile = 2 m). Bessie's body is 1.75 × 3.25 m, her
 |---|---|---|
 | **2+ tiles** | Drivable alley | Part of the route area. Bessie (1.75 m) fits with 1.1 m of clearance each side of the brushes' sweep line. Must not be a dead end longer than 6 tiles without a turning head. |
 | **1 tile** | Footway (pedestrians only) | The compiler marks it non-drivable and excludes it from the route area. The mouth must carry a bollard `!` or be bounded by buildings, so Bessie cannot wedge herself in. |
+
+*As built (SSP-034):* footway cells are SOLID in the collide layer. A footway **mouth** is a footway cell orthogonally next to a drivable cell; it needs a bollard (`prop.bollard`) on the footway cell or on the drivable cell in front of it (L015). An end that meets only buildings, walls or the map edge is "bounded by buildings": it is not a mouth and needs nothing. A footway running alongside a pavement is a mouth along its whole length, so give it a wall or hedge instead.
 
 Alleys are where Golden Crisps and Lost Property like to hide: off-route, but a short brush-up detour away.
 
@@ -674,6 +678,8 @@ Alleys are where Golden Crisps and Lost Property like to hide: off-route, but a 
 | **Hammerhead** | 3 tiles deep × 7 tiles wide | Allowed, but needs a three-point turn (reverse max 2.5 m/s), so use it only where the delay is the point |
 
 Junction approaches keep **3 tiles** of kerb clear of parking bays on each arm, so the traffic AI and Bessie both have sight lines.
+
+*As built (SSP-034), how L014 measures:* the **carriageway** is the drivable area that is not pavement or grass, plus dropped kerbs (road, cobbles, yard, apron and drivable alley; kerbed pavements and verges neither make a dead end nor a turning head). A turning-head cell lies in some 5×5 square of carriageway. The carriageway is thinned to its centre line; each closed end that is not in a turning head is followed back to the nearest junction, turning head or map edge, and its depth is the path distance from the road it leaves to its farthest tile. More than 6 tiles is L014. A carriageway that runs off the map edge continues (the town goes on), so it is never a dead end, but a stub that only reaches the edge at its far end is measured like any other. The depth is exact for 3- and 5-tile roads and within one tile next to even-width roads (the centre line of an even width sits half a tile off-centre).
 
 ### 7.5 Crossings and stops
 
@@ -776,7 +782,7 @@ The compiler's built-in legend (`DEFAULT_LEGEND` in `tools/levels/compile-level.
 | `>` `<` `^` `v` | Road, one-way | yes | yes | Flow direction east / west / north / south |
 | `.` | Pavement (slabs) | yes | yes | Kerb edge against road unless `d` |
 | `:` | Cobbles (precinct) | yes | yes | Asphalt grip; no traffic |
-| `;` | Alley (setts) | if ≥ 2 wide | if drivable | Footway when 1 wide ([§7.3](#73-alleys-and-ginnels)) |
+| `;` | Alley (setts) | if ≥ 2 wide | if drivable | Pavement grip (8.0; SSP-034, pending owner review); footway when 1 wide ([§7.3](#73-alleys-and-ginnels)) |
 | `,` | Grass | yes | no | Grip 5.0, drag ×2.5 |
 | `%` | Yard / gravel | yes | yes | Pavement grip; **dusty** |
 | `+` | Concrete apron | yes | no | Asphalt grip; no lanes, no grime (depot yards) |
@@ -1215,6 +1221,8 @@ flowchart LR
 
 *As built (SSP-033):* the compiler core writes `ground`, `surface`, `storeys`/`roof`/`wall` (style tables sorted by id), `route`, `props` (one per character, at the tile centre in metres, `rot` 0), `sites` (each id's cells merged into maximal rectangles, sorted north-west first; map-placed hazards such as `=` `haz.speed_bump` are written as sites too, because they are static tile features), `player`, `weather`, `timerS` and, when `level.json` names them, `music` and `ambience`. `autotile` (255), `collide`, `solids` (SSP-034), `grimeDensity`, `gutter` (M2), `frontages` (M2), `lanes`/`nav` (M3), `spawns` and `schedules` (M3) stay empty until their tasks. Anchors are resolved (digit, name, tile) but are not written in v1: the M3 nav graph tags anchor nodes (SSP-076). `p` parking bays and `d` dropped kerbs are road and pavement ground with a compiler marker that SSP-034 (kerb edges) and M3 (parked cars) read. The map size is checked against `level.json` → `size` until `districts.json` exists. `npm run levels -- --src <dir> --manifest <file> --out <root>` compiles another directory of pairs (the fixtures in `tests/fixtures/levels/`).
 
+*As built (SSP-034):* the compiler also writes `autotile` (kerb blob index, §7.2), `markings` (§7.1), `collide` (`SOLID` on every cell Bessie may not drive on: buildings, `w e r`, water, sand, void and 1-tile footways; the `KERB_EDGE` bits of §7.2) and `solids` (the SOLID cells merged by `mergeSolids`, TECHNICAL_DESIGN §9.1). Static props are not SOLID cells: they stay in `props` and become collision shapes at runtime (SSP-036). It then runs the layout checks L014, L015 and L020–L022 (§10.3) on every level. The kerb blob table is read from `assets-src/procedural/tiles/kerb_blob.json`.
+
 `public/assets/levels/<name>.json` is byte-deterministic (stable key order, no timestamps). Its schema (v1, base64 `Uint8` grid layers) is specified in [TECHNICAL_DESIGN §15.2](TECHNICAL_DESIGN.md#152-compiled-schema-v1). The compiler also prints the par report (§10.4).
 
 ### 10.3 Validation rules
@@ -1254,6 +1262,8 @@ Errors fail `npm run levels` (and so CI). Warnings print but do not fail. Messag
 | L072 | error | Night level: a hazard or litter hotspot outside every lamp pool and not `darkOk` |
 | L080 | error | Event referencing an unknown anchor, or a route that leaves the nav or lane graph |
 | L081 | warning | Last scheduled event later than 200 s elapsed |
+
+*As built (SSP-034):* path distances are BFS over drivable tiles (4-connected), 2 m per step. **L014** measures dead ends as described in §7.4. **L015** is the footway-mouth rule of §7.3. **L020** counts depot bays as 4-connected groups of `$` cells; the skip rule (at least 40 m from every bay) applies to shift levels only, because the Skip Run's skips are set dressing (§8.6); dump sites are depot bays and skips; one message names the farthest route tile and how many are over. **L021** sources are hydrants (`prop.hydrant`) and depot bays, reported the same way. **L022**: a hydrant needs a carriageway tile (§7.4) with no prop orthogonally beside it; a skip (each 4-connected group of `s` cells) needs a drivable tile with no prop or skip along a long side (any side when square). Messages: `L014 dead end of 8 tiles without a 5×5 turning head (max 6)`, `L015 1-tile alley mouth Bessie can enter: put a bollard (!) in it or close it with buildings`, `L020 1 depot bay(s) ($); a level needs at least 2`, `L020 skip is 4 m (path) from the nearest depot bay; skips must be at least 40 m away`, `L020 route tile is 212 m (path) from the nearest dump site (depot bay or skip); the limit is 200 m (37 route tile(s) over)`, `L021 route tile is 170 m (path) from the nearest hydrant or depot bay; the limit is 150 m (40 route tile(s) over)`, `L022 hydrant has no stopping tile beside it (…)`, `L022 skip has no stopping tile beside it (…)`. Each has a failing fixture in `tests/fixtures/levels/`.
 
 ### 10.4 Par report
 

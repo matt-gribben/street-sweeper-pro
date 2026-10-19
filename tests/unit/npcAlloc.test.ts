@@ -215,15 +215,23 @@ function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
   expect(world.npcAi.stimuli.delivered - before.delivered).toBeGreaterThan(100);
   // The generic pedestrians walk into her path; the test walkers seldom meet her inside one window.
   if (generic) {
-    expect(reactions.hits - before.hits).toBeGreaterThan(0);
     // SSP-084: the litterbugs' drops (the town has no litter of its own, and the brush is up) have filled the
-    // LitterField to its 2,000 cap during the pre-warm and no further (the window's drops are refused), and the
-    // harness's horn caught some litterbugs (the town has no kerbs, so the only style bonus is Caught!).
+    // LitterField to its 2,000 cap during the pre-warm and no further (the window's drops are refused).
     expect(world.litter.count).toBe(world.litter.capacity);
     expect(world.litter.litterSpawned).toBe(world.litter.capacity);
+  }
+  if (generic && !doris) {
+    expect(reactions.hits - before.hits).toBeGreaterThan(0);
+    // SSP-084: the harness's horn caught some litterbugs (the town has no kerbs, so the only style bonus is
+    // Caught!).
     expect(world.scoring.bonusPts - before.bonusPts).toBeGreaterThan(0);
   }
-  if (doris) expect(whacks).toBeGreaterThan(0);
+  if (doris) {
+    // Bessie stands still to spray half the time, and since SSP-084 the shoppers sidestep her predicted path, so
+    // the Doris window's actor contacts are bumps rather than hits; the work under test is Doris's whacks.
+    expect(reactions.hits + reactions.bumps - before.hits - before.bumps).toBeGreaterThan(0);
+    expect(whacks).toBeGreaterThan(0);
+  }
   assertHeapDeltaWithinThresholds(delta);
 }
 

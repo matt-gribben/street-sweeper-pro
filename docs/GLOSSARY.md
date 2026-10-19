@@ -503,7 +503,7 @@ A per-instance **index → index** table applied when drawing a sprite, with up 
 The off-screen buffer the scene is drawn into: **(W+2)×272**, i.e. the [internal resolution](#internal-resolution) plus a 1 px margin on every side for the [sub-pixel camera](#sub-pixel-camera). It uses NearestFilter, no MSAA and no mipmaps.
 
 ### Replay / replay hash
-A **replay** is a recorded seed, district and input log (`tests/replay/replays/*.json`). `npm run test:replay` re-simulates 3,600 ticks (60 s) and asserts a **replay hash**: a hash of the final sim state quantised to 1e-4, plus invariants. A changed hash means the simulation's behaviour changed. That is either a bug or an intentional tuning change that must be re-approved. The first replay hash is committed in M1.
+A **replay** is a recorded seed, district and input log (`tests/replay/replays/*.json`). `npm run test:replay` re-simulates 3,600 ticks (60 s) and asserts its **replay hashes**: a running FNV-1a hash of the sim state, quantised to 1e-4, checked every 600 ticks and at the end (the final-state hash), plus invariants. See [TECHNICAL_DESIGN §18.3](TECHNICAL_DESIGN.md#183-deterministic-replay-tests). A changed hash means the simulation's behaviour changed. That is either a bug or an intentional tuning change that must be re-approved. The first replay hash is committed in M1.
 
 ### Rival Sweep
 An M9 mode: versus [Spotless Sid](#spotless-sid), most LU dumped in 180 s.

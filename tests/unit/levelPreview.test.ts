@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Group } from 'three';
 import { describe, expect, it } from 'vitest';
+import { EventBus } from '../../src/app/events.ts';
 import type { SceneContext } from '../../src/app/Game.ts';
 import { levelUrl, loadLevel } from '../../src/app/levelLoader.ts';
 import { SCENE_IDS } from '../../src/app/SceneManager.ts';
@@ -57,6 +58,7 @@ describe('LevelPreviewScene', () => {
       renderer: {} as Renderer,
       root: new Group(),
       ui: new Group(),
+      events: new EventBus(),
       loadAtlas: async (name) => {
         loaded.push(name);
         return loadAtlas(name, {

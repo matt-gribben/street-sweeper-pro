@@ -887,6 +887,7 @@ All UI renders in the same internal pixel space as the game (base 480×270; widt
 | Complaints meter | Top-right | Five empty stamp boxes; each complaint slams a red "COMPLAINT" stamp in with `sfx.complaint_stamp` and a 2-frame shake |
 | Radio panel | Bottom-left, above gauges | Pam's barks: 9-slice panel, one line, auto-dismiss after 3 s (proposed). Never covers the road ahead of Bessie. |
 | Hopper gauge | Bottom-left | Fill bar and %. Flashes and shows "!" at 80%. Shows "FULL" and the dump-site arrow at 100%. |
+| Dump prompt | Bottom-centre, above the gauges | Whenever a dump is available (stopped at a depot bay or beside a skip with something to dump): the interact key label in a ring that fills over the 1.0 s hold (§6.2, §8.7); it empties on a cancel and goes when the drain starts (SSP-070) |
 | Water gauge | Bottom-left | Fill bar; hydrant icon pulses when below 20% (proposed) |
 | Dignity (HP) | Bottom-left | Bar: green above 60 HP, yellow from 40 to 60 HP, turns red below 40 HP when the dented sprite appears (colours in [ART_BIBLE §12.2](ART_BIBLE.md)) |
 | Brush-o-meter | Bottom-left | Speed with **three zones**: clean (≤ 4.0 m/s), fling (4.0–6.0 m/s), transit (brush up). Needle position plus zone colour plus a pattern (solid / hatched / dotted) so it never relies on colour alone. |
@@ -895,6 +896,8 @@ All UI renders in the same internal pixel space as the game (base 480×270; widt
 | Minimap | Bottom-right | Rendered at runtime from map data: roads, Bessie's arrow, depot bay, skips, hydrants, pledge frontages (green/red). Grime shown as a coarse heat tint. |
 | Score popups | World space | Points float up from the pickup; tier words big and centred |
 | Off-screen arrows | Screen edge | Point to depot bay when hopper ≥ 80% and to the nearest hydrant when water < 20% (proposed) |
+
+**M2 HUD (SSP-070).** The timer, score with its roll, combo with the chain bar and tier popups, the hopper, water and Dignity gauges, and the dump prompt are built (positions and colours in [ART_BIBLE §12.2](ART_BIBLE.md)). Until the M4 icons the gauges carry text labels (HOPPER, WATER, DIGNITY) and all HUD text is outlined Kerbside 5×7.
 
 **HUD principles:**
 

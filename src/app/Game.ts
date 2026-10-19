@@ -48,6 +48,11 @@ export type SceneContext = {
    * darkened at night.
    */
   readonly ui: Group;
+  /**
+   * The typed event bus the loop drains every scene's sim events into after each tick (§7.2). Presentation
+   * subscribes here (ShiftScene's HUD listens for EV.ComboTier, SSP-070) and unsubscribes in exit().
+   */
+  readonly events: EventBus;
   /** Loads one sprite atlas (spriteAtlas.ts loadAtlas). */
   loadAtlas(name: AtlasName): Promise<SpriteAtlas>;
   /**
@@ -157,6 +162,7 @@ export class Game {
       renderer: this.renderer,
       root: this.root,
       ui: this.uiRoot,
+      events: this.events,
       loadAtlas: (name) => loadAtlas(name),
       pinCamera: (x, y, h) => this.pinCamera(x, y, h),
       followCamera: (x, y, vx, vy, speedMps) => this.followCamera(x, y, vx, vy, speedMps),

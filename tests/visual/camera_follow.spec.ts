@@ -5,7 +5,8 @@
 //
 // - 1:1 ground at <= 6.0 m/s: brush down (top speed 6.0 m/s), 4 s of throttle, frozen. H must be exactly 31.5 m,
 //   the camera must lead Bessie by up to 3.0 m along her velocity, and every 2 m ground tile wholly on screen
-//   and clear of Bessie, building walls/roofs (projected at the frame's camera) and building shadows must equal
+//   and clear of Bessie, the HUD's reserved boxes (src/ui/hud.ts hudLayout, SSP-070), building walls/roofs
+//   (projected at the frame's camera) and building shadows must equal
 //   its `world` atlas frame(s) pixel for pixel (base tile, then any marking overlay, as groundLayer.ts draws
 //   them). The atlas pixels are Kerbside-32 colours and the day palette pass maps each to itself, so "after
 //   palette mapping" is the atlas pixel. A review capture (`camera_1to1.png`) is written to test-results/.
@@ -29,6 +30,7 @@ import {
   loadPuddleLane,
   type Rect,
 } from '../support/groundReference.ts';
+import { hudCover } from '../support/hudCover.ts';
 import {
   collectPageErrors,
   encodeFramePng,
@@ -120,6 +122,8 @@ test('at <= 6.0 m/s the live camera leads Bessie and the ground is exactly 1 tex
       y1: bessie.y + BESSIE_CLEAR_M,
     },
   ];
+  // The HUD draws over the ground (SSP-070): tiles under any of its reserved boxes are left out.
+  blocked.push(...hudCover(camX, camY, frame.width));
   // Each 4 px grime cell must be its tile's texels 1:1, with the cell's initial grime or swept clean (SSP-066).
   const ground = compareGroundTiles(frame, level, worldAtlas, camX, camY, blocked, INITIAL_GRIME, false);
   const checked = ground.checkedTiles;

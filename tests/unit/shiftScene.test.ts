@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Group } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { EventBus } from '../../src/app/events.ts';
 import type { SceneContext } from '../../src/app/Game.ts';
 import { createLoop, type LoopClock } from '../../src/app/loop.ts';
 import { SCENE_IDS, SceneManager } from '../../src/app/SceneManager.ts';
@@ -43,10 +44,14 @@ const LEVEL_JSON = read('public/assets/levels/puddle_lane.json');
 /** Serves compiled levels from the checkout (`/assets/levels/<name>.json` under base `/`). */
 const checkoutLevels = async (url: string): Promise<string> => read(`public/${url.replace(/^\//, '')}`);
 
+/** Serves font metrics from the checkout (`/assets/fonts/<name>.json` under base `/`). */
+const checkoutFonts = async (url: string): Promise<unknown> =>
+  JSON.parse(read(`public/${url.replace(/^\//, '')}`));
+
 const atlasFiles = new Map<AtlasName, { json: unknown; image: RgbaImage }>();
 
 beforeAll(() => {
-  for (const name of ['world', 'actors', 'items'] as const) {
+  for (const name of ['world', 'actors', 'items', 'ui'] as const) {
     atlasFiles.set(name, {
       json: JSON.parse(read(`public/assets/atlas/${name}.json`)),
       image: decodePng(readFileSync(`${REPO_ROOT}public/assets/atlas/${name}.png`)),
@@ -80,6 +85,7 @@ function context() {
     renderer: { rig, webgl } as unknown as Renderer,
     root: new Group(),
     ui: new Group(),
+    events: new EventBus(),
     loadAtlas: async (name) => {
       loaded.push(name);
       const files = atlasFiles.get(name);
@@ -103,7 +109,10 @@ function context() {
 
 function scene(options: ShiftSceneOptions = {}) {
   const c = context();
-  return { ...c, scene: new ShiftScene(c.ctx, { levelSource: checkoutLevels, ...options }) };
+  return {
+    ...c,
+    scene: new ShiftScene(c.ctx, { levelSource: checkoutLevels, fontSource: checkoutFonts, ...options }),
+  };
 }
 
 /** A fake rAF clock (as in loop.test.ts). */
@@ -209,7 +218,7 @@ describe('ShiftScene', () => {
     expect(shift.snapshot()).toBeNull();
     expect(shift.simEvents).toBeNull();
     await shift.enter({ seed: 1, district: 'district.puddle_lane' });
-    expect(loaded.sort()).toEqual(['actors', 'items', 'world']);
+    expect(loaded.sort()).toEqual(['actors', 'items', 'ui', 'world']);
     expect(shift.district).toBe('district.puddle_lane');
     const world = shift.worldView;
     if (world === null) throw new Error('no world');
@@ -425,7 +434,7 @@ describe('ShiftScene', () => {
     await expect(a.scene.enter({ seed: 1 })).rejects.toThrow(/without a district/);
     await expect(a.scene.enter({ seed: 1, district: 'puddle_lane' })).rejects.toThrow(/not a district ID/);
     const b = context();
-    const wrong = new ShiftScene(b.ctx, { levelSource: async () => LEVEL_JSON });
+    const wrong = new ShiftScene(b.ctx, { levelSource: async () => LEVEL_JSON, fontSource: checkoutFonts });
     await expect(wrong.enter({ seed: 1, district: 'district.kebab_mile' })).rejects.toThrow(
       /kebab_mile\.json holds 'district\.puddle_lane'/,
     );

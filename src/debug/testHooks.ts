@@ -7,8 +7,9 @@
 //   scene=<id>  boot straight into a scene: a district shift (`district.puddle_lane`, src/scenes/ShiftScene.ts,
 //               also the default without `scene`), `spike_city`, `lean_quadrants`, `scale_1440`, `scale_sheet`
 //               (src/scenes/SpikeScene.ts), `level_preview` (src/scenes/LevelPreviewScene.ts), `text_sample`
-//               (src/scenes/TextSampleScene.ts, SSP-069) or `panel_sample` (src/scenes/PanelSampleScene.ts,
-//               SSP-285); main.ts pushes it onto the SceneManager;
+//               (src/scenes/TextSampleScene.ts, SSP-069), `panel_sample` (src/scenes/PanelSampleScene.ts,
+//               SSP-285) or `hud_sample` (src/scenes/HudSampleScene.ts, SSP-070); main.ts pushes it onto the
+//               SceneManager;
 //   tick=<n>    advance n ticks synchronously after load, before `ready` turns true;
 //   freeze=1    the loop (src/app/loop.ts) keeps rendering but never steps;
 //   night=1     the palette pass applies the night remap outside the light mask, and scenes draw their light

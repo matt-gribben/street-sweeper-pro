@@ -16,9 +16,14 @@
 //                       stains, hydrants, skip and depot bays inside the camera's ground rect plus 4 m
 //                       (itemsBatch.ts, SSP-067). It reads the World, never writes it.
 //
-// Draw calls: city (1) + building shadows (1) + Bessie's drop shadow (1) + actors batch (1) + items batch (1),
-// then the palette pass and the blit: 7 of the 10 budgeted (§12.7). The items draw is skipped (6) only when no
-// item is in view.
+// Draw calls: city (1) + building shadows (1) + Bessie's drop shadow (1) + actors batch (1) + items batch (1) +
+// the HUD's UI batch (1), then the palette pass and the blit: 8 of the 10 budgeted (§12.7). The items draw is
+// skipped (7) only when no item is in view.
+//
+// HUD (SSP-070, src/ui/hud.ts): enter() also loads the `ui` atlas and Kerbside 5×7 and builds the HUD over one
+// UiSpriteBatch on the UI pass (SceneContext.ui); it subscribes to EV.ComboTier on the event bus for the tier
+// popups (unsubscribed in exit()). fixedUpdate() rolls the HUD's shown score after each World tick, and render()
+// draws the HUD from the WorldView at the current internal width. The HUD only reads the World.
 //
 // The camera (SSP-047, src/render/camera.ts) follows Bessie's interpolated body centre, leads it by up to 3.0 m
 // along her velocity (forward·vLong + right·vLat at the drawn heading) and takes its speed-zoom height from her
@@ -35,7 +40,8 @@
 // remembers whether any recorded tick ran on a tuning that differs from tuning.json (`logMatchesCommittedTuning`);
 // the dev panel's Save replay refuses (or asks twice) when it does.
 //
-// No HUD, timer or shift end yet (M2), no audio (M5).
+// The shift end's scene change (tally) is SSP-071; no audio (M5).
+import type { Unsubscribe } from '../app/events.ts';
 import type { SceneContext } from '../app/Game.ts';
 import { type LevelSource, loadLevel } from '../app/levelLoader.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
@@ -46,6 +52,7 @@ import { bodyVelocity, createPose, createVelocity, interpolatePose } from '../re
 import { ItemsBatch } from '../render/itemsBatch.ts';
 import { createLevelCity, type LevelCity } from '../render/levelCity.ts';
 import type { SpriteAtlas } from '../render/spriteAtlas.ts';
+import { UiSpriteBatch } from '../render/spriteBatch.ts';
 import type { Aabb } from '../sim/collision/obb.ts';
 import { viewDirt } from '../sim/dirt.ts';
 import type { ReadonlyEventQueue } from '../sim/eventQueue.ts';
@@ -55,6 +62,14 @@ import { appendInput, createInputLog, DISTRICT_ID_PATTERN, type InputLog } from 
 import { type SimSnapshot, snapshotWorld } from '../sim/snapshot.ts';
 import { DEFAULT_TUNING, type Tuning, tuningsEqual } from '../sim/tuning.ts';
 import { createWorld, setWorldTuning, viewWorld, type World, type WorldView } from '../sim/world.ts';
+import { type BitmapFont, type FontJsonSource, loadBitmapFont } from '../ui/bitmapText.ts';
+import { Hud } from '../ui/hud.ts';
+
+/** The HUD's font (`public/assets/fonts/kerbside5x7.json`). */
+export const HUD_FONT = 'kerbside5x7';
+
+/** UI quads the HUD batch holds (the M2 HUD draws under 200). */
+export const HUD_CAPACITY = 512;
 
 /** The district `npm run dev` boots into in M1. */
 export const DEFAULT_DISTRICT = 'district.puddle_lane';
@@ -66,6 +81,8 @@ export type ShiftSceneOptions = {
   readonly tuning?: Tuning;
   /** Record the shift's input log through the World's replay hook (dev builds). Default false. */
   readonly recordInputs?: boolean;
+  /** Fetches the HUD font's metrics JSON (default: the browser's fetch, bitmapText.ts). Tests inject a reader. */
+  readonly fontSource?: FontJsonSource;
 };
 
 /** `district.<name>` → `<name>`, the compiled level's file name; throws on anything else. */
@@ -82,6 +99,8 @@ type Built = {
   readonly city: LevelCity;
   readonly bessie: BessieSprite;
   readonly items: ItemsBatch;
+  readonly hudBatch: UiSpriteBatch;
+  readonly hud: Hud;
 };
 
 /** The drive-only shift: one World, its level city and Bessie. */
@@ -90,6 +109,7 @@ export class ShiftScene implements Scene {
   readonly blocksUpdateBelow = false;
   private readonly context: SceneContext;
   private readonly levelSource: LevelSource | undefined;
+  private readonly fontSource: FontJsonSource | undefined;
   private currentTuning: Tuning;
   /** The tick from which the World has run on a tuning that differs from tuning.json, or null while it does not. */
   private offTuningSinceTick: number | null;
@@ -100,6 +120,9 @@ export class ShiftScene implements Scene {
   private city: LevelCity | null = null;
   private bessie: BessieSprite | null = null;
   private items: ItemsBatch | null = null;
+  private hud: Hud | null = null;
+  private hudBatch: UiSpriteBatch | null = null;
+  private unsubscribeHud: Unsubscribe | null = null;
   private atlases: SpriteAtlas[] = [];
   /** The brush overlay's spin phase (render-side, brushSpin.ts). */
   private readonly brushSpin = createBrushSpin();
@@ -116,6 +139,7 @@ export class ShiftScene implements Scene {
   constructor(context: SceneContext, options: ShiftSceneOptions = {}) {
     this.context = context;
     this.levelSource = options.levelSource;
+    this.fontSource = options.fontSource;
     this.currentTuning = options.tuning ?? DEFAULT_TUNING;
     this.offTuningSinceTick = tuningsEqual(this.currentTuning, DEFAULT_TUNING) ? null : 0;
     this.recordInputs = options.recordInputs ?? false;
@@ -154,6 +178,16 @@ export class ShiftScene implements Scene {
   /** The items batch: litter, stains and the level's flat markers (null before enter() resolves). */
   get itemsBatch(): ItemsBatch | null {
     return this.items;
+  }
+
+  /** The HUD (null before enter() resolves). */
+  get hudView(): Hud | null {
+    return this.hud;
+  }
+
+  /** The HUD's UI batch (null before enter() resolves): its count is the quads drawn last frame. */
+  get uiBatch(): UiSpriteBatch | null {
+    return this.hudBatch;
   }
 
   /** Frames this scene has posed (render() calls). */
@@ -209,24 +243,26 @@ export class ShiftScene implements Scene {
     const district = params.district;
     if (district === undefined) throw new Error('ShiftScene: entered without a district');
     const levelName = districtLevelName(district);
-    const [level, world, actors, items] = await Promise.all([
+    const [level, world, actors, items, ui, font] = await Promise.all([
       loadLevel(levelName, this.levelSource),
       this.context.loadAtlas('world'),
       this.context.loadAtlas('actors'),
       this.context.loadAtlas('items'),
+      this.context.loadAtlas('ui'),
+      loadBitmapFont(HUD_FONT, this.fontSource),
     ]);
-    const atlases = [world, actors, items];
+    const atlases = [world, actors, items, ui];
     let built: Built;
     try {
       if (level.id !== district) {
         throw new Error(`ShiftScene: ${levelName}.json holds '${level.id}', not '${district}'`);
       }
-      built = this.build(level, params.seed, world, actors, items);
+      built = this.build(level, params.seed, world, actors, items, ui, font);
     } catch (error: unknown) {
       for (const atlas of atlases) disposeAtlas(atlas);
       throw error;
     }
-    const { sim, city, bessie } = built;
+    const { sim, city, bessie, hud, hudBatch } = built;
     this.items = built.items;
     if (this.recordInputs) {
       const log = createInputLog();
@@ -239,9 +275,13 @@ export class ShiftScene implements Scene {
     this.world = sim;
     this.city = city;
     this.bessie = bessie;
+    this.hud = hud;
+    this.hudBatch = hudBatch;
+    this.unsubscribeHud = hud.attach(this.context.events);
     this.atlases = atlases;
     this.districtId = district;
     this.context.root.add(city.group, bessie.group, built.items.mesh);
+    this.context.ui.add(hudBatch.mesh);
     this.brushSpin.lastTick = -1;
     // Place the camera over Bessie before the first frame (no render time passes, so no spring moves).
     const v = sim.vehicle;
@@ -250,8 +290,8 @@ export class ShiftScene implements Scene {
   }
 
   /**
-   * The World, the level city, Bessie's sprites and the items batch; releases whatever it built if a later step
-   * throws.
+   * The World, the level city, Bessie's sprites, the items batch and the HUD; releases whatever it built if a
+   * later step throws.
    */
   private build(
     level: Level,
@@ -259,18 +299,26 @@ export class ShiftScene implements Scene {
     world: SpriteAtlas,
     actors: SpriteAtlas,
     items: SpriteAtlas,
+    ui: SpriteAtlas,
+    font: BitmapFont,
   ): Built {
+    if (font.metrics.atlas !== ui.name) {
+      throw new Error(`ShiftScene: ${font.metrics.id} draws from atlas '${font.metrics.atlas}', not 'ui'`);
+    }
     const sim = createWorld(level, seed, this.currentTuning);
     const city = createLevelCity(level, world, undefined, viewDirt(sim.dirt));
     let bessie: BessieSprite | null = null;
+    let itemsBatch: ItemsBatch | null = null;
     try {
       bessie = createBessieSprite(actors, this.currentTuning.vehicle.sweeper.health.dentedBelowHp);
-      const itemsBatch = new ItemsBatch(items, world, level, {
+      itemsBatch = new ItemsBatch(items, world, level, {
         litterCapacity: sim.litter.capacity,
         stainCapacity: sim.stains.capacity,
       });
-      return { sim, city, bessie, items: itemsBatch };
+      const hudBatch = new UiSpriteBatch(ui, HUD_CAPACITY);
+      return { sim, city, bessie, items: itemsBatch, hudBatch, hud: new Hud(hudBatch, font) };
     } catch (error: unknown) {
+      itemsBatch?.dispose();
       bessie?.dispose();
       city.dispose();
       throw error;
@@ -293,6 +341,14 @@ export class ShiftScene implements Scene {
       this.items.dispose();
       this.items = null;
     }
+    this.unsubscribeHud?.();
+    this.unsubscribeHud = null;
+    if (this.hudBatch !== null) {
+      this.context.ui.remove(this.hudBatch.mesh);
+      this.hudBatch.dispose();
+      this.hudBatch = null;
+    }
+    this.hud = null;
     for (const atlas of this.atlases) disposeAtlas(atlas);
     this.atlases = [];
     if (this.world !== null) {
@@ -307,6 +363,7 @@ export class ShiftScene implements Scene {
     if (world === null) return;
     world.step(input);
     this.city?.grime?.accumulate(world.dirt);
+    this.hud?.tick(world);
   }
 
   render(alpha: number): void {
@@ -327,6 +384,13 @@ export class ShiftScene implements Scene {
     if (items !== null) {
       cameraGroundRect(rig, 0, this.cameraRect);
       items.update(world.litter, world.stains, world.tick, alpha, this.cameraRect, rig.snappedZ);
+    }
+    const hud = this.hud;
+    const batch = this.hudBatch;
+    if (hud !== null && batch !== null) {
+      batch.begin();
+      hud.draw(world, rig.internalWidth);
+      batch.end();
     }
     this.frames += 1;
   }

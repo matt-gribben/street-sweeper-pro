@@ -45,6 +45,7 @@ export const SCENE_IDS = [
   'level_preview',
   'text_sample',
   'panel_sample',
+  'hud_sample',
 ] as const;
 export type SceneId = (typeof SCENE_IDS)[number];
 

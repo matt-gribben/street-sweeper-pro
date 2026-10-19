@@ -22,7 +22,7 @@ export const EVENTS_PER_TICK = 512;
  * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
  * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd, SSP-093 HazardJolt and HazardStop, SSP-063
  * ComboTier, SSP-078 Complaint and Horn, SSP-092 Knock, SSP-082 NpcHit, SSP-089 CarHorn, SSP-083
- * HandbagWhack, SSP-084 Caught, SSP-090 Dent; later issues append the rest of the §7.2 list.
+ * HandbagWhack, SSP-084 Caught, SSP-090 Dent, SSP-086 LeadTangle; later issues append the rest of the §7.2 list.
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036), for
@@ -112,6 +112,7 @@ export const EV = {
   HandbagWhack: 19,
   Caught: 20,
   Dent: 21,
+  LeadTangle: 22,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

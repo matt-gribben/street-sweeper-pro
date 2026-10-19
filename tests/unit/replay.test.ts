@@ -275,6 +275,9 @@ describe('state hash', () => {
     // Its behaviour timers (SSP-083).
     world.npc.timerA[n] = 600;
     world.npc.timerB[n] = 17;
+    // Its behaviour words (SSP-086).
+    world.npc.dueTick[n] = 2_500;
+    world.npc.routeAt[n] = 2;
     world.npcAi.reactions.hiVisUntilTick = 700;
     world.npcAi.reactions.hits = 1;
     world.npcAi.reactions.bumps = 2;
@@ -419,6 +422,19 @@ describe('state hash', () => {
     const edits: [string, (w: World) => void][] = [
       ['zebras.offences', (w) => (w.zebras.offences = 2)],
       ['zebras.bessieOn', (w) => (w.zebras.bessieOn[0] = 0)],
+    ];
+    for (const [name, edit] of edits) {
+      const w = handSetWorld();
+      edit(w);
+      expect(hashOf(w), name).not.toBe(base);
+    }
+  });
+
+  it('absorbs the behaviour words (SSP-086): the per-NPC due tick and route place', () => {
+    const base = hashOf(handSetWorld());
+    const edits: [string, (w: World) => void][] = [
+      ['dueTick', (w) => (w.npc.dueTick[0] = 2_501)],
+      ['routeAt', (w) => (w.npc.routeAt[0] = 3)],
     ];
     for (const [name, edit] of edits) {
       const w = handSetWorld();
@@ -1482,8 +1498,11 @@ describe('state hash', () => {
  * SSP-090 appended the parked-car columns (paint, the dent episode, dents, the roof perch) and the dent counter
  * after the zebra offence, and gave the vehicle a paint slot and a dented episode: bce018f8 → ef821327 (e6cb8040
  * on its branch, before SSP-083, SSP-084 and SSP-085 merged).
+ * SSP-086 appended the behaviours' own per-NPC words (dueTick, routeAt) after the vehicle contacts, and gave the
+ * hand-set NPC a due tick and a route place: ef821327 → ee810692 (82d0b612 on its branch, before SSP-083, SSP-084,
+ * SSP-085 and SSP-090 merged).
  */
-const GOLDEN_HAND_SET_HASH = 'ef821327';
+const GOLDEN_HAND_SET_HASH = 'ee810692';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

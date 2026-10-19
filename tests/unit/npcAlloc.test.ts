@@ -8,8 +8,12 @@
 // every 10 s, so actor hits run in the window), the behaviours walk them (a test
 // behaviour, below: walk straight, turn back at the map edge, hurry for a second when honked at, moving them
 // through the spatial hash), the harness pushes a Horn stimulus every 0.5 s and a Hit at one NPC every 1.5 s,
-// and a quarter of the store runs its perception query every tick. Runs in the Vitest unit project, whose
-// forks pool has --expose-gc; without it the check throws, it never skips.
+// and a quarter of the store runs its perception query every tick. With the registry's behaviours (the generic
+// pedestrians and, since SSP-086, the dog walkers and their dogs) the harness also puts someone just ahead of
+// Bessie's nose every 3 s and a dog walker and its dog either side of her path 1.5 s later, so actor hits and Lead
+// Tangles happen inside the window whatever the crowd does (people who see her coming yield, so meeting her by
+// chance was a coin flip per window). Runs in the Vitest unit project, whose forks pool has --expose-gc; without
+// it the check throws, it never skips.
 import { describe, expect, it } from 'vitest';
 import { DT_S } from '../../src/sim/constants.ts';
 import { NPC_IDS } from '../../src/sim/entities.ts';
@@ -17,6 +21,7 @@ import { countEvents, EV } from '../../src/sim/eventQueue.ts';
 import { cos, sin } from '../../src/sim/fmath.ts';
 import { BUTTON, createInputFrame, THROTTLE_MAX } from '../../src/sim/inputFrame.ts';
 import { type Behaviour, Stimulus } from '../../src/sim/npc/behaviour.ts';
+import { leadDog } from '../../src/sim/npc/behaviours/dogWalker.ts';
 import { pushStimulus } from '../../src/sim/npc/stimuli.ts';
 import {
   NO_NPC_HANDLE,
@@ -25,6 +30,7 @@ import {
   setNpcState,
   updateNpcCell,
 } from '../../src/sim/npc/store.ts';
+import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import { createWorld, stepWorld, type World } from '../../src/sim/world.ts';
 import { endlessShiftTuning } from '../support/endlessShift.ts';
 import {
@@ -83,16 +89,32 @@ const LITTERBUG_KIND = NPC_IDS.indexOf('npc.litterbug');
 const AHEAD_M = 1.625 + 2;
 /** Bessie is only aimed at NPCs at least this far inside the map, metres. */
 const AIM_MARGIN_M = 24;
+/** Bessie's half length, plus a little: where the harness puts an NPC in her way, metres ahead of her centre. */
+const NOSE_M = DEFAULT_TUNING.vehicle.sweeper.body.lengthM / 2 + 0.6;
+
+/** Put NPC `i` `aheadM` ahead of Bessie's centre and `rightM` to her right (a test standing in for its walk). */
+function putInPath(world: World, i: number, aheadM: number, rightM: number): void {
+  const v = world.vehicle;
+  const s = sin(v.headingRad);
+  const c = cos(v.headingRad);
+  world.npc.x[i] = v.xM + s * aheadM + c * rightM;
+  world.npc.y[i] = v.yM - c * aheadM + s * rightM;
+  updateNpcCell(world.npc, i);
+}
 
 /**
  * The rig: `generic` keeps the registry's behaviours (the SSP-082 generic pedestrian for the people, the SSP-084
- * shopper, businessman and litterbug, the SSP-085 old man, mum and postie, the no-op for the animals) instead of the test walker, so the reaction
- * model's states run in the window, with the shoppers' sidesteps, the businessmen's 2 m startles, the litterbugs'
- * drops and, under the harness's horn, their Caught! (EV.Caught, the bonus in phase 9) and slinking off. `doris`
+ * shopper, businessman and litterbug, the SSP-085 old man, mum and postie, the SSP-086 dog walker and its dog, the
+ * no-op for the animals) instead of the test walker, so the reaction model's states run in the window, with the
+ * shoppers' sidesteps, the businessmen's 2 m startles, the litterbugs' drops and, under the harness's horn, their
+ * Caught! (EV.Caught, the bonus in phase 9) and slinking off, and the dog walkers' Lead Tangles and dog mess. `doris`
  * adds Doris (SSP-083) to the mix and sprays for 2 s of every 4 (the tank topped up), so her glare, fist shake,
  * chase and handbag whacks run too; Bessie's HP is restored every tick so the whacks never get her TOWED.
  */
-function npcRig(generic = false, doris = false): { world: World; step: (t: number) => void } {
+function npcRig(
+  generic = false,
+  doris = false,
+): { world: World; step: (t: number) => void; tangles: Int32Array } {
   const { level } = npcTown(TILES, {
     population: [{ fromS: 0, toS: 100_000, target: 80 }],
     mix: [
@@ -131,6 +153,7 @@ function npcRig(generic = false, doris = false): { world: World; step: (t: numbe
   const input = createInputFrame();
   input.steer = 50;
   const q = world.npcAi.stimuli;
+  const tangles = new Int32Array(1);
   const step = (t: number): void => {
     if (t % 1200 === 0) {
       const k = ((t / 1200) & 3) * 2;
@@ -189,15 +212,27 @@ function npcRig(generic = false, doris = false): { world: World; step: (t: numbe
     }
     if (t % 90 === 0 && world.npc.count > 0)
       pushStimulus(q, Stimulus.Hit, npcHandle(world.npc, t % world.npc.count));
+    const npc = world.npc;
+    if (generic && t % 180 === 0 && npc.count > 0) putInPath(world, (t / 180) % npc.count, NOSE_M, 0);
+    if (generic && t % 180 === 90) {
+      for (let i = 0; i < npc.count; i++) {
+        const dog = leadDog(npc, i);
+        if (dog < 0) continue;
+        putInPath(world, i, NOSE_M + 1, -2);
+        putInPath(world, dog, NOSE_M + 1, 2);
+        break;
+      }
+    }
     stepWorld(world, input);
+    tangles[0] = (tangles[0] as number) + countEvents(world.events, EV.LeadTangle);
   };
-  return { world, step };
+  return { world, step, tangles };
 }
 
 /** The §17 heap check over the rig; logs the window's work and asserts that it ran. */
 function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
   requireGc();
-  const { world, step } = npcRig(generic, doris);
+  const { world, step, tangles } = npcRig(generic, doris);
   const sp = world.npcAi.spawner;
   const reactions = world.npcAi.reactions;
   for (let t = 0; t < PREWARM_TICKS; t++) step(t);
@@ -209,6 +244,7 @@ function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
     bumps: reactions.bumps,
     bonusPts: world.scoring.bonusPts,
     litterSpawned: world.litter.litterSpawned,
+    tangles: tangles[0] as number,
   };
   let minCount = NPC_CAPACITY;
   let fullTicks = 0;
@@ -232,7 +268,8 @@ function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
       `delivered +${world.npcAi.stimuli.delivered - before.delivered}, actor hits ` +
       `+${reactions.hits - before.hits}, bumps +${reactions.bumps - before.bumps}, handbag whacks ${whacks}, ` +
       `Caught! bonus ` +
-      `+${world.scoring.bonusPts - before.bonusPts}, litter dropped +${world.litter.litterSpawned - before.litterSpawned}`,
+      `+${world.scoring.bonusPts - before.bonusPts}, litter dropped +${world.litter.litterSpawned - before.litterSpawned}, ` +
+      `lead tangles +${(tangles[0] as number) - before.tangles}`,
   );
   // The window ran the work under test: a full store, spawns and retirements, stimuli delivered.
   expect(fullTicks).toBeGreaterThan(HEAP_MEASURED_TICKS / 2);
@@ -240,7 +277,8 @@ function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
   expect(sp.ambientSpawned - before.spawned).toBeGreaterThan(10);
   expect(sp.ambientRetired - before.retired).toBeGreaterThan(10);
   expect(world.npcAi.stimuli.delivered - before.delivered).toBeGreaterThan(100);
-  // The generic pedestrians walk into her path; the test walkers seldom meet her inside one window.
+  // With the registry's behaviours the harness puts people and leads in her path (and aims her at someone every
+  // 10 s); the test walkers seldom meet her inside one window.
   if (generic) {
     // SSP-084: the litterbugs' drops (the town has no litter of its own, and the brush is up) have filled the
     // LitterField to its 2,000 cap during the pre-warm and no further (the window's drops are refused).
@@ -249,6 +287,8 @@ function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
   }
   if (generic && !doris) {
     expect(reactions.hits - before.hits).toBeGreaterThan(0);
+    // SSP-086: the harness's dog walkers either side of her path tangle her in their leads.
+    expect((tangles[0] as number) - before.tangles).toBeGreaterThan(0);
     // SSP-084: the harness's horn caught some litterbugs (the town has no kerbs, so the only style bonus is
     // Caught!).
     expect(world.scoring.bonusPts - before.bonusPts).toBeGreaterThan(0);
@@ -269,7 +309,7 @@ describe('phase 7 heap-delta check with 80 NPCs (TECHNICAL_DESIGN §17, SSP-080)
     checkPhase7Heap('npcAlloc', false);
   });
 
-  it('allocates nothing with the generic pedestrians walking, yielding, startling and falling (SSP-082)', {
+  it('allocates nothing with the generic pedestrians walking, yielding, startling and falling (SSP-082) and the dog walkers roaming, tangling and dropping mess (SSP-086)', {
     timeout: 120_000,
   }, () => {
     checkPhase7Heap('npcAlloc (generic pedestrian)', true);

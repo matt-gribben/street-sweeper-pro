@@ -279,8 +279,8 @@ function placedReserve(sp: NpcSpawner): number {
 
 /**
  * Add an NPC of `kind` and `origin` (spec entry `group`) at (xs[j], ys[j]), in its behaviour's initial state,
- * with its kind's radius and walking speed and nav target `node`; a dog walker gets its dog (which keeps up at
- * the walker's speed). Returns the index, or −1 when the
+ * with its kind's radius and walking speed and nav target `node`; a dog walker gets its dog (spawned at the
+ * walker's speed; behaviours/dogWalker.ts trots it faster from its first tick). Returns the index, or −1 when the
  * store is full (the caller checks room first).
  */
 function spawnAt(

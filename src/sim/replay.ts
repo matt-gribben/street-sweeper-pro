@@ -452,6 +452,8 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *   SSP-085 appends the occupied-zebra offence (npc/zebraOffence.ts): I zebras.offences, then per zebra B bessieOn
  *   SSP-090 appends the parked cars and Bessie's vehicle contacts (parked.ts):
  *   I traffic.dents, contactStops, then per vehicle: I paint, touchClear, dented, dents, roofPerch
+ *   SSP-086 appends the behaviours' own words: per NPC I dueTick, routeAt (none without NPCs, so a run with an
+ *     empty store hashes as before)
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -513,6 +515,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbTraffic(hasher, world);
   absorbZebraOffences(hasher, world);
   absorbVehicleContacts(hasher, world);
+  absorbBehaviourWords(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -1144,6 +1147,23 @@ function absorbZebraOffences(hasher: StateHasher, world: World): void {
     }
     w[k] = (z.bessieOn[i] as number) | 0;
     k += 1;
+  }
+  mixWords(hasher, k);
+}
+
+/** SSP-086: the behaviours' own per-NPC words (dueTick, routeAt). */
+function absorbBehaviourWords(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const npc = world.npc;
+  let k = 0;
+  for (let i = 0; i < npc.count; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (npc.dueTick[i] as number) | 0;
+    w[k + 1] = (npc.routeAt[i] as number) | 0;
+    k += 2;
   }
   mixWords(hasher, k);
 }

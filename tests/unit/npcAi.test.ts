@@ -7,15 +7,13 @@ import { createInputFrame } from '../../src/sim/inputFrame.ts';
 import { createBlankLevel } from '../../src/sim/map.ts';
 import { type Behaviour, Stimulus } from '../../src/sim/npc/behaviour.ts';
 import { businessmanBehaviour } from '../../src/sim/npc/behaviours/businessman.ts';
+import { dogWalkerBehaviour } from '../../src/sim/npc/behaviours/dogWalker.ts';
 import { litterbugBehaviour } from '../../src/sim/npc/behaviours/litterbug.ts';
 import { mumPushchairBehaviour } from '../../src/sim/npc/behaviours/mumPushchair.ts';
 import { NOOP, noopBehaviour, noopJaywalkBehaviour } from '../../src/sim/npc/behaviours/noop.ts';
 import { oldManFrameBehaviour } from '../../src/sim/npc/behaviours/oldManFrame.ts';
 import { oldWomanBehaviour } from '../../src/sim/npc/behaviours/oldWoman.ts';
-import {
-  pedestrianBehaviour,
-  stationaryPedestrianBehaviour,
-} from '../../src/sim/npc/behaviours/pedestrian.ts';
+import { stationaryPedestrianBehaviour } from '../../src/sim/npc/behaviours/pedestrian.ts';
 import { postieBehaviour } from '../../src/sim/npc/behaviours/postie.ts';
 import { shopperBehaviour } from '../../src/sim/npc/behaviours/shopper.ts';
 import { PERCEPTION_EVERY_TICKS, PERCEPTION_PATH_S } from '../../src/sim/npc/perception.ts';
@@ -45,14 +43,13 @@ describe('behaviour registry', () => {
   it('maps every entities.json behaviour key to a module: its own, or the generic pedestrian or the no-op until it lands', () => {
     expect(Object.keys(BEHAVIOUR_REGISTRY).sort()).toEqual([...NPC_BEHAVIOURS].sort());
     // SSP-083: Doris has her own module; SSP-084: so do the shopper, the businessman (an M3 jaywalker) and the
-    // litterbug; SSP-085: so do the old man, the mum and the postie. SSP-082: every other person kind gets the
-    // generic pedestrian (the market trader the stationary one); the animals keep the no-op (SSP-081: the cat
-    // jaywalks).
+    // litterbug; SSP-085: so do the old man, the mum and the postie; SSP-086: so does the dog walker. SSP-082: the
+    // market trader gets the stationary generic pedestrian; the animals keep the no-op (SSP-081: the cat jaywalks).
     const expected: { readonly [K in (typeof NPC_BEHAVIOURS)[number]]: Behaviour } = {
       shopper: shopperBehaviour,
       old_woman: oldWomanBehaviour,
       old_man_frame: oldManFrameBehaviour,
-      dog_walker: pedestrianBehaviour,
+      dog_walker: dogWalkerBehaviour,
       litterbug: litterbugBehaviour,
       businessman: businessmanBehaviour,
       mum_pushchair: mumPushchairBehaviour,

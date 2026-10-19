@@ -297,6 +297,20 @@ export type DentEvent = SimEventBase & {
   readonly vn: number;
 };
 
+/**
+ * Bessie drove through a dog walker's lead (phase 7, npc/behaviours/dogWalker.ts, SSP-086): once per crossing
+ * episode that costs the Lead Tangle. `entity` is the walker's store index. Audio plays dog_bark, then ped_oi
+ * 120 ms after (M5); the −150 popup reads it.
+ */
+export type LeadTangleEvent = SimEventBase & {
+  readonly type: typeof EV.LeadTangle;
+  /** Where Bessie's body crosses the lead (the middle of the overlapping stretch), sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The dog's store index. */
+  readonly dog: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -320,6 +334,7 @@ export type SimEventByType = {
   [EV.HandbagWhack]: HandbagWhackEvent;
   [EV.Caught]: CaughtEvent;
   [EV.Dent]: DentEvent;
+  [EV.LeadTangle]: LeadTangleEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -402,6 +417,7 @@ function createPayloads(): Payloads {
     [EV.HandbagWhack]: { type: EV.HandbagWhack, tick: 0, entity: -1, x: 0, y: 0, hp: 0 },
     [EV.Caught]: { type: EV.Caught, tick: 0, entity: -1, x: 0, y: 0, pts: 0 },
     [EV.Dent]: { type: EV.Dent, tick: 0, entity: -1, x: 0, y: 0, vn: 0 },
+    [EV.LeadTangle]: { type: EV.LeadTangle, tick: 0, entity: -1, x: 0, y: 0, dog: -1 },
   };
 }
 
@@ -467,7 +483,8 @@ function isEventType(type: number): type is EventType {
     type === EV.CarHorn ||
     type === EV.HandbagWhack ||
     type === EV.Caught ||
-    type === EV.Dent
+    type === EV.Dent ||
+    type === EV.LeadTangle
   );
 }
 
@@ -590,6 +607,7 @@ export class EventBus implements UiEventSink, PauseEventSink {
     [EV.HandbagWhack]: [],
     [EV.Caught]: [],
     [EV.Dent]: [],
+    [EV.LeadTangle]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -913,6 +931,16 @@ export class EventBus implements UiEventSink, PauseEventSink {
         e.y = b;
         e.vn = c;
         this.emit(EV.Dent, e);
+        return;
+      }
+      case EV.LeadTangle: {
+        const e = this.payloads[EV.LeadTangle];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.dog = c;
+        this.emit(EV.LeadTangle, e);
         return;
       }
     }

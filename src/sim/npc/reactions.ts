@@ -48,8 +48,10 @@
 //   - either way the window opens for actorHit.ignoreContactS (1.5 s = 90 ticks). Every tick it counts down by
 //     one, and every tick Bessie still overlaps the actor refills it, so one episode lasts as long as the
 //     overlap and a new one needs 1.5 s apart. A FALLEN actor (lying down, then getting up) is never hit again.
-// A companion dog carries its walker's kind (store.ts), so hitting it costs the dog walker's `hit` (SSP-086 may
-// refine that).
+// A companion dog carries its walker's kind (store.ts), so hitting it costs the dog walker's `hit`: the walker's
+// animal hit, −300 and 1 C (decided in SSP-086). The two are tied by `link` and share one contact episode: a touch
+// of either refills both ignore windows, and a touch while either window is open or either is FALLEN is part of
+// the same episode, so hitting the walker and then the dog (or the other way round) costs one hit.
 //
 // Hot path: stepReactions allocates nothing and passes no doubles across calls, except
 // addLitter's arguments on the rare tick a hit drops shopping (as with the hazard spills, hazards.ts).
@@ -70,7 +72,7 @@ import type { World } from '../world.ts';
 import { Stimulus } from './behaviour.ts';
 import { STEER_TILE } from './steering.ts';
 import { pushStimulus, STIMULUS_EVERYONE } from './stimuli.ts';
-import { NO_NPC_HANDLE, NPC_FLAG, npcHandle, queryNpcs } from './store.ts';
+import { NO_NPC_HANDLE, NPC_FLAG, npcHandle, queryNpcs, resolveNpcHandle } from './store.ts';
 
 /** Dropped items land this far from the actor's centre at least, metres. */
 export const DROP_MIN_M = 0.4;
@@ -316,8 +318,16 @@ export function stepActorContacts(w: World): void {
     circle.y = npc.y[i] as number;
     circle.radiusM = npc.radius[i] as number;
     if (!obbVsCircleShape(obb, circle, contact)) continue;
-    const inEpisode = (ignore[i] as number) > 0 || ((npc.flags[i] as number) & hitMask) !== 0;
+    let inEpisode = (ignore[i] as number) > 0 || ((npc.flags[i] as number) & hitMask) !== 0;
     ignore[i] = r.ignoreTicks;
+    // A dog walker and its dog share their contact episodes (SSP-086): a touch of either refills both windows,
+    // and either one's open window or fall makes it the same episode.
+    const partner = resolveNpcHandle(npc, npc.link[i] as number);
+    if (partner >= 0) {
+      if ((ignore[partner] as number) > 0 || ((npc.flags[partner] as number) & hitMask) !== 0)
+        inEpisode = true;
+      ignore[partner] = r.ignoreTicks;
+    }
     if (inEpisode) continue;
     // The normal points from the circle toward Bessie; the actor lies along −normal from her.
     const ux = -contact.normalX;

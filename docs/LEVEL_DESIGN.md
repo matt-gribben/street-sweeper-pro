@@ -1223,6 +1223,8 @@ All spawning is a pure function of `(seed, compiled level, elapsed ticks, sim st
 6. **Rotation:** one of the 4 code-generated rotations, from the same stream.
 7. **Dynamic litter** (NPC drops, events, burst bin bags, spills) uses the same tables and the `events` or `npc` stream. Every dynamic item counts toward "litter spawned" in Tidy %, and the live total is capped at the 2,000-item budget (the compiler checks `initial + expected dynamic ≤ 1,000` so there is always headroom).
 
+*As built (SSP-086), rule 5 for the dog walker's dynamic mess:* the dog drops `litter.dog_mess` only while its centre is on a `Pavement` or `Grass` tile; one that falls due elsewhere (a road crossing, cobbles, an alley) waits until it is ([TECHNICAL_DESIGN §11.1](TECHNICAL_DESIGN.md#111-behaviour-system)).
+
 *As built (SSP-054):* the compiler (`tools/levels/spawnLayers.ts`) emits the weight field and the type table, not placements; `litter.ts` (SSP-057) samples them at shift start (rules 4 and 6). The compiled shape is in [TECHNICAL_DESIGN §15.2](TECHNICAL_DESIGN.md#152-compiled-schema-v1). Decisions:
 - **Candidates** are the 0.5 m sub-cells of route-area tiles (rule 1), minus `site.skip` tiles and any sub-cell a solid prop's footprint (`tuning.json` → `propFootprints`) overlaps.
 - **Road gutter** is a road sub-cell whose centre is within 1 tile (2 m) of a raised kerb edge (`KERB_EDGE`); other road is road centre. Precinct is cobbles (`:`). Grounds outside rule 2 (grass, apron) are never route area anyway.

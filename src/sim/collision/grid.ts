@@ -27,7 +27,15 @@ import { TILE_M } from '../constants.ts';
 import type { Level, LevelProp } from '../map.ts';
 import type { PropFootprint, PropFootprints } from '../tuning.ts';
 import { type Aabb, createAabb, createObb, type Obb, obbAabb, setObb } from './obb.ts';
-import { type Circle, type Contact, obbVsCircleShape, obbVsObb, obbVsRectMasked, RECT_OPEN } from './sat.ts';
+import {
+  type Circle,
+  type Contact,
+  createCircle,
+  obbVsCircleShape,
+  obbVsObb,
+  obbVsRectMasked,
+  RECT_OPEN,
+} from './sat.ts';
 
 /** Shape kinds. */
 export const ShapeKind = { Rect: 0, Circle: 1, Box: 2 } as const;
@@ -152,7 +160,7 @@ export function createStaticGrid(level: Level, footprints: PropFootprints): Stat
   const tileY0 = new Int32Array(n);
   const tileX1 = new Int32Array(n);
   const tileY1 = new Int32Array(n);
-  const circles: Circle[] = specs.map(() => ({ x: 0, y: 0, radiusM: 0 }));
+  const circles: Circle[] = specs.map(() => createCircle());
   const boxes = specs.map(() => createObb());
   const propIndex = new Int32Array(n).fill(-1);
   // The solid raster: the map interior starts empty; ring cells stay solid.

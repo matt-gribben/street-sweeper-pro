@@ -309,8 +309,26 @@ export function obbVsCircle(obb: Obb, px: number, py: number, radiusM: number, o
 /** A circle in sim space: centre and radius, metres. */
 export type Circle = { x: number; y: number; radiusM: number };
 
+/**
+ * A zero circle whose fields hold doubles from the start. Setup only, never per tick. Always build circles
+ * here, never from a `{ x: 0, y: 0, radiusM: 0 }` literal: V8 gives a literal's integer fields small-integer
+ * representation, and Circle shares its hidden-class tree with every other `{ x, y, … }` object in the sim, so
+ * the first double written into any of their `x` fields deprecates the circles' hidden class. Objects left on a
+ * deprecated map keep missing the inline caches that read them, and V8 delays tier-up after every IC update,
+ * so obbVsCircleShape, which only runs near props, stayed in baseline code that boxes every double it computes
+ * (~450 B per call: the m1_drive_puddle_lane replay's heap check, SSP-049). Starting from fractional values and
+ * then zeroing keeps double representation, so the map is never deprecated.
+ */
+export function createCircle(): Circle {
+  const circle = { x: 0.5, y: 0.5, radiusM: 0.5 };
+  circle.x = 0;
+  circle.y = 0;
+  circle.radiusM = 0;
+  return circle;
+}
+
 /** obbVsCircle's circle, so it hands obbVsCircleShape an object instead of three number arguments. */
-const circleScratch: Circle = { x: 0, y: 0, radiusM: 0 };
+const circleScratch: Circle = createCircle();
 
 /**
  * obbVsCircle with the circle in an object (SSP-036): the per-tick form, which passes no number arguments, so

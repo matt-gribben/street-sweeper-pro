@@ -22,6 +22,7 @@ import {
   resolveStatic,
 } from '../../src/sim/collision/resolveStatic.ts';
 import {
+  createCircle,
   createContact,
   obbVsCircle,
   obbVsCircleShape,
@@ -685,6 +686,17 @@ describe('static grid (collision/grid.ts)', () => {
     expect(bench.maxX - bench.minX).toBeCloseTo(0.6, 9);
     expect(bench.maxY - bench.minY).toBeCloseTo(1.8, 9);
     expect([grid.boxes[6]?.cx, grid.boxes[6]?.cy]).toEqual([9, 3]);
+  });
+
+  it('builds every circle with createCircle: a zero circle unless the shape is a circle prop (SSP-049)', () => {
+    // createCircle starts from fractional values so V8 keeps the fields double (TECHNICAL_DESIGN §17,
+    // "Deprecated hidden classes"); what callers see is still an all-zero circle.
+    expect(createCircle()).toEqual({ x: 0, y: 0, radiusM: 0 });
+    expect(Object.keys(createCircle())).toEqual(['x', 'y', 'radiusM']);
+    for (let s = 0; s < grid.shapeCount; s++) {
+      if (grid.kind[s] === ShapeKind.Circle) continue;
+      expect(grid.circles[s]).toEqual({ x: 0, y: 0, radiusM: 0 });
+    }
   });
 
   it('rasterises solids, and treats cells outside the map as solid', () => {

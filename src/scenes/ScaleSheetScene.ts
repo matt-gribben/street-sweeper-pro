@@ -14,7 +14,7 @@
 // shadow (ART_BIBLE §6.4); litter lies flat on the ground layer below the drop shadows and casts none
 // (TECHNICAL_DESIGN §12.5).
 //
-// Static: nothing depends on the render-frame counter, so every frame is the same. Draw calls: the city mesh,
+// Static: nothing depends on the frame counter, so every frame is the same. Draw calls: the city mesh,
 // drop shadows, the actors atlas and the items atlas (4), plus the palette pass and blit (6). There are no
 // building shadows (the shadow mesh would be empty), so none is drawn.
 import { Group } from 'three';

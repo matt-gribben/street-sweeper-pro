@@ -2,7 +2,7 @@
 id: SSP-049
 title: "Record and commit the m1_drive_puddle_lane replay and its final-state hash"
 milestone: M1
-status: todo
+status: done
 type: test
 estimate: S
 labels: [type:test, area:test, area:sim, size:S, vertical-slice]
@@ -54,10 +54,10 @@ Policy (ROADMAP §5.3, CLAUDE.md §7):
 
 ## Acceptance criteria
 
-- [ ] `npm run test:replay` passes with the replay present, and fails if any input byte is altered (checked locally)
-- [ ] The replay's minEvents invariant asserts at least one EV.Impact, one EV.KerbJolt and one EV.ReverseBeeper over its 3,600 ticks
-- [ ] Running `npm run test:replay` 3 times gives identical results
-- [ ] The zero-allocation heap check passes on this replay
+- [x] `npm run test:replay` passes with the replay present, and fails if any input byte is altered (checked locally)
+- [x] The replay's minEvents invariant asserts at least one EV.Impact, one EV.KerbJolt and one EV.ReverseBeeper over its 3,600 ticks
+- [x] Running `npm run test:replay` 3 times gives identical results
+- [x] The zero-allocation heap check passes on this replay
 
 ## Verification
 

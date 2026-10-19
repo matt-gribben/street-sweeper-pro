@@ -183,6 +183,7 @@ describe('installTestHooks with test=1', () => {
       litter: { spawned: 130, collected: 9 },
       grime: { initial: 9000, cleaned: 450 },
       frontages: [{ id: 'frontage.test', clean: 0.5, cleanSwept: false }],
+      complaints: 1,
     };
     const host = fakeHost(() => ({
       tick: simTick,

@@ -13,6 +13,7 @@
 // subscribe() and unsubscribing copy the listener list (copy-on-write), so a listener may unsubscribe itself,
 // or subscribe another, during dispatch: the change takes effect from the next event.
 
+import { Offence } from '../sim/complaints.ts';
 import { LITTER_IDS, type LitterId, STAIN_IDS, type StainId } from '../sim/entities.ts';
 import {
   EV,
@@ -172,6 +173,29 @@ export type ComboTierEvent = SimEventBase & {
   readonly chain: number;
 };
 
+/**
+ * A Council Complaint landed on the meter (phase 9, complaints.ts, SSP-078): one event per complaint. The HUD
+ * stamps the next box; sfx.complaint_stamp (M5).
+ */
+export type ComplaintEvent = SimEventBase & {
+  readonly type: typeof EV.Complaint;
+  /** Where the offence happened, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** Why (complaints.ts Offence: Hit, Noise, RoadRage, ...). */
+  readonly reason: Offence;
+};
+
+/** Bessie sounded her horn (phase 1, complaints.ts, SSP-078): the tick of the HORN pressed edge. */
+export type HornEvent = SimEventBase & {
+  readonly type: typeof EV.Horn;
+  /** Bessie's body centre as the tick started, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The horn's stimulus radius, m (8, or 12 with the two-tone horn). */
+  readonly radiusM: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -187,6 +211,8 @@ export type SimEventByType = {
   [EV.HazardJolt]: HazardJoltEvent;
   [EV.HazardStop]: HazardStopEvent;
   [EV.ComboTier]: ComboTierEvent;
+  [EV.Complaint]: ComplaintEvent;
+  [EV.Horn]: HornEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -208,6 +234,7 @@ type Writable<T> = { -readonly [K in keyof T]: T[K] };
 type Payloads = { [T in EventType]: Writable<SimEventByType[T]> };
 
 const SHIFT_END_REASONS: ReadonlySet<number> = new Set(Object.values(ShiftEndReason));
+const OFFENCES: ReadonlySet<number> = new Set(Object.values(Offence));
 
 function createPayloads(): Payloads {
   return {
@@ -260,6 +287,8 @@ function createPayloads(): Payloads {
       previousMultiplier: 1,
       chain: 0,
     },
+    [EV.Complaint]: { type: EV.Complaint, tick: 0, entity: -1, x: 0, y: 0, reason: Offence.Hit },
+    [EV.Horn]: { type: EV.Horn, tick: 0, entity: -1, x: 0, y: 0, radiusM: 0 },
   };
 }
 
@@ -301,7 +330,9 @@ function isEventType(type: number): type is EventType {
     type === EV.DumpEnd ||
     type === EV.HazardJolt ||
     type === EV.HazardStop ||
-    type === EV.ComboTier
+    type === EV.ComboTier ||
+    type === EV.Complaint ||
+    type === EV.Horn
   );
 }
 
@@ -325,6 +356,8 @@ export class EventBus {
     [EV.HazardJolt]: [],
     [EV.HazardStop]: [],
     [EV.ComboTier]: [],
+    [EV.Complaint]: [],
+    [EV.Horn]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -514,6 +547,29 @@ export class EventBus {
         e.previousMultiplier = b;
         e.chain = c;
         this.emit(EV.ComboTier, e);
+        return;
+      }
+      case EV.Complaint: {
+        if (!OFFENCES.has(c)) {
+          throw new Error(`EventBus: Complaint at tick ${tick} carries unknown offence ${c}`);
+        }
+        const e = this.payloads[EV.Complaint];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.reason = c as Offence;
+        this.emit(EV.Complaint, e);
+        return;
+      }
+      case EV.Horn: {
+        const e = this.payloads[EV.Horn];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.radiusM = c;
+        this.emit(EV.Horn, e);
         return;
       }
     }

@@ -11,7 +11,7 @@
 //   M2 (SSP-065)  score, tidy, stars, hopper { lu, capacityLu, full }, water { units, capacity },
 //                 combo { chain, multiplier, timerTicks, bestChain }, litter { spawned, collected },
 //                 grime { initial, cleaned }, frontages [{ id, clean, cleanSwept }];
-//   M3 (SSP-078)  complaints.
+//   M3 (SSP-078)  complaints (the Council Complaints meter, 0..5).
 //
 // Load-time / test-time code: it allocates a fresh object per call and is never called per tick.
 import type { WorldView } from './world.ts';
@@ -60,7 +60,7 @@ export type SimFrontageSnapshot = {
   readonly cleanSwept: boolean;
 };
 
-/** What `__ssp.state()` reports about the sim: M1 fields, then the M2 sweeping state (SSP-065). */
+/** What `__ssp.state()` reports about the sim: M1 fields, the M2 sweeping state (SSP-065), then M3's. */
 export type SimSnapshot = {
   /** Ticks completed since shift start (World.tick). */
   readonly tick: number;
@@ -81,6 +81,8 @@ export type SimSnapshot = {
   /** Grime cells laid at shift start and cleaned since. */
   readonly grime: { readonly initial: number; readonly cleaned: number };
   readonly frontages: readonly SimFrontageSnapshot[];
+  /** Council Complaints this shift, 0..5 (complaints.ts): never decreases; 5 is SACKED! (SSP-079). */
+  readonly complaints: number;
 };
 
 /** `value` as a JSON-safe number: −0 becomes 0; NaN and ±Infinity throw, naming `field`. */
@@ -138,5 +140,6 @@ export function snapshotWorld(world: WorldView): SimSnapshot {
       cleaned: jsonNumber(world.dirt.cleanedCells, 'grime.cleaned'),
     },
     frontages,
+    complaints: jsonNumber(world.complaints.count, 'complaints'),
   };
 }

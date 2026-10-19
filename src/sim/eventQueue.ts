@@ -21,7 +21,7 @@ export const EVENTS_PER_TICK = 512;
  * Event type ids (`type`, Uint16). 0 is never a valid type. The values are hashed into replays: append new
  * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
  * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd, SSP-093 HazardJolt and HazardStop, SSP-063
- * ComboTier; later issues append the rest of the §7.2 list (NpcHit, Complaint, Horn, ...).
+ * ComboTier, SSP-078 Complaint and Horn; later issues append the rest of the §7.2 list (NpcHit, ...).
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036).
@@ -53,6 +53,12 @@ export const EVENTS_PER_TICK = 512;
  * - ComboTier: a = the new combo multiplier (1..5), b = the previous multiplier, c = the chain after the change;
  *   entity −1. Phase 9 (combo.ts, SSP-063), on every multiplier change: a rise (a > b) is a tier reached (the
  *   HUD popup and sfx.combo_tier), a drop is the chain expiring or a penalty resetting it.
+ * - Complaint: a = x, b = y (where the offence happened, m), c = its Offence code (complaints.ts); entity −1.
+ *   Phase 9 (complaints.ts applyPenalties, SSP-078), once per complaint that lands on the meter (a
+ *   two-complaint offence emits two; none at the cap). The HUD stamps a box; sfx.complaint_stamp (M5).
+ * - Horn: a = x, b = y (Bessie's body centre as the tick starts, m), c = the horn radius (m: 8, or 12 with the
+ *   two-tone horn); entity −1. Phase 1 (complaints.ts stepHornInput, SSP-078), on the tick whose InputFrame
+ *   carries the HORN pressed edge. Phase 7 delivers it to the NPCs in range (SSP-082); sfx.horn (M5).
  */
 export const EV = {
   Impact: 1,
@@ -68,6 +74,8 @@ export const EV = {
   HazardJolt: 11,
   HazardStop: 12,
   ComboTier: 13,
+  Complaint: 14,
+  Horn: 15,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

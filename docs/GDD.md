@@ -537,7 +537,7 @@ Item point values are in [ENTITY_CATALOG.md](ENTITY_CATALOG.md). For calibration
 
 - Every **pickup** (litter collected, stain cleaned) refreshes a **2.0 s chain timer** and adds 1 to the chain. The pickup scores at the multiplier *after* its own increment (the item that makes the chain 10 scores ×2; §10.4). Stain cleans take the multiplier and extend the chain like litter ([ENTITY_CATALOG](ENTITY_CATALOG.md) §17 Q5, resolved in SSP-063), and 0-point pickups (`litter.spilled_shopping`, a cleaned splat) still count.
 - With no pickup the chain expires exactly 2.0 s (120 ticks) after the last one; the timer is frozen while a dump drains (§20 Q4).
-- **Any penalty resets the chain.** (This includes dust coughs; see §11.) A tick's penalties apply after that tick's pickups, so the tick always ends at chain 0 (decided in SSP-063).
+- **Any penalty resets the chain.** (This includes dust coughs and the complaint-only offences, horn spam and Road Rage, which go through the same penalty pipeline: decided in SSP-078; see §11.) A tick's penalties apply after that tick's pickups, so the tick always ends at chain 0 (decided in SSP-063).
 - Grime neither builds nor breaks the chain.
 - `pwr.flask_of_tea` doubles the chain timer (to 4.0 s) for 15 s.
 
@@ -611,7 +611,7 @@ Full per-entity values are in [ENTITY_CATALOG.md](ENTITY_CATALOG.md). The tiers 
 
 | Offence | Penalty |
 |---|---|
-| Horn spam (> 3 honks in 5 s) | 1 complaint ("Noise") |
+| Horn spam (> 3 honks in 5 s) | 1 complaint ("Noise"). A Noise complaint clears the count, so the next one needs another 4 honks within 5 s (proposed in SSP-078); a honk that lands the litterbug's Caught! does not count |
 | Blocking traffic over 10 s | 1 complaint ("Road Rage") |
 | Running an occupied zebra | −200 + 1 complaint |
 | Splashing or hitting the Inspector | 2 complaints |
@@ -898,6 +898,8 @@ All UI renders in the same internal pixel space as the game (base 480×270; widt
 | Off-screen arrows | Screen edge | Point to depot bay when hopper ≥ 80% and to the nearest hydrant when water < 20% (proposed) |
 
 **M2 HUD (SSP-070).** The timer, score with its roll, combo with the chain bar and tier popups, the hopper, water and Dignity gauges, and the dump prompt are built (positions and colours in [ART_BIBLE §12.2](ART_BIBLE.md)). Until the M4 icons the gauges carry text labels (HOPPER, WATER, DIGNITY) and all HUD text is outlined Kerbside 5×7.
+
+**M3 complaints meter (SSP-078).** Five boxes top-right, just under the top row (the widest combo leaves no room beside it at 432 and 480 px). Each `EV.Complaint` slams a stamp into the next box over 3 frames of 3 ticks (the solid stamp face, then the stamp, then rest) with the 2-frame shake (1 px right, then 1 px left). From 4 complaints the whole meter shakes in a 12-tick burst every second. Placeholder art (an outline form, a red ring-and-block stamp) until SSP-156 (M4).
 
 **HUD principles:**
 

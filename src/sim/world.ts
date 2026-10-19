@@ -3,7 +3,8 @@
 // canonical: changing it changes replay hashes and must be called out in the commit (§5.2).
 //
 //   1 Input             copy the InputFrame into the sim; hand it to the replay recorder (SSP-038); once the
-//                       shift is over, replace it with the knock-off brake (gateShiftInput, shift.ts)
+//                       shift is over, replace it with the knock-off brake (gateShiftInput, shift.ts); consume
+//                       the HORN edge into EV.Horn (stepHornInput, complaints.ts, SSP-078)
 //   2 Vehicle (+hopper) brush state machine (the BRUSH edge, lower/raise and spin timers; brush.ts) → surface
 //                       sample, hazard grip overrides included → stepVehicle (handling scaled by the hopper
 //                       fill, top speed by the brush state) → EV.ReverseBeeper → kerb crossing → hazard
@@ -17,18 +18,21 @@
 //                       water.ts) (SSP-065)
 //   6 Dirt              stepDirt (grime footprint erase, Kerb Hugger; dirt.ts) → cleanStainsInCone (water.ts);
 //                       dust is M3 (SSP-065)
-//   7 NPC               empty until M3 (SSP-080)
+//   7 NPC               empty until M3 (SSP-080); the litterbug's Caught! flags the tick's honk here
+//                       (markHornCaught, complaints.ts)
 //   8 Traffic           empty until M3 (SSP-089)
-//   9 Scoring/combo/complaints stepScoring (scoring.ts, combo.ts) → stepTidy (tidy.ts); complaints.ts is M3
-//                       (SSP-078) (SSP-065)
+//   9 Scoring/combo/complaints stepHornSpam → applyPenalties (complaints.ts, SSP-078: the honk window, then
+//                       the tick's penalty facts: points, complaints, EV.Complaint) → stepScoring (scoring.ts,
+//                       combo.ts: pickups, then the penalties' points and the chain reset) → stepTidy (tidy.ts)
 //  10 Shift timer       shift.ts (SSP-062): TOWED, the rollout start, the dump FSM (hopper drain, depot water
 //                       refill, EV.DumpStart/DumpEnd), the 240 s countdown, the knock-off and EV.ShiftEnd
 //  11 Emit events       seal the EventQueue
 //
 // Shift setup (createWorld, SSP-065): every store is allocated once, at its §7.1 capacity (litter 2,000, stains
-// 256, hazards 64), then the shift starts: the initial litter is spawned (spawnInitialLitter), the hazards
-// (spawnHazards, with the oil slicks' paired stains), the grime is laid (initGrime), the frontage tally is
-// counted and attached (initTidy), the tank is filled (refillWater) and the hopper is empty.
+// 256, hazards 64, penalty facts 64 per tick), then the shift starts: the initial litter is spawned
+// (spawnInitialLitter), the hazards (spawnHazards, with the oil slicks' paired stains), the grime is laid
+// (initGrime), the frontage tally is counted and attached (initTidy), the tank is filled (refillWater), the
+// hopper is empty and the complaints meter is at 0; the stain store's penalty hook records into the penalty log.
 //
 // The EventQueue is reset before phase 1, so every tick starts with it empty. Renderers, audio and UI read
 // the World only through WorldView (read-only types over the same objects; nothing is copied) and never write
@@ -44,6 +48,16 @@ import {
   resolveStatic,
   type StaticResolver,
 } from './collision/resolveStatic.ts';
+import {
+  applyPenalties,
+  type Complaints,
+  type ComplaintsView,
+  createComplaints,
+  Offence,
+  setComplaintsTuning,
+  stepHornInput,
+  stepHornSpam,
+} from './complaints.ts';
 import { createDirt, type Dirt, type DirtView, initGrime, setDirtTuning, stepDirt } from './dirt.ts';
 import type { Entities } from './entities.ts';
 import {
@@ -76,6 +90,7 @@ import {
   stepLitter,
 } from './litter.ts';
 import type { Level } from './map.ts';
+import { createPenaltyHook, createPenaltyLog, type PenaltyLog, type PenaltyLogView } from './penalties.ts';
 import { createStream, type Sfc32 } from './rng.ts';
 import { createScoring, type Scoring, type ScoringView, setScoringTuning, stepScoring } from './scoring.ts';
 import {
@@ -181,6 +196,14 @@ export type World = {
   /** Tidy %, stars and the frontages' clean % and Clean Sweeps (tidy.ts, SSP-064), stepped in phase 9. */
   readonly tidy: Tidy;
   /**
+   * This tick's penalty facts (penalties.ts, SSP-078): the one penalty API. Phases 2–8 push facts
+   * (pushPenalty(world.penalties, reason, pts, complaints), then the position into the slot); phase 9 consumes
+   * them, so it is empty between ticks.
+   */
+  readonly penalties: PenaltyLog;
+  /** The Council Complaints meter and the horn window (complaints.ts, SSP-078): phases 1, 7 and 9. */
+  readonly complaints: Complaints;
+  /**
    * The hazard store (hazards.ts, SSP-093), spawned at shift start from the level's speed bumps and compiled
    * `hazards` spec. Phase 2 reads its grip overrides and applies its jolts and hard stop.
    */
@@ -228,6 +251,8 @@ export type WorldView = {
   readonly dirt: DirtView;
   readonly scoring: ScoringView;
   readonly tidy: TidyView;
+  readonly penalties: PenaltyLogView;
+  readonly complaints: ComplaintsView;
   readonly hazards: HazardStoreView;
   readonly surface: Readonly<VehicleSurface>;
   readonly events: ReadonlyEventQueue;
@@ -277,7 +302,8 @@ export function createWorld(
   initGrime(dirt, level, seed >>> 0);
   initTidy(tidy, dirt, litter);
   refillWater(water);
-  stains.onPenalty = scoring.penaltyHook;
+  const penalties = createPenaltyLog();
+  stains.onPenalty = createPenaltyHook(penalties, Offence.Splat);
   const world: World = {
     level,
     tuning,
@@ -294,6 +320,8 @@ export function createWorld(
     dirt,
     scoring,
     tidy,
+    penalties,
+    complaints: createComplaints(tuning),
     hazards,
     eventsRng,
     surface: { gripPerS: sweeper.lateralGripPerS.asphalt, rollMult: 1 },
@@ -351,6 +379,7 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   setDirtTuning(world.dirt, tuning);
   setScoringTuning(world.scoring, tuning);
   setTidyTuning(world.tidy, tuning, world.dirt, world.litter);
+  setComplaintsTuning(world.complaints, tuning);
 }
 
 /** Advance the world by one tick (DT_S) under `input`, running the 11 phases of §5.2 in order. */
@@ -401,7 +430,9 @@ export function stepWorld(world: World, input: Readonly<InputFrame>): void {
 /**
  * Phase 1: copy the frame field by field (the caller may reuse its object) and hand it to the recorder. Then,
  * once the shift is over (knock-off or ended), replace it with the knock-off brake (shift.ts): the log keeps
- * what the player pressed, and every later phase sees the gated frame.
+ * what the player pressed, and every later phase sees the gated frame. Last, the gated frame's HORN edge is
+ * consumed: EV.Horn at Bessie's pose as the tick starts, and the honk is marked for phase 9's spam window
+ * (complaints.ts stepHornInput, SSP-078).
  */
 function phaseInput(world: World, input: Readonly<InputFrame>): void {
   const own = world.input;
@@ -413,6 +444,7 @@ function phaseInput(world: World, input: Readonly<InputFrame>): void {
   const recorder = world.recordInput;
   if (recorder !== null) recorder(world.tick, own);
   gateShiftInput(world.shift, own);
+  stepHornInput(world.complaints, own, world.vehicle, world.events);
 }
 
 /**
@@ -542,7 +574,10 @@ function phaseDirt(world: World): void {
   cleanStainsInCone(world.water, world.stains, world.events);
 }
 
-/** Phase 7: NPC AI. SSP-080. */
+/**
+ * Phase 7: NPC AI. SSP-080. The litterbug behaviour flags a honk that lands its Caught! with markHornCaught
+ * (complaints.ts), so phase 9 does not count it toward horn spam; SSP-082 delivers EV.Horn to the NPCs.
+ */
 function phaseNpc(_world: World): void {
   // Filled by SSP-080.
 }
@@ -553,13 +588,18 @@ function phaseTraffic(_world: World): void {
 }
 
 /**
- * Phase 9 (SSP-065): scoring and combo, then Tidy %. stepScoring reads this tick's facts (the chain timer,
- * frozen while a dump drains; EV.LitterCollected and EV.StainCleaned in emission order; the Dirt's cleaned
- * cells and Kerb Hugger contact; the penalties recorded in phases 1–8), then stepTidy recomputes the frontages
+ * Phase 9 (SSP-065, SSP-078): complaints, scoring and combo, then Tidy %. stepHornSpam counts this tick's honk
+ * (unless phase 7 flagged it Caught!) and may record a Noise fact; applyPenalties consumes the tick's penalty
+ * facts in order (their points to scoring's penalty API, their complaints to the meter with EV.Complaint each,
+ * the police-witness hook); stepScoring reads this tick's facts (the chain timer, frozen while a dump drains;
+ * EV.LitterCollected and EV.StainCleaned in emission order; the Dirt's cleaned cells and Kerb Hugger contact),
+ * then applies the penalties' points and resets the chain after the pickups; stepTidy recomputes the frontages
  * whose counters moved, awards Clean Sweeps through the bonus API and updates Tidy % and the stars. The drain
- * state is read before phase 10 runs. Complaints join in M3 (SSP-078).
+ * state is read before phase 10 runs.
  */
 function phaseScoring(world: World): void {
+  stepHornSpam(world.complaints, world.penalties, world.vehicle, world.tick);
+  applyPenalties(world.complaints, world.penalties, world.scoring, world.events);
   stepScoring(world.scoring, world.events, world.dirt, isShiftDraining(world.shift));
   stepTidy(world.tidy, world.dirt, world.litter, world.scoring);
 }

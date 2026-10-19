@@ -1,6 +1,6 @@
 // The score (GDD §9.1, §10, §11.1; TECHNICAL_DESIGN §5.2 phase 9; SSP-063): item and stain points × the combo
 // multiplier, grime points, the Kerb Hugger bonus, the bonus API (Clean Sweep, SSP-064; M3's style bonuses)
-// and the penalty API (the −20 dog-mess splat in M2; SSP-078's pipeline in M3).
+// and the penalty API (addPenalty: the points side of SSP-078's penalty pipeline, complaints.ts applyPenalties).
 //
 //     score = Σ (item points × combo multiplier) + grime points + style bonuses − penalties     (GDD §10.1)
 //
@@ -170,8 +170,10 @@ export function awardBonus(scoring: Scoring, pts: number): void {
 
 /**
  * The penalty API (GDD §10.2, §11.1): record a penalty of `pts` (an integer, 0 or below) this tick. Phase 9
- * applies it after the tick's pickups: the points come off the score and the chain resets to 0. The stain
- * store's brush-up splat (−20) calls it through `scoring.penaltyHook`; M3's penalty pipeline (SSP-078) too.
+ * applies it after the tick's pickups: the points come off the score and the chain resets to 0. In the World
+ * only the penalty pipeline calls it (complaints.ts applyPenalties, phase 9, SSP-078): offences record penalty
+ * facts in world.penalties (the splat included, since SSP-078) instead. `scoring.penaltyHook` is the same API as a
+ * stain-store hook, for tests of the store and scoring alone.
  */
 export function addPenalty(scoring: Scoring, pts: number): void {
   if (!(Number.isInteger(pts) && pts <= 0)) {

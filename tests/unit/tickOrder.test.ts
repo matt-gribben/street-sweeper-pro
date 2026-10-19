@@ -1,7 +1,8 @@
 // The canonical tick order (TECHNICAL_DESIGN §5.2) as the systems are actually called (SSP-065). The phase
 // trace in tests/unit/world.test.ts proves the eleven phase slots run in order; this file wraps every system
 // function World.step calls, records each call, and checks the full per-tick sequence, so a system that moved
-// to another phase (or swapped places inside one) fails here. Changing this order changes replay hashes and
+// to another phase (or swapped places inside one) fails here. SSP-078 adds the horn (phase 1) and the honk window
+// and penalty facts (phase 9, before scoring). Changing this order changes replay hashes and
 // must be called out in the commit (§5.2).
 //
 // vi.mock replaces each module for everything that imports it in this test file's module graph (world.ts
@@ -65,12 +66,16 @@ vi.mock('../../src/sim/water.ts', async (importOriginal) =>
 vi.mock('../../src/sim/dirt.ts', async (importOriginal) => wrap(await importOriginal(), ['stepDirt']));
 vi.mock('../../src/sim/scoring.ts', async (importOriginal) => wrap(await importOriginal(), ['stepScoring']));
 vi.mock('../../src/sim/tidy.ts', async (importOriginal) => wrap(await importOriginal(), ['stepTidy']));
+vi.mock('../../src/sim/complaints.ts', async (importOriginal) =>
+  wrap(await importOriginal(), ['stepHornInput', 'stepHornSpam', 'applyPenalties']),
+);
 
 /** One tick, as TECHNICAL_DESIGN §5.2 orders it: `phase n` marks the phase trace, the rest are system calls. */
 const ONE_TICK = [
   'resetEvents',
   'phase 1',
   'gateShiftInput',
+  'stepHornInput',
   'phase 2',
   'stepBrushState',
   'sampleSurface',
@@ -94,6 +99,8 @@ const ONE_TICK = [
   'phase 7',
   'phase 8',
   'phase 9',
+  'stepHornSpam',
+  'applyPenalties',
   'stepScoring',
   'stepTidy',
   'phase 10',
@@ -102,7 +109,7 @@ const ONE_TICK = [
   'sealEvents',
 ];
 
-describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065)', () => {
+describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078)', () => {
   it('calls every system of phases 1–11 in the documented order, every tick', () => {
     const level = decodeLevel(
       readFileSync(
@@ -115,12 +122,12 @@ describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065)', () =>
       if (calls.on) calls.log.push(`phase ${phase}`);
     };
     const input = createInputFrame();
-    // A sweeping run: lower the brush, drive, spray every other second, raise it again.
+    // A sweeping run: lower the brush, drive, spray every other second, raise it again; honk now and then.
     calls.on = true;
     const ticks = 240;
     let collectingTicks = 0;
     for (let t = 0; t < ticks; t++) {
-      input.pressed = t === 0 || t === 200 ? PRESSED.BRUSH : 0;
+      input.pressed = (t === 0 || t === 200 ? PRESSED.BRUSH : 0) | (t % 50 === 7 ? PRESSED.HORN : 0);
       input.throttle = 180;
       input.buttons = ((t / 60) | 0) % 2 === 1 ? BUTTON.SPRAY : 0;
       world.step(input);
@@ -134,5 +141,6 @@ describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065)', () =>
     expect(collectingTicks).toBeGreaterThan(100);
     expect(world.brush.state).not.toBe(BrushState.Collecting); // raised again at tick 200
     expect(world.vehicle.water).toBeLessThan(DEFAULT_TUNING.water.tankUnits);
+    expect(world.complaints.honks).toBe(5);
   });
 });

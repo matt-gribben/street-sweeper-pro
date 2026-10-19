@@ -17,7 +17,9 @@
 // one stain) to keep the stores full at 2,000 and 256, and moves one item and one stain that has fallen more
 // than 12 m behind her lane into a band round it, so the brush and the spray keep meeting them; it refills the
 // tank every 900 ticks and empties a full hopper over 3 s as a skip would (the shift's dump FSM needs a site;
-// this is the hopper half of it).
+// this is the hopper half of it). Complaints are active (SSP-078): she honks four times in the first 80 ticks of
+// every 10 s, so every 10 s brings EV.Horn, a Noise fact through the penalty pipeline, a chain reset and an
+// EV.Complaint, and the harness empties the meter whenever it reaches its cap (5), so complaints keep landing.
 import { describe, expect, it } from 'vitest';
 import { DT_S, TILE_M } from '../../src/sim/constants.ts';
 import { LITTER_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
@@ -146,7 +148,8 @@ function stressRig(): { world: World; step: (t: number) => void } {
   const input = createInputFrame();
   const step = (t: number): void => {
     const phase = t % 1200;
-    input.pressed = phase === 0 || phase === 1080 ? PRESSED.BRUSH : 0;
+    const honk = t % 600 < 80 && t % 20 === 10 ? PRESSED.HORN : 0;
+    input.pressed = (phase === 0 || phase === 1080 ? PRESSED.BRUSH : 0) | honk;
     input.buttons = t % 180 < 120 ? BUTTON.SPRAY : 0;
     input.throttle = v.vLongMps < CRUISE_MPS ? THROTTLE_MAX : 0;
     stepWorld(world, input);
@@ -160,6 +163,7 @@ function stressRig(): { world: World; step: (t: number) => void } {
     if (world.hopper.full && world.hopper.drainSite === 0) startHopperDrain(world.hopper, DumpSite.Skip, 180);
     if (world.hopper.drainSite !== 0) stepHopperDrain(world.hopper);
     if (t % 900 === 0) refillWater(world.water);
+    if (world.complaints.count >= world.complaints.max) world.complaints.count = 0;
     tend(t);
   };
   return { world, step };
@@ -171,7 +175,7 @@ function percentile(sorted: Float64Array, p: number): number {
   return sorted[i] as number;
 }
 
-describe('sim hot path heap-delta check with 2,000 litter items (TECHNICAL_DESIGN §17, SSP-065)', () => {
+describe('sim hot path heap-delta check with 2,000 litter items (TECHNICAL_DESIGN §17, SSP-065, SSP-078)', () => {
   it('needs --expose-gc and fails loudly without it (it never skips)', () => {
     expect(typeof globalThis.gc, 'run this file in the Vitest unit project (forks, --expose-gc)').toBe(
       'function',
@@ -188,7 +192,7 @@ describe('sim hot path heap-delta check with 2,000 litter items (TECHNICAL_DESIG
     }
   });
 
-  it('World.step allocates nothing per tick with the store full, sweeping and spraying', {
+  it('World.step allocates nothing per tick with the store full, sweeping, spraying and honking', {
     timeout: 120_000,
   }, () => {
     requireGc();
@@ -205,6 +209,9 @@ describe('sim hot path heap-delta check with 2,000 litter items (TECHNICAL_DESIG
       grime: world.dirt.cleanedCells,
       stains: world.stains.stainsCleaned,
       score: world.scoring.score,
+      noise: world.complaints.noiseOffences,
+      honks: world.complaints.honks,
+      penalties: world.penalties.applied,
     };
     const delta = measureHeapDelta((t) => step(PREWARM_TICKS + t));
     console.log(
@@ -212,13 +219,20 @@ describe('sim hot path heap-delta check with 2,000 litter items (TECHNICAL_DESIG
         `${delta.retainedBytes} B (≤ ${HEAP_RETAINED_THRESHOLD_BYTES}), pre-final-GC ${delta.preGcBytes} B ` +
         `(≤ ${HEAP_PRE_GC_THRESHOLD_BYTES}); litter ${world.litter.count}, collected ` +
         `+${world.litter.litterCollected - before.collected}, grime +${world.dirt.cleanedCells - before.grime}, ` +
-        `stains +${world.stains.stainsCleaned - before.stains}, score +${world.scoring.score - before.score}`,
+        `stains +${world.stains.stainsCleaned - before.stains}, score +${world.scoring.score - before.score}, ` +
+        `honks +${world.complaints.honks - before.honks}, Noise +${world.complaints.noiseOffences - before.noise}, ` +
+        `penalty facts +${world.penalties.applied - before.penalties}`,
     );
     expect(world.litter.count).toBeGreaterThan(LITTER_CAPACITY - 100);
     expect(world.litter.litterCollected - before.collected).toBeGreaterThan(100);
     expect(world.dirt.cleanedCells - before.grime).toBeGreaterThan(1000);
     expect(world.stains.stainsCleaned - before.stains).toBeGreaterThan(0);
     expect(world.scoring.score).toBeGreaterThan(before.score);
+    // Complaints active through the warm-up and the window (4,200 ticks): seven 10 s cycles of four honks and a
+    // Noise complaint.
+    expect(world.complaints.honks - before.honks).toBe(28);
+    expect(world.complaints.noiseOffences - before.noise).toBe(7);
+    expect(world.penalties.applied - before.penalties).toBeGreaterThanOrEqual(7);
     assertHeapDeltaWithinThresholds(delta);
 
     // For information: sim step time over one more minute (TECHNICAL_DESIGN §17; not asserted until SSP-106).

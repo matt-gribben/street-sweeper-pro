@@ -27,6 +27,12 @@
 //            already holding there). The ring's fill shows only while Holding: step floor(k × 8 / holdTicks) of 8
 //            at hold tick k. A cancel (release, or speed reaching 0.5 m/s) empties it or hides the prompt with
 //            it; Draining hides both (GDD §6.2, §8.7).
+//   complaints the Council Complaints meter (SSP-078): COMPLAINT_SLOTS (5) boxes, the first `complaints` of them
+//            stamped. A box's stamp slams in over 3 frames of STAMP_FRAME_TICKS (3) ticks from the tick after its
+//            EV.Complaint (hud.ts records it): ticks 0–2 the solid stamp face (Slam) 1 px right, 3–5 the stamp
+//            (Stamped) 1 px left (the 2-frame shake), then at rest. At COMPLAINT_WARN_AT (4) complaints or more
+//            the whole meter shakes: in each 60-tick cycle from the 4th stamp, ticks 0–11 alternate +1 / −1 px
+//            every 3 ticks; a box mid-slam keeps its own offset. Offsets are never more than 1 px either way.
 //
 // Per frame nothing allocates: every string comes from a table built at module load, and the model is written
 // into a preallocated object. The section between the "per-frame draw path" markers is scanned by
@@ -38,6 +44,7 @@ import type { WorldView } from '../sim/world.ts';
 export const HudColour = {
   Ink: 0,
   AsphaltLt: 3,
+  Kerb: 6,
   Chalk: 7,
   SweeperYellow: 15,
   Lemon: 16,
@@ -45,6 +52,7 @@ export const HudColour = {
   PostboxRed: 18,
   Bubblegum: 20,
   GrassLt: 23,
+  Navy: 25,
   Sky: 27,
   Spray: 28,
 } as const;
@@ -138,6 +146,21 @@ export const HOPPER_WARN_TEXT = '!';
 /** The dump prompt's key label (the interact key, E, in M2). */
 export const DUMP_KEY_TEXT = 'E';
 
+/** Boxes on the complaints meter: the SACKED threshold (tuning.json complaints.meter.sackedAt). */
+export const COMPLAINT_SLOTS = 5;
+/** The meter shakes from this many complaints (GDD §11.3: "One more and you're off the van!"). */
+export const COMPLAINT_WARN_AT = 4;
+/** Ticks per frame of a stamp's slam (3 frames: face, shake, rest; ART_BIBLE §12.2). */
+export const STAMP_FRAME_TICKS = 3;
+/** The meter's warning shake: a burst of METER_SHAKE_TICKS every METER_SHAKE_EVERY_TICKS, ±1 px per 3 ticks. */
+export const METER_SHAKE_EVERY_TICKS = 60;
+export const METER_SHAKE_TICKS = 12;
+export const METER_SHAKE_STEP_TICKS = 3;
+
+/** What a complaints box shows. */
+export const ComplaintSlotState = { Empty: 0, Slam: 1, Stamped: 2 } as const;
+export type ComplaintSlotState = (typeof ComplaintSlotState)[keyof typeof ComplaintSlotState];
+
 /**
  * What the HUD reads, as plain numbers (readHudSnapshot fills it from a WorldView; tests build it directly).
  * `score` is what to show (hud.ts rolls it towards the sim's score); `popup*` is the HUD's own record of the last
@@ -172,6 +195,13 @@ export type HudSnapshot = {
   dumpState: DumpState;
   dumpHoldTicks: number;
   dumpHoldTotalTicks: number;
+  /** Council Complaints (complaints.ts count, 0..5). */
+  complaints: number;
+  /**
+   * World tick each box's stamp started on (the tick after its EV.Complaint), or −1 (drawn at rest): the HUD's
+   * own record from the event bus, COMPLAINT_SLOTS long.
+   */
+  complaintStampTicks: Int32Array;
 };
 
 /** One text element of the model. */
@@ -197,7 +227,12 @@ export type HudModel = {
   readonly dignity: HudBar;
   /** The dump prompt, and its ring's fill (step 0..8; shown only while Holding). */
   readonly dump: { visible: boolean; ringVisible: boolean; ringStep: number };
+  /** The complaints meter: each box's state and its shake offset in pixels (−1, 0 or 1). */
+  readonly complaints: { visible: boolean; readonly slots: readonly HudComplaintSlot[] };
 };
+
+/** One box of the complaints meter. */
+export type HudComplaintSlot = { state: ComplaintSlotState; dx: number };
 
 /** A zeroed snapshot. Setup only. */
 export function createHudSnapshot(): HudSnapshot {
@@ -222,6 +257,8 @@ export function createHudSnapshot(): HudSnapshot {
     dumpState: DumpState.Idle,
     dumpHoldTicks: 0,
     dumpHoldTotalTicks: 1,
+    complaints: 0,
+    complaintStampTicks: new Int32Array(COMPLAINT_SLOTS).fill(-1),
   };
 }
 
@@ -247,6 +284,10 @@ export function createHudModel(): HudModel {
     water: { ...bar(), topColour: HudColour.Spray },
     dignity: bar(),
     dump: { visible: false, ringVisible: false, ringStep: 0 },
+    complaints: {
+      visible: false,
+      slots: Array.from({ length: COMPLAINT_SLOTS }, () => ({ state: ComplaintSlotState.Empty, dx: 0 })),
+    },
   };
 }
 
@@ -327,7 +368,16 @@ export function readHudSnapshot(view: WorldView, out: HudSnapshot): HudSnapshot 
   out.dumpState = shift.dumpState;
   out.dumpHoldTicks = shift.holdTicks;
   out.dumpHoldTotalTicks = site >= 0 ? dumpHoldTicksAt(shift, site) : 1;
+  out.complaints = view.complaints.count;
   return out;
+}
+
+/** The meter's warning-shake offset at `age` ticks since the 4th stamp (see the header). */
+export function meterShakeDx(age: number): number {
+  let phase = age % METER_SHAKE_EVERY_TICKS;
+  if (phase < 0) phase += METER_SHAKE_EVERY_TICKS;
+  if (phase >= METER_SHAKE_TICKS) return 0;
+  return (Math.floor(phase / METER_SHAKE_STEP_TICKS) & 1) === 0 ? 1 : -1;
 }
 
 /**
@@ -428,6 +478,40 @@ export function hudModel(s: Readonly<HudSnapshot>, tick: number, out: HudModel =
     if (step > DUMP_RING_STEPS) step = DUMP_RING_STEPS;
   }
   dump.ringStep = step;
+
+  // Complaints meter.
+  const meter = out.complaints;
+  meter.visible = true;
+  let count = s.complaints | 0;
+  if (count < 0) count = 0;
+  if (count > COMPLAINT_SLOTS) count = COMPLAINT_SLOTS;
+  const stamps = s.complaintStampTicks;
+  let meterDx = 0;
+  if (count >= COMPLAINT_WARN_AT) {
+    const warnStart = stamps[COMPLAINT_WARN_AT - 1] ?? -1;
+    meterDx = meterShakeDx(warnStart >= 0 ? tick - warnStart : tick);
+  }
+  const slots = meter.slots;
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i];
+    if (slot === undefined) continue;
+    slot.dx = meterDx;
+    if (i >= count) {
+      slot.state = ComplaintSlotState.Empty;
+      continue;
+    }
+    slot.state = ComplaintSlotState.Stamped;
+    const start = stamps[i] ?? -1;
+    if (start < 0) continue;
+    const age = tick - start;
+    if (age < 0) continue;
+    if (age < STAMP_FRAME_TICKS) {
+      slot.state = ComplaintSlotState.Slam;
+      slot.dx = 1;
+    } else if (age < 2 * STAMP_FRAME_TICKS) {
+      slot.dx = -1;
+    }
+  }
   return out;
 }
 // per-frame draw path: end

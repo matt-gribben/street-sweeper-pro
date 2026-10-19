@@ -1,7 +1,7 @@
 // Zero allocation per frame for the HUD (SSP-070; TECHNICAL_DESIGN §17 procedure, tests/support/heapDelta.ts):
 // UiSpriteBatch.begin, Hud.tick and Hud.draw from a live World view, then Hud.drawModel over a snapshot whose every
 // field moves frame by frame (timer, score digits and sign, combo tiers, the chain bar, tier popups, hopper, water,
-// Dignity and the dump ring), end.
+// Dignity, the dump ring and the complaints meter's stamps and shakes), end.
 //
 // A file of its own, like bitmapTextHeap.test.ts: Vitest runs each file in a fresh process, so the JIT sees only the
 // UiSpriteBatch sink, as the game does.
@@ -64,6 +64,9 @@ it('allocates nothing per frame: tick, draw from the World, and a model whose ev
       snapshot.dumpAvailable = (tick & 64) !== 0;
       snapshot.dumpState = (tick & 128) !== 0 ? DumpState.Holding : DumpState.Idle;
       snapshot.dumpHoldTicks = tick % 61;
+      snapshot.complaints = Math.floor(tick / 40) % 6;
+      snapshot.complaintStampTicks[snapshot.complaints > 0 ? snapshot.complaints - 1 : 0] =
+        tick - (tick % 40);
       batch.begin();
       hud.tick(world);
       hud.draw(world, 480);

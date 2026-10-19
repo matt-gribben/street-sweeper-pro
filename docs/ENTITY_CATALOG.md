@@ -144,10 +144,11 @@ flowchart LR
 ### 3.3 Penalty multipliers and complaint sources
 
 - **Police witness:** a penalty within **15 m** of a `veh.police` adds **+1 extra complaint**.
-- **Horn spam:** more than 3 honks in 5 s = 1 complaint ("Noise"). The threshold becomes 5 with `upg.two_tone_horn`.
+- **Horn spam:** more than 3 honks in 5 s = 1 complaint ("Noise"). The threshold becomes 5 with `upg.two_tone_horn`. As built (SSP-078): the window is the last 300 ticks (a honk at tick t counts those at t − 299 … t); a Noise complaint clears it, so the next needs another 4 honks within 5 s (8 quick honks = 2 complaints; proposed re-arm rule, owner to confirm); a honk that lands the litterbug's Caught! does not count.
 - **Blocking traffic** for more than 10 s = 1 complaint ("Road Rage").
 - **Running an occupied zebra** = −200 + 1 complaint.
 - Every complaint plays `complaint_stamp` and a rubber-stamp popup.
+- Every offence, these included, goes through one penalty pipeline (`world.penalties`, consumed in tick phase 9; [TECHNICAL_DESIGN §10.6](TECHNICAL_DESIGN.md#106-scoring-and-combo-srcsimscoringts-srcsimcombots)): points off the score, the chain reset, the complaints added, the police-witness check. So a complaint-only offence resets the combo chain too (SSP-078).
 
 ### 3.4 Generic pedestrian reaction model
 

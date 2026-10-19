@@ -57,6 +57,7 @@ describe('snapshotWorld', () => {
       'litter',
       'grime',
       'frontages',
+      'complaints',
     ]);
     expect(Object.keys(snap.bessie)).toEqual(['x', 'y', 'heading', 'speed']);
     expect(Object.keys(snap.hopper)).toEqual(['lu', 'capacityLu', 'full']);

@@ -1888,6 +1888,7 @@ export function compileLevel(input: CompileInput): CompileResult {
     cells: f.cells.map((i): [number, number] => [i % w, Math.floor(i / w)]),
   }));
   if (lvl.collectibles !== null) checkCollectiblePlacement(lr, lvl.collectibles, map, props, lvl.mode);
+  if (lvl.powerups !== null) checkPowerupPlacement(lr, lvl.powerups, map, props);
   // The pavement nav graph (SSP-076), with portal, door and anchor tags.
   level.nav = buildNavGraph(computeNavGraph(map, frontages, anchors), w, h, 'compileLevel');
 
@@ -2099,6 +2100,35 @@ function checkCollectiblePlacement(
     }
     const why = collectibleProblem(at, map, props);
     if (why !== null) lr.key(path, 'L041', `${label} at [${at[0]}, ${at[1]}] ${why}`);
+  }
+}
+
+/**
+ * L040 (SSP-096): the fixed power-up points. `powerups.at` lists at most `count` points (the runtime spawner
+ * places the first `count`, LEVEL_DESIGN §9.6), and each must be on an open pavement tile that Bessie's body can
+ * reach (collectibleProblem: drivable, not in a footway, not inside a solid prop's footprint).
+ */
+function checkPowerupPlacement(
+  lr: Reporter,
+  p: CheckedPowerups,
+  map: ResolvedMap,
+  props: readonly LevelProp[],
+): void {
+  if (p.at.length > p.count) {
+    lr.key(
+      ['powerups', 'at'],
+      'L040',
+      `powerups.at lists ${p.at.length} points but powerups.count is ${p.count}; the extra points are never used`,
+    );
+  }
+  for (let j = 0; j < p.at.length; j++) {
+    const at = p.at[j] as [number, number];
+    const i = Math.floor(at[1]) * map.w + Math.floor(at[0]);
+    const why =
+      map.ground[i] !== Ground.Pavement || map.solid[i] !== 0
+        ? 'is not on a pavement tile (power-ups spawn on pavements)'
+        : collectibleProblem(at, map, props);
+    if (why !== null) lr.key(['powerups', 'at'], 'L040', `powerups.at[${j}] [${at[0]}, ${at[1]}] ${why}`);
   }
 }
 

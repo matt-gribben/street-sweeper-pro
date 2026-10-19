@@ -14,6 +14,8 @@
 //   4 Bodies            stepBodies (bodies.ts, SSP-092): knockable bins, cones, A-boards, trolleys and recycling
 //                       boxes: body vs body, Bessie's contacts (EV.Knock; on a body's first, its penalty fact
 //                       and its litter spill), the swept move against the static grid, ground friction
+//                       → stepPickups (pickups.ts, SSP-096): timed power-ups whose time is up end, then every
+//                       pickup Bessie's body overlaps is collected (EV.PowerUp) and its effect applied
 //   5 Brush/litter/water beginLitterTick → stepBrushLitter (gutter, suction, fling, inlet, bulldozer; brush.ts)
 //                       → the brush-up rules: stepBrushUpLeaves (hazards.ts) then stepBrushUpSplats (stains.ts)
 //                       → stepLitter (arcs, pushes, drift; litter.ts) → stepWater (hydrant refill, spray;
@@ -45,9 +47,10 @@
 // ShiftEnd tick's events twice); the tick, the input buffer, the recorder and every store stay as the shift ended.
 //
 // Shift setup (createWorld, SSP-065): every store is allocated once, at its §7.1 capacity (litter 2,000, stains
-// 256, hazards 64, NPCs 80, knockables 128, vehicles 30, penalty facts 64 per tick), then the shift starts: the
+// 256, hazards 64, NPCs 80, knockables 128, vehicles 30, pickups 16, penalty facts 64 per tick), then the shift starts: the
 // initial litter is spawned (spawnInitialLitter), the hazards (spawnHazards, with the oil slicks' paired stains),
-// the level's knockables (spawnKnockables, SSP-092, pushed clear of the static world), the grime is laid
+// the level's knockables (spawnKnockables, SSP-092, pushed clear of the static world), the power-ups
+// (spawnPickups, SSP-096, on the `pickups` stream), the grime is laid
 // (initGrime), the frontage tally is counted and attached (initTidy), the tank is filled (refillWater), the
 // hopper is empty and the complaints meter is at 0; the stain store's penalty hook records into the penalty log.
 //
@@ -129,6 +132,7 @@ import {
 import { deliverStimuli } from './npc/stimuli.ts';
 import { beginNpcTick, createNpcStore, type NpcStore, type NpcStoreView } from './npc/store.ts';
 import { createPenaltyHook, createPenaltyLog, type PenaltyLog, type PenaltyLogView } from './penalties.ts';
+import { createPickups, type Pickups, type PickupsView, spawnPickups, stepPickups } from './pickups.ts';
 import { createStream, type Sfc32 } from './rng.ts';
 import { createScoring, type Scoring, type ScoringView, setScoringTuning, stepScoring } from './scoring.ts';
 import {
@@ -263,6 +267,11 @@ export type World = {
    */
   readonly bodies: BodyStore;
   /**
+   * The power-ups (pickups.ts, SSP-096): the pickup store, capacity 16, spawned at shift start from the level's
+   * compiled `pickups` on the `pickups` stream, and the timed effects' timers. Phase 4 collects and expires them.
+   */
+  readonly pickups: Pickups;
+  /**
    * The `events` stream, sfc32(seed ^ hash32('events')): dynamic litter (LEVEL_DESIGN §9.1 rule 7), so far
    * the hazard spills and the knock spills (SSP-092). Later event systems draw from this same object.
    */
@@ -340,6 +349,7 @@ export type WorldView = {
   readonly complaints: ComplaintsView;
   readonly hazards: HazardStoreView;
   readonly bodies: BodyStoreView;
+  readonly pickups: PickupsView;
   readonly npc: NpcStoreView;
   readonly zebras: ZebrasView;
   readonly vehicles: VehicleStoreView;
@@ -361,7 +371,8 @@ export type WorldView = {
  * caller edits. Bessie spawns at the level's player start (body centre, heading), stationary, with an empty
  * hopper and a full tank. Shift setup (SSP-065), in this order: the initial litter (spawnInitialLitter on the
  * `litter` stream), the hazards (spawnHazards: speed bumps, placed, random on the `hazards` stream, each oil
- * slick with its paired stain), the grime (initGrime on the `grime` stream), the frontage tally (initTidy),
+ * slick with its paired stain), the knockables, the power-ups (spawnPickups on the `pickups` stream, SSP-096),
+ * the grime (initGrime on the `grime` stream), the frontage tally (initTidy),
  * the full tank (refillWater). Each step draws on its own stream, so the order changes no layout; it matters
  * only in that initTidy must follow the litter and the grime. The event queue starts empty and sealed.
  */
@@ -389,10 +400,12 @@ export function createWorld(
   const scoring = createScoring(tuning, entities);
   const tidy = createTidy(level, tuning);
   const water = createWater(vehicle, tuning, level);
+  const pickups = createPickups(entities);
   // Shift setup (see above).
   spawnInitialLitter(litter, level, seed >>> 0);
   spawnHazards(hazards, level, seed >>> 0, stains);
   spawnKnockables(bodies, level, staticGrid);
+  spawnPickups(pickups, level, seed >>> 0, tuning.propFootprints);
   initGrime(dirt, level, seed >>> 0);
   initTidy(tidy, dirt, litter);
   refillWater(water);
@@ -427,6 +440,7 @@ export function createWorld(
     complaints,
     hazards,
     bodies,
+    pickups,
     eventsRng,
     npc,
     npcAi,
@@ -660,8 +674,11 @@ function phaseStaticCollision(world: World): void {
  *   2. Per body, in index order: Bessie's contact (push, impulse off her as an infinite-mass mover; a new
  *      episode emits EV.Knock, and a body's first records its penalty fact and spills its litter through
  *      addLitter on the `events` stream), the swept move against the static grid, ground friction.
- * Bessie is read, never written: knockables never slow or damage her. Spilled items join the LitterField
- * before phase 5, so the brush may collect them this very tick.
+ *   3. stepPickups (pickups.ts, SSP-096): the timed power-ups whose time is up end, then every pickup Bessie's
+ *      body OBB overlaps is collected (EV.PowerUp) and its effect applied, so a super suction or a flask of tea
+ *      picked up now already counts in phases 5–9 of this tick (a bacon butty from phase 2 of the next).
+ * Bessie is read, never written, by the bodies: knockables never slow or damage her. Spilled items join the
+ * LitterField before phase 5, so the brush may collect them this very tick.
  */
 function phaseBodies(world: World): void {
   stepBodies(
@@ -673,6 +690,7 @@ function phaseBodies(world: World): void {
     world.penalties,
     world.events,
   );
+  stepPickups(world);
 }
 
 /**

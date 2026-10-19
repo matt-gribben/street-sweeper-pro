@@ -7,7 +7,8 @@
 // and an empty box; since SSP-299 also the Brush-o-meter in the fling zone with a full spin-up ring, the widest
 // district name over a 59% Tidy % bar, and both off-screen arrows (placed in the layout's arrow frame at the
 // drawn width); since SSP-289 Pam's radio panel at home with the first page of tutorial beat 2 (HUD_SAMPLE_BARK:
-// 'Brush down with [Space]. Takes', the keycap from the default keyboard glyphs). It is the HUD's
+// 'Brush down with [Space]. Takes', the keycap from the default keyboard glyphs); since SSP-096 the power-up
+// slot with super suction running ('0:09'). It is the HUD's
 // evidence scene until the M4 `hud_specimen` golden: tests/e2e/hud.spec.ts saves its frames at W = 480, 432 and
 // 640 to test-results/ and checks every UI pixel against a CPU rasterisation of the same model.
 //
@@ -129,6 +130,9 @@ export const HUD_SAMPLE_SNAPSHOT: Readonly<HudSnapshot> = Object.freeze({
   cameraXM: 0,
   cameraYM: 0,
   cameraPxPerM: 16,
+  // SSP-096: super suction (POWERUP_IDS index 3) with 539 ticks left ('0:09').
+  powerUpKind: 3,
+  powerUpTicksLeft: 539,
 });
 
 /**

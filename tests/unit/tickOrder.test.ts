@@ -3,7 +3,7 @@
 // function World.step calls, records each call, and checks the full per-tick sequence, so a system that moved
 // to another phase (or swapped places inside one) fails here. SSP-078 adds the horn (phase 1) and the honk window
 // and penalty facts (phase 9, before scoring); SSP-092 the knockable bodies (phase 4, between static collision
-// and brush/litter). SSP-089 fills phase 8 with stepTraffic, run on a compiled town with traffic so phase 8 does
+// and brush/litter), SSP-096 the power-ups right after them (stepPickups). SSP-089 fills phase 8 with stepTraffic, run on a compiled town with traffic so phase 8 does
 // real work (spawns, car following, a car queued behind Bessie, its honks and the Road Rage fact that phase 9
 // then files). Changing this order changes replay hashes and must be called out in the commit (§5.2).
 //
@@ -58,6 +58,7 @@ vi.mock('../../src/sim/collision/resolveStatic.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['resolveStatic']),
 );
 vi.mock('../../src/sim/bodies.ts', async (importOriginal) => wrap(await importOriginal(), ['stepBodies']));
+vi.mock('../../src/sim/pickups.ts', async (importOriginal) => wrap(await importOriginal(), ['stepPickups']));
 vi.mock('../../src/sim/litter.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['beginLitterTick', 'stepLitter']),
 );
@@ -113,6 +114,7 @@ const ONE_TICK = [
   'resolveStatic',
   'phase 4',
   'stepBodies',
+  'stepPickups',
   'phase 5',
   'beginLitterTick',
   'stepBrushLitter',
@@ -151,6 +153,9 @@ describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078
     expect(at('resolveStatic')).toBeLessThan(at('phase 4'));
     expect(at('phase 4')).toBeLessThan(at('stepBodies'));
     expect(at('stepBodies')).toBeLessThan(at('phase 5'));
+    // SSP-096: the power-ups are collected after the bodies, before phase 5 (so super suction counts this tick).
+    expect(at('stepBodies')).toBeLessThan(at('stepPickups'));
+    expect(at('stepPickups')).toBeLessThan(at('phase 5'));
     expect(at('phase 5')).toBeLessThan(at('beginLitterTick'));
   });
 

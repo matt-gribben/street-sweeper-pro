@@ -66,6 +66,8 @@ describe('snapshotWorld', () => {
       'shift',
       'npcs',
       'complaints',
+      'pickups',
+      'powerUps',
     ]);
     expect(Object.keys(snap.shift)).toEqual([
       'phase',

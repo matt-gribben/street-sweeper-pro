@@ -176,6 +176,14 @@ export function refillWater(water: WaterTank): void {
   water.vehicle.water = water.tuning.tankUnits;
 }
 
+/**
+ * Add `units` to the tank at once, capped at capacity (pwr.water_can's +50, pickups.ts, SSP-096). Rounded to
+ * WATER_QUANTUM like every other change. Not per tick: only on the tick a pickup is collected.
+ */
+export function addWater(water: WaterTank, units: number): void {
+  water.vehicle.water = settle(water.vehicle.water + units, water.tuning.tankUnits);
+}
+
 /** Write Bessie's right and forward unit axes for her current heading into `water` (the only trig here). */
 function writeAxes(water: Water): void {
   const h = water.vehicle.headingRad;

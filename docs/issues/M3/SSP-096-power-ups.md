@@ -2,7 +2,7 @@
 id: SSP-096
 title: "Spawn power-ups on pavements, implement all six pwr.* effects, draw them"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:gameplay, area:render, area:ui, area:test, size:M, vertical-slice]

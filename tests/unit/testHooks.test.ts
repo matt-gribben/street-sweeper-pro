@@ -314,6 +314,8 @@ describe('installTestHooks with test=1', () => {
         { id: 'npc.shopper', origin: 'ambient' as const, x: 3, y: 4, heading: 0, state: 0, stateTicks: 9 },
       ],
       complaints: 1,
+      pickups: [{ id: 'pwr.flask_of_tea' as const, x: 61, y: 9 }],
+      powerUps: [],
     };
     const host = fakeHost(() => ({
       tick: simTick,

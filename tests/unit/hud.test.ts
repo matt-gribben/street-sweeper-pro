@@ -13,6 +13,7 @@ import { HUD_SAMPLE_SNAPSHOT, hudSampleModel as sampleModel } from '../../src/sc
 import { HUD_FONT } from '../../src/scenes/ShiftScene.ts';
 import { BrushState } from '../../src/sim/brush.ts';
 import { Offence } from '../../src/sim/complaints.ts';
+import { POWERUP_IDS } from '../../src/sim/entities.ts';
 import { createEventQueue, EV, emitEvent, resetEvents, sealEvents } from '../../src/sim/eventQueue.ts';
 import {
   BUTTON,
@@ -22,6 +23,7 @@ import {
   THROTTLE_MAX,
 } from '../../src/sim/inputFrame.ts';
 import { createBlankLevel, decodeLevel, Ground, type Level } from '../../src/sim/map.ts';
+import { addPickup } from '../../src/sim/pickups.ts';
 import { availableDumpSite, DumpState, dumpHoldTicksAt, ShiftPhase } from '../../src/sim/shift.ts';
 import { snapshotWorld } from '../../src/sim/snapshot.ts';
 import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
@@ -42,6 +44,7 @@ import {
   HYDRANT_ARROW_FRAMES,
   hudLayout,
   METER_FRAMES,
+  POWER_UP_ICON_FRAMES,
   writeScoreChars,
 } from '../../src/ui/hud.ts';
 import {
@@ -57,6 +60,7 @@ import {
   districtDisplayName,
   type HudArrow,
   type HudArrowFrame,
+  HudColour,
   type HudModel,
   type HudSnapshot,
   hudModel,
@@ -747,6 +751,7 @@ describe('layout at every width 432..640 (GDD §15.2: 4 px safe margin, anchored
       m.brush.visible = false;
       m.depotArrow.visible = false;
       m.hydrantArrow.visible = false;
+      m.powerUp.visible = false;
       return m;
     };
     const toggles: [HudElement, (m: HudModel) => void][] = [
@@ -760,6 +765,7 @@ describe('layout at every width 432..640 (GDD §15.2: 4 px safe margin, anchored
       ['tidy', (m) => (m.tidy.visible = true)],
       ['brushMeter', (m) => (m.meter.visible = true)],
       ['brushState', (m) => (m.brush.visible = true)],
+      ['powerUpSlot', (m) => (m.powerUp.visible = true)],
     ];
     for (const w of PIXEL_WIDTHS) {
       const layout = hudLayout(font, w);
@@ -1058,6 +1064,70 @@ describe('hudModel: the brush state icon and spin-up ring (GDD §8.2)', () => {
     // Half the ring is filled in 15 (clockwise from 12 o'clock to 6) and the other half is still the 03 track.
     expect(raster.at(r.x + 14, r.y + 7)).toBe(SWEEPER_YELLOW);
     expect(raster.at(r.x + 1, r.y + 7)).toBe(ASPHALT_LT);
+  });
+});
+
+describe('hudModel: the power-up slot (SSP-096; GDD §15.2)', () => {
+  it('shows the running power-up and its m:ss countdown, hidden while none runs', () => {
+    expect(model({}).powerUp.visible).toBe(false);
+    const tea = model({
+      powerUpKind: POWERUP_IDS.indexOf('pwr.flask_of_tea'),
+      powerUpTicksLeft: 899,
+    }).powerUp;
+    expect(tea).toEqual({ visible: true, kind: 0, text: '0:15', colour: HudColour.Chalk });
+    expect(model({ powerUpKind: 0, powerUpTicksLeft: 661 }).powerUp.text).toBe('0:12');
+    expect(model({ powerUpKind: 0, powerUpTicksLeft: 660 }).powerUp.text).toBe('0:11');
+    expect(model({ powerUpKind: 0, powerUpTicksLeft: 1 }).powerUp.text).toBe('0:01');
+    expect(model({ powerUpKind: 0, powerUpTicksLeft: 0 }).powerUp.visible).toBe(false);
+    expect(model({ powerUpKind: -1, powerUpTicksLeft: 50 }).powerUp.visible).toBe(false);
+  });
+
+  it('reads the power-up the sim shows: the timed one collected last, with its ticks left', () => {
+    const level = decodeLevel(readFileSync(`${REPO_ROOT}public/assets/levels/puddle_lane.json`, 'utf8'));
+    const world = createWorld(level, 1001, DEFAULT_TUNING);
+    expect(readHudSnapshot(world, createHudSnapshot()).powerUpKind).toBe(-1);
+    const butty = POWERUP_IDS.indexOf('pwr.bacon_butty');
+    addPickup(world.pickups, butty, world.vehicle.xM, world.vehicle.yM);
+    world.step(createInputFrame());
+    const s = readHudSnapshot(world, createHudSnapshot());
+    expect([s.powerUpKind, s.powerUpTicksLeft]).toEqual([butty, 599]);
+    expect(hudModel(s, world.tick).powerUp.text).toBe('0:10');
+    // The meter's scale follows the butty's top speed (×1.3).
+    expect(s.meterDownMaxMps).toBeCloseTo(7.8, 9);
+  });
+
+  it('draws the icon in the slot box and the countdown beside it, inside the box', () => {
+    const hiVis = POWERUP_IDS.indexOf('pwr.hi_vis');
+    for (const w of [432, 480, 640]) {
+      const r = hudLayout(font, w).reserved.powerUpSlot;
+      const draw = (shown: boolean): TextRaster => {
+        const raster = new TextRaster(w, 270, uiAtlas);
+        const fields = shown ? { powerUpKind: hiVis, powerUpTicksLeft: 700 } : {};
+        new Hud(raster, font).drawModel(model(fields), w);
+        return raster;
+      };
+      const on = draw(true);
+      const off = draw(false);
+      const want = new TextRaster(w, 270, uiAtlas);
+      want.add(POWER_UP_ICON_FRAMES[hiVis] ?? 'ui.powerup_icon:hi_vis:-:0', r.x + 8, r.y + 8, 255, 0);
+      let icon = 0;
+      let text = 0;
+      for (let y = 0; y < 270; y++) {
+        for (let x = 0; x < w; x++) {
+          if (on.at(x, y) === off.at(x, y)) continue;
+          // Everything the slot adds lies inside its reserved box.
+          expect(inRect(r, x, y), `(${x}, ${y}) at W = ${w}`).toBe(true);
+          if (x < r.x + 16) {
+            expect(on.at(x, y), `icon (${x}, ${y})`).toBe(want.at(x, y));
+            icon += 1;
+          } else text += 1;
+        }
+      }
+      // The icon, then the countdown '0:12' to its right.
+      expect(icon).toBeGreaterThan(50);
+      expect(text).toBeGreaterThan(20);
+    }
+    expect(POWER_UP_ICON_FRAMES).toEqual(POWERUP_IDS.map((id) => `ui.powerup_icon:${id.slice(4)}:-:0`));
   });
 });
 

@@ -33,6 +33,8 @@ import {
   type LitterId,
   NPC_IDS,
   type NpcId,
+  POWERUP_IDS,
+  type PowerupId,
   STAIN_IDS,
   type StainId,
 } from '../sim/entities.ts';
@@ -257,6 +259,19 @@ export type CarHornEvent = SimEventBase & {
   readonly honk: number;
 };
 
+/**
+ * Bessie collected a power-up (phase 4, pickups.ts, SSP-096): once per pickup, on the tick its effect starts.
+ * sfx.powerup (M5) and the HUD's power-up slot read it.
+ */
+export type PowerUpEvent = SimEventBase & {
+  readonly type: typeof EV.PowerUp;
+  /** The pickup's centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** Which power-up. */
+  readonly kind: PowerupId;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -277,6 +292,7 @@ export type SimEventByType = {
   [EV.Knock]: KnockEvent;
   [EV.NpcHit]: NpcHitEvent;
   [EV.CarHorn]: CarHornEvent;
+  [EV.PowerUp]: PowerUpEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -356,6 +372,7 @@ function createPayloads(): Payloads {
     [EV.Knock]: { type: EV.Knock, tick: 0, entity: -1, x: 0, y: 0, kind: 'prop.wheelie_bin' },
     [EV.NpcHit]: { type: EV.NpcHit, tick: 0, entity: -1, x: 0, y: 0, kind: 'npc.shopper' },
     [EV.CarHorn]: { type: EV.CarHorn, tick: 0, entity: -1, x: 0, y: 0, honk: 1 },
+    [EV.PowerUp]: { type: EV.PowerUp, tick: 0, entity: -1, x: 0, y: 0, kind: 'pwr.flask_of_tea' },
   };
 }
 
@@ -389,6 +406,14 @@ function npcKindOf(c: number, tick: number): NpcId {
   return id;
 }
 
+/** The power-up id carried in a PowerUp event's `c` (a POWERUP_IDS index); throws on anything else. */
+function powerUpKindOf(c: number, tick: number): PowerupId {
+  const id = Number.isInteger(c) ? POWERUP_IDS[c] : undefined;
+  if (id === undefined)
+    throw new Error(`EventBus: event type ${EV.PowerUp} at tick ${tick} carries unknown power-up kind ${c}`);
+  return id;
+}
+
 /** The stain id carried in a StainCleaned event's `entity` (a STAIN_IDS index); throws on anything else. */
 function stainKindOf(entity: number, tick: number): StainId {
   const id = Number.isInteger(entity) ? STAIN_IDS[entity] : undefined;
@@ -418,7 +443,8 @@ function isEventType(type: number): type is EventType {
     type === EV.Horn ||
     type === EV.Knock ||
     type === EV.NpcHit ||
-    type === EV.CarHorn
+    type === EV.CarHorn ||
+    type === EV.PowerUp
   );
 }
 
@@ -538,6 +564,7 @@ export class EventBus implements UiEventSink, PauseEventSink {
     [EV.Knock]: [],
     [EV.NpcHit]: [],
     [EV.CarHorn]: [],
+    [EV.PowerUp]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -831,6 +858,16 @@ export class EventBus implements UiEventSink, PauseEventSink {
         e.y = b;
         e.honk = c;
         this.emit(EV.CarHorn, e);
+        return;
+      }
+      case EV.PowerUp: {
+        const e = this.payloads[EV.PowerUp];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.kind = powerUpKindOf(c, tick);
+        this.emit(EV.PowerUp, e);
         return;
       }
     }

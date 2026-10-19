@@ -33,6 +33,10 @@ import {
   levelItemMarkers,
   litterAnim,
   litterFrame,
+  PICKUP_BOB_TICKS_PER_FRAME,
+  POWERUP_FRAMES,
+  pickupBob,
+  pickupFrame,
   STAIN_FRAMES,
   stainFrame,
   WOBBLE_TICKS_PER_FRAME,
@@ -42,7 +46,7 @@ import { INSTANCE_STRIDE } from '../../src/render/spriteBatch.ts';
 import { RT_HEIGHT_PX, rtWidthPx } from '../../src/render/upscale.ts';
 import { DepthLayer } from '../../src/render/worldMaterial.ts';
 import type { Aabb } from '../../src/sim/collision/obb.ts';
-import { LITTER_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
+import { LITTER_IDS, POWERUP_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
 import {
   addLitter,
   createLitterField,
@@ -52,6 +56,7 @@ import {
   queryLitterView,
 } from '../../src/sim/litter.ts';
 import { createBlankLevel, decodeLevel, type Level } from '../../src/sim/map.ts';
+import { addPickup, createPickups, PICKUP_CAPACITY } from '../../src/sim/pickups.ts';
 import { addStain, createStainStore, type StainStore } from '../../src/sim/stains.ts';
 import { DEFAULT_ENTITIES, DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import { createWorld } from '../../src/sim/world.ts';
@@ -62,6 +67,8 @@ const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const PUDDLE_LANE: Level = decodeLevel(
   readFileSync(`${REPO_ROOT}public/assets/levels/puddle_lane.json`, 'utf8'),
 );
+/** An empty pickup store, for the cases about litter, stains and markers. */
+const NO_PICKUPS = createPickups(DEFAULT_ENTITIES);
 /** Frames run before measuring the update path's heap, so it is JIT-optimised (as spriteBatch.test.ts). */
 const RENDER_WARMUP_FRAMES = 20_000;
 
@@ -87,8 +94,17 @@ function atlas(name: AtlasName): Promise<SpriteAtlas> {
   return loaded;
 }
 
-async function newBatch(level: Level, litterCapacity = 64, stainCapacity = 16): Promise<ItemsBatch> {
-  return new ItemsBatch(await atlas('items'), await atlas('world'), level, { litterCapacity, stainCapacity });
+async function newBatch(
+  level: Level,
+  litterCapacity = 64,
+  stainCapacity = 16,
+  pickupCapacity = 4,
+): Promise<ItemsBatch> {
+  return new ItemsBatch(await atlas('items'), await atlas('world'), level, {
+    litterCapacity,
+    stainCapacity,
+    pickupCapacity,
+  });
 }
 
 type Instance = { x: number; y: number; turns: number; layer: number; atlas: number; rect: number[] };
@@ -280,7 +296,7 @@ describe('ItemsBatch culling (TECHNICAL_DESIGN §12.5)', () => {
     ];
     const field = litterAt([...outside.slice(0, 3), ...inside, ...outside.slice(3)]);
     const batch = await newBatch(level);
-    batch.update(field, createStainStore(DEFAULT_ENTITIES, 16, 64), 0, 1, camera, 38.5);
+    batch.update(field, createStainStore(DEFAULT_ENTITIES, 16, 64), NO_PICKUPS, 0, 1, camera, 38.5);
     expect(batch.cullRect).toEqual(box(36, 26, 74, 51));
     expect(ITEMS_CULL_MARGIN_M).toBe(4);
     const drawn = instances(batch).map((i) => [i.x, i.y]);
@@ -305,11 +321,11 @@ describe('ItemsBatch culling (TECHNICAL_DESIGN §12.5)', () => {
     ]);
     const batch = await newBatch(level);
     const stains = createStainStore(DEFAULT_ENTITIES, 16, 64);
-    batch.update(field, stains, 0, 1, box(0, 0, 20, 20), 10);
+    batch.update(field, stains, NO_PICKUPS, 0, 1, box(0, 0, 20, 20), 10);
     expect(instances(batch).map((i) => [i.x, i.y])).toEqual([[10, 10]]);
-    batch.update(field, stains, 0, 1, box(90, 90, 110, 110), 100);
+    batch.update(field, stains, NO_PICKUPS, 0, 1, box(90, 90, 110, 110), 100);
     expect(instances(batch).map((i) => [i.x, i.y])).toEqual([[100, 100]]);
-    batch.update(field, stains, 0, 1, box(40, 40, 60, 60), 50);
+    batch.update(field, stains, NO_PICKUPS, 0, 1, box(40, 40, 60, 60), 50);
     expect(batch.batch.count).toBe(0);
     expect(batch.batch.mesh.count).toBe(0);
   });
@@ -321,7 +337,7 @@ describe('ItemsBatch culling (TECHNICAL_DESIGN §12.5)', () => {
     addStain(stains, 2, 80, 40); // oil, outside
     const field = litterAt([[55, 38]]);
     const batch = await newBatch(level);
-    batch.update(field, stains, 0, 1, camera, 38.5);
+    batch.update(field, stains, NO_PICKUPS, 0, 1, camera, 38.5);
     const drawn = instances(batch);
     expect(batch.stainsDrawn).toBe(2);
     expect(drawn).toHaveLength(3);
@@ -348,7 +364,7 @@ describe('ItemsBatch frames and interpolation', () => {
     field.flags[2] = LitterFlag.Flung;
     const batch = await newBatch(level, 8, 4);
     const stains = createStainStore(DEFAULT_ENTITIES, 4, 8);
-    batch.update(field, stains, 12, 0.25, camera, 10);
+    batch.update(field, stains, NO_PICKUPS, 12, 0.25, camera, 10);
     const drawn = instances(batch);
     expect(drawn.map((i) => [i.x, i.y])).toEqual([
       [9.25, 10.75],
@@ -365,9 +381,9 @@ describe('ItemsBatch frames and interpolation', () => {
     // Rotation is a frame choice, never a quad rotation; every item is on the litter layer.
     expect(drawn.every((i) => i.turns === 0 && i.layer === DepthLayer.Litter && i.atlas === 0)).toBe(true);
     // alpha is clamped to [0, 1].
-    batch.update(field, stains, 0, 3, camera, 10);
+    batch.update(field, stains, NO_PICKUPS, 0, 3, camera, 10);
     expect(instances(batch)[0]).toMatchObject({ x: 10, y: 10 });
-    batch.update(field, stains, 0, -1, camera, 10);
+    batch.update(field, stains, NO_PICKUPS, 0, -1, camera, 10);
     expect(instances(batch)[0]).toMatchObject({ x: 9, y: 11 });
   });
 });
@@ -406,18 +422,70 @@ describe('static markers from the compiled level', () => {
     const batch = await newBatch(PUDDLE_LANE, 4, 4);
     const field = createLitterField(PUDDLE_LANE, DEFAULT_TUNING, DEFAULT_ENTITIES, 4);
     const stains = createStainStore(DEFAULT_ENTITIES, 4, 4);
-    batch.update(field, stains, 0, 1, box(-8, 80, 22, 97), 89); // the depot start's view
+    batch.update(field, stains, NO_PICKUPS, 0, 1, box(-8, 80, 22, 97), 89); // the depot start's view
     expect(batch.markersDrawn).toBe(2);
     expect(instances(batch)).toEqual([
       { x: 14, y: 87, turns: 0, layer: DepthLayer.Decal, atlas: 0, rect: rectOf('site.depot_bay:flat:-:0') },
       { x: 20, y: 87, turns: 0, layer: DepthLayer.Decal, atlas: 0, rect: rectOf('site.depot_bay:flat:-:0') },
     ]);
-    batch.update(field, stains, 0, 1, box(36, 2, 92, 20), 11); // both hydrants
+    batch.update(field, stains, NO_PICKUPS, 0, 1, box(36, 2, 92, 20), 11); // both hydrants
     expect(instances(batch).map((i) => [i.x, i.y, i.layer])).toEqual([
       [77, 7, DepthLayer.Litter],
       [51, 15, DepthLayer.Litter],
     ]);
     expect(instances(batch)[0]?.rect).toEqual(rectOf(HYDRANT_FRAME));
+  });
+});
+
+describe('power-up pickups (SSP-096; ART_BIBLE §8.5, §10.2)', () => {
+  it('bob between their two frames every 24 ticks, all in phase', () => {
+    expect(PICKUP_BOB_TICKS_PER_FRAME).toBe(24);
+    expect([0, 23, 24, 47, 48, 71, 72].map(pickupBob)).toEqual([0, 0, 1, 1, 0, 0, 1]);
+    expect(POWERUP_FRAMES.length).toBe(POWERUP_IDS.length);
+    for (let k = 0; k < POWERUP_IDS.length; k++) {
+      const id = POWERUP_IDS[k];
+      expect(POWERUP_FRAMES[k]).toEqual([`${id}:bob:-:0`, `${id}:bob:-:1`]);
+      expect(pickupFrame(k, 0)).toBe(`${id}:bob:-:0`);
+      expect(pickupFrame(k, 24)).toBe(`${id}:bob:-:1`);
+      // 16×16 cells centred on the pickup.
+      for (const f of POWERUP_FRAMES[k] ?? [])
+        expect([FRAME[f].w, FRAME[f].h, FRAME[f].px, FRAME[f].py]).toEqual([16, 16, 8, 8]);
+    }
+    expect(() => pickupFrame(POWERUP_IDS.length, 0)).toThrow(/power-up kind 6/);
+  });
+
+  it('draws the pickups in view at layer 3 from the items atlas, after the litter, culled like it', async () => {
+    const batch = await newBatch(PUDDLE_LANE, 4, 4, 4);
+    const field = createLitterField(PUDDLE_LANE, DEFAULT_TUNING, DEFAULT_ENTITIES, 4);
+    addLitter(field, CRISP, 60.5, 22.5, 0);
+    const stains = createStainStore(DEFAULT_ENTITIES, 4, 4);
+    const pickups = createPickups(DEFAULT_ENTITIES, 4);
+    const tea = POWERUP_IDS.indexOf('pwr.flask_of_tea');
+    const can = POWERUP_IDS.indexOf('pwr.water_can');
+    addPickup(pickups, tea, 61, 23);
+    addPickup(pickups, can, 200, 23); // far off screen
+    const view = box(50, 15, 70, 30);
+    batch.update(field, stains, pickups, 30, 1, view, 23);
+    expect(batch.pickupsDrawn).toBe(1);
+    const drawn = instances(batch);
+    const last = drawn[drawn.length - 1];
+    expect(last).toEqual({
+      x: 61,
+      y: 23,
+      turns: 0,
+      layer: DepthLayer.Litter,
+      atlas: 0,
+      rect: rectOf('pwr.flask_of_tea:bob:-:1'),
+    });
+    expect(drawn[drawn.length - 2]?.layer).toBe(DepthLayer.Litter); // the crisp packet first
+    batch.update(field, stains, pickups, 48, 1, view, 23);
+    expect(instances(batch).at(-1)?.rect).toEqual(rectOf('pwr.flask_of_tea:bob:-:0'));
+    // Inside the 4 m margin it is still drawn.
+    batch.update(field, stains, pickups, 0, 1, box(64.5, 15, 80, 30), 23);
+    expect(batch.pickupsDrawn).toBe(1);
+    batch.update(field, stains, pickups, 0, 1, box(65.5, 15, 80, 30), 23);
+    expect(batch.pickupsDrawn).toBe(0);
+    batch.dispose();
   });
 });
 
@@ -430,8 +498,11 @@ describe('the items draw', () => {
     expect(batch.mesh.frustumCulled).toBe(false);
     expect(batch.batch.receiveShadows).toBe(true);
     expect(batch.batch.secondaryAtlas?.name).toBe('world');
-    // Capacity: every litter slot, every stain slot and the 5 Puddle Lane markers.
-    expect(batch.batch.capacity).toBe(64 + 16 + 5);
+    // Capacity: every litter slot, every stain slot, every pickup slot and the 5 Puddle Lane markers.
+    expect(batch.batch.capacity).toBe(64 + 16 + 4 + 5);
+    const full = new ItemsBatch(await atlas('items'), await atlas('world'), PUDDLE_LANE);
+    expect(full.batch.capacity).toBe(2000 + 256 + PICKUP_CAPACITY + 5);
+    full.dispose();
     const material = batch.mesh.material as unknown as {
       fragmentShader: string;
       blendSrc: number;
@@ -508,7 +579,8 @@ describe('update path allocates nothing', () => {
 
   it('a Puddle Lane frame with litter, stains, markers and wobble keeps the heap flat', async () => {
     const world = createWorld(PUDDLE_LANE, 1, DEFAULT_TUNING);
-    // Stains in view, and a third of the visible litter in suction so the wobble frames are drawn too.
+    // Stains in view, a pickup, and a third of the visible litter in suction so the wobble frames are drawn too.
+    addPickup(world.pickups, 0, 60, 12);
     addStain(world.stains, 0, 50, 13);
     addStain(world.stains, 4, 56, 12);
     for (let i = 0; i < world.litter.count; i += 3) world.litter.flags[i] = LitterFlag.InSuction;
@@ -520,10 +592,11 @@ describe('update path allocates nothing', () => {
     pinCameraRig(rig, 64, 11, 37.8);
     const camera = cameraGroundRect(rig, 0, box(0, 0, 0, 0));
     const camY = rig.snappedZ;
-    batch.update(world.litter, world.stains, 0, 0.5, camera, camY);
+    batch.update(world.litter, world.stains, world.pickups, 0, 0.5, camera, camY);
     expect(batch.litterDrawn).toBeGreaterThan(10);
     expect(batch.stainsDrawn).toBe(2);
     expect(batch.markersDrawn).toBe(2); // both hydrants
+    expect(batch.pickupsDrawn).toBeGreaterThanOrEqual(1);
     // Every rotation is on screen in this view (the e2e frame of the same view is the visual evidence).
     const rots = new Set<number>();
     const hits = new Int32Array(world.litter.capacity);
@@ -532,7 +605,7 @@ describe('update path allocates nothing', () => {
     expect([...rots].sort()).toEqual([0, 1, 2, 3]);
     // The tick is a small integer (no boxing), the alpha a fixed fraction, as in the spriteBatch heap test.
     const delta = measureHeapDelta(
-      (tick) => batch.update(world.litter, world.stains, tick, 0.5, camera, camY),
+      (tick) => batch.update(world.litter, world.stains, world.pickups, tick, 0.5, camera, camY),
       {
         warmupTicks: RENDER_WARMUP_FRAMES,
       },

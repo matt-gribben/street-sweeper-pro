@@ -107,10 +107,11 @@ HUD_ART = {
     "ui.brush_needle": (3, 10),
     "ui.brush_state": (16, 16),
     "ui.offscreen_arrow": (11, 11),
+    "ui.powerup_icon": (16, 16),
 }
 """SSP-070: the HUD's placeholder bar fill (1 frame) and dump-hold ring (9 fill steps) in the ui atlas; SSP-299:
 the Brush-o-meter zones (3), its needle (1), the brush state badges and spin-up ring (2 + 9) and the off-screen
-arrows (2 x 8 dirs)."""
+arrows (2 x 8 dirs); SSP-096: the power-up slot's icons (one per pwr.*, 6)."""
 OVERLAYS = ("tile.double_yellow", "tile.lane_marking", "tile.parking_bay", *STAINS, *GRIME, *HAZARDS)
 """World-atlas frames that are not opaque cells: road markings, stains, grime and hazard decals."""
 GROUND_MARKINGS = ("site.depot_bay",)
@@ -184,7 +185,7 @@ CELLS = {
 }
 PARKED = {f"veh.{n}_parked": f"veh.{n}" for n in ("hatchback", "saloon", "taxi", "van_white")}
 """SSP-100's alias entries: frame IDs on the target's atlas rects, no frames of their own."""
-FRAME_COUNT = 2182
+FRAME_COUNT = 2188
 ATLAS_OF = {
     **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES, *STAINS, *GRIME, *HAZARDS)},
     **{a: "items" for a in (*PICKUPS, *SITES, *PROPS, "prop.hydrant")},
@@ -272,6 +273,7 @@ def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
         "ui.brush_needle": 1,
         "ui.brush_state": 11,
         "ui.offscreen_arrow": 16,
+        "ui.powerup_icon": 6,
         **STAINS,
         **GRIME,
         **HAZARDS,
@@ -430,7 +432,7 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
 
 
 @pytest.mark.parametrize(
-    ("name", "count", "aliased"), [("world", 151, 0), ("actors", 1524, 128), ("items", 263, 0), ("ui", 244, 0)]
+    ("name", "count", "aliased"), [("world", 151, 0), ("actors", 1524, 128), ("items", 263, 0), ("ui", 250, 0)]
 )
 def test_atlas_holds_every_frame_at_its_rect(
     builds: tuple[BuildResult, Path, Path], name: str, count: int, aliased: int

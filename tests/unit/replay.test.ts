@@ -22,6 +22,7 @@ import { createBlankLevel, decodeLevel } from '../../src/sim/map.ts';
 import { Stimulus } from '../../src/sim/npc/behaviour.ts';
 import { pushStimulus } from '../../src/sim/npc/stimuli.ts';
 import { addNpcAt, NO_NPC_HANDLE, NPC_PATH_NODES, NpcOrigin, removeNpc } from '../../src/sim/npc/store.ts';
+import { addPickup } from '../../src/sim/pickups.ts';
 import {
   absorbTick,
   appendInput,
@@ -310,6 +311,11 @@ describe('state hash', () => {
     world.vehicles.blockTicks[v] = 200;
     world.vehicles.honks[v] = 1;
     world.traffic.carHorns = 1;
+    // A pickup on the street and a running flask of tea with a bacon butty, so the SSP-096 section has records.
+    addPickup(world.pickups, 3, 1.25, 2.75);
+    world.pickups.untilTick[0] = 812;
+    world.pickups.startTick[0] = 0;
+    world.vehicleParams.topSpeedMult = 1.3;
     return world;
   }
 
@@ -370,6 +376,26 @@ describe('state hash', () => {
     const w = handSetWorld();
     w.npc.path[2] = 9;
     expect(hashOf(w)).toBe(base);
+  });
+
+  it('absorbs the power-ups (SSP-096): the pickups, their counters, the timers and the top-speed multiplier', () => {
+    const base = hashOf(handSetWorld());
+    const edits: [string, (w: World) => void][] = [
+      ['count', (w) => addPickup(w.pickups, 0, 3.25, 1.25)],
+      ['kind', (w) => (w.pickups.kind[0] = 4)],
+      ['x', (w) => (w.pickups.x[0] = 1.251)],
+      ['y', (w) => (w.pickups.y[0] = 2.749)],
+      ['spawned', (w) => (w.pickups.spawned += 1)],
+      ['collected', (w) => (w.pickups.collected += 1)],
+      ['untilTick', (w) => (w.pickups.untilTick[2] = 30)],
+      ['startTick', (w) => (w.pickups.startTick[0] = 1)],
+      ['topSpeedMult', (w) => (w.vehicleParams.topSpeedMult = 1)],
+    ];
+    for (const [name, edit] of edits) {
+      const w = handSetWorld();
+      edit(w);
+      expect(hashOf(w), name).not.toBe(base);
+    }
   });
 
   it('absorbs the reaction state (SSP-082): the per-NPC contact window and state limit, and the shared rules', () => {
@@ -1437,8 +1463,10 @@ describe('state hash', () => {
  * b31a23d9 (f20bff33 on its branch, before SSP-092 merged).
  * SSP-089 appended the vehicle store and the traffic state, and gave the hand-set World a vehicle held by Bessie
  * with a two-edge plan: b31a23d9 → 68d953a7 (fc7651f5 on its branch, before SSP-092 and SSP-082 merged).
+ * SSP-096 appended the power-ups (the pickup store, the timers, the top-speed multiplier), and gave the hand-set
+ * World a pickup, a running flask of tea and a butty's top-speed multiplier: 68d953a7 → 440ed8ae.
  */
-const GOLDEN_HAND_SET_HASH = '68d953a7';
+const GOLDEN_HAND_SET_HASH = '440ed8ae';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

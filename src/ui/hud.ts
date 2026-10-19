@@ -35,7 +35,9 @@
 //               already reach the bottom margin, so it takes the row above them): the Brush-o-meter's 64×6
 //               zones in a 1 px ink frame (66×8 at (4, 234)) with the 3×10 needle at x = 5 + needle, y = 233; the
 //               speed outlined, box at (72, 233); the 16×16 brush state badge and ring 4 px right of the speed's
-//               box; then the reserved 16×16 + countdown power-up slot (SSP-096) 4 px further right;
+//               box; then the power-up slot 4 px further right (SSP-096): the running power-up's 16×16
+//               ui.powerup_icon at (x, 230), its 'm:ss' countdown outlined in 07, box 2 px right of the icon at
+//               y = 233 (the speed's row);
 //   slots       reserved for later widgets, so nothing here lands on them: the 64×64 minimap (SSP-291) in the
 //               bottom-right corner;
 // SSP-289, Pam's radio panel (radio.ts owns the queue, paging, keycaps and side rule):
@@ -142,6 +144,16 @@ export const METER_FRAMES = Object.freeze({
   transit: 'ui.brush_meter:transit:-:0',
 } as const satisfies Record<string, FrameId>);
 export const NEEDLE_FRAME: FrameId = 'ui.brush_needle:needle:-:0';
+
+/** The power-up slot's icons, by POWERUP_IDS index (SSP-096; placeholders until SSP-156). */
+export const POWER_UP_ICON_FRAMES: readonly FrameId[] = Object.freeze([
+  'ui.powerup_icon:flask_of_tea:-:0',
+  'ui.powerup_icon:bacon_butty:-:0',
+  'ui.powerup_icon:hi_vis:-:0',
+  'ui.powerup_icon:super_suction:-:0',
+  'ui.powerup_icon:wrench:-:0',
+  'ui.powerup_icon:water_can:-:0',
+] satisfies FrameId[]);
 
 /** The brush state badges (▲ raised, ▼ lowered) by BrushIcon, and the spin-up ring by step 0..8. */
 export const BRUSH_ICON_FRAMES: readonly FrameId[] = Object.freeze([
@@ -260,6 +272,8 @@ export const ICON_PX = 16;
 export const BRUSH_ROW_GAP_PX = 4;
 /** Gap between the power-up slot's icon and its countdown. */
 export const POWER_UP_TEXT_GAP_PX = 2;
+/** Box top of the power-up countdown (the speed's row, centred on the 16 px icon). */
+export const POWER_UP_TEXT_Y = 233;
 /** The minimap slot (SSP-291): 64×64 in the bottom-right corner. */
 export const MINIMAP_PX = 64;
 
@@ -284,6 +298,9 @@ export type HudLayout = {
   readonly tidyTextX: number;
   readonly speedTextX: number;
   readonly brushStateX: number;
+  /** x of the power-up slot's icon, and of its countdown's box. */
+  readonly powerUpX: number;
+  readonly powerUpTextX: number;
   /** The frame the off-screen arrows are placed in: this width, and every reserved box as a blocker. */
   readonly arrowFrame: HudArrowFrame;
   /**
@@ -458,6 +475,8 @@ export function hudLayout(font: BitmapFont, widthPx: number): HudLayout {
     tidyTextX,
     speedTextX,
     brushStateX,
+    powerUpX: powerUpSlot.x,
+    powerUpTextX: powerUpSlot.x + ICON_PX + POWER_UP_TEXT_GAP_PX,
     arrowFrame: { widthPx, heightPx: HUD_HEIGHT_PX, blockers: Object.freeze(Object.values(reserved)) },
     reserved,
   };
@@ -815,6 +834,16 @@ export class Hud {
       sink.add(icon, cx, cy, BUTTON_NO_RECOLOUR, 0);
       if (brush.ringVisible)
         sink.add(BRUSH_RING_FRAMES[brush.ringStep] ?? BAR_FRAME, cx, cy, BUTTON_NO_RECOLOUR, 0);
+    }
+
+    // The power-up slot: icon, then the countdown.
+    const powerUp = model.powerUp;
+    if (powerUp.visible) {
+      const icon = POWER_UP_ICON_FRAMES[powerUp.kind];
+      if (icon !== undefined) {
+        sink.add(icon, layout.powerUpX + (ICON_PX >> 1), BRUSH_ROW_Y + (ICON_PX >> 1), BUTTON_NO_RECOLOUR, 0);
+      }
+      font.draw(sink, powerUp.text, layout.powerUpTextX + 1, POWER_UP_TEXT_Y + 1, powerUp.colour, outline);
     }
 
     // Pam's radio panel.

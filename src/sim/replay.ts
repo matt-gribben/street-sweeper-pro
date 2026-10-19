@@ -447,6 +447,9 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     servedStop, box0, box1, planLen, then its planLen plan edges
  *   I traffic.rng a, b, c, counter; I nextBusTick, busesDue, busesSpawned, carHorns, roadRageOffences, then per
  *     junction box its claim and claim edge and per slot its holder and holder edge
+ *   SSP-096 appends the power-ups (pickups.ts):
+ *   I pickups.count, spawned, collected; F vehicleParams.topSpeedMult; then per pickup: I kind; F x, y; then per
+ *     POWERUP_IDS kind: I untilTick, startTick
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -506,6 +509,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbBodies(hasher, world);
   absorbReactions(hasher, world);
   absorbTraffic(hasher, world);
+  absorbPickups(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -995,6 +999,31 @@ function absorbBodies(hasher: StateHasher, world: World): void {
     w[k + 10] = Math.round((b.vy[i] as number) * q) | 0;
     w[k + 11] = Math.round((b.omega[i] as number) * q) | 0;
     k += 12;
+  }
+  mixWords(hasher, k);
+}
+
+function absorbPickups(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const q = HASH_QUANTUM;
+  const p = world.pickups;
+  const n = p.count;
+  w[0] = n | 0;
+  w[1] = p.spawned | 0;
+  w[2] = p.collected | 0;
+  w[3] = Math.round(world.vehicleParams.topSpeedMult * q) | 0;
+  let k = 4;
+  for (let i = 0; i < n; i += 1) {
+    w[k] = (p.kind[i] as number) | 0;
+    w[k + 1] = Math.round((p.x[i] as number) * q) | 0;
+    w[k + 2] = Math.round((p.y[i] as number) * q) | 0;
+    k += 3;
+  }
+  const kinds = p.untilTick.length;
+  for (let j = 0; j < kinds; j += 1) {
+    w[k] = (p.untilTick[j] as number) | 0;
+    w[k + 1] = (p.startTick[j] as number) | 0;
+    k += 2;
   }
   mixWords(hasher, k);
 }

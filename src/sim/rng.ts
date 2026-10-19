@@ -130,6 +130,7 @@ export const RNG_STREAMS = [
   'events',
   'brush',
   'weather',
+  'pickups',
 ] as const;
 export type RngStream = (typeof RNG_STREAMS)[number];
 

@@ -257,7 +257,9 @@ describe('ShiftScene', () => {
     // nearest spawned item is beyond the camera rect plus 4 m).
     const items = shift.itemsBatch;
     expect(items?.markersDrawn).toBe(2);
-    expect(items?.batch.count).toBe((items?.markersDrawn ?? 0) + (items?.litterDrawn ?? 0));
+    expect(items?.batch.count).toBe(
+      (items?.markersDrawn ?? 0) + (items?.litterDrawn ?? 0) + (items?.pickupsDrawn ?? 0),
+    );
   });
 
   it('steps the World once per fixedUpdate and draws the pose lerped by alpha', async () => {
@@ -686,6 +688,8 @@ describe('__ssp hooks bound to the ShiftScene', () => {
       'hp',
       'litter',
       'npcs',
+      'pickups',
+      'powerUps',
       'score',
       'shift',
       'stars',

@@ -34,7 +34,7 @@ import {
   type GroundFrameTables,
   groundFrameTables,
 } from '../../src/render/groundLayer.ts';
-import { levelItemMarkers, litterFrame, stainFrame } from '../../src/render/itemsBatch.ts';
+import { levelItemMarkers, litterFrame, pickupFrame, stainFrame } from '../../src/render/itemsBatch.ts';
 import { buildShadowPolygons } from '../../src/render/shadows.ts';
 import type { RgbaImage } from '../../src/render/spriteAtlas.ts';
 import { INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
@@ -131,12 +131,13 @@ function frameCover(frame: FrameId, xM: number, yM: number): Rect {
 
 /**
  * Rects the items batch draws over the ground at shift start for `seed` (SSP-067, itemsBatch.ts): every litter
- * item and stain the World lays, and the level's hydrants, skip and depot-bay markings.
+ * item and stain the World lays, its power-up pickups (SSP-096, either bob frame) and the level's hydrants, skip
+ * and depot-bay markings.
  */
 export function itemsCover(level: Level, seed: number): Rect[] {
   const world = createWorld(level, seed >>> 0, DEFAULT_TUNING);
   const rects = levelItemMarkers(level).map((m) => frameCover(m.frame, m.xM, m.yM));
-  const { litter, stains } = world;
+  const { litter, stains, pickups } = world;
   for (let i = 0; i < litter.count; i++) {
     const xM = litter.x[i] ?? 0;
     const yM = litter.y[i] ?? 0;
@@ -146,6 +147,11 @@ export function itemsCover(level: Level, seed: number): Rect[] {
     const xM = stains.x[i] ?? 0;
     const yM = stains.y[i] ?? 0;
     rects.push(frameCover(stainFrame(stains.kind[i] ?? 0, xM, yM), xM, yM));
+  }
+  for (let i = 0; i < pickups.count; i++) {
+    const xM = pickups.x[i] ?? 0;
+    const yM = pickups.y[i] ?? 0;
+    rects.push(frameCover(pickupFrame(pickups.kind[i] ?? 0, 0), xM, yM));
   }
   return rects;
 }

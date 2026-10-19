@@ -54,6 +54,8 @@ function snapshot(overrides: Partial<SimSnapshot> = {}): SimSnapshot {
       finalStars: overrides.stars ?? 0,
     },
     complaints: 0,
+    pickups: [],
+    powerUps: [],
     ...overrides,
   };
 }

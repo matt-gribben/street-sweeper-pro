@@ -19,6 +19,7 @@ import {
 import { Actions } from '../../src/input/actions.ts';
 import { GamepadDevice } from '../../src/input/gamepad.ts';
 import { KeyboardDevice } from '../../src/input/keyboard.ts';
+import { createDirtyRect, mergeDirtyRect, type TextureRegionUploader } from '../../src/render/groundLayer.ts';
 import type { Renderer } from '../../src/render/Renderer.ts';
 import { type AtlasName, loadAtlas, type RgbaImage } from '../../src/render/spriteAtlas.ts';
 import {
@@ -63,9 +64,17 @@ function context() {
   const follows: [x: number, y: number, vx: number, vy: number, speed: number][] = [];
   const loaded: AtlasName[] = [];
   const rig = { snappedZ: 0 };
+  // The grime uploads (SSP-066): copyTextureToTexture regions, as [minX, minY, maxX, maxY) cells.
+  const uploads: [number, number, number, number][] = [];
+  const webgl: TextureRegionUploader = {
+    copyTextureToTexture: (_src, _dst, region) => {
+      if (region === null) throw new Error('no region');
+      uploads.push([region.min.x, region.min.y, region.max.x, region.max.y]);
+    },
+  };
   let released = 0;
   const ctx: SceneContext = {
-    renderer: { rig } as unknown as Renderer,
+    renderer: { rig, webgl } as unknown as Renderer,
     root: new Group(),
     ui: new Group(),
     loadAtlas: async (name) => {
@@ -85,7 +94,7 @@ function context() {
       released += 1;
     },
   };
-  return { ctx, follows, loaded, released: () => released };
+  return { ctx, follows, loaded, uploads, released: () => released };
 }
 
 function scene(options: ShiftSceneOptions = {}) {
@@ -287,6 +296,43 @@ describe('ShiftScene', () => {
     expect(shift.worldView?.vehicle.brushDown).toBe(true);
     expect(shift.bessieSprite?.brushFrame).toBe('veh.sweeper_brush:brush:h00:0');
     expect(shift.bessieSprite?.sprites.count).toBe(2);
+  });
+
+  it('draws grime from the World mask and uploads the union of each frame’s dirty rects once (SSP-066)', async () => {
+    const { scene: shift, uploads } = scene();
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    const grime = shift.levelCity?.grime;
+    const world = shift.worldView;
+    if (grime === undefined || grime === null || world === null) throw new Error('no grime');
+    expect(grime.texture.image.data).toBe(world.dirt.mask);
+    const input = createInputFrame();
+    input.pressed = PRESSED.BRUSH;
+    shift.fixedUpdate(input);
+    input.pressed = 0;
+    input.throttle = 255;
+    let uploadsExpected = 0;
+    for (let frame = 0; frame < 200; frame++) {
+      const union = createDirtyRect();
+      for (let t = 0; t < 1 + (frame % 2); t++) {
+        shift.fixedUpdate(input);
+        const d = world.dirt;
+        mergeDirtyRect(union, d.dirtyMinX, d.dirtyMinY, d.dirtyMaxX, d.dirtyMaxY);
+      }
+      const before = uploads.length;
+      shift.render(1);
+      if (union.maxX < union.minX) {
+        expect(uploads.length).toBe(before);
+        continue;
+      }
+      uploadsExpected++;
+      expect(uploads.length).toBe(before + 1);
+      expect(uploads[uploads.length - 1]).toEqual([union.minX, union.minY, union.maxX + 1, union.maxY + 1]);
+    }
+    expect(world.dirt.cleanedCells).toBeGreaterThan(0);
+    expect(uploadsExpected).toBeGreaterThan(10);
+    expect(uploads).toHaveLength(uploadsExpected);
+    shift.exit();
+    expect(shift.levelCity).toBeNull();
   });
 
   it('draws the dented body while hp is below health.dentedBelowHp', async () => {

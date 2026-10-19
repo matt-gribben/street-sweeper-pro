@@ -8,12 +8,16 @@
 //   - Styles come from the compiled header: wall value n names `wallIds[n − 1]` (a `facade.*` set with
 //     `lit`/`base`/`dark` bay frames) and roof value n names `roofIds[n − 1]` (a `roof.*` tile family whose
 //     `v` variants are picked per cell). A missing frame throws at build time.
+//   - Given the sim's grime mask (a shift; SSP-066), the city material samples it through a GroundGrime
+//     (groundLayer.ts): the scene merges each tick's dirty rectangle into it and uploads the union once per
+//     rendered frame. Without one (level_preview) the city draws no grime.
 //
-// Render-only: reads the decoded Level and the loaded atlas and never writes either. Built once on district
-// load; nothing here runs per frame.
+// Render-only: reads the decoded Level, the loaded atlas and the grime mask and never writes any of them. Built
+// once on district load; only GroundGrime's accumulate and upload run per tick and per frame.
 import { Group, type Mesh } from 'three';
 import type { FrameId } from '../gen/assets.ts';
-import type { Level } from '../sim/map.ts';
+import type { DirtView } from '../sim/dirt.ts';
+import { GUTTER_CELLS_PER_TILE, type Level } from '../sim/map.ts';
 import {
   type CityBox,
   type CityGeometryData,
@@ -29,7 +33,14 @@ import {
   roofParapetSe,
   writeBuildings,
 } from './cityMesh.ts';
-import { cellGroundFrames, type GroundChunk, groundFrameTables, writeGroundLayer } from './groundLayer.ts';
+import {
+  cellGroundFrames,
+  type GroundChunk,
+  GroundGrime,
+  grimePatterns,
+  groundFrameTables,
+  writeGroundLayer,
+} from './groundLayer.ts';
 import { KERBSIDE32, type Kerbside32 } from './palettePass.ts';
 import { createBuildingShadows } from './shadows.ts';
 import type { SpriteAtlas } from './spriteAtlas.ts';
@@ -96,6 +107,7 @@ export function levelCityFrames(level: Level): FrameId[] {
   }
   for (const id of level.wallIds) for (const frame of facadeFrames(id)) frames.add(frame);
   for (const id of level.roofIds) for (const frame of worldFrameVariants(id, 'v')) frames.add(frame);
+  for (const family of tables.grime.frames) for (const frame of family) frames.add(frame);
   return [...frames].sort();
 }
 
@@ -124,19 +136,36 @@ export type LevelCity = {
   readonly group: Group;
   readonly city: Mesh;
   readonly shadows: Mesh;
-  /** Releases the meshes' GPU resources (not the shared atlas texture). */
+  /** The grime mask texture the city samples, or null when built without a mask (no grime drawn). */
+  readonly grime: GroundGrime | null;
+  /** Releases the meshes' GPU resources and the grime texture (not the shared atlas texture). */
   dispose(): void;
 };
 
-/** Builds a level's city meshes from the loaded `world` atlas. */
+/**
+ * Builds a level's city meshes from the loaded `world` atlas. With `dirt` (the World's grime mask, read-only)
+ * the ground draws the grime overlay; its mask must be the level's size (tiles × 8).
+ */
 export function createLevelCity(
   level: Level,
   world: SpriteAtlas,
   palette: Kerbside32 = KERBSIDE32,
+  dirt: DirtView | null = null,
 ): LevelCity {
   if (world.name !== 'world') throw new Error(`createLevelCity needs the world atlas, got '${world.name}'`);
+  const [w, h] = level.size;
+  if (
+    dirt !== null &&
+    (dirt.maskW !== w * GUTTER_CELLS_PER_TILE || dirt.maskH !== h * GUTTER_CELLS_PER_TILE)
+  ) {
+    throw new Error(
+      `createLevelCity: a ${dirt.maskW}×${dirt.maskH} grime mask does not fit a ${w}×${h} level`,
+    );
+  }
   const data = buildLevelCityData(level, world, GROUND_SKIRT_M, palette);
-  const city = createCityMesh(data.geometry, world.texture, palette);
+  const grime = dirt === null ? null : new GroundGrime(dirt);
+  const binding = grime === null ? null : grime.binding(grimePatterns());
+  const city = createCityMesh(data.geometry, world.texture, palette, binding);
   city.renderOrder = 0;
   const shadows = createBuildingShadows(data.boxes);
   // Shadows must follow the city so roofs and walls are already in the depth buffer.
@@ -148,9 +177,11 @@ export function createLevelCity(
     group,
     city,
     shadows,
+    grime,
     dispose(): void {
       group.remove(city, shadows);
       disposeCityMesh(city);
+      grime?.dispose();
       shadows.geometry.dispose();
       const material = shadows.material;
       if (!Array.isArray(material)) material.dispose();

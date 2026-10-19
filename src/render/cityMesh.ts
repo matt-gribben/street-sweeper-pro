@@ -23,16 +23,27 @@
 // Vertex format (per vertex; 4 vertices and 6 indices per quad):
 //   position (vec3, metres), aUvM (vec2, world metres: ground/roofs (x, z), walls (along-wall, height)),
 //   aRect (vec4, atlas rect x, y, w, h in pixels, from FRAME), aCellM (vec2, the cell's NW corner, which ground
-//   and roof texels are clamped to), aInfo (vec4: SurfaceKind, roof edge bits, SE parapet index, grime flag).
-// The grime flag is 1 on ground and markings and 0 on walls, roofs and the skirt: the M2 grime overlay
-// (SSP-066) reads it so walls and roofs never show grime.
+//   and roof texels are clamped to), aInfo (vec4: SurfaceKind, roof edge bits, SE parapet index, grime code).
+// The grime code (SSP-066, {@link grimeCode}) is 0 where grime never shows (walls, roofs, the skirt, grass,
+// aprons and every quad of the M0 placeholder city); on a route cell's ground and marking quads it names the
+// cell's two grime pattern slots: its surface pattern (asphalt or slab, hash-picked variant) and its gutter
+// pattern variant.
+//
+// Grime (TECHNICAL_DESIGN §10.3, §12.4; ART_BIBLE §9.2): where the code is non-zero the fragment shader reads
+// the grime mask (an R8 texture, one texel per 4 px grime cell, groundLayer.ts GroundGrime) at the fragment's
+// world texel. A cell with intensity 0 is clean; otherwise the cell's pattern (the gutter pattern when bit 7
+// is set, else the surface pattern) is sampled at the same texel of the tile, and an opaque pattern texel
+// replaces the clean one when the texel's stable rank passes the intensity ({@link grimeTexelShows}). Cells
+// are 4×4 texels aligned to the tile, so the clean edge is stepped in 4 px blocks, as ART_BIBLE §9.2 wants.
+// grimeTexelIndex() is the CPU mirror of the shader's grime step.
 //
 // The fragment shader reads a Kerbside-32 index from the R8 atlas texture (255 = transparent, discarded: the
 // marking overlays) and looks the colour up in the palette texture, so nothing here spells a colour. Texel
 // lookups add 1/256 texel before flooring: magnified roofs and walls put texel edges exactly on pixel centres at
 // some camera positions, and the two triangles of a quad would otherwise round that pixel row differently.
-import { BufferAttribute, BufferGeometry, GLSL3, Mesh, ShaderMaterial, Texture } from 'three';
-import { PX_PER_M, TILE_M } from '../sim/constants.ts';
+import { BufferAttribute, BufferGeometry, GLSL3, Mesh, ShaderMaterial, Texture, Vector2 } from 'three';
+import { GRIME_CELL_M, PX_PER_M, TILE_M } from '../sim/constants.ts';
+import { GRIME_GUTTER_BIT, GRIME_INTENSITY_MASK } from '../sim/dirt.ts';
 import {
   createPaletteTexture,
   KERBSIDE32,
@@ -58,7 +69,10 @@ export const TILE_PX = CELL_M * PX_PER_M;
 export const GROUND_SKIRT_M = 512;
 
 /** Atlas value of a fully transparent texel (spriteAtlas.ts TRANSPARENT_INDEX): the shader discards it. */
-const TRANSPARENT_TEXEL = 255;
+export const TRANSPARENT_TEXEL = 255;
+
+/** A grime cell's edge in texels: 4 px (0.25 m, TECHNICAL_DESIGN §10.3). */
+export const GRIME_CELL_PX = GRIME_CELL_M * PX_PER_M;
 
 /** Outward direction of a surface. Walls are N/E/S/W; roofs and ground face Up. */
 export const Face = { N: 0, E: 1, S: 2, W: 3, Up: 4 } as const;
@@ -353,9 +367,95 @@ export function cellVariant(x: number, y: number, count: number, salt: number): 
   return cellHash(x, y, salt) % count;
 }
 
-/** Hash salts, so ground and roof variants of the same cell are independent. */
-export const VariantSalt = { Ground: 0, Roof: 1 } as const;
+/**
+ * Hash salts, so the variants of the same cell are independent: ground and roof tiles (SSP-045), the grime
+ * pattern variant of a tile (`Grime`) and the per-texel grime rank (`GrimeRank`, SSP-066).
+ */
+export const VariantSalt = { Ground: 0, Roof: 1, Grime: 2, GrimeRank: 3 } as const;
 export type VariantSalt = (typeof VariantSalt)[keyof typeof VariantSalt];
+
+// ---------------------------------------------------------------------------------------------------------
+// Grime (SSP-066). The shader's grime step and its CPU mirror share these numbers.
+
+/** Grime pattern families: the three overlay assets of ART_BIBLE §9.2, in slot order. */
+export const GrimeFamily = { Asphalt: 0, Slab: 1, Gutter: 2 } as const;
+export type GrimeFamily = (typeof GrimeFamily)[keyof typeof GrimeFamily];
+
+/** Pattern slots per family: family f's variant v is slot f × 4 + v (a family may have at most 4 variants). */
+export const GRIME_FAMILY_SLOTS = 4;
+
+/** Slots in the shader's pattern rect table (`uGrimeRects`): 3 families × 4. */
+export const GRIME_SLOT_COUNT = 3 * GRIME_FAMILY_SLOTS;
+
+/** Packing radix of a grime code: code = 1 + surfaceSlot + GRIME_CODE_RADIX × gutterSlot. */
+const GRIME_CODE_RADIX = 16;
+
+/** A grime rank is 0..127: the low 7 bits of the texel hash. */
+const GRIME_RANK_MASK = 127;
+
+/**
+ * Ranks below this plus half the intensity show: at intensity 126–127 every opaque pattern texel shows, at
+ * GRIME_INTENSITY_MIN (64) about 76% of them, at 1 about half.
+ */
+const GRIME_RANK_BASE = 65;
+
+/** The grime code of a quad with no grime (walls, roofs, the skirt, grass, aprons, the placeholder city). */
+export const GRIME_NONE = 0;
+
+/** The per-vertex grime code (aInfo.w) of a ground or marking quad: its surface and gutter pattern slots. */
+export function grimeCode(surfaceSlot: number, gutterSlot: number): number {
+  for (const slot of [surfaceSlot, gutterSlot]) {
+    if (!Number.isInteger(slot) || slot < 0 || slot >= GRIME_SLOT_COUNT)
+      throw new Error(`grimeCode: slot ${slot} outside 0..${GRIME_SLOT_COUNT - 1}`);
+  }
+  return 1 + surfaceSlot + GRIME_CODE_RADIX * gutterSlot;
+}
+
+/** The pattern slot a dirty cell of mask value `maskValue` samples under grime code `code` (> 0). */
+export function grimePatternSlot(code: number, maskValue: number): number {
+  const packed = code - 1;
+  return (maskValue & GRIME_GUTTER_BIT) !== 0
+    ? Math.floor(packed / GRIME_CODE_RADIX)
+    : packed % GRIME_CODE_RADIX;
+}
+
+/** The stable rank 0..127 of world texel (x, y) (whole texels from the map's NW corner). */
+export function grimeRank(texelX: number, texelY: number): number {
+  return cellHash(texelX, texelY, VariantSalt.GrimeRank) & GRIME_RANK_MASK;
+}
+
+/** True when a texel of rank `rank` in a cell of mask value `maskValue` shows its pattern texel. */
+export function grimeTexelShows(maskValue: number, rank: number): boolean {
+  const intensity = maskValue & GRIME_INTENSITY_MASK;
+  return intensity > 0 && rank < GRIME_RANK_BASE + (intensity >> 1);
+}
+
+/**
+ * CPU mirror of the shader's grime step for one texel: the clean index `clean` (ground or marking), the
+ * cell's mask value, the texel's world position and the pattern index under it (`TRANSPARENT_TEXEL` = none).
+ * Returns the index drawn.
+ */
+export function grimeTexelIndex(
+  clean: number,
+  maskValue: number,
+  texelX: number,
+  texelY: number,
+  patternIndex: number,
+): number {
+  if (patternIndex === TRANSPARENT_TEXEL) return clean;
+  return grimeTexelShows(maskValue, grimeRank(texelX, texelY)) ? patternIndex : clean;
+}
+
+/**
+ * What the city material needs to draw grime: the R8 mask texture (one texel per grime cell, row 0 north), its
+ * size in cells and the pattern rect table (GRIME_SLOT_COUNT × (x, y, w, h), atlas pixels).
+ */
+export type CityGrime = {
+  readonly texture: Texture;
+  readonly widthCells: number;
+  readonly heightCells: number;
+  readonly rects: Int32Array;
+};
 
 /**
  * The most common index inside `rect` of an index atlas (`width` pixels wide), ignoring transparent texels; ties
@@ -403,7 +503,7 @@ export type CityGeometryData = {
   readonly rects: Float32Array;
   /** NW corner (x, z) of the quad's cell in metres (ground, overlays, roofs), (0, 0) elsewhere. */
   readonly cells: Float32Array;
-  /** (SurfaceKind, roof edge bits, SE parapet index, grime flag) per vertex. */
+  /** (SurfaceKind, roof edge bits, SE parapet index, grime code) per vertex. */
   readonly info: Float32Array;
   /** Triangle indices, 6 per quad, wound counter-clockwise as seen from outside. */
   readonly indices: Uint32Array;
@@ -443,7 +543,10 @@ export class CityGeometryWriter {
     cellZM = 0,
     edges = 0,
     parapetSe = 0,
+    grime: number = GRIME_NONE,
   ): void {
+    if (grime !== GRIME_NONE && kind !== SurfaceKind.Ground && kind !== SurfaceKind.Overlay)
+      throw new Error('city: only ground and marking quads carry grime');
     const [a, b, c] = corners;
     const n = faceNormal(face);
     const e1x = b[0] - a[0];
@@ -457,7 +560,6 @@ export class CityGeometryWriter {
     const base = this.positions.length / 3;
     if (dot > 0) this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
     else this.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
-    const grime = kind === SurfaceKind.Ground || kind === SurfaceKind.Overlay ? 1 : 0;
     for (const v of corners) {
       this.positions.push(v[0], v[1], v[2]);
       this.uvs.push(v[3], v[4]);
@@ -469,8 +571,19 @@ export class CityGeometryWriter {
     this.kinds.push(kind);
   }
 
-  /** A ground-plane rectangle at y = 0 in sim metres, UVs in world metres, clamped to the cell at (x0, y0). */
-  groundQuad(x0: number, y0: number, x1: number, y1: number, kind: SurfaceKind, rect: AtlasRect): void {
+  /**
+   * A ground-plane rectangle at y = 0 in sim metres, UVs in world metres, clamped to the cell at (x0, y0).
+   * `grime` is the cell's grime code ({@link grimeCode}; GRIME_NONE, the default, draws no grime).
+   */
+  groundQuad(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    kind: SurfaceKind,
+    rect: AtlasRect,
+    grime: number = GRIME_NONE,
+  ): void {
     this.quad(
       [
         [x0, 0, y0, x0, y0],
@@ -483,6 +596,9 @@ export class CityGeometryWriter {
       rect,
       x0,
       y0,
+      0,
+      0,
+      grime,
     );
   }
 
@@ -607,12 +723,12 @@ in vec4 aInfo;
 out vec2 vUvM;
 flat out ivec4 vRect;
 flat out vec2 vCellM;
-flat out ivec3 vInfo;
+flat out ivec4 vInfo;
 void main() {
   vUvM = aUvM;
   vRect = ivec4(aRect + 0.5);
   vCellM = aCellM;
-  vInfo = ivec3(aInfo.xyz + 0.5);
+  vInfo = ivec4(aInfo + 0.5);
   // Everything is depth layer 0: ground and markings lie at y = 0 (markings a hair in front, sort bias 0.5),
   // walls and roofs keep their real heights.
   float sortBias = vInfo.x == ${SurfaceKind.Overlay} ? 0.5 : 0.0;
@@ -627,13 +743,25 @@ precision highp int;
 uniform highp sampler2D uAtlas;
 uniform highp sampler2D uPalette;
 uniform int uParapetNw;
+// Grime (SSP-066): the mask (R8, one texel per 4 px cell, row 0 north), its size in cells (0 × 0: no grime)
+// and the pattern rects by slot.
+uniform highp sampler2D uGrime;
+uniform ivec2 uGrimeSize;
+uniform ivec4 uGrimeRects[${GRIME_SLOT_COUNT}];
 in vec2 vUvM;
 flat in ivec4 vRect;
 flat in vec2 vCellM;
-flat in ivec3 vInfo;
+flat in ivec4 vInfo;
 ${WORLD_OUTPUTS_GLSL}
 const float TEXEL_BIAS = 1.0 / 256.0;
 const float STOREY_PX = ${STOREY_PX}.0;
+// cellHash() of cityMesh.ts in unsigned 32-bit arithmetic (Math.imul wraps the same way).
+uint cellHash(uint x, uint y, uint salt) {
+  uint h = (x * ${HASH_X}u) ^ (y * ${HASH_Y}u) ^ ((salt + 1u) * ${HASH_SALT}u);
+  h = (h ^ (h >> 15u)) * ${HASH_MIX_1}u;
+  h = (h ^ (h >> 13u)) * ${HASH_MIX_2}u;
+  return h ^ (h >> 16u);
+}
 void main() {
   int kind = vInfo.x;
   vec2 size = vec2(vRect.zw);
@@ -666,6 +794,24 @@ void main() {
       idx = vInfo.z;
     }
   }
+  int grime = vInfo.w;
+  if (grime > 0) {
+    // The fragment's world texel (cell corners are whole metres) and its 4 px grime cell (grimeTexelIndex).
+    ivec2 texel = ivec2(floor(vCellM * ${PX_PER_M}.0 + 0.5)) + t;
+    ivec2 cell = texel / ${GRIME_CELL_PX};
+    if (all(greaterThanEqual(texel, ivec2(0))) && all(lessThan(cell, uGrimeSize))) {
+      int m = int(texelFetch(uGrime, cell, 0).r * 255.0 + 0.5);
+      int intensity = m & ${GRIME_INTENSITY_MASK};
+      if (intensity > 0) {
+        int packed = grime - 1;
+        int slot = (m & ${GRIME_GUTTER_BIT}) != 0 ? packed / ${GRIME_CODE_RADIX} : packed % ${GRIME_CODE_RADIX};
+        ivec4 pattern = uGrimeRects[slot];
+        int g = int(texelFetch(uAtlas, pattern.xy + t, 0).r * 255.0 + 0.5);
+        int rank = int(cellHash(uint(texel.x), uint(texel.y), ${VariantSalt.GrimeRank}u) & ${GRIME_RANK_MASK}u);
+        if (g != ${TRANSPARENT_TEXEL} && rank < ${GRIME_RANK_BASE} + (intensity >> 1)) idx = g;
+      }
+    }
+  }
   outColour = vec4(texelFetch(uPalette, ivec2(idx, 0), 0).rgb, 1.0);
   outMask = vec4(0.0);
 }
@@ -685,9 +831,17 @@ export function createCityGeometry(data: CityGeometryData): BufferGeometry {
 
 /**
  * The city material: an R8 index atlas (`texelFetch(x, y)` is atlas pixel (x, y), y down; 255 = transparent)
- * looked up in the palette texture. One instance per city; it owns its palette texture, not the atlas.
+ * looked up in the palette texture, with the grime overlay when `grime` is given (SSP-066; null draws none).
+ * One instance per city; it owns its palette texture, not the atlas or the grime texture.
  */
-export function createCityMaterial(atlas: Texture, palette: Kerbside32 = KERBSIDE32): ShaderMaterial {
+export function createCityMaterial(
+  atlas: Texture,
+  palette: Kerbside32 = KERBSIDE32,
+  grime: CityGrime | null = null,
+): ShaderMaterial {
+  if (grime !== null && grime.rects.length !== GRIME_SLOT_COUNT * 4) {
+    throw new Error(`city: the grime rect table must hold ${GRIME_SLOT_COUNT} rects`);
+  }
   return new ShaderMaterial({
     glslVersion: GLSL3,
     vertexShader: CITY_VERTEX,
@@ -696,6 +850,9 @@ export function createCityMaterial(atlas: Texture, palette: Kerbside32 = KERBSID
       uAtlas: { value: atlas },
       uPalette: { value: createPaletteTexture(palette) },
       uParapetNw: { value: paletteIndex(ROOF_PARAPET_NW, palette) },
+      uGrime: { value: grime?.texture ?? null },
+      uGrimeSize: { value: new Vector2(grime?.widthCells ?? 0, grime?.heightCells ?? 0) },
+      uGrimeRects: { value: grime?.rects ?? new Int32Array(GRIME_SLOT_COUNT * 4) },
     },
   });
 }
@@ -705,8 +862,9 @@ export function createCityMesh(
   data: CityGeometryData,
   atlas: Texture,
   palette: Kerbside32 = KERBSIDE32,
+  grime: CityGrime | null = null,
 ): Mesh {
-  const mesh = new Mesh(createCityGeometry(data), createCityMaterial(atlas, palette));
+  const mesh = new Mesh(createCityGeometry(data), createCityMaterial(atlas, palette, grime));
   mesh.name = 'cityMesh';
   mesh.frustumCulled = false;
   return mesh;

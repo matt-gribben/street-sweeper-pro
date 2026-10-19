@@ -2,7 +2,7 @@
 id: SSP-066
 title: "Sample the grime mask in the ground shader with incremental dirty-rect uploads"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:render, area:perf, size:M, vertical-slice]

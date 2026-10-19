@@ -1,19 +1,30 @@
 // SSP-045: the ground layer of a compiled level on small fixtures (pure, no WebGL): ground id → tile family with a
 // hashed variant, kerb blob frames, site tiles, marking overlays (dash phase, kerb sides), no ground under
-// buildings, 16×16-tile chunking into the shared city writer, and the skirt.
+// buildings, 16×16-tile chunking into the shared city writer, and the skirt. SSP-066: the grime code of every
+// cell (surface pattern family by ground id, gutter pattern, hashed variants) and that ground and marking quads
+// carry it.
 import { describe, expect, it } from 'vitest';
 import { FRAME, type FrameId } from '../../src/gen/assets.ts';
 import {
   CELL_M,
   CityGeometryWriter,
   cellVariant,
+  GRIME_FAMILY_SLOTS,
+  GRIME_NONE,
+  GrimeFamily,
+  grimeCode,
+  grimePatternSlot,
   SurfaceKind,
   VariantSalt,
 } from '../../src/render/cityMesh.ts';
 import {
+  cellGrimeCode,
   cellGroundFrames,
+  GRIME_ASSET,
   GROUND_CHUNK_TILES,
+  GROUND_GRIME_FAMILY,
   GROUND_TILE_ASSET,
+  grimePatterns,
   groundFrameTables,
   siteVariant,
   writeGroundLayer,
@@ -210,5 +221,107 @@ describe('writeGroundLayer', () => {
       }
     }
     expect(q).toBe(cells + overlays);
+  });
+});
+
+describe('grime code per cell (SSP-066)', () => {
+  const patterns = grimePatterns();
+
+  it('resolves the three overlay families with their FRAME rects into the shader slot table', () => {
+    for (const family of [GrimeFamily.Asphalt, GrimeFamily.Slab, GrimeFamily.Gutter]) {
+      const frames = patterns.frames[family] ?? [];
+      expect(frames.length).toBeGreaterThan(0);
+      expect(frames.length).toBeLessThanOrEqual(GRIME_FAMILY_SLOTS);
+      for (let v = 0; v < GRIME_FAMILY_SLOTS; v++) {
+        const frame = frames[v] ?? frames[0];
+        if (frame === undefined) throw new Error('no frame');
+        expect(frame.startsWith(`${GRIME_ASSET[family]}:v:-:`)).toBe(true);
+        const r = frameRect(frame);
+        const at = (family * GRIME_FAMILY_SLOTS + v) * 4;
+        expect(Array.from(patterns.rects.subarray(at, at + 4))).toEqual([r.x, r.y, r.w, r.h]);
+      }
+    }
+  });
+
+  it('maps roads to asphalt, pavements and setts to slab, and grass, yards and aprons to none', () => {
+    expect(GROUND_GRIME_FAMILY).toHaveLength(GROUND_TILE_ASSET.length);
+    const expected: Record<number, GrimeFamily | null> = {
+      [Ground.Void]: null,
+      [Ground.Road]: GrimeFamily.Asphalt,
+      [Ground.RoadOneWayE]: GrimeFamily.Asphalt,
+      [Ground.RoadOneWayW]: GrimeFamily.Asphalt,
+      [Ground.RoadOneWayN]: GrimeFamily.Asphalt,
+      [Ground.RoadOneWayS]: GrimeFamily.Asphalt,
+      [Ground.Pavement]: GrimeFamily.Slab,
+      [Ground.Cobbles]: GrimeFamily.Slab,
+      [Ground.Alley]: GrimeFamily.Slab,
+      [Ground.Grass]: null,
+      [Ground.Yard]: null,
+      [Ground.Apron]: null,
+      [Ground.Water]: null,
+      [Ground.Sand]: null,
+    };
+    for (const [id, family] of Object.entries(expected)) {
+      const level = roadLevel(4, 4);
+      level.layers.ground.fill(Number(id));
+      const tables = groundFrameTables(level);
+      const code = cellGrimeCode(level, tables, 1, 2);
+      if (family === null) {
+        expect(code, `ground ${id}`).toBe(GRIME_NONE);
+        continue;
+      }
+      const variants = patterns.frames[family]?.length ?? 0;
+      const gutters = patterns.frames[GrimeFamily.Gutter]?.length ?? 0;
+      expect(code, `ground ${id}`).toBe(
+        grimeCode(
+          family * GRIME_FAMILY_SLOTS + cellVariant(1, 2, variants, VariantSalt.Grime),
+          GrimeFamily.Gutter * GRIME_FAMILY_SLOTS + cellVariant(1, 2, gutters, VariantSalt.Grime),
+        ),
+      );
+      // A dirty cell samples its surface pattern; a gutter cell samples the gutter pattern.
+      expect(Math.floor(grimePatternSlot(code, 100) / GRIME_FAMILY_SLOTS)).toBe(family);
+      expect(Math.floor(grimePatternSlot(code, 128 | 100) / GRIME_FAMILY_SLOTS)).toBe(GrimeFamily.Gutter);
+    }
+  });
+
+  it('gives building cells and cells off the map no grime, and kerb blobs (pavement) the slab pattern', () => {
+    const level = roadLevel(4, 4);
+    set(level, 'storeys', 1, 1, 2);
+    set(level, 'ground', 2, 1, Ground.Pavement);
+    set(level, 'autotile', 2, 1, 5);
+    const tables = groundFrameTables(level);
+    expect(cellGrimeCode(level, tables, 1, 1)).toBe(GRIME_NONE);
+    expect(cellGrimeCode(level, tables, -1, 0)).toBe(GRIME_NONE);
+    expect(cellGrimeCode(level, tables, 4, 0)).toBe(GRIME_NONE);
+    expect(Math.floor(grimePatternSlot(cellGrimeCode(level, tables, 2, 1), 100) / GRIME_FAMILY_SLOTS)).toBe(
+      GrimeFamily.Slab,
+    );
+  });
+
+  it('writes each cell code onto its ground quad and every marking overlay, and none onto the skirt', () => {
+    const level = roadLevel(3, 2);
+    set(level, 'ground', 0, 0, Ground.Grass);
+    set(level, 'markings', 1, 0, MARKING.CENTRE_NS);
+    const writer = new CityGeometryWriter();
+    writeGroundLayer(level, writer, 8);
+    const data = writer.build();
+    const tables = groundFrameTables(level);
+    const expected: number[] = [];
+    for (let y = 0; y < 2; y++) {
+      for (let x = 0; x < 3; x++) {
+        const { overlays } = cellGroundFrames(level, tables, x, y);
+        for (let k = 0; k <= overlays.length; k++) expected.push(cellGrimeCode(level, tables, x, y));
+      }
+    }
+    expected.push(GRIME_NONE, GRIME_NONE, GRIME_NONE, GRIME_NONE);
+    const codes = Array.from({ length: data.quadCount }, (_, q) => data.info[q * 16 + 3]);
+    expect(codes).toEqual(expected);
+    expect(expected[0]).toBe(GRIME_NONE); // grass
+    expect(expected[1]).toBe(expected[2]); // the marked cell's ground and lane overlay
+    expect(expected[1]).toBeGreaterThan(GRIME_NONE);
+    // Every vertex of a quad carries the same code.
+    for (let q = 0; q < data.quadCount; q++) {
+      for (let c = 1; c < 4; c++) expect(data.info[(q * 4 + c) * 4 + 3]).toBe(data.info[q * 16 + 3]);
+    }
   });
 });

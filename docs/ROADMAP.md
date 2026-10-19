@@ -432,7 +432,7 @@ Each milestone has the same shape:
 
 *Render, UI and flow*
 
-- [ ] Ground shader samples the grime mask texture. The upload is incremental: only dirty chunks are re-uploaded each frame.
+- [x] Ground shader samples the grime mask texture. The upload is incremental: only dirty chunks are re-uploaded each frame. *(SSP-066: an R8 `DataTexture` over the sim's own mask, sampled per fragment by the city material; each rendered frame uploads only the union of its ticks' dirty rectangles with one `texSubImage2D` (`copyTextureToTexture` from a never-bound source wrapper), so no full-upload fallback was needed. Surfaces: roads asphalt, pavements and setts slab, gutter cells the gutter pattern, grass, yards and aprons none; intensity maps to the share of pattern texels shown. See [TECHNICAL_DESIGN §10.3](TECHNICAL_DESIGN.md#103-grime-mask-srcsimdirtts), [§12.4](TECHNICAL_DESIGN.md#124-city-mesh-and-ground-citymeshts-groundlayerts) and [ART_BIBLE §9.2](ART_BIBLE.md#92-grime-and-the-clean-reveal); evidence `tests/e2e/grimeReveal.spec.ts`.)*
 - [ ] `src/render/spriteBatch.ts`: an `items` atlas instance batch for litter. Per-instance 4 rotations and the 2-frame wobble.
 - [x] `src/ui/bitmapText.ts` with a first draft of `assets-src/fonts/kerbside5x7.glyphs.txt` (ASCII 32–126 plus £ ★ → ← ↑ ↓). *(Glyphs, forge font builder and `ui` atlas: SSP-068. Runtime: SSP-069, `bitmapText.ts` plus the UI pass and `UiSpriteBatch`, text coloured by a per-quad recolour pair, TECHNICAL_DESIGN §12.3/§12.5. Narrow advances wait for SSP-141.)*
 - [ ] `src/ui/hud.ts`: timer, score, combo tier popup text, hopper bar with 80% warning, water, HP.

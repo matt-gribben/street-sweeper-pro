@@ -4,15 +4,16 @@
 //
 // - before: with the camera pinned over the road north of the depot, every 2 m ground tile on screen and clear of
 //   buildings and their shadows equals the CPU reference of the ground shader (tests/support/groundReference.ts)
-//   under the grime the World lays for seed 1, cell for cell: grime shows on the route tiles, and on no grass,
+//   under the grime the World lays for seed 1, cell for cell (skipping the grime cells under the items batch's
+//   litter, stains and markers, SSP-067): grime shows on the route tiles, and on no grass,
 //   apron, wall or roof;
 // - a scripted brush-down drive (Space edge, W held, between `__ssp.step(n)` calls) clears a stepped band behind
 //   Bessie: at least 500 pixels in the driven band differ from the before-frame, every grime cell on screen still
 //   shows exactly its initial grime or the clean ground (so the incremental uploads never lose or smear a cell),
 //   the swept cells lie inside the band and the World's own count of cleaned cells covers them;
-// - the frame stays within the draw-call budget (6 of 10: grime adds no draw);
+// - the frame stays within the draw-call budget (7 of 10 with items in view: grime adds no draw);
 // - the frozen shift frame over the depot (test-results/grime_depot.png) and a view of the park
-//   (test-results/grime_park.png) equal the reference too: no grime on the apron or the grass.
+//   (test-results/grime_park.png) equal the reference too, away from the items: no grime on the apron or the grass.
 import { expect, type Page, test } from '@playwright/test';
 import type { ShiftTestState, TestState } from '../../src/debug/testHooks.ts';
 import { SWEEP_HEIGHT_M } from '../../src/render/camera.ts';
@@ -23,7 +24,9 @@ import {
   cityCover,
   compareGroundTiles,
   initialGrimeMask,
+  itemsCover,
   loadPuddleLane,
+  overlaps,
   type Rect,
 } from '../support/groundReference.ts';
 import { collectPageErrors, openTestScene, readTestFrame } from '../support/visualGolden.ts';
@@ -40,8 +43,8 @@ const PARK_CAMERA = { x: 66, y: 16, h: SWEEP_HEIGHT_M } as const;
 /** W at the ci project's 1920×1080 viewport. */
 const WIDTH_PX = 480;
 
-/** City + building shadows + Bessie's drop shadow + actors + palette pass + blit (§12.7). */
-const EXPECTED_DRAW_CALLS = 6;
+/** City + building shadows + Bessie's drop shadow + actors + items + palette pass + blit (§12.7, SSP-067). */
+const EXPECTED_DRAW_CALLS = 7;
 const DRAW_CALL_BUDGET = 10;
 
 /** Bessie's start (the depot, facing north) and the grime footprint half-width (tuning.json sweeping.grimeFootprint). */
@@ -64,6 +67,9 @@ const BESSIE_CLEAR_M = 4.5;
 
 const { level, atlas } = loadPuddleLane();
 const INITIAL_GRIME = initialGrimeMask(level, 1);
+
+/** What the items batch draws over the ground at the start of seed 1 (litter, stains, hydrants, skip, bays). */
+const ITEMS = itemsCover(level, 1);
 
 async function shiftState(page: Page): Promise<ShiftTestState> {
   const state = await page.evaluate((): TestState => {
@@ -104,7 +110,17 @@ test('grime shows on route tiles and a brush-down drive reveals a clean band beh
   expect(await page.evaluate(() => window.__ssp?.perf().drawCalls ?? -1)).toBe(EXPECTED_DRAW_CALLS);
 
   const blocked = cityCover(level, CAMERA.x, CAMERA.y, CAMERA.h);
-  const start = compareGroundTiles(before, level, atlas, CAMERA.x, CAMERA.y, blocked, INITIAL_GRIME, true);
+  const start = compareGroundTiles(
+    before,
+    level,
+    atlas,
+    CAMERA.x,
+    CAMERA.y,
+    blocked,
+    INITIAL_GRIME,
+    true,
+    ITEMS,
+  );
   console.log(
     `[grime] before: ${start.checkedTiles} tiles, ${start.checkedCells} cells (${start.grimyCells} grimy), ` +
       `${start.mismatches.length} mismatched`,
@@ -134,9 +150,15 @@ test('grime shows on route tiles and a brush-down drive reveals a clean band beh
   const after = await readTestFrame(page);
   await saveFrame(testInfo, 'grime_after.png', after, { atResultsRoot: true });
 
-  // Pixels that changed, inside and outside the driven band.
+  // Pixels that changed, inside and outside the driven band. Items (litter the brush picks up) may change too.
   const bandX0 = Math.floor(frameX(BAND.x0));
   const bandX1 = Math.ceil(frameX(BAND.x1));
+  const itemPx = ITEMS.map((r) => ({
+    x0: frameX(r.x0),
+    y0: frameY(r.y0),
+    x1: frameX(r.x1),
+    y1: frameY(r.y1),
+  }));
   let inBand = 0;
   let outside = 0;
   for (let y = 0; y < INTERNAL_HEIGHT_PX; y++) {
@@ -145,6 +167,8 @@ test('grime shows on route tiles and a brush-down drive reveals a clean band beh
       let differs = false;
       for (let c = 0; c < 4; c++) if (before.data[i + c] !== after.data[i + c]) differs = true;
       if (!differs) continue;
+      const px: Rect = { x0: x, y0: y, x1: x + 1, y1: y + 1 };
+      if (itemPx.some((r) => overlaps(px, r))) continue;
       if (x >= bandX0 && x < bandX1) inBand++;
       else outside++;
     }
@@ -156,7 +180,17 @@ test('grime shows on route tiles and a brush-down drive reveals a clean band beh
   expect(outside).toBe(0);
 
   // Every grime cell shows its initial grime or the clean ground; the swept ones lie in the band.
-  const end = compareGroundTiles(after, level, atlas, CAMERA.x, CAMERA.y, blocked, INITIAL_GRIME, false);
+  const end = compareGroundTiles(
+    after,
+    level,
+    atlas,
+    CAMERA.x,
+    CAMERA.y,
+    blocked,
+    INITIAL_GRIME,
+    false,
+    ITEMS,
+  );
   console.log(
     `[grime] after: ${end.cleanCells.length} grimy cells on screen swept clean, ${end.mismatches.length} mismatched`,
   );
@@ -197,6 +231,7 @@ test('no grime on the depot apron, the park grass, walls or roofs (the frozen sh
     [...cityCover(level, depotCamera.x, depotCamera.y, depotCamera.h), nearBessie],
     INITIAL_GRIME,
     true,
+    ITEMS,
   );
 
   await page.evaluate(({ x, y, h }) => window.__ssp?.setCamera(x, y, h), PARK_CAMERA);
@@ -212,6 +247,7 @@ test('no grime on the depot apron, the park grass, walls or roofs (the frozen sh
     cityCover(level, PARK_CAMERA.x, PARK_CAMERA.y, PARK_CAMERA.h),
     INITIAL_GRIME,
     true,
+    ITEMS,
   );
 
   const [w] = level.size;

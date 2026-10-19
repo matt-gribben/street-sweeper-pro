@@ -11,6 +11,10 @@
 // The initial grime of a shift is f(level, seed): createDirt + initGrime here give the mask the page's World lays
 // for `?seed=<n>`. Cleaning only ever zeroes cells, so after a drive every grime cell must show either its initial
 // grime or the clean ground: `compareGroundTiles` checks each cell block against both.
+//
+// The items batch (SSP-067) draws litter, stains, hydrants, the skip and the depot-bay markings over the ground;
+// `itemsCover` gives the rects they can cover at shift start for `seed`; compareGroundTiles skips the grime cells
+// under them (`skipCells`) rather than whole tiles.
 import { readFileSync } from 'node:fs';
 import { FRAME, type FrameId } from '../../src/gen/assets.ts';
 import {
@@ -30,13 +34,15 @@ import {
   type GroundFrameTables,
   groundFrameTables,
 } from '../../src/render/groundLayer.ts';
+import { levelItemMarkers, litterFrame, stainFrame } from '../../src/render/itemsBatch.ts';
 import { buildShadowPolygons } from '../../src/render/shadows.ts';
 import type { RgbaImage } from '../../src/render/spriteAtlas.ts';
 import { INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
-import { PX_PER_M } from '../../src/sim/constants.ts';
+import { GRIME_CELL_M, PX_PER_M } from '../../src/sim/constants.ts';
 import { createDirt, initGrime } from '../../src/sim/dirt.ts';
 import { decodeLevel, type Level } from '../../src/sim/map.ts';
 import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
+import { createWorld } from '../../src/sim/world.ts';
 import { decodePng } from './png.ts';
 import type { RgbaFrame } from './visualGolden.ts';
 
@@ -116,6 +122,34 @@ export function cityCover(level: Level, camX: number, camY: number, heightM: num
   ];
 }
 
+/** The rect a sprite frame centred on (xM, yM) can cover in any quarter turn, widened by a texel. */
+function frameCover(frame: FrameId, xM: number, yM: number): Rect {
+  const f = FRAME[frame];
+  const half = Math.max(f.w, f.h) / 2 / PX_PER_M + 1 / PX_PER_M;
+  return { x0: xM - half, y0: yM - half, x1: xM + half, y1: yM + half };
+}
+
+/**
+ * Rects the items batch draws over the ground at shift start for `seed` (SSP-067, itemsBatch.ts): every litter
+ * item and stain the World lays, and the level's hydrants, skip and depot-bay markings.
+ */
+export function itemsCover(level: Level, seed: number): Rect[] {
+  const world = createWorld(level, seed >>> 0, DEFAULT_TUNING);
+  const rects = levelItemMarkers(level).map((m) => frameCover(m.frame, m.xM, m.yM));
+  const { litter, stains } = world;
+  for (let i = 0; i < litter.count; i++) {
+    const xM = litter.x[i] ?? 0;
+    const yM = litter.y[i] ?? 0;
+    rects.push(frameCover(litterFrame(litter.kind[i] ?? 0, litter.rot[i] ?? 0, 0, 0), xM, yM));
+  }
+  for (let i = 0; i < stains.count; i++) {
+    const xM = stains.x[i] ?? 0;
+    const yM = stains.y[i] ?? 0;
+    rects.push(frameCover(stainFrame(stains.kind[i] ?? 0, xM, yM), xM, yM));
+  }
+  return rects;
+}
+
 function copyPixel(atlas: RgbaImage, ax: number, ay: number, out: Uint8Array, at: number): boolean {
   const src = (ay * atlas.width + ax) * 4;
   if ((atlas.data[src + 3] ?? 0) === 0) return false;
@@ -185,7 +219,8 @@ export type GroundComparison = {
 /**
  * Compares every 2 m ground tile wholly inside `frame` (camera at (camX, camY) on the 1/16 m grid) and clear of
  * `blocked` against the reference: each 4 px grime cell must show its initial grime (from `initial`) or, unless
- * `requireInitial`, the clean ground.
+ * `requireInitial`, the clean ground. Grime cells overlapping `skipCells` (sprites drawn over the ground, such as
+ * itemsCover) are not compared; their tile still is.
  */
 export function compareGroundTiles(
   frame: RgbaFrame,
@@ -196,6 +231,7 @@ export function compareGroundTiles(
   blocked: readonly Rect[],
   initial: { mask: Uint8Array; maskW: number },
   requireInitial: boolean,
+  skipCells: readonly Rect[] = [],
 ): GroundComparison {
   const tables = groundFrameTables(level);
   const [cols, rows] = level.size;
@@ -237,6 +273,13 @@ export function compareGroundTiles(
           }
           const wx = cx * CELLS_PER_TILE + gx;
           const wy = cy * CELLS_PER_TILE + gy;
+          const cellRect: Rect = {
+            x0: wx * GRIME_CELL_M,
+            y0: wy * GRIME_CELL_M,
+            x1: (wx + 1) * GRIME_CELL_M,
+            y1: (wy + 1) * GRIME_CELL_M,
+          };
+          if (skipCells.some((rect) => overlaps(cellRect, rect))) continue;
           const grimy = (initial.mask[wy * initial.maskW + wx] ?? 0) !== 0;
           checkedCells++;
           if (grimy) grimyCells++;

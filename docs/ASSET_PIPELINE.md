@@ -129,7 +129,7 @@ assets-src/
 │  ├─ prop/     bollard.sprite.txt, traffic_cone.sprite.txt, …
 │  ├─ pickup/   flask_of_tea.sprite.txt, golden_crisp.sprite.txt, …
 │  ├─ site/     depot_bay.sprite.txt, skip.sprite.txt (M2 placeholders, SSP-052)
-│  ├─ ui/       icon_hopper.sprite.txt, panel_default.sprite.txt, …
+│  ├─ ui/       panel_council.sprite.txt, panel_paper.sprite.txt, panel_dark.sprite.txt (SSP-285 placeholders), icon_hopper.sprite.txt, …
 │  └─ facade/   window_sash.sprite.txt, door_terrace.sprite.txt, …
 ├─ fonts/
 │  ├─ kerbside5x7.glyphs.txt
@@ -271,7 +271,7 @@ Until its implementing issue lands, a subcommand accepts its flags but exits 3 w
 
 ### 6.1 Manifest (`assets-src/manifest.json`)
 
-There is one entry per asset, with the fields `{ id, class, technique, source, cell:[w,h], states, dirs, frames, atlas, outline, swaps }`. `technique` is one of `"grid" | "procedural" | "blender" | "ai-ingest" | "ai-art"`. Entries are kept sorted by `id` (lint checks this, so diffs stay small).
+There is one entry per asset, with the fields `{ id, class, technique, source, cell:[w,h], states, dirs, frames, atlas, outline, swaps }`, plus the optional boolean `placeholder`: `true` marks a placeholder under its final ID (ROADMAP M4's `noPlaceholders` check), and the entry drops the field when final art replaces it (SSP-285 added it to the forge's manifest validation, which rejects a non-boolean; SSP-115 adds the lint summary of remaining placeholders). `technique` is one of `"grid" | "procedural" | "blender" | "ai-ingest" | "ai-art"`. Entries are kept sorted by `id` (lint checks this, so diffs stay small).
 
 ```json
 {
@@ -1321,7 +1321,7 @@ Every recipe starts and ends the same way:
 ### 10.7 Small prop, pickup or UI icon (grids)
 
 1. Write `assets-src/sprites/{prop,pickup,ui}/<name>.sprite.txt`. Props are 32×32 (or 32×32 per slice), pickups 16×16 with a 2-frame bob, HUD icons 16×16.
-2. 9-slice panels are 24×24 source with 8 px corners. Name them `ui.panel_<name>`. The slicing is done in code (`src/ui/panels.ts`).
+2. 9-slice panels are 24×24 source with 8 px corners. Name them `ui.panel_<name>`, one frame `panel:-:0`, `outline: false`. The slicing is done in code (`src/ui/panels.ts`), which repeats the middle 8 px cell along each edge and across the centre, so keep that cell constant along its repeat direction (or periodic in 8 px) or the joins show.
 3. Run the common end steps, and check the `hud_specimen` visual scene for UI.
 
 ### 10.8 Ground tile, roof surface, stain or VFX (procedural)

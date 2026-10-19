@@ -677,6 +677,48 @@
       "swaps": []
     },
     {
+      "id": "ui.panel_council",
+      "class": "ui",
+      "technique": "grid",
+      "source": "assets-src/sprites/ui/panel_council.sprite.txt",
+      "cell": [24, 24],
+      "states": ["panel"],
+      "dirs": "-",
+      "frames": { "panel": 1 },
+      "atlas": "ui",
+      "outline": false,
+      "swaps": [],
+      "placeholder": true
+    },
+    {
+      "id": "ui.panel_dark",
+      "class": "ui",
+      "technique": "grid",
+      "source": "assets-src/sprites/ui/panel_dark.sprite.txt",
+      "cell": [24, 24],
+      "states": ["panel"],
+      "dirs": "-",
+      "frames": { "panel": 1 },
+      "atlas": "ui",
+      "outline": false,
+      "swaps": [],
+      "placeholder": true
+    },
+    {
+      "id": "ui.panel_paper",
+      "class": "ui",
+      "technique": "grid",
+      "source": "assets-src/sprites/ui/panel_paper.sprite.txt",
+      "cell": [24, 24],
+      "states": ["panel"],
+      "dirs": "-",
+      "frames": { "panel": 1 },
+      "atlas": "ui",
+      "outline": false,
+      "swaps": [],
+      "placeholder": true
+    },
+    {
       "id": "veh.sweeper",
       "class": "veh",
       "technique": "blender",

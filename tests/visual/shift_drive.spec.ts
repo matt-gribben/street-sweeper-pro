@@ -132,6 +132,7 @@ test('step(n) advances exactly n ticks and renders exactly once, with freeze=1; 
     'hp',
     'litter',
     'score',
+    'shift',
     'stars',
     'tick',
     'tidy',

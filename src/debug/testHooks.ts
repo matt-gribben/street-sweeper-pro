@@ -4,8 +4,9 @@
 //
 // URL parameters, all optional after `test=1`:
 //   seed=<n>    run seed, an unsigned 32-bit integer (the shift's World is created with it; 0 when absent);
-//   scene=<id>  boot straight into a scene: a district shift (`district.puddle_lane`, src/scenes/ShiftScene.ts,
-//               also the default without `scene`), `spike_city`, `lean_quadrants`, `scale_1440`, `scale_sheet`
+//   scene=<id>  boot straight into a scene: the shift flow's intro card (`shift_intro`, src/scenes/ShiftIntroScene.ts,
+//               also the default without `scene`, SSP-071), a district shift with the intro skipped (`shift` for
+//               Puddle Lane, or `district.puddle_lane`, src/scenes/ShiftScene.ts), `spike_city`, `lean_quadrants`, `scale_1440`, `scale_sheet`
 //               (src/scenes/SpikeScene.ts), `level_preview` (src/scenes/LevelPreviewScene.ts), `text_sample`
 //               (src/scenes/TextSampleScene.ts, SSP-069) or `panel_sample` (src/scenes/PanelSampleScene.ts,
 //               SSP-285); main.ts pushes it onto the SceneManager;
@@ -31,7 +32,11 @@
 //   perf()        draw calls of the last rendered frame (all passes), frames rendered since boot, plus the
 //                 frame timings recorded since the last perfReset(): rAF timestamp deltas and frame-callback CPU
 //                 time (perfCounters.ts);
-//   perfReset()   clears the recorded timings (start of a perf sampling window).
+//   perfReset()   clears the recorded timings (start of a perf sampling window);
+//   scene()       the active (top) scene's ID (`shift_intro`, `shift`, `tally`, `lean_quadrants`, …), or null while
+//                 the stack is empty (SSP-071): SimSnapshot has no field for it;
+//   sceneHistory() the IDs of every scene that joined the stack since boot, oldest first (SSP-071), so a spec can
+//                 check a transition skipped a scene (Try Again never shows the intro card).
 //
 // step(n) runs n fixed 60 Hz loop ticks synchronously (loop.runTicks: input → scenes.fixedUpdate → event drain)
 // and renders once (loop.renderNow). In a shift each loop tick is one World tick (ShiftScene.fixedUpdate calls
@@ -121,6 +126,10 @@ export type SspTestApi = {
   setCamera(x: number, y: number, h: number): void;
   perf(): TestPerf;
   perfReset(): void;
+  /** The active (top) scene's ID, or null while the stack is empty. */
+  scene(): string | null;
+  /** IDs of the scenes that joined the stack since boot, oldest first. */
+  sceneHistory(): string[];
 };
 
 /** What the hooks drive: implemented by main.ts over the Game's loop and renderer. */
@@ -142,6 +151,10 @@ export type TestHookHost = {
   drawCalls(): number;
   /** Frames rendered since boot (Renderer.renderCount). */
   renders(): number;
+  /** The top scene's ID (SceneManager.top), or null. */
+  sceneId(): string | null;
+  /** IDs of the scenes that joined the stack since boot, oldest first. */
+  sceneHistory(): readonly string[];
 };
 
 /** An object that can carry `__ssp`: the browser's `window`, or a plain object in unit tests. */
@@ -259,6 +272,12 @@ export function installTestHooks(
     },
     perfReset(): void {
       counters.reset();
+    },
+    scene(): string | null {
+      return host.sceneId();
+    },
+    sceneHistory(): string[] {
+      return [...host.sceneHistory()];
     },
   };
   target.__ssp = api;

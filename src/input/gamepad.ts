@@ -6,6 +6,10 @@
 // [8] View/Back → MAP, [9] Start/Menu → PAUSE; axes[0] left stick X → steer, through a 0.15 deadzone rescaled
 // to full range outside it: s = sign(x) · max(0, |x| − 0.15) / 0.85. Actions quantises (0.575 → 0.5 → 64).
 //
+// Menu navigation (GDD §6.1, SSP-071; never in the sim frame, actions.ts): A and Start select, B goes back,
+// [12] D-pad up and [13] D-pad down move the focus. The left stick and hold-repeat join with SSP-286 (a first try
+// at reading axes[1] in the poll boxed a double per poll and failed tests/unit/inputAllocation.test.ts).
+//
 // Edges: a button newly pressed since the previous poll latches until Actions takes it. A press and release
 // that both fall between two polls is invisible to a polled API; at 60 fps that is a press shorter than 17 ms.
 // The first poll of a newly (re)connected pad only sets the baseline, so a button held through a reconnect
@@ -35,16 +39,20 @@ export const PAD_BUTTON = {
   RIGHT_TRIGGER: 7,
   BACK: 8,
   START: 9,
+  DPAD_UP: 12,
+  DPAD_DOWN: 13,
 } as const;
 
-/** Digital button → ACTION bit (TECHNICAL_DESIGN §13.1). */
-const BUTTON_ACTIONS: readonly (readonly [index: number, action: number])[] = [
-  [PAD_BUTTON.SOUTH, ACTION.BRUSH],
-  [PAD_BUTTON.EAST, ACTION.HORN],
+/** Digital button → ACTION bits (TECHNICAL_DESIGN §13.1, plus the GDD §6.1 menu bits, SSP-071). */
+const BUTTON_ACTIONS: readonly (readonly [index: number, actions: number])[] = [
+  [PAD_BUTTON.SOUTH, ACTION.BRUSH | ACTION.MENU_SELECT],
+  [PAD_BUTTON.EAST, ACTION.HORN | ACTION.MENU_BACK],
   [PAD_BUTTON.WEST, ACTION.SPRAY],
   [PAD_BUTTON.NORTH, ACTION.INTERACT],
   [PAD_BUTTON.BACK, ACTION.MAP],
-  [PAD_BUTTON.START, ACTION.PAUSE],
+  [PAD_BUTTON.START, ACTION.PAUSE | ACTION.MENU_SELECT],
+  [PAD_BUTTON.DPAD_UP, ACTION.MENU_UP],
+  [PAD_BUTTON.DPAD_DOWN, ACTION.MENU_DOWN],
 ];
 
 /** Impact rumble thresholds and cues (AUDIO_DESIGN §12.5, split as sfx.bump_wall / sfx.crash in §5). */

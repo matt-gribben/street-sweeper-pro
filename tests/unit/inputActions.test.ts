@@ -6,7 +6,9 @@ import { createLoop, type LoopClock } from '../../src/app/loop.ts';
 import {
   ACTION,
   Actions,
+  ALL_ACTIONS,
   type InputDevice,
+  MENU_ACTIONS,
   quantiseAxis,
   quantiseUnit,
   SCENE_ACTIONS,
@@ -60,12 +62,14 @@ describe('quantisation', () => {
 });
 
 describe('action groups', () => {
-  it('splits every action into exactly one of sim-edge, sim-held and scene', () => {
+  it('splits every action into exactly one of sim-edge, sim-held, scene and menu', () => {
     const all = Object.values(ACTION).reduce((a, b) => a | b, 0);
-    expect(SIM_EDGE_ACTIONS | SIM_HELD_ACTIONS | SCENE_ACTIONS).toBe(all);
-    expect(SIM_EDGE_ACTIONS & SIM_HELD_ACTIONS).toBe(0);
-    expect(SIM_EDGE_ACTIONS & SCENE_ACTIONS).toBe(0);
-    expect(SIM_HELD_ACTIONS & SCENE_ACTIONS).toBe(0);
+    expect(SIM_EDGE_ACTIONS | SIM_HELD_ACTIONS | SCENE_ACTIONS | MENU_ACTIONS).toBe(all);
+    expect(ALL_ACTIONS).toBe(all);
+    const groups = [SIM_EDGE_ACTIONS, SIM_HELD_ACTIONS, SCENE_ACTIONS, MENU_ACTIONS];
+    for (let i = 0; i < groups.length; i++) {
+      for (let j = i + 1; j < groups.length; j++) expect((groups[i] ?? 0) & (groups[j] ?? 0)).toBe(0);
+    }
   });
 });
 

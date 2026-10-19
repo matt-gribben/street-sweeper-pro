@@ -247,7 +247,7 @@ The **combo chain** (2.0 s timer, refreshed by every pickup) is the glue: it rew
 
 All keys are remappable and stored in `ssp.settings.v1`. Rumble on impacts plays where supported.
 
-**Menu navigation (proposed, M3):** arrows/WASD or D-pad/left stick to move; Enter/Space or A to select; Esc/Backspace or B to go back. Mouse clicks work on all menu items. `sfx.ui_move`, `sfx.ui_select` and `sfx.ui_back` accompany each action.
+**Menu navigation (proposed, M3):** arrows/WASD or D-pad/left stick to move; Enter/Space or A to select; Esc/Backspace or B to go back. Mouse clicks work on all menu items. `sfx.ui_move`, `sfx.ui_select` and `sfx.ui_back` accompany each action. *(SSP-071 built the keyboard and D-pad part for the M2 intro card and tally, plus Start as a second select on the pad; the left stick, hold-repeat and mouse arrive with SSP-286.)*
 
 ### 6.2 Control design notes
 
@@ -849,6 +849,8 @@ flowchart LR
 ```
 
 Scene names match `src/scenes/` (see [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md), whose §6.2 mirrors this diagram). `ZooScene` is a test-only scene and never reachable from menus.
+
+**M2 stand-in (SSP-071, until TitleScene and WeekMapScene exist):** the game boots straight to the intro card for Puddle Lane, and the numbers-only tally offers **Try Again** (default focus: the same shift and seed, intro card skipped) and **Back to Briefing**, which returns to the intro card and stands in for 'quit' (to the Week Map). The tally ignores menu input for its first **0.5 s** (proposed), so a brush or horn press made as the shift ends cannot pick a button by accident.
 
 **Flow targets (proposed, M7):**
 

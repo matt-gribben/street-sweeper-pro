@@ -29,7 +29,7 @@ function steerTicks(actions: Actions, n: number): number[] {
 }
 
 describe('bindings', () => {
-  it('binds exactly the §13.1 keyboard column, by KeyboardEvent.code', () => {
+  it('binds exactly the §13.1 keyboard column, plus the GDD §6.1 menu keys, by KeyboardEvent.code', () => {
     expect([...KEY_BINDINGS.keys()].sort()).toEqual(
       [
         'KeyW',
@@ -41,11 +41,14 @@ describe('bindings', () => {
         'KeyD',
         'ArrowRight',
         'Space',
+        'Enter',
+        'NumpadEnter',
         'ShiftLeft',
         'KeyH',
         'KeyE',
         'Tab',
         'Escape',
+        'Backspace',
         'KeyP',
         'F1',
       ].sort(),
@@ -166,7 +169,7 @@ describe('preventDefault', () => {
     }
   });
 
-  it.each(['KeyQ', 'Enter', 'ShiftRight', 'F5', 'Digit1', 'Backspace'])(
+  it.each(['KeyQ', 'Delete', 'ShiftRight', 'F5', 'Digit1', 'KeyZ'])(
     'is never called for the unbound key %s',
     (code) => {
       const keyboard = new KeyboardDevice(DT_S);

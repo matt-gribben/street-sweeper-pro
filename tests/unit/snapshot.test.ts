@@ -1,10 +1,14 @@
 // SSP-046: the JSON-safe SimSnapshot that `__ssp.state()` returns in a shift (TECHNICAL_DESIGN §18.5); SSP-065
-// adds the M2 sweeping state (score, Tidy %, stars, hopper, water, combo, litter and grime counts, frontages).
+// adds the M2 sweeping state (score, Tidy %, stars, hopper, water, combo, litter and grime counts, frontages), and
+// SSP-071 the shift's phase, timer and end reason (the tally's end reason).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { SHIFT_TICKS } from '../../src/sim/constants.ts';
+import { ShiftEndReason } from '../../src/sim/eventQueue.ts';
 import { BUTTON, createInputFrame, PRESSED } from '../../src/sim/inputFrame.ts';
 import { decodeLevel } from '../../src/sim/map.ts';
+import { ShiftPhase } from '../../src/sim/shift.ts';
 import { snapshotWorld } from '../../src/sim/snapshot.ts';
 import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import { createWorld } from '../../src/sim/world.ts';
@@ -57,7 +61,9 @@ describe('snapshotWorld', () => {
       'litter',
       'grime',
       'frontages',
+      'shift',
     ]);
+    expect(Object.keys(snap.shift)).toEqual(['phase', 'ticksRemaining', 'endReason', 'endTick']);
     expect(Object.keys(snap.bessie)).toEqual(['x', 'y', 'heading', 'speed']);
     expect(Object.keys(snap.hopper)).toEqual(['lu', 'capacityLu', 'full']);
     expect(Object.keys(snap.water)).toEqual(['units', 'capacity']);
@@ -119,6 +125,30 @@ describe('snapshotWorld', () => {
     expect(set.litter.collected).toBe(5);
     expect(set.grime.cleaned).toBe(1234);
     expect(JSON.parse(JSON.stringify(set))).toEqual(set);
+  });
+
+  it('reports the shift phase, timer and end reason by name (SSP-071)', () => {
+    const fresh = createWorld(puddleLane(), 3, DEFAULT_TUNING);
+    expect(snapshotWorld(fresh).shift).toEqual({
+      phase: 'rollout',
+      ticksRemaining: SHIFT_TICKS,
+      endReason: null,
+      endTick: -1,
+    });
+    const input = createInputFrame();
+    input.throttle = 255;
+    fresh.step(input);
+    expect(snapshotWorld(fresh).shift).toMatchObject({ phase: 'running', ticksRemaining: SHIFT_TICKS - 1 });
+    fresh.shift.phase = ShiftPhase.KnockOff;
+    expect(snapshotWorld(fresh).shift.phase).toBe('knock_off');
+    fresh.shift.phase = ShiftPhase.Ended;
+    fresh.shift.endReason = ShiftEndReason.Towed;
+    fresh.shift.endTick = 99;
+    expect(snapshotWorld(fresh).shift).toMatchObject({ phase: 'ended', endReason: 'towed', endTick: 99 });
+    fresh.shift.endReason = ShiftEndReason.TimeUp;
+    const ended = snapshotWorld(fresh);
+    expect(ended.shift.endReason).toBe('time_up');
+    expect(JSON.parse(JSON.stringify(ended))).toEqual(ended);
   });
 
   it('folds −0 into 0 (JSON writes −0 as 0) and throws on a non-finite field', () => {

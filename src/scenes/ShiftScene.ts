@@ -1,13 +1,16 @@
-// ShiftScene, drive-only (TECHNICAL_DESIGN §6, SSP-046): loads a compiled district, creates a seeded World and
-// steps it at 60 Hz from the player's input, and draws the city plus Bessie with render interpolation. It is the
-// default boot scene from M1 (ROADMAP §1 principle 5: `npm run dev` always launches something drivable) and
-// what `?test=1&scene=district.<name>` boots.
+// ShiftScene (TECHNICAL_DESIGN §6, SSP-046): loads a compiled district, creates a seeded World and steps it at
+// 60 Hz from the player's input, and draws the city plus Bessie with render interpolation. Since SSP-071 it is
+// the middle of the shift flow (src/app/shiftFlow.ts): ShiftIntroScene → ShiftScene → TallyScene, which
+// `?test=1&scene=district.<name>` (or `scene=shift`) enters here, with the intro card skipped.
 //
-//   enter(params)       fetches `assets/levels/<name>.json` relative to import.meta.env.BASE_URL (levelLoader.ts;
-//                       ShiftIntroScene preloads it in the full flow, §6.3), decodes it with map.ts, loads the
+//   enter(params)       takes the level ShiftIntroScene preloaded (options.level, §6.3), or fetches
+//                       `assets/levels/<name>.json` relative to import.meta.env.BASE_URL (levelLoader.ts) and
+//                       decodes it with map.ts; loads the
 //                       `world` and `actors` atlases, calls createWorld(level, seed, tuning), builds the level city
 //                       and Bessie's sprites and places the follow camera over her start pose;
-//   fixedUpdate(input)  world.step(input): one tick of the canonical tick order (§5.2);
+//   fixedUpdate(input)  world.step(input): one tick of the canonical tick order (§5.2), until the shift has ended
+//                       (EV.ShiftEnd, after the knock-off coast or on TOWED): from then on the World is no longer
+//                       stepped, so the state the tally shows is the state the shift ended in (SSP-071);
 //   render(alpha)       lerps Bessie's pose between the last two ticks (shortest arc for the heading), points the
 //                       follow camera at it with her velocity and speed and poses her sprites. It reads the World,
 //                       never writes it.
@@ -22,15 +25,15 @@
 // they need no interpolation.
 //
 // Dev builds (`recordInputs`) attach a full-shift input log to the World's phase-1 replay hook (SSP-038), so the
-// dev panel can save the shift as a replay (SSP-048). M1's drive-only shift never ends: once the log is full
-// (SHIFT_TICKS, 240 s) recording stops and the sim carries on.
+// dev panel can save the shift as a replay (SSP-048). The rollout and the knock-off coast make a shift a little
+// longer than 240 s: once the log is full (SHIFT_TICKS) recording stops and the sim carries on.
 //
 // Live tuning (SSP-048): setTuning(tuning) hands the World an edited copy between ticks (world.ts
 // setWorldTuning), never writing sim state itself. A replay reproduces only under one tuning, so the scene
 // remembers whether any recorded tick ran on a tuning that differs from tuning.json (`logMatchesCommittedTuning`);
 // the dev panel's Save replay refuses (or asks twice) when it does.
 //
-// No HUD, timer or shift end (M2), no audio (M5).
+// No HUD yet (SSP-070), no audio (M5).
 import type { SceneContext } from '../app/Game.ts';
 import { type LevelSource, loadLevel } from '../app/levelLoader.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
@@ -42,6 +45,7 @@ import type { ReadonlyEventQueue } from '../sim/eventQueue.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
 import type { Level } from '../sim/map.ts';
 import { appendInput, createInputLog, DISTRICT_ID_PATTERN, type InputLog } from '../sim/replay.ts';
+import { ShiftPhase } from '../sim/shift.ts';
 import { type SimSnapshot, snapshotWorld } from '../sim/snapshot.ts';
 import { DEFAULT_TUNING, type Tuning, tuningsEqual } from '../sim/tuning.ts';
 import { createWorld, setWorldTuning, viewWorld, type World, type WorldView } from '../sim/world.ts';
@@ -52,6 +56,11 @@ export const DEFAULT_DISTRICT = 'district.puddle_lane';
 export type ShiftSceneOptions = {
   /** Fetches the compiled level JSON (default: the browser's fetch, levelLoader.ts). Tests inject a file reader. */
   readonly levelSource?: LevelSource;
+  /**
+   * The decoded level, already loaded (ShiftIntroScene's preload, or the previous run's on Try Again, SSP-071).
+   * enter() then fetches nothing but the atlases; it still refuses a level whose id is another district.
+   */
+  readonly level?: Level;
   /** The tuning the World runs on (default: tuning.json). The dev panel (SSP-048) passes an edited copy. */
   readonly tuning?: Tuning;
   /** Record the shift's input log through the World's replay hook (dev builds). Default false. */
@@ -75,6 +84,7 @@ export class ShiftScene implements Scene {
   readonly blocksUpdateBelow = false;
   private readonly context: SceneContext;
   private readonly levelSource: LevelSource | undefined;
+  private readonly preloadedLevel: Level | null;
   private currentTuning: Tuning;
   /** The tick from which the World has run on a tuning that differs from tuning.json, or null while it does not. */
   private offTuningSinceTick: number | null;
@@ -96,6 +106,7 @@ export class ShiftScene implements Scene {
   constructor(context: SceneContext, options: ShiftSceneOptions = {}) {
     this.context = context;
     this.levelSource = options.levelSource;
+    this.preloadedLevel = options.level ?? null;
     this.currentTuning = options.tuning ?? DEFAULT_TUNING;
     this.offTuningSinceTick = tuningsEqual(this.currentTuning, DEFAULT_TUNING) ? null : 0;
     this.recordInputs = options.recordInputs ?? false;
@@ -109,6 +120,16 @@ export class ShiftScene implements Scene {
   /** The World, read-only (null before enter() resolves or after exit()). */
   get worldView(): WorldView | null {
     return this.world === null ? null : viewWorld(this.world);
+  }
+
+  /** The level the World runs on (null before enter() resolves or after exit()). */
+  get level(): Level | null {
+    return this.world?.level ?? null;
+  }
+
+  /** True once the shift has ended (EV.ShiftEnd fired): the World is no longer stepped. */
+  get ended(): boolean {
+    return this.world !== null && this.world.shift.phase === ShiftPhase.Ended;
   }
 
   /** The district this scene entered (`district.<name>`), or null before enter(). */
@@ -184,8 +205,9 @@ export class ShiftScene implements Scene {
     const district = params.district;
     if (district === undefined) throw new Error('ShiftScene: entered without a district');
     const levelName = districtLevelName(district);
+    const preloaded = this.preloadedLevel;
     const [level, world, actors] = await Promise.all([
-      loadLevel(levelName, this.levelSource),
+      preloaded ?? loadLevel(levelName, this.levelSource),
       this.context.loadAtlas('world'),
       this.context.loadAtlas('actors'),
     ]);
@@ -203,7 +225,7 @@ export class ShiftScene implements Scene {
     const { sim, city, bessie } = built;
     if (this.recordInputs) {
       const log = createInputLog();
-      // Like attachInputLog (replay.ts), but stops at the log's capacity instead of throwing: M1 never ends.
+      // Like attachInputLog (replay.ts), but stops at the log's capacity instead of throwing (a shift outlasts it).
       sim.recordInput = (tick, input) => {
         if (log.length < log.capacity) appendInput(log, tick, input);
       };
@@ -255,7 +277,9 @@ export class ShiftScene implements Scene {
   }
 
   fixedUpdate(input: Readonly<InputFrame>): void {
-    this.world?.step(input);
+    const world = this.world;
+    if (world === null || world.shift.phase === ShiftPhase.Ended) return;
+    world.step(input);
   }
 
   render(alpha: number): void {

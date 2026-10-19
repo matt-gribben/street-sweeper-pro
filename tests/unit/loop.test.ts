@@ -380,6 +380,8 @@ describe('freeze mode', () => {
       drawCalls: () => 0,
       snapshot: () => null,
       renders: () => 0,
+      sceneId: () => null,
+      sceneHistory: () => [],
     });
     expect(hooks?.params.freeze).toBe(true);
     loop.start();

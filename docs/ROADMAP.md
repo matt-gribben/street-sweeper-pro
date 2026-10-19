@@ -436,8 +436,8 @@ Each milestone has the same shape:
 - [ ] `src/render/spriteBatch.ts`: an `items` atlas instance batch for litter. Per-instance 4 rotations and the 2-frame wobble.
 - [x] `src/ui/bitmapText.ts` with a first draft of `assets-src/fonts/kerbside5x7.glyphs.txt` (ASCII 32–126 plus £ ★ → ← ↑ ↓). *(Glyphs, forge font builder and `ui` atlas: SSP-068. Runtime: SSP-069, `bitmapText.ts` plus the UI pass and `UiSpriteBatch`, text coloured by a per-quad recolour pair, TECHNICAL_DESIGN §12.3/§12.5. Narrow advances wait for SSP-141.)*
 - [ ] `src/ui/hud.ts`: timer, score, combo tier popup text, hopper bar with 80% warning, water, HP.
-- [ ] `TallyScene` (numbers only): Tidy %, items collected, grime cleaned, score, would-be stars.
-- [ ] `ShiftIntroScene` placeholder card (text only).
+- [x] `TallyScene` (numbers only): Tidy %, items collected, grime cleaned, score, would-be stars. *(SSP-071: `src/scenes/TallyScene.ts` over `src/ui/tallyPage.ts`, entered on `EV.ShiftEnd` with the SimSnapshot the shift ended in; end reason, Tidy % to one decimal, items collected / spawned, grime cleaned / initial, score, ★ ×3; Try Again (default focus, same seed, intro skipped, measured 36 ms in `tests/e2e/flow.spec.ts`) and Back to Briefing as the stand-in for quit; flow in `src/app/shiftFlow.ts`, [TECHNICAL_DESIGN §6.2](TECHNICAL_DESIGN.md#62-scene-flow).)*
+- [x] `ShiftIntroScene` placeholder card (text only). *(SSP-071: `src/scenes/ShiftIntroScene.ts` over `src/ui/introCard.ts`, the default boot scene: 'PUDDLE LANE', a one-line briefing placeholder and 'Press Space to start'; the compiled level loads while the card shows.)*
 
 **Explicitly deferred.** Pedestrians, coughing and dust complaints (M3, which needs NPCs). Power-ups (M3). The Mercury layout (M6). £ economy (M6). Pickup SFX pitch rise (M5).
 

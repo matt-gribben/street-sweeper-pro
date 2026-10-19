@@ -1083,11 +1083,6 @@ describe('entities.json rules mirror ENTITY_CATALOG §4.2 and §5', () => {
  * full resolution test once all five placeholder issues have landed, and empties this list.
  */
 const PENDING_PLACEHOLDER_SPRITES: Readonly<Record<string, string>> = {
-  'npc.shopper': 'SSP-097',
-  'npc.old_man_frame': 'SSP-097',
-  'npc.dog_walker': 'SSP-097',
-  'npc.mum_pushchair': 'SSP-097',
-  'npc.postie': 'SSP-097',
   'npc.litterbug': 'SSP-098',
   'npc.businessman': 'SSP-098',
   'npc.market_trader': 'SSP-098',
@@ -1168,7 +1163,7 @@ describe('entities.json references', () => {
 
   it('lists as pending only M3 sprites, each against the placeholder issue that adds it', () => {
     const pending = Object.keys(PENDING_PLACEHOLDER_SPRITES);
-    expect(pending).toHaveLength(47);
+    expect(pending).toHaveLength(42);
     const raw = entitiesJson as Record<string, Json>;
     for (const sprite of pending) {
       const owners = Object.entries(raw).filter(([, entry]) => entry.sprite === sprite);
@@ -1176,9 +1171,14 @@ describe('entities.json references', () => {
       expect(owners[0]?.[1].milestone, sprite).toBe('M3');
       expect(PENDING_PLACEHOLDER_SPRITES[sprite]).toMatch(/^SSP-(097|098|099|100|101)$/);
     }
-    // The M3 sprites that already had placeholders before SSP-075 are not pending.
+    // The M3 sprites that already had placeholders before SSP-075, or whose issue has landed, are not pending.
     for (const sprite of [
       'npc.old_woman',
+      'npc.shopper',
+      'npc.old_man_frame',
+      'npc.dog_walker',
+      'npc.mum_pushchair',
+      'npc.postie',
       'prop.lamp_post',
       'prop.hydrant',
       'haz.speed_bump',

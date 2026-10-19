@@ -1304,6 +1304,8 @@ Every recipe starts and ends the same way:
 6. Keep the figure within 18×22 inside the 24×24 cell, with feet on a consistent baseline (pivot).
 7. Run the common end steps. Read the sheet at 4× next to `npc.old_woman` and Bessie h00 to check the figure is on-model.
 
+*M3 placeholders (SSP-097):* before step 1, a person ships as a `grid` placeholder (`"placeholder": true`; Doris keeps `ai-ingest`) drafted by `uv run --project tools/forge python tools/forge/scripts/people_placeholders.py` (templated body, props and colour keys; `--report` prints the 18×22 / row-22 bounds of the committed grids, `--preview <dir>` writes review PNGs). The script stamps each grid with `# generated-sha256:` and refuses to overwrite a grid edited since, unless `--force`. The committed grid is the source of truth; M4 replaces it through steps 1–7.
+
 ### 10.5 Animal (`npc.cat`, `npc.dog_*`, `npc.pigeon`, `npc.seagull`, grids)
 
 1. Write the grid directly, e.g. `assets-src/sprites/npc/cat.sprite.txt`, `cell: 16x16`, with walk 4, sit 2, dart 2 and leap 3 per direction.

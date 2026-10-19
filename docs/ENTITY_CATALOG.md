@@ -242,7 +242,7 @@ stateDiagram-v2
 
 ## 6. Pedestrians (`npc.*` people)
 
-**Common sprite spec:** cell **24×24**, figure ≤ 18×22 px (≈ 1.1 × 1.4 m). 8 directions (S, SW, W, NW, N authored; SE, E, NE mirrored). Frames per direction: `walk ×4`, `idle ×2`, `startle ×2`, `fall ×3`, `angry ×2` = **13 per direction, 104 frame IDs, 65 authored**. Carried props (handbag, trolley, pushchair, walking frame, clipboard, skateboard) must fit inside the 24×24 cell. Technique: `ai-ingest`, using a Codex key-pose sheet reference-locked to `assets-src/ai/ref.people_style/golden.png`, ingested to `assets-src/sprites/npc/<name>.sprite.txt`. Claude authors the remaining frames in the grid. Atlas: `actors`. Outfit variety uses per-instance ramp swaps (up to 8 tables per atlas).
+**Common sprite spec:** cell **24×24**, figure ≤ 18×22 px (≈ 1.1 × 1.4 m). 8 directions (S, SW, W, NW, N authored; SE, E, NE mirrored). Frames per direction: `walk ×4`, `idle ×2`, `startle ×2`, `fall ×3`, `angry ×2` = **13 per direction, 104 frame IDs, 65 authored**. Carried props (handbag, trolley, pushchair, walking frame, clipboard, skateboard) must fit inside the 24×24 cell. Technique: `ai-ingest`, using a Codex key-pose sheet reference-locked to `assets-src/ai/ref.people_style/golden.png`, ingested to `assets-src/sprites/npc/<name>.sprite.txt`. Claude authors the remaining frames in the grid. Atlas: `actors`. Outfit variety uses per-instance ramp swaps (up to 8 tables per atlas). Until M4, the M3 people are `grid` placeholders under these final frame IDs (`"placeholder": true`; SSP-097 for the Monday cast, [ART_BIBLE §8.3](ART_BIBLE.md#83-people-and-animals)).
 
 ### 6.1 Stats
 

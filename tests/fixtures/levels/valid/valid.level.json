@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "id": "district.fixture_valid",
+  "name": "Fixture valid",
+  "day": "mon",
+  "mode": "shift",
+  "map": "valid.map.txt",
+  "size": [20, 12],
+  "timer": 240,
+  "seed": 1,
+  "timeOfDay": "morning",
+  "weather": "clear",
+  "start": {
+    "heading": 8
+  },
+  "depot": {
+    "rect": [8, 6, 12, 5]
+  },
+  "buildings": {
+    "A": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "B": {
+      "storeys": 3,
+      "roof": "roof.felt",
+      "wall": "facade.corner_shop",
+      "use": "shop",
+      "frontageWidth": 5
+    },
+    "C": {
+      "storeys": 8,
+      "roof": "roof.depot",
+      "wall": "facade.terrace_brick_bay",
+      "use": "civic",
+      "landmark": true
+    }
+  },
+  "music": "mus.puddle_lane",
+  "ambience": "amb.town_morning",
+  "anchors": {
+    "1": "doris_home",
+    "2": "zebra_s"
+  }
+}

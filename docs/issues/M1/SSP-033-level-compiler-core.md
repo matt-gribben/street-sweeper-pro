@@ -2,7 +2,7 @@
 id: SSP-033
 title: "Build level schema and compile-level.ts core: parse, legend, buildings, M1 checks"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:tooling, area:test, size:L, vertical-slice]

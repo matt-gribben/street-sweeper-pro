@@ -1,6 +1,7 @@
-// M0 input-count guards for the audio and level tools (SSP-006 decision (a), ASSET_PIPELINE §5.2).
-// The helper is tested against temporary source trees; the three real tools are then spawned on plain Node
-// type stripping and must agree with whatever sources the repo actually holds.
+// M0 input-count guards for the audio tools (SSP-006 decision (a), ASSET_PIPELINE §5.2).
+// The helper is tested against temporary source trees (with a level-shaped spec, as the level compiler used
+// it until SSP-033); the two real audio tools are then spawned on plain Node type stripping and must agree
+// with whatever sources the repo actually holds. The real level compiler is tested in compileLevel.test.ts.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -125,7 +126,6 @@ describe('the real tools on Node type stripping', () => {
       suffix: '.song.json',
       until: 'M5',
     },
-    { script: 'tools/levels/compile-level.ts', dir: 'assets-src/levels', suffix: '.map.txt', until: 'M1' },
   ] as const;
 
   it.each(tools)('$script agrees with the sources in the repo', ({ script, dir, suffix, until }) => {

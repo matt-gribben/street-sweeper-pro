@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "district.fixture_l013_isolated",
+  "name": "Fixture l013_isolated",
+  "day": "mon",
+  "mode": "shift",
+  "map": "l013_isolated.map.txt",
+  "size": [8, 5],
+  "timer": 240,
+  "seed": 1,
+  "timeOfDay": "morning",
+  "weather": "clear",
+  "start": {
+    "heading": 0
+  },
+  "depot": {
+    "rect": [0, 4, 8, 1]
+  },
+  "buildings": {
+    "A": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house"
+    }
+  }
+}

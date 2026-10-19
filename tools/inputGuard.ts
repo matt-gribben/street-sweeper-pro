@@ -1,7 +1,7 @@
-// Input-count guard shared by the M0 audio and level tools (SSP-006 decision (a), ASSET_PIPELINE §5.2).
+// Input-count guard shared by the M0 audio tools (SSP-006 decision (a), ASSET_PIPELINE §5.2).
 //
-// `npm run assets` must succeed in M0, so tools/audio/render-sfx.ts, tools/audio/render-music.ts and
-// tools/levels/compile-level.ts exist before their real implementations. Each one enumerates its sources:
+// `npm run assets` must succeed in M0, so tools/audio/render-sfx.ts and tools/audio/render-music.ts exist
+// before their real implementations (tools/levels/compile-level.ts used it too, until SSP-033 replaced it). Each one enumerates its sources:
 // with none it logs "0 sources; nothing to render" and exits 0; with any source present it exits non-zero
 // with "not implemented until <milestone>". It never passes silently when there is work to do.
 //

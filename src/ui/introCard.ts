@@ -4,6 +4,10 @@
 // still loading, 'Press Space to start' once it is in, and 'Level failed to load' (18 postbox red) if it failed.
 // Big Pam's portrait, the target, the weather and the real card art are M4 (SSP-157).
 //
+// The prompt names the select control for the active input device (SSP-286, glyphs.ts): 'Press Space to start' on
+// the keyboard, 'Press A to start' on the pad. ShiftIntroScene makes the card a one-item menus.ts Menu whose hit
+// rect is the whole panel, so a click anywhere on the card starts the shift too.
+//
 // Pure layout over UiItems (uiItems.ts): ShiftIntroScene draws it, and the tests rasterise it on the CPU.
 import { type BitmapFont, TextAlign, TextVariant } from './bitmapText.ts';
 import { PanelStyle } from './panels.ts';
@@ -16,12 +20,15 @@ export type IntroStatus = (typeof IntroStatus)[keyof typeof IntroStatus];
 /** The briefing placeholder until Big Pam's briefings (M4). */
 export const INTRO_BRIEFING = 'Clear the litter and the grime before knock-off, love.';
 
-/** The prompt per status. */
-export const INTRO_PROMPTS: { readonly [S in IntroStatus]: string } = {
-  [IntroStatus.Loading]: 'Loading...',
-  [IntroStatus.Ready]: 'Press Space to start',
-  [IntroStatus.Failed]: 'Level failed to load',
-};
+/** The select glyph the prompt names until an input device says otherwise (the keyboard's, glyphs.ts). */
+export const INTRO_DEFAULT_SELECT_GLYPH = 'Space';
+
+/** The prompt for `status`, naming `selectGlyph` (the active device's menu-select label) once the level is in. */
+export function introPrompt(status: IntroStatus, selectGlyph: string = INTRO_DEFAULT_SELECT_GLYPH): string {
+  if (status === IntroStatus.Loading) return 'Loading...';
+  if (status === IntroStatus.Failed) return 'Level failed to load';
+  return `Press ${selectGlyph} to start`;
+}
 
 /** Palette indices (Kerbside-32 names). */
 const SWEEPER_YELLOW = 15;
@@ -48,7 +55,7 @@ export function districtDisplayName(district: string): string {
 
 /**
  * The card for `district` in a `widthPx` × `heightPx` internal frame (432..640 × 270), with the prompt for
- * `status`.
+ * `status` naming `selectGlyph`. The first item is always the panel (the card's hit rect).
  */
 export function introCardLayout(
   font: BitmapFont,
@@ -56,9 +63,10 @@ export function introCardLayout(
   heightPx: number,
   district: string,
   status: IntroStatus,
+  selectGlyph: string = INTRO_DEFAULT_SELECT_GLYPH,
 ): UiItem[] {
   const title = districtDisplayName(district);
-  const prompt = INTRO_PROMPTS[status];
+  const prompt = introPrompt(status, selectGlyph);
   const contentW = Math.max(
     font.measure(title, TextVariant.Outline),
     font.measure(INTRO_BRIEFING),

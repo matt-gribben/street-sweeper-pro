@@ -7,9 +7,9 @@ import { TextVariant } from '../../src/ui/bitmapText.ts';
 import {
   districtDisplayName,
   INTRO_BRIEFING,
-  INTRO_PROMPTS,
   IntroStatus,
   introCardLayout,
+  introPrompt,
 } from '../../src/ui/introCard.ts';
 import { ButtonState, Panels } from '../../src/ui/panels.ts';
 import {
@@ -17,8 +17,9 @@ import {
   formatFraction,
   formatTidyPercent,
   STAR,
-  stepTallyFocus,
   TallyButton,
+  tallyButtonRects,
+  tallyButtonStates,
   tallyFigures,
   tallyPageLayout,
 } from '../../src/ui/tallyPage.ts';
@@ -115,15 +116,6 @@ describe('tally figures', () => {
     });
     expect(() => tallyFigures(running, 'PUDDLE LANE')).toThrow(/has not ended/);
   });
-
-  it('steps the focus up and down with wrap, and holds it when both or neither edge came', () => {
-    expect(stepTallyFocus(TallyButton.TryAgain, false, true)).toBe(TallyButton.BackToBriefing);
-    expect(stepTallyFocus(TallyButton.BackToBriefing, false, true)).toBe(TallyButton.TryAgain);
-    expect(stepTallyFocus(TallyButton.TryAgain, true, false)).toBe(TallyButton.BackToBriefing);
-    expect(stepTallyFocus(TallyButton.BackToBriefing, true, false)).toBe(TallyButton.TryAgain);
-    expect(stepTallyFocus(TallyButton.TryAgain, true, true)).toBe(TallyButton.TryAgain);
-    expect(stepTallyFocus(TallyButton.BackToBriefing, false, false)).toBe(TallyButton.BackToBriefing);
-  });
 });
 
 describe('tally page layout', () => {
@@ -133,8 +125,7 @@ describe('tally page layout', () => {
       width,
       HEIGHT,
       tallyFigures(snapshot({ stars: 3 }), 'PUDDLE LANE'),
-      0,
-      false,
+      tallyButtonStates(TallyButton.TryAgain),
     );
     const panel = items[0];
     if (panel?.kind !== 'panel') throw new Error('no panel');
@@ -145,7 +136,7 @@ describe('tally page layout', () => {
 
   it('shows the figures in order, with Try Again focused, and Back to Briefing pressed once picked', () => {
     const figures = tallyFigures(snapshot({ stars: 1 }), 'PUDDLE LANE');
-    const items = tallyPageLayout(font, 480, HEIGHT, figures, TallyButton.TryAgain, false);
+    const items = tallyPageLayout(font, 480, HEIGHT, figures, tallyButtonStates(TallyButton.TryAgain));
     expect(uiItemStrings(items)).toEqual([
       'TIME UP!',
       'PUDDLE LANE',
@@ -166,15 +157,41 @@ describe('tally page layout', () => {
     ]);
     const buttons = items.filter((item) => item.kind === 'button');
     expect(buttons.map((b) => b.state)).toEqual([ButtonState.Focus, ButtonState.Normal]);
-    const picked = tallyPageLayout(font, 480, HEIGHT, figures, TallyButton.BackToBriefing, true);
+    const picked = tallyPageLayout(
+      font,
+      480,
+      HEIGHT,
+      figures,
+      tallyButtonStates(TallyButton.BackToBriefing, true),
+    );
     expect(picked.filter((item) => item.kind === 'button').map((b) => b.state)).toEqual([
       ButtonState.Normal,
       ButtonState.Pressed,
     ]);
   });
 
+  it('lays the buttons out at the rects the menu hit-tests, in the states it is given', () => {
+    const figures = tallyFigures(snapshot(), 'PUDDLE LANE');
+    for (const width of WIDTHS) {
+      const rects = tallyButtonRects(font, width, HEIGHT);
+      const states = [ButtonState.Disabled, ButtonState.Pressed];
+      const buttons = tallyPageLayout(font, width, HEIGHT, figures, states).filter(
+        (i) => i.kind === 'button',
+      );
+      expect(buttons.map((b) => b.rect)).toEqual(rects);
+      expect(buttons.map((b) => b.state)).toEqual(states);
+      expect(rects[1]?.y).toBeGreaterThan((rects[0]?.y ?? 0) + (rects[0]?.h ?? 0)); // no overlap
+    }
+  });
+
   it.each([0, 1, 2, 3])('draws %i earned stars outlined in 15 and the rest plain in 04', (stars) => {
-    const items = tallyPageLayout(font, 480, HEIGHT, tallyFigures(snapshot({ stars }), 'X'), 0, false);
+    const items = tallyPageLayout(
+      font,
+      480,
+      HEIGHT,
+      tallyFigures(snapshot({ stars }), 'X'),
+      tallyButtonStates(0),
+    );
     const starItems = items.filter((item) => item.kind === 'text' && item.text === STAR);
     expect(starItems).toHaveLength(3);
     const looks = starItems.map((item) => (item.kind === 'text' ? [item.colour, item.variant] : []));
@@ -187,7 +204,8 @@ describe('tally page layout', () => {
     const towed = snapshot({
       shift: { phase: 'ended', ticksRemaining: 900, endReason: 'towed', endTick: 13_000 },
     });
-    const header = (s: SimSnapshot) => tallyPageLayout(font, 480, HEIGHT, tallyFigures(s, 'X'), 0, false)[1];
+    const header = (s: SimSnapshot) =>
+      tallyPageLayout(font, 480, HEIGHT, tallyFigures(s, 'X'), tallyButtonStates(0))[1];
     expect(header(towed)).toMatchObject({ kind: 'text', text: 'TOWED!', colour: 18 });
     expect(header(snapshot())).toMatchObject({ kind: 'text', text: 'TIME UP!', colour: 0 });
   });
@@ -206,8 +224,14 @@ describe('intro card', () => {
   ])('shows the district, the briefing and the prompt for status %i', (status, prompt, colour) => {
     const items = introCardLayout(font, 480, HEIGHT, 'district.puddle_lane', status);
     expect(uiItemStrings(items)).toEqual(['PUDDLE LANE', INTRO_BRIEFING, prompt]);
-    expect(INTRO_PROMPTS[status]).toBe(prompt);
+    expect(introPrompt(status)).toBe(prompt);
     expect(items[3]).toMatchObject({ kind: 'text', colour });
+  });
+
+  it("names the active device's select control in the ready prompt (SSP-286)", () => {
+    const items = introCardLayout(font, 480, HEIGHT, 'district.puddle_lane', IntroStatus.Ready, 'A');
+    expect(uiItemStrings(items)[2]).toBe('Press A to start');
+    expect(introPrompt(IntroStatus.Loading, 'A')).toBe('Loading...');
   });
 
   it.each(WIDTHS)('fits every quad inside the council panel, centred, at W = %i', (width) => {

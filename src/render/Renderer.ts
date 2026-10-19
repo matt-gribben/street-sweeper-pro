@@ -105,6 +105,7 @@ export class Renderer {
   private readonly blitMaterial: ShaderMaterial;
   private readonly blitOffset: Vector2;
   private scale = 1;
+  private layout: ViewportLayout | null = null;
   private framesRendered = 0;
 
   /**
@@ -202,6 +203,7 @@ export class Renderer {
       setUiCameraFrame(this.uiCamera, layout.internalWidth);
     }
     this.scale = layout.scale;
+    this.layout = layout;
     const uniforms = this.blitMaterial.uniforms;
     if (uniforms.uScale !== undefined) uniforms.uScale.value = layout.scale;
     if (uniforms.uCanvasHeight !== undefined) uniforms.uCanvasHeight.value = layout.canvasDeviceHeight;
@@ -272,6 +274,11 @@ export class Renderer {
 
   set night(on: boolean) {
     this.palettePass.night = on;
+  }
+
+  /** The window layout last applied by resize() (null before the first), for pointer mapping (SSP-286). */
+  get viewport(): ViewportLayout | null {
+    return this.layout;
   }
 
   /** Current integer upscale factor. */

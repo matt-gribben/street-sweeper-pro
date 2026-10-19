@@ -12,8 +12,9 @@
 //   with Ctrl, Cmd or Alt held is left to the browser entirely (Ctrl+W, Cmd+R); key-ups always count, so a key
 //   never sticks.
 // - Losing focus (window blur) releases every key: the browser sends no key-ups to a window it has left.
+// - Activity (SSP-286): a bound key going down makes the keyboard the active device (actions.ts activeDevice).
 
-import { ACTION, ALL_ACTIONS, type InputDevice } from './actions.ts';
+import { ACTION, ALL_ACTIONS, type InputDevice, type InputDeviceKind } from './actions.ts';
 
 /** Time for digital steering to go from centre to full lock, in seconds. */
 export const STEER_RAMP_S = 0.08;
@@ -74,7 +75,10 @@ export type KeyEventTarget = {
 
 /** The keyboard as an InputDevice. */
 export class KeyboardDevice implements InputDevice {
+  readonly kind: InputDeviceKind = 'keyboard';
   private readonly rampPerTick: number;
+  /** A bound key went down since takeActivity() last ran. */
+  private used = false;
   /** Codes of bound keys currently down. */
   private readonly down = new Set<string>();
   /** DRIVE | ACTION bits of the keys in `down`. */
@@ -126,6 +130,7 @@ export class KeyboardDevice implements InputDevice {
     event.preventDefault();
     if (this.down.has(event.code)) return; // key repeat, or a keydown we already saw
     this.down.add(event.code);
+    this.used = true;
     const before = this.mask;
     this.mask = before | bit;
     this.edges |= this.mask & ~before & ALL_ACTIONS;
@@ -162,6 +167,12 @@ export class KeyboardDevice implements InputDevice {
     const taken = this.edges & mask;
     this.edges &= ~mask;
     return taken;
+  }
+
+  takeActivity(): boolean {
+    const used = this.used;
+    this.used = false;
+    return used;
   }
 
   private recomputeMask(): void {

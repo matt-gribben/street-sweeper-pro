@@ -247,7 +247,12 @@ The **combo chain** (2.0 s timer, refreshed by every pickup) is the glue: it rew
 
 All keys are remappable and stored in `ssp.settings.v1`. Rumble on impacts plays where supported.
 
-**Menu navigation (proposed, M3):** arrows/WASD or D-pad/left stick to move; Enter/Space or A to select; Esc/Backspace or B to go back. Mouse clicks work on all menu items. `sfx.ui_move`, `sfx.ui_select` and `sfx.ui_back` accompany each action. *(SSP-071 built the keyboard and D-pad part for the M2 intro card and tally, plus Start as a second select on the pad; the left stick, hold-repeat and mouse arrive with SSP-286.)*
+**Menu navigation (M3):** arrows/WASD or D-pad/left stick to move; Enter/Space or A to select; Esc/Backspace or B to go back. Mouse clicks work on all menu items. `sfx.ui_move`, `sfx.ui_select` and `sfx.ui_back` accompany each action. Menu keys are fixed and never remappable, so a bad remap can always be undone (SSP-236). *(SSP-071 built the keyboard and D-pad part for the M2 intro card and tally, plus Start as a second select on the pad. SSP-286 completed it in `src/ui/menus.ts`, with these lead calls, tunable later:)*
+
+- **Hold-repeat:** a held direction (key, D-pad or stick) steps once on the press, again after **0.40 s**, then every **0.15 s** while held (24 and 9 ticks at 60 Hz). Browser key repeat is ignored, so the keyboard repeats at the same rate as the pad. Select and Back never repeat. A direction still held when a menu appears is ignored until released.
+- **Left stick:** Y at or past **±0.5** holds up or down, like the D-pad.
+- **Mouse:** a press focuses the item under the pointer and shows it pressed; the release over the same item selects it (select on release, so taps reuse it in M8). Hover does nothing. The intro card is one big item: a click anywhere on it starts the shift.
+- **Prompt glyphs** follow the device used last (keyboard and mouse count as one): the keyboard shows `W`, `A/D`, `Space`, `Left Shift`, `H`, `E`, `Esc`; the pad shows `RT`, `LT`, `Left Stick`, `A`, `X`, `B`, `Y`, `Start`, `View`. The intro card reads "Press Space to start" or "Press A to start". No controller brand logos.
 
 ### 6.2 Control design notes
 

@@ -2,7 +2,7 @@
 id: SSP-286
 title: "Implement src/ui/menus.ts: keyboard, gamepad and mouse menu navigation plus input-device glyphs"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:ui, area:input, area:test, size:M, vertical-slice]
@@ -52,13 +52,13 @@ Art: buttons and focus come from panels.ts (SSP-285). Text comes from bitmapText
 
 ## Acceptance criteria
 
-- [ ] Unit test: Down/S/D-pad down/stick down move focus to the next enabled, visible item, skipping disabled ones and wrapping at the ends; Enter/Space/A selects; Esc/Backspace/B calls back
-- [ ] Unit test: a held stick or D-pad direction repeats focus steps at the documented rate
-- [ ] Unit test: at integer scales 2, 3 and 4 with letterbox offsets, the client→internal transform maps a click at the centre of an item's on-screen rect to that item
-- [ ] e2e: on the TallyScene, a mouse click on Try Again restarts the shift with no keyboard input
-- [ ] Unit test: each navigation action emits exactly one UiMove/UiSelect/UiBack event
-- [ ] Unit test: the glyph lookup returns 'Space' for brush with the keyboard active and 'A' with the gamepad active; the active device switches on the first input from the other device
-- [ ] Menu input never changes the sim InputFrame, and replay hashes are unchanged (npm run test:replay)
+- [x] Unit test: Down/S/D-pad down/stick down move focus to the next enabled, visible item, skipping disabled ones and wrapping at the ends; Enter/Space/A selects; Esc/Backspace/B calls back
+- [x] Unit test: a held stick or D-pad direction repeats focus steps at the documented rate
+- [x] Unit test: at integer scales 2, 3 and 4 with letterbox offsets, the client→internal transform maps a click at the centre of an item's on-screen rect to that item
+- [x] e2e: on the TallyScene, a mouse click on Try Again restarts the shift with no keyboard input
+- [x] Unit test: each navigation action emits exactly one UiMove/UiSelect/UiBack event
+- [x] Unit test: the glyph lookup returns 'Space' for brush with the keyboard active and 'A' with the gamepad active; the active device switches on the first input from the other device
+- [x] Menu input never changes the sim InputFrame, and replay hashes are unchanged (npm run test:replay)
 
 ## Verification
 

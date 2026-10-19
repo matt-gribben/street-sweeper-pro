@@ -152,6 +152,31 @@ export function blitUiAwareTexel(
   return out;
 }
 
+/** An internal pixel: x right, y down from the frame's top-left. */
+export type InternalPoint = { x: number; y: number };
+
+/**
+ * The inverse of the integer-scale and letterbox transform (SSP-286): the internal pixel under a point given in
+ * client (CSS) pixels, such as a PointerEvent's clientX/clientY, for a canvas laid out by `layout`. The UI pass is
+ * blitted without the sub-pixel offset (blitUiAwareTexel), so UI pixel (x, y) covers exactly the canvas device
+ * block [x·scale, (x + 1)·scale) × [y·scale, (y + 1)·scale) and this is its exact inverse. Writes `out` and returns
+ * true when the point lies on the frame, false when it is on the letterbox (out is still written, possibly
+ * outside 0..W−1 × 0..269). Allocates nothing.
+ */
+export function clientToInternalPx(
+  layout: ViewportLayout,
+  clientX: number,
+  clientY: number,
+  out: InternalPoint,
+): boolean {
+  const scale = layout.scale;
+  const x = Math.floor((clientX * layout.devicePixelRatio - layout.canvasDeviceLeft) / scale);
+  const y = Math.floor((clientY * layout.devicePixelRatio - layout.canvasDeviceTop) / scale);
+  out.x = x;
+  out.y = y;
+  return x >= 0 && x < layout.internalWidth && y >= 0 && y < INTERNAL_HEIGHT_PX;
+}
+
 /** Owner of the canvas size. Calls `onLayout` once immediately and again on every resize or DPR change. */
 export function attachUpscaler(
   canvas: HTMLCanvasElement,

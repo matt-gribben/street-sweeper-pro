@@ -28,6 +28,13 @@
 // never lost to a frame that ran no tick, and step(n) in test mode sees it on its first tick. Nothing takes them
 // while a shift runs, so a menu scene discards what is latched when it enters (takeMenuEdges() and drop it).
 //
+// SSP-286 adds what a menu needs beyond the edges (MenuInputSource): `menuHeld` (the MENU_UP / MENU_DOWN bits held
+// now, for hold-repeat in menuInput.ts), the pointer queue (pointer.ts: mouse presses and releases on the canvas,
+// in client pixels, taken per tick by menu scenes) and `activeDevice`, the kind of device the player used last
+// ('keyboard' covers the keyboard and the mouse). Every device and the pointer are ActivitySources: each reports
+// whether it was used since it was last asked, and Actions switches the active device on the first such report
+// from another kind. Prompts read it to pick their glyphs (src/ui/glyphs.ts). None of this touches the InputFrame.
+//
 // src/input may import only the InputFrame module from src/sim (TECHNICAL_DESIGN §2.1,
 // tests/unit/inputImports.test.ts). The composition root (src/app/Game.ts) builds the devices, passes the tick
 // length and wires gamepad rumble to the event bus.
@@ -80,14 +87,64 @@ export const MENU_ACTIONS = ACTION.MENU_UP | ACTION.MENU_DOWN | ACTION.MENU_SELE
 /** Every ACTION bit. */
 export const ALL_ACTIONS = SIM_EDGE_ACTIONS | SIM_HELD_ACTIONS | SCENE_ACTIONS | MENU_ACTIONS;
 
+/** The kind of device the player used last (SSP-286): the keyboard and the mouse count as one. M8 adds 'touch'. */
+export type InputDeviceKind = 'keyboard' | 'gamepad';
+
+/** The device kind a Game starts with, before any input. */
+export const DEFAULT_INPUT_DEVICE: InputDeviceKind = 'keyboard';
+
+/** The directions a held menu input repeats (menuInput.ts). */
+export const MENU_REPEAT_ACTIONS = ACTION.MENU_UP | ACTION.MENU_DOWN;
+
+/** Something whose use switches the active device: every InputDevice, and the pointer (pointer.ts). */
+export type ActivitySource = {
+  readonly kind: InputDeviceKind;
+  /**
+   * True when the player used the device since the last call (a bound key or a pad button newly down, a stick or
+   * trigger leaving rest, a press on the canvas); clears it.
+   */
+  takeActivity(): boolean;
+};
+
+/** One mouse (or pen) press or release on the canvas, in client (CSS) pixels: what pointer.ts queues. */
+export type PointerSample = {
+  /** POINTER_PHASE value. */
+  phase: PointerPhase;
+  clientX: number;
+  clientY: number;
+};
+
+/** The pointer phases a menu reads. Down focuses and arms an item; Up over the armed item selects it. */
+export const POINTER_PHASE = { Down: 1, Up: 2, Cancel: 3 } as const;
+export type PointerPhase = (typeof POINTER_PHASE)[keyof typeof POINTER_PHASE];
+
+/** Where Actions reads the pointer queue (pointer.ts PointerDevice). */
+export type PointerSource = ActivitySource & {
+  /** Moves the oldest queued sample into `out` and returns true, or returns false when the queue is empty. */
+  take(out: PointerSample): boolean;
+};
+
 /**
- * Where menu scenes read their input: the rising edges of the MENU_ACTIONS bits latched since the last call
- * (Actions implements it; tests pass a fake). Taking clears them.
+ * Where menu scenes read their input (Actions implements it; tests pass a fake). None of it reaches the sim.
  */
-export type MenuInputSource = { takeMenuEdges(): number };
+export type MenuInputSource = {
+  /** The rising edges of the MENU_ACTIONS bits latched since the last call. Taking clears them. */
+  takeMenuEdges(): number;
+  /** The MENU_REPEAT_ACTIONS bits held right now on any device (hold-repeat, menuInput.ts). */
+  readonly menuHeld: number;
+  /** The kind of device the player used last (glyphs follow it). */
+  readonly activeDevice: InputDeviceKind;
+  /** Moves the oldest pointer sample not yet taken into `out`; false when there is none. */
+  takePointer(out: PointerSample): boolean;
+};
 
 /** A menu source that never reports anything (a Game whose input is not the keyboard and gamepad). */
-export const NO_MENU_INPUT: MenuInputSource = Object.freeze({ takeMenuEdges: () => 0 });
+export const NO_MENU_INPUT: MenuInputSource = Object.freeze({
+  takeMenuEdges: () => 0,
+  menuHeld: 0,
+  activeDevice: DEFAULT_INPUT_DEVICE,
+  takePointer: () => false,
+});
 
 /** See the quantisation rule at the top of this file. */
 export const QUANTISE_EPS = 1e-6;
@@ -96,7 +153,7 @@ export const QUANTISE_EPS = 1e-6;
  * One input device as Actions sees it. Analogue values are unquantised (Actions quantises them all in one
  * place). Devices must never throw: a lost device reads as neutral (§21.4).
  */
-export type InputDevice = {
+export type InputDevice = ActivitySource & {
   /** Once per rendered frame, before the frame's ticks (the gamepad polls here). */
   beginFrame(): void;
   /** Once per tick, before the values are read (the keyboard advances its steer ramp here). */
@@ -132,11 +189,40 @@ export function quantiseUnit(value: number, max: number): number {
 /** Merges devices into one InputFrame per tick. One per Game. */
 export class Actions implements MenuInputSource {
   private readonly devices: readonly InputDevice[];
+  private readonly pointer: PointerSource | null;
   private readonly frame: InputFrame = createInputFrame();
   private sceneEdges = 0;
+  private active: InputDeviceKind = DEFAULT_INPUT_DEVICE;
 
-  constructor(devices: readonly InputDevice[]) {
+  /** `pointer` is the canvas pointer queue for menus (pointer.ts), or null (no mouse menus). */
+  constructor(devices: readonly InputDevice[], pointer: PointerSource | null = null) {
     this.devices = devices;
+    this.pointer = pointer;
+  }
+
+  /**
+   * The kind of device the player used last: it switches on the first input from a device of another kind (a key,
+   * a click, a pad button or a stick leaving rest). 'keyboard' until any input.
+   */
+  get activeDevice(): InputDeviceKind {
+    this.noteActivity();
+    return this.active;
+  }
+
+  /** MENU_UP / MENU_DOWN bits held right now on any device (for menu hold-repeat). */
+  get menuHeld(): number {
+    const devices = this.devices;
+    let held = 0;
+    for (let i = 0; i < devices.length; i += 1) held |= devices[i]?.held ?? 0;
+    return held & MENU_REPEAT_ACTIONS;
+  }
+
+  /** The oldest queued pointer sample (pointer.ts), moved into `out`; false when there is none. */
+  takePointer(out: PointerSample): boolean {
+    const pointer = this.pointer;
+    if (pointer === null) return false;
+    this.noteActivity();
+    return pointer.take(out);
   }
 
   /**
@@ -158,6 +244,18 @@ export class Actions implements MenuInputSource {
       edges |= device.takeEdges(SCENE_ACTIONS);
     }
     this.sceneEdges = edges;
+    this.noteActivity();
+  }
+
+  /** Switches the active device to the kind of any source used since the last check (later sources win a tie). */
+  private noteActivity(): void {
+    const devices = this.devices;
+    for (let i = 0; i < devices.length; i += 1) {
+      const device = devices[i];
+      if (device?.takeActivity() === true) this.active = device.kind;
+    }
+    const pointer = this.pointer;
+    if (pointer?.takeActivity() === true) this.active = pointer.kind;
   }
 
   /**

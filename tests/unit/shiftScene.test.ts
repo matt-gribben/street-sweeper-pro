@@ -103,6 +103,7 @@ function context() {
     releaseCamera: () => {
       released += 1;
     },
+    clientToInternal: () => false,
   };
   return { ctx, follows, loaded, uploads, released: () => released };
 }

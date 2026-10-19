@@ -17,18 +17,21 @@
 // Frames are saved to test-results/ as review captures (open them with Read).
 import { expect, type Page, test } from '@playwright/test';
 import type { ShiftTestState } from '../../src/debug/testHooks.ts';
-import { KERBSIDE32 } from '../../src/render/palettePass.ts';
 import { INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
 import { TALLY_INPUT_LOCK_TICKS } from '../../src/scenes/TallyScene.ts';
-import { UI_SCREEN_FONT } from '../../src/scenes/uiScreen.ts';
 import type { SimSnapshot } from '../../src/sim/snapshot.ts';
 import { IntroStatus, introCardLayout } from '../../src/ui/introCard.ts';
-import { Panels } from '../../src/ui/panels.ts';
-import { STAR, TallyButton, tallyFigures, tallyPageLayout } from '../../src/ui/tallyPage.ts';
-import { drawUiItems, type UiItem, uiItemStrings } from '../../src/ui/uiItems.ts';
-import { readBitmapFont, readIndexedAtlas, TextRaster } from '../support/textRaster.ts';
-import { collectPageErrors, openTestScene, type RgbaFrame, readTestFrame } from '../support/visualGolden.ts';
+import {
+  STAR,
+  TallyButton,
+  tallyButtonStates,
+  tallyFigures,
+  tallyPageLayout,
+} from '../../src/ui/tallyPage.ts';
+import { uiItemStrings } from '../../src/ui/uiItems.ts';
+import { collectPageErrors, openTestScene, readTestFrame } from '../support/visualGolden.ts';
 import { saveFrame } from './helpers/saveFrame.ts';
+import { rasterise, uiFont, uiMismatches } from './helpers/uiPixels.ts';
 
 /** The default boot: the intro card for Puddle Lane, frozen so only `step(n)` advances ticks. */
 const FLOW_URL = '/?test=1&seed=5&freeze=1';
@@ -45,47 +48,7 @@ const UI_SCREEN_DRAW_CALLS = 3;
 /** More than the longest shift: a 3 s rollout, 14,400 timer ticks and the knock-off coast. */
 const PAST_THE_END_TICKS = 15_600;
 
-const font = readBitmapFont(UI_SCREEN_FONT);
-
-function rasterise(items: readonly UiItem[]): TextRaster {
-  const raster = new TextRaster(WIDTH_PX, INTERNAL_HEIGHT_PX, readIndexedAtlas('ui'));
-  drawUiItems(new Panels(raster, font), items);
-  return raster;
-}
-
-/** Palette index of a frame pixel (-1 if it is not exactly a Kerbside-32 colour). */
-function pixelIndex(frame: RgbaFrame, x: number, y: number): number {
-  const o = (y * frame.width + x) * 4;
-  const rgb = KERBSIDE32.rgb;
-  for (let i = 0; i < 32; i++) {
-    if (
-      frame.data[o] === rgb[i * 3] &&
-      frame.data[o + 1] === rgb[i * 3 + 1] &&
-      frame.data[o + 2] === rgb[i * 3 + 2]
-    ) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-/** UI pixels of `raster` whose frame colour differs (first few listed). */
-function uiMismatches(raster: TextRaster, frame: RgbaFrame): { count: number; first: string[] } {
-  let count = 0;
-  const first: string[] = [];
-  for (let y = 0; y < raster.height; y++) {
-    for (let x = 0; x < raster.width; x++) {
-      const want = raster.at(x, y);
-      if (want < 0) continue;
-      const got = pixelIndex(frame, x, y);
-      if (got !== want) {
-        count++;
-        if (first.length < 8) first.push(`(${x}, ${y}) want ${want} got ${got}`);
-      }
-    }
-  }
-  return { count, first };
-}
+const font = uiFont;
 
 async function sceneId(page: Page): Promise<string | null> {
   return page.evaluate(() => window.__ssp?.scene() ?? null);
@@ -128,6 +91,7 @@ test('intro → Space → full shift → tally matching state() → Try Again re
   // The card, once the level has loaded behind it (§6.3): every UI pixel as laid out.
   const introRaster = rasterise(
     introCardLayout(font, WIDTH_PX, INTERNAL_HEIGHT_PX, 'district.puddle_lane', IntroStatus.Ready),
+    WIDTH_PX,
   );
   await expect
     .poll(async () => uiMismatches(introRaster, await readTestFrame(page)).count, { timeout: 10_000 })
@@ -168,8 +132,7 @@ test('intro → Space → full shift → tally matching state() → Try Again re
     WIDTH_PX,
     INTERNAL_HEIGHT_PX,
     figures,
-    TallyButton.TryAgain,
-    false,
+    tallyButtonStates(TallyButton.TryAgain),
   );
   const shown = uiItemStrings(tallyItems);
   expect(shown).toEqual([
@@ -196,7 +159,7 @@ test('intro → Space → full shift → tally matching state() → Try Again re
   await step(page, 0);
   const tallyFrame = await readTestFrame(page);
   await saveFrame(testInfo, 'flow_tally.png', tallyFrame);
-  const tallyMismatches = uiMismatches(rasterise(tallyItems), tallyFrame);
+  const tallyMismatches = uiMismatches(rasterise(tallyItems, WIDTH_PX), tallyFrame);
   expect(tallyMismatches.first).toEqual([]);
   expect(tallyMismatches.count).toBe(0);
   expect(await drawCalls(page)).toBe(UI_SCREEN_DRAW_CALLS);

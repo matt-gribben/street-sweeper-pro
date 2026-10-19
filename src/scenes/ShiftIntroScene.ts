@@ -6,23 +6,32 @@
 //                       (levelLoader.ts) without waiting for it, so the card is on screen while the level loads
 //                       (§6.3). With options.level (Back to Briefing, or a level loaded before) there is nothing
 //                       to load. Menu edges latched before the card showed are dropped.
-//   fixedUpdate()       takes the tick's menu edges (actions.ts takeMenuEdges: Space / Enter, pad A / Start).
-//                       MENU_SELECT starts the shift: onStart(level) once the level is in. A press while it is
-//                       still loading is kept, and the shift starts the moment the level arrives. The sim
-//                       InputFrame is ignored: menu input never reaches a sim (§13.1).
-//   render()            draws the card, re-laid out only when the width or the prompt changes.
+//   fixedUpdate()       feeds the tick's menu input to the card's one-item Menu (src/ui/menus.ts, SSP-286, via
+//                       menuController.ts): Space / Enter, pad A / Start, or a click anywhere on the card (on
+//                       release; the item's hit rect is the whole panel) selects it, which starts the shift:
+//                       onStart(level) once the level is in. A press while it is still loading is kept, and the
+//                       shift starts the moment the level arrives. The item is disabled once the level has failed.
+//                       Back does nothing yet (no Title to go back to). UiSelect goes to the scene context's bus.
+//                       The sim InputFrame is ignored: menu input never reaches a sim (§13.1).
+//   render()            draws the card, re-laid out only when the width, the prompt or the active input device
+//                       changes: the prompt names the select control of the device used last (glyphs.ts:
+//                       'Press Space to start', 'Press A to start').
 //
 // Big Pam's portrait and the real card art are M4 (SSP-157); the music stems' background decode is M5.
 import type { SceneContext } from '../app/Game.ts';
+import { DEFAULT_GLYPHS } from '../app/glyphBindings.ts';
 import { type LevelSource, loadLevel } from '../app/levelLoader.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
-import { ACTION, type MenuInputSource } from '../input/actions.ts';
+import type { InputDeviceKind, MenuInputSource } from '../input/actions.ts';
 import { INTERNAL_HEIGHT_PX } from '../render/upscale.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
 import type { Level } from '../sim/map.ts';
 import type { FontJsonSource } from '../ui/bitmapText.ts';
+import { glyphLabel } from '../ui/glyphs.ts';
 import { IntroStatus, introCardLayout } from '../ui/introCard.ts';
+import { Menu } from '../ui/menus.ts';
 import { type UiItem, uiItemStrings } from '../ui/uiItems.ts';
+import { MenuController } from './menuController.ts';
 import { districtLevelName } from './ShiftScene.ts';
 import { UiScreen } from './uiScreen.ts';
 
@@ -47,8 +56,10 @@ export class ShiftIntroScene implements Scene {
   readonly blocksUpdateBelow = false;
   readonly simEvents = null;
   readonly district: string;
+  /** The card as a one-item menu (select: start the shift). */
+  readonly menu: Menu;
   private readonly context: SceneContext;
-  private readonly menu: MenuInputSource;
+  private readonly input: MenuController;
   private readonly onStart: (level: Level) => void;
   private readonly levelSource: LevelSource | undefined;
   private readonly fontSource: FontJsonSource | undefined;
@@ -62,12 +73,27 @@ export class ShiftIntroScene implements Scene {
   private items: readonly UiItem[] = [];
   private laidOutWidth = -1;
   private laidOutStatus: IntroStatus | -1 = -1;
+  private laidOutDevice: InputDeviceKind | null = null;
 
   constructor(context: SceneContext, options: ShiftIntroOptions) {
     districtLevelName(options.district); // throws for anything but `district.<snake_name>`
     this.context = context;
     this.district = options.district;
-    this.menu = options.menu;
+    this.input = new MenuController(context, options.menu);
+    this.menu = new Menu({
+      id: 'shift_intro',
+      items: [
+        {
+          label: 'START',
+          enabled: () => !this.failed,
+          onSelect: () => {
+            this.startRequested = true;
+            this.maybeStart();
+          },
+        },
+      ],
+      events: context.events,
+    });
     this.onStart = options.onStart;
     this.loaded = options.level ?? null;
     this.levelSource = options.levelSource;
@@ -97,7 +123,7 @@ export class ShiftIntroScene implements Scene {
 
   async enter(_params: SceneParams): Promise<void> {
     this.screen = await UiScreen.load(this.context, 'shift_intro', this.fontSource);
-    this.menu.takeMenuEdges();
+    this.input.reset();
     if (this.loaded !== null) return;
     const name = districtLevelName(this.district);
     loadLevel(name, this.levelSource)
@@ -121,11 +147,12 @@ export class ShiftIntroScene implements Scene {
   }
 
   fixedUpdate(_input: Readonly<InputFrame>): void {
-    const edges = this.menu.takeMenuEdges();
-    if ((edges & ACTION.MENU_SELECT) !== 0 && !this.failed) {
-      this.startRequested = true;
-      this.maybeStart();
+    if (this.startRequested) {
+      this.input.update(null); // asked already: the rest is waiting for the level
+      return;
     }
+    this.layout(); // the hit rect follows the current width before any click is tested
+    this.input.update(this.menu);
   }
 
   render(_alpha: number): void {
@@ -145,10 +172,17 @@ export class ShiftIntroScene implements Scene {
     if (screen === null) return this.items;
     const width = this.context.renderer.rig.internalWidth;
     const status = this.status;
-    if (width !== this.laidOutWidth || status !== this.laidOutStatus) {
-      this.items = introCardLayout(screen.font, width, INTERNAL_HEIGHT_PX, this.district, status);
+    const device = this.input.activeDevice;
+    if (width !== this.laidOutWidth || status !== this.laidOutStatus || device !== this.laidOutDevice) {
+      const glyph = glyphLabel(DEFAULT_GLYPHS, 'menuSelect', device);
+      this.items = introCardLayout(screen.font, width, INTERNAL_HEIGHT_PX, this.district, status, glyph);
+      const panel = this.items[0];
+      this.menu.setRects([
+        panel?.kind === 'panel' ? { x: panel.x, y: panel.y, w: panel.w, h: panel.h } : null,
+      ]);
       this.laidOutWidth = width;
       this.laidOutStatus = status;
+      this.laidOutDevice = device;
     }
     return this.items;
   }

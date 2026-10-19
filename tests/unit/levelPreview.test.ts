@@ -73,6 +73,7 @@ describe('LevelPreviewScene', () => {
         throw new Error('level_preview never follows');
       },
       releaseCamera: () => {},
+      clientToInternal: () => false,
     };
     return { ctx, pins, loaded };
   }

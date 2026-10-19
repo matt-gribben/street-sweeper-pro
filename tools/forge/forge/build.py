@@ -13,7 +13,13 @@ Techniques built here (M0):
 - ``blender``: read ``assets-src/rendered/<id>/`` -> block-mode 4x4 -> 1 px -> palette snap ->
   alpha 128 -> 1 px ink outline (:mod:`forge.outline`) -> pivots from ``render.json``.
 
-``procedural`` and ``ai-art`` entries raise :class:`BuildError` until M1/M4 implement them.
+- ``procedural`` (SSP-041): the params JSON names a generator in :mod:`forge.procedural`
+  (seeded surface variants such as roofs, or assembled frames such as facade sets with their
+  forge-derived ``lit``/``dark`` ramps) -> validate the frame list -> outline when asked -> pivot
+  at the cell centre. Every extra file a generator reads (facade module grids) is part of the
+  asset's cache key.
+
+``ai-art`` entries raise :class:`BuildError` until M4 implements them.
 
 Blender reduction details. Each render pixel is keyed by its *exact* colour: a Kerbside-32
 colour gets its palette index (0-31) as key, any other colour gets ``32 + 0xRRGGBB``. Block
@@ -59,6 +65,7 @@ from forge.pack import Atlas, PackError, pack_atlases
 from forge.palette import PALETTE_PATH, PALETTE_SIZE, REPO_ROOT, TRANSPARENT, Palette, load_palette, nearest_indices
 from forge.pixelize import ALPHA_THRESHOLD, block_mode_keys_factor
 from forge.pngio import PngError, decode_indexed_png, encode_indexed_png, write_bytes_if_changed
+from forge.procedural import ProceduralError, dependencies, run_procedural
 from forge.sprite import SpriteError, read_sprite, render_frames
 
 __all__ = [
@@ -87,8 +94,8 @@ DEFAULT_CACHE_DIR = REPO_ROOT / "build" / ".forge-cache"
 RENDER_FACTOR = 4
 """Blender renders are 4x the target cell (ASSET_PIPELINE §6.6); block mode reduces 4x4 -> 1 px."""
 
-BUILT_TECHNIQUES = ("grid", "ai-ingest", "blender")
-"""Techniques this build implements (procedural: M1/M4, ai-art: M4)."""
+BUILT_TECHNIQUES = ("grid", "ai-ingest", "blender", "procedural")
+"""Techniques this build implements (ai-art: M4)."""
 
 ASSET_JSON = "asset.json"
 """Per-asset summary written next to the frame PNGs."""
@@ -413,12 +420,39 @@ def _build_grid(entry: AssetEntry, repo_root: Path) -> AssetBuild:
     return AssetBuild(entry=entry, frames=frames)
 
 
+# ---------------------------------------------------------------------------------------------
+# Procedural technique
+
+
+def _build_procedural(entry: AssetEntry, repo_root: Path, palette: Palette) -> AssetBuild:
+    path = repo_root / entry.source
+    if not entry.source.endswith(".json"):
+        raise BuildError(f"{entry.id}: procedural source must be a params .json file, got {entry.source}")
+    try:
+        out = run_procedural(entry.id, path, entry.cell, repo_root, palette)
+    except ProceduralError as exc:
+        msg = str(exc)
+        raise BuildError(msg if msg.startswith(f"{entry.id}") else f"{entry.id}: {msg}") from None
+    _check_frame_list(entry, out.frames, "generator")
+    pivot = grid_pivot(entry)
+    frames: list[Frame] = []
+    for local in sorted(out.frames):
+        fid, state, d, n = _split_local(entry.id, local)
+        indices = _finish_frame(entry, local, out.frames[local])
+        frames.append(
+            Frame(frame_id=fid, asset_id=entry.id, state=state, dir=d, n=n, indices=indices, pivot=pivot, atlas=entry.atlas)
+        )
+    return AssetBuild(entry=entry, frames=frames)
+
+
 def build_asset(entry: AssetEntry, repo_root: Path = REPO_ROOT, palette: Palette | None = None) -> AssetBuild:
     """Build one manifest entry (no cache, no file output)."""
     if entry.technique not in BUILT_TECHNIQUES:
-        raise BuildError(f"{entry.id}: technique {entry.technique!r} is not implemented yet (procedural: M1, ai-art: M4)")
+        raise BuildError(f"{entry.id}: technique {entry.technique!r} is not implemented yet (ai-art: M4)")
     if entry.technique == "blender":
         return _build_blender(entry, repo_root, palette or load_palette())
+    if entry.technique == "procedural":
+        return _build_procedural(entry, repo_root, palette or load_palette())
     return _build_grid(entry, repo_root)
 
 
@@ -441,7 +475,8 @@ def asset_cache_key(entry: AssetEntry, repo_root: Path = REPO_ROOT, palette_path
     """Content hash of everything an asset's frames depend on.
 
     Covers the cache layout version, the forge code, the palette file, the canonical JSON of
-    the manifest entry and the source bytes (every file of a Blender render folder, by name).
+    the manifest entry and the source bytes (every file of a Blender render folder, by name;
+    for a procedural entry also every file its generator reads, by repo-relative path).
     """
     h = hashlib.sha256()
 
@@ -463,6 +498,10 @@ def asset_cache_key(entry: AssetEntry, repo_root: Path = REPO_ROOT, palette_path
         feed(src.read_bytes())
     else:
         feed(b"<missing>")
+    if entry.technique == "procedural" and src.is_file():
+        for dep in dependencies(src, repo_root):
+            feed(dep.relative_to(repo_root).as_posix().encode() if dep.is_relative_to(repo_root) else str(dep).encode())
+            feed(dep.read_bytes() if dep.is_file() else b"<missing>")
     return h.hexdigest()
 
 

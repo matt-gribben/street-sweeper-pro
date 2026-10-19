@@ -1,0 +1,9 @@
+{
+  "id": "facade.flats_render",
+  "generator": "facades.set",
+  "cell": [64, 80],
+  "params": {
+    "upper": [["render_window"], ["render_window"]],
+    "ground": [["render_door"], ["render_window"]]
+  }
+}

@@ -134,7 +134,9 @@ shadow 00 00 01 01 02 03 04 05 00 08 09 13 11 08 13 14 15 18 19 30 31 01 21 22 2
   from the top-left") all agree.
 - Top faces (roofs, bonnets, heads seen from above) render **base**, flat. NW-facing bevels are one step lighter,
   SE-facing ones one step darker (1 px; 2 px on large vehicles).
-- Building walls use pre-built ramp variants: N and W faces `lit`, E and S faces `dark`, roofs `base`.
+- Building walls use pre-built ramp variants: N and W faces `lit`, E and S faces `dark`, roofs `base`. The forge
+  derives `lit`/`dark` from base-value modules by one ramp step (clamped); ink 00, glass 25/27 and the accents
+  20/29 never shift, and glass gains one 28 glint per pane on `lit` only (ART_BIBLE §9.4).
 - **Creatures and litter are top-lit and symmetric** (highlights centred on head, shoulders and back), because
   SE/E/NE frames are mirrors and litter is rotated in 90° steps by code. The engine's SE drop shadow carries the
   sun direction for them.

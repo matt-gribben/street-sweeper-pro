@@ -1,0 +1,9 @@
+{
+  "id": "facade.parade_brick",
+  "generator": "facades.set",
+  "cell": [64, 80],
+  "params": {
+    "upper": [["window_sash"], ["window_sash", "drainpipe"]],
+    "ground": [["shopfront_window"], ["shopfront_door"]]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "facade.terrace_brick",
+  "generator": "facades.set",
+  "cell": [64, 80],
+  "params": {
+    "upper": [["window_sash"], ["window_sash", "drainpipe"]],
+    "ground": [["door_terrace"], ["window_sash", "drainpipe"]]
+  }
+}

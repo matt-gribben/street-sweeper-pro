@@ -1,0 +1,9 @@
+{
+  "id": "facade.depot_shed",
+  "generator": "facades.set",
+  "cell": [64, 80],
+  "params": {
+    "upper": [["shed_window"], ["shed_cladding"]],
+    "ground": [["shed_shutter"], ["shed_cladding"]]
+  }
+}

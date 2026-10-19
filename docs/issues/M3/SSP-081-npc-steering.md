@@ -2,7 +2,7 @@
 id: SSP-081
 title: "Implement NPC steering: seek, flee, separation, nav paths, zebra crossing"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:sim, area:ai-npc, area:test, size:L, vertical-slice]

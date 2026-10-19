@@ -491,7 +491,7 @@ Each milestone has the same shape:
 
 **Task checklist.**
 
-- [ ] `src/sim/npc/steering.ts`: seek, flee, separation, path following on the pavement nav graph, crossing logic at `site.zebra`.
+- [x] `src/sim/npc/steering.ts`: seek, flee, separation, path following on the pavement nav graph, crossing logic at `site.zebra`. *(SSP-081: also arrive, sidestep of Bessie's predicted path, prop avoidance, the kerb wait with its gap-check hook, per-zebra occupancy on `world.zebras` and the per-behaviour jaywalk flag; starting values in `tuning.json` → `streetLife.npcSteering`, M3 tuning.)*
 - [ ] Behaviours: `shopper.ts`, `oldWoman.ts`, `oldManFrame.ts`, `mumPushchair.ts`, `postie.ts`, `dogWalker.ts` (lead as a line obstacle; Lead Tangle; the dog drops `litter.dog_mess`), `businessman.ts`, `litterbug.ts`, `marketTrader.ts`, `cat.ts`, `pigeon.ts`. Traffic kinds in `traffic.ts`: taxi (abrupt fare stops), white van (parks half on the pavement), bicycle (filters between lanes), mobility scooter (1.5 m/s on pavements).
 - [ ] `src/sim/traffic.ts`: lane graph following, stopping behind Bessie, honk after 3 s blocked, the 10 s Road Rage complaint, bus stops at `site.bus_stop` for 5 s.
 - [ ] `src/sim/bodies.ts`: knockable impulse bodies with masses and spill counts from `entities.json`.

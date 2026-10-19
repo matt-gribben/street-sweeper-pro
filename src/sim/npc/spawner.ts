@@ -103,6 +103,8 @@ export type NpcSpawner = {
   readonly dogWalkerKind: number;
   /** Circle radius per NPC kind, metres. */
   readonly radiusByKind: Float64Array;
+  /** Walking speed per NPC kind (entities.json `speed`), m/s: each spawn's walkMps (steering.ts). */
+  readonly speedByKind: Float64Array;
   /** [0] the largest NPC radius (spawn points), [1] the dog's, [2] a flock's reach (spread + bird radius). */
   readonly radii: Float64Array;
   /** Live ambient NPCs per kind and in all, as counted at the start of this controller run. */
@@ -204,6 +206,7 @@ export function createNpcSpawner(level: Level, tuning: Tuning, entities: Entitie
     flocksPlaced: 0,
     dogWalkerKind: kindIndex('npc.dog_walker', where),
     radiusByKind: new Float64Array(NPC_IDS.length),
+    speedByKind: Float64Array.from(NPC_IDS, (id) => entities.npcs[id].speedMps),
     radii: new Float64Array(3),
     ambientByKind: new Int32Array(NPC_IDS.length),
     ambientCount: 0,
@@ -264,7 +267,8 @@ function placedReserve(sp: NpcSpawner): number {
 
 /**
  * Add an NPC of `kind` and `origin` (spec entry `group`) at (xs[j], ys[j]), in its behaviour's initial state,
- * with its kind's radius and nav target `node`; a dog walker gets its dog. Returns the index, or −1 when the
+ * with its kind's radius and walking speed and nav target `node`; a dog walker gets its dog (which keeps up at
+ * the walker's speed). Returns the index, or −1 when the
  * store is full (the caller checks room first).
  */
 function spawnAt(
@@ -284,12 +288,14 @@ function spawnAt(
   if (i < 0) return -1;
   npc.state[i] = behaviour.initial;
   npc.radius[i] = sp.radiusByKind[kind] as number;
+  npc.walkMps[i] = sp.speedByKind[kind] as number;
   npc.targetNode[i] = node;
   if (kind === sp.dogWalkerKind && origin !== NpcOrigin.Companion) {
     const d = addNpc(npc, kind, NpcOrigin.Companion, -1, xs, ys, j);
     if (d >= 0) {
       npc.state[d] = behaviour.initial;
       npc.radius[d] = sp.radii[1] as number;
+      npc.walkMps[d] = sp.speedByKind[kind] as number;
       npc.targetNode[d] = node;
       npc.link[d] = npcHandle(npc, i);
       npc.link[i] = npcHandle(npc, d);

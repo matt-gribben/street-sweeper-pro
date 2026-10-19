@@ -31,6 +31,11 @@ const NPC_GEN_MASK = 0xffffff;
 export const NO_NPC_HANDLE = -1;
 /** Edge of one spatial-hash cell in metres (the litter.ts cell). */
 export const NPC_HASH_CELL_M = 4;
+/**
+ * Nav nodes of path each NPC holds at once (steering.ts, SSP-081): its path segment, path[i·NPC_PATH_NODES …].
+ * A longer path is planned again from the segment's last node when the NPC reaches it.
+ */
+export const NPC_PATH_NODES = 32;
 
 /**
  * Per-NPC flag bits (`flags`, Uint16). Hashed into replays: append, never renumber. Behaviours set them
@@ -98,6 +103,20 @@ export type NpcStore = {
   readonly pathEtaS: Float64Array;
   /** Perception: the tick of the last query, −1 before the first. */
   readonly perceivedTick: Int32Array;
+  /** Steering (steering.ts, SSP-081): the speed it steers at, m/s (its kind's entities.json speed at spawn). */
+  readonly walkMps: Float64Array;
+  /** Steering: the nav node its path leads to, −1 = none. */
+  readonly goalNode: Int32Array;
+  /** Steering: nodes in its path segment (path[i·NPC_PATH_NODES …]) and the cursor; targetNode = path[pathAt]. */
+  readonly pathLen: Uint8Array;
+  readonly pathAt: Uint8Array;
+  /** Steering: every NPC's path segment, NPC_PATH_NODES nav nodes per index. */
+  readonly path: Int32Array;
+  /** Steering: the crossing nav edge it waits at or is crossing, −1 = none. */
+  readonly crossEdge: Int32Array;
+  /** Steering: its NavState (steering.ts) and the ticks spent in it. */
+  readonly navState: Uint8Array;
+  readonly navTicks: Uint32Array;
   /** Handle slot of each live index. */
   readonly handleSlot: Int32Array;
   /** Live index of each handle slot, −1 while the slot is free. */
@@ -144,6 +163,10 @@ export type NpcStoreView = {
   readonly origin: Uint8Array;
   readonly group: Int16Array;
   readonly link: Int32Array;
+  readonly walkMps: Float64Array;
+  readonly goalNode: Int32Array;
+  readonly crossEdge: Int32Array;
+  readonly navState: Uint8Array;
   readonly handleSlot: Int32Array;
   readonly slotGen: Uint32Array;
 };
@@ -186,6 +209,14 @@ export function createNpcStore(level: Level, capacity: number = NPC_CAPACITY): N
     pathGapM: new Float64Array(capacity).fill(-1),
     pathEtaS: new Float64Array(capacity).fill(-1),
     perceivedTick: new Int32Array(capacity).fill(-1),
+    walkMps: new Float64Array(capacity),
+    goalNode: new Int32Array(capacity).fill(-1),
+    pathLen: new Uint8Array(capacity),
+    pathAt: new Uint8Array(capacity),
+    path: new Int32Array(capacity * NPC_PATH_NODES).fill(-1),
+    crossEdge: new Int32Array(capacity).fill(-1),
+    navState: new Uint8Array(capacity),
+    navTicks: new Uint32Array(capacity),
     handleSlot: new Int32Array(capacity).fill(-1),
     slotIndex: new Int32Array(capacity).fill(-1),
     slotGen: new Uint32Array(capacity),
@@ -321,8 +352,8 @@ export function queryNpcs(store: NpcStore, box: Readonly<Aabb>, out: Int32Array)
 
 /**
  * Add an NPC of `kind` (NPC_IDS index) and `origin`, spawned from spec entry `group` (−1 for none), at
- * (xs[j], ys[j]), at rest, facing north, in state 0 with no target node, flags, link or perception, and
- * radius 0 (the spawner sets the state and radius). Returns its index, or −1 (changing nothing) when the store
+ * (xs[j], ys[j]), at rest, facing north, in state 0 with no target node, flags, link, perception or path, and
+ * radius and walking speed 0 (the spawner sets the state, radius and speed). Returns its index, or −1 (changing nothing) when the store
  * is full. Takes the position through arrays so no double crosses the call.
  */
 export function addNpc(
@@ -364,6 +395,13 @@ export function addNpc(
   store.pathGapM[i] = -1;
   store.pathEtaS[i] = -1;
   store.perceivedTick[i] = -1;
+  store.walkMps[i] = 0;
+  store.goalNode[i] = -1;
+  store.pathLen[i] = 0;
+  store.pathAt[i] = 0;
+  store.crossEdge[i] = -1;
+  store.navState[i] = 0;
+  store.navTicks[i] = 0;
   linkCell(store, i, npcCellIndex(store, i));
   return i;
 }
@@ -413,6 +451,14 @@ export function removeNpc(store: NpcStore, i: number): void {
     store.pathGapM[i] = store.pathGapM[last] as number;
     store.pathEtaS[i] = store.pathEtaS[last] as number;
     store.perceivedTick[i] = store.perceivedTick[last] as number;
+    store.walkMps[i] = store.walkMps[last] as number;
+    store.goalNode[i] = store.goalNode[last] as number;
+    store.pathLen[i] = store.pathLen[last] as number;
+    store.pathAt[i] = store.pathAt[last] as number;
+    store.path.copyWithin(i * NPC_PATH_NODES, last * NPC_PATH_NODES, (last + 1) * NPC_PATH_NODES);
+    store.crossEdge[i] = store.crossEdge[last] as number;
+    store.navState[i] = store.navState[last] as number;
+    store.navTicks[i] = store.navTicks[last] as number;
     const movedSlot = store.handleSlot[last] as number;
     store.handleSlot[i] = movedSlot;
     store.slotIndex[movedSlot] = i;

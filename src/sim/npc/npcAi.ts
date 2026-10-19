@@ -6,10 +6,12 @@
 //      ambient population (at most 2 spawns or retirements);
 //   4. deliverStimuli (stimuli.ts): every queued stimulus, to the behaviours' onStimulus;
 //   5. perceiveNpcs (perception.ts): the perception query of the quarter of the store on this tick's phase;
-//   6. tickNpcBehaviours (here): each live NPC's behaviour tick, in index order, then its state clock.
-// Steering (SSP-081) and the shared reaction model (SSP-082) plug into the behaviours' ticks.
+//   6. tickNpcBehaviours (here): each live NPC's behaviour tick, in index order, then its state clock;
+//   7. updateZebraOccupancy (steering.ts, SSP-081): world.zebras from where the NPCs ended up.
+// Steering (steering.ts, SSP-081) and the shared reaction model (SSP-082) plug into the behaviours' ticks.
 //
 // Hot path: tickNpcBehaviours allocates nothing.
+import type { StaticGrid } from '../collision/grid.ts';
 import type { Entities } from '../entities.ts';
 import type { Level } from '../map.ts';
 import { createStream, type Sfc32 } from '../rng.ts';
@@ -18,6 +20,7 @@ import type { World } from '../world.ts';
 import type { Behaviour } from './behaviour.ts';
 import { behavioursByKind } from './registry.ts';
 import { createNpcSpawner, type NpcSpawner } from './spawner.ts';
+import { createSteering, type Steering, type Zebras } from './steering.ts';
 import { createStimulusQueue, type StimulusQueue } from './stimuli.ts';
 
 /** Everything phase 7 needs besides the store itself (world.npc). */
@@ -31,17 +34,31 @@ export type NpcAi = {
    */
   readonly behaviours: Behaviour[];
   readonly spawner: NpcSpawner;
+  /** The steering core's tables, search buffers and kerb gap check (steering.ts, SSP-081). */
+  readonly steering: Steering;
   /** The validated entities.json the World runs on (the kinds' behaviour keys and radius classes). */
   readonly entities: Entities;
 };
 
-/** Phase 7's state for a shift on `level` with `seed`. Setup only. */
-export function createNpcAi(level: Level, seed: number, tuning: Tuning, entities: Entities): NpcAi {
+/**
+ * Phase 7's state for a shift on `level` with `seed`; steering takes the props from `grid`, the zebras from
+ * `zebras` and sizes its neighbour buffer for `capacity` NPCs. Setup only.
+ */
+export function createNpcAi(
+  level: Level,
+  seed: number,
+  tuning: Tuning,
+  entities: Entities,
+  grid: StaticGrid,
+  zebras: Zebras,
+  capacity: number,
+): NpcAi {
   return {
     rng: createStream(seed >>> 0, 'npc'),
     stimuli: createStimulusQueue(),
     behaviours: behavioursByKind(entities),
     spawner: createNpcSpawner(level, tuning, entities),
+    steering: createSteering(level, grid, zebras, tuning, capacity),
     entities,
   };
 }

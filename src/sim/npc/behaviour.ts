@@ -33,6 +33,12 @@ export const STIMULUS_MAX = 6;
 export type Behaviour = {
   /** The state a newly spawned NPC starts in. */
   readonly initial: number;
+  /**
+   * True for the kinds that jaywalk (TECHNICAL_DESIGN §11.1, SSP-081; in M3 the cat and the businessman):
+   * steering (steering.ts) lets them onto any road tile and across a crossing without waiting at the kerb.
+   * Every other kind keeps its centre off the road except while it is on a crossing edge of the nav graph.
+   */
+  readonly jaywalks: boolean;
   /** Advance NPC `i` by one tick. */
   tick(w: World, i: number): void;
   /**

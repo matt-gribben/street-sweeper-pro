@@ -20,7 +20,8 @@
 //   7 NPC               beginNpcTick (prev positions) → updateViewRect (world.viewRect from Bessie's pose) →
 //                       stepNpcSpawner (named arrivals; once a second cats, flocks and the ambient population)
 //                       → deliverStimuli → perceiveNpcs (index mod 4 == tick mod 4) → tickNpcBehaviours
-//                       (npc/, SSP-080)
+//                       (npc/, SSP-080; the behaviours steer with npc/steering.ts, SSP-081) →
+//                       updateZebraOccupancy (world.zebras, SSP-081)
 //   8 Traffic           empty until M3 (SSP-089)
 //   9 Scoring/combo/complaints stepScoring (scoring.ts, combo.ts) → stepTidy (tidy.ts); complaints.ts is M3
 //                       (SSP-078) (SSP-065)
@@ -82,6 +83,13 @@ import type { Level } from './map.ts';
 import { createNpcAi, type NpcAi, tickNpcBehaviours } from './npc/npcAi.ts';
 import { perceiveNpcs } from './npc/perception.ts';
 import { setNpcSpawnerTuning, stepNpcSpawner } from './npc/spawner.ts';
+import {
+  createZebras,
+  setSteeringTuning,
+  updateZebraOccupancy,
+  type Zebras,
+  type ZebrasView,
+} from './npc/steering.ts';
 import { deliverStimuli } from './npc/stimuli.ts';
 import { beginNpcTick, createNpcStore, type NpcStore, type NpcStoreView } from './npc/store.ts';
 import { createStream, type Sfc32 } from './rng.ts';
@@ -204,8 +212,16 @@ export type World = {
    * Phase 7's spawner fills and empties it; the behaviours move them.
    */
   readonly npc: NpcStore;
-  /** Phase 7's other state (npc/npcAi.ts): the `npc` stream, the stimulus queue, the behaviours, the spawner. */
+  /**
+   * Phase 7's other state (npc/npcAi.ts): the `npc` stream, the stimulus queue, the behaviours, the spawner and
+   * the steering core.
+   */
   readonly npcAi: NpcAi;
+  /**
+   * Per-zebra occupancy (npc/steering.ts, SSP-081): every site.zebra and how many NPCs stand on it, counted at
+   * the end of phase 7. A zebra is OCCUPIED while its count is above 0 (traffic, SSP-089; the penalty, SSP-085).
+   */
+  readonly zebras: Zebras;
   /**
    * The deterministic stand-in for the view (viewRect.ts, TECHNICAL_DESIGN §7.4): Bessie plus her look-ahead,
    * ±28 × ±14.2 m, margin included. Updated at the start of phase 7 from her pose after phase 3; spawning and
@@ -252,6 +268,7 @@ export type WorldView = {
   readonly tidy: TidyView;
   readonly hazards: HazardStoreView;
   readonly npc: NpcStoreView;
+  readonly zebras: ZebrasView;
   readonly viewRect: Readonly<ViewRect>;
   readonly surface: Readonly<VehicleSurface>;
   readonly events: ReadonlyEventQueue;
@@ -304,7 +321,9 @@ export function createWorld(
   stains.onPenalty = scoring.penaltyHook;
   // NPCs spawn from the first tick's phase 7 on (the spawner never places one at shift setup).
   const npc = createNpcStore(level);
-  const npcAi = createNpcAi(level, seed >>> 0, tuning, entities);
+  const staticGrid = createStaticGrid(level, tuning.propFootprints);
+  const zebras = createZebras(level);
+  const npcAi = createNpcAi(level, seed >>> 0, tuning, entities, staticGrid, zebras, npc.capacity);
   const world: World = {
     level,
     tuning,
@@ -325,10 +344,11 @@ export function createWorld(
     eventsRng,
     npc,
     npcAi,
+    zebras,
     viewRect: createViewRect(vehicle),
     surface: { gripPerS: sweeper.lateralGripPerS.asphalt, rollMult: 1 },
     events: createEventQueue(),
-    staticGrid: createStaticGrid(level, tuning.propFootprints),
+    staticGrid,
     staticResolver: createStaticResolver(),
     shift: createShift(level, vehicle, hopper, water, tuning, shift),
     recordInput: null,
@@ -382,6 +402,7 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   setScoringTuning(world.scoring, tuning);
   setTidyTuning(world.tidy, tuning, world.dirt, world.litter);
   setNpcSpawnerTuning(world, tuning, world.npcAi.entities);
+  setSteeringTuning(world.npcAi.steering, world.level, world.staticGrid, tuning);
 }
 
 /** Advance the world by one tick (DT_S) under `input`, running the 11 phases of §5.2 in order. */
@@ -581,7 +602,8 @@ function phaseDirt(world: World): void {
  *      population (at most 2 spawns or retirements), all off the view rect except named arrivals.
  *   4. deliverStimuli: the queued Horn, Spray, Hit, NearMiss, HiVis and BeaconYield stimuli, in push order.
  *   5. perceiveNpcs: the perception query of every NPC with index mod 4 == tick mod 4.
- *   6. tickNpcBehaviours: each NPC's behaviour tick, in index order.
+ *   6. tickNpcBehaviours: each NPC's behaviour tick, in index order (behaviours steer with npc/steering.ts).
+ *   7. updateZebraOccupancy: how many NPCs stand on each zebra (world.zebras), for phases 8 and 9.
  */
 function phaseNpc(world: World): void {
   beginNpcTick(world.npc);
@@ -590,6 +612,7 @@ function phaseNpc(world: World): void {
   deliverStimuli(world);
   perceiveNpcs(world);
   tickNpcBehaviours(world);
+  updateZebraOccupancy(world);
 }
 
 /** Phase 8: traffic. SSP-089. */

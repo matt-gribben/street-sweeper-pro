@@ -729,6 +729,8 @@ Junction approaches keep **3 tiles** of kerb clear of parking bays on each arm, 
 | **Parking bays** | `p` along the kerb, runs of 2–8 | Parked-car spawn candidates; `traffic.parkedFill` sets occupancy |
 | **Taxi rank** | `p` run listed in `traffic.taxiRank` | Saturday |
 
+*As built (SSP-081), zebras for pedestrians:* a non-jaywalking NPC crosses a road only along a crossing edge of the nav graph (zebra, school crossing or dropped kerb, §7.2). It walks to the kerb node, waits there for `tuning.json` → `streetLife.npcSteering.kerbLookS` and until the kerb gap check says clear (a hook that says clear until traffic exists, SSP-089), then crosses in the crossing's straight corridor. While any NPC's centre is on a `site.zebra` rect the zebra is **OCCUPIED** (`world.zebras.occupancy`, recounted at the end of phase 7), which traffic's stop line (SSP-089) and the running-an-occupied-zebra penalty (SSP-085) read ([TECHNICAL_DESIGN §11.1](TECHNICAL_DESIGN.md#111-behaviour-system)).
+
 ### 7.6 Parks, markets and squares
 
 - **Parks** are hedge (`e`) or railing (`r`) bounded grass (`,`) with pavement paths (`.`) at least 2 tiles wide. Paths are drivable shortcuts. Grass is drivable but slow (grip 5.0, drag ×2.5). Trees (`t`) and benches (`n`) are solid.

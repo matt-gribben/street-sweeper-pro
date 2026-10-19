@@ -4,7 +4,8 @@
 // - `ci` (headless SwiftShader, `npm run test:e2e`): draw calls ≤ 10 per frame over every pass, read from
 //   `__ssp.perf().drawCalls` (renderer.info with autoReset = false). A CPU rasteriser on a shared runner says
 //   nothing about GPU frame time, so this project asserts no timing. The sim-step assertion joins it with the
-//   first stress scene (M3, SSP-106): there is no sim in M0.
+//   first stress scene (M3, SSP-106): there is no sim in M0. Since SSP-102 a second `ci` check counts the draws of
+//   a shift with fx particles alive (the fx_puddle splash): one more draw while droplets live, still within 10.
 // - `gpu` (headed Chromium on the real GPU, local only: `npx playwright test tests/e2e/perf.spec.ts
 //   --project=gpu`): samples requestAnimationFrame timestamp deltas from `__ssp.perf().frameMs` and asserts
 //   their p99 against P99_FRAME_TIME_BUDGET_MS. Never run by `npm run test:e2e`, `npm run ci` or ci.yml.
@@ -16,9 +17,11 @@
 // Civic Quarter stress load; the final perf scene is Kebab Mile at night with max litter (§18.6).
 import { expect, type Page, test } from '@playwright/test';
 import type { TestPerf } from '../../src/debug/testHooks.ts';
+import { SPLASH } from '../../src/render/fx.ts';
 import { HEADING_COUNT } from '../../src/render/headings.ts';
 import { FRAMES_PER_HEADING } from '../../src/render/spikeActors.ts';
 import { frameStats, roundStats } from '../support/frameStats.ts';
+import { FX_PUDDLE_DRIVE_TICKS, planFxPuddle } from '../support/fxPuddle.ts';
 
 /** Draw-call budget per frame, all passes (§12.7: 9 allocated + 1 spare for the dev panel). */
 const DRAW_CALL_BUDGET = 10;
@@ -113,6 +116,44 @@ test('draw calls stay within the budget on lean_quadrants', { tag: '@ci' }, asyn
     MIN_PLAUSIBLE_DRAW_CALLS,
   );
   expect(maxCalls, `draw calls per frame (budget ${DRAW_CALL_BUDGET})`).toBeLessThanOrEqual(DRAW_CALL_BUDGET);
+  expect(errors).toEqual([]);
+});
+
+test('draw calls stay within the budget with fx particles active (fx_puddle splash, SSP-102)', {
+  tag: '@ci',
+}, async ({ page }) => {
+  const errors = collectErrors(page);
+  // The splash drive planned in Node (tests/support/fxPuddle.ts), replayed by World tick.
+  const plan = planFxPuddle(1);
+  await page.goto('/?test=1&seed=1&scene=fx_puddle&freeze=1');
+  await page.waitForFunction(() => window.__ssp?.ready === true);
+  await page.evaluate(({ inputs, ticks }) => window.__ssp?.loadInputs(inputs, ticks), {
+    inputs: plan.inputs,
+    ticks: FX_PUDDLE_DRIVE_TICKS,
+  });
+  const counts = await page.evaluate(
+    ({ upTo, frames }) => {
+      const api = window.__ssp;
+      if (api === undefined) throw new Error('window.__ssp missing');
+      api.step(upTo);
+      const out = [api.perf().drawCalls];
+      for (let i = 0; i < frames; i++) {
+        api.step(1);
+        out.push(api.perf().drawCalls);
+      }
+      return out;
+    },
+    { upTo: plan.splashTick, frames: SPLASH.lifeMaxTicks + 2 },
+  );
+  const maxCalls = Math.max(...counts);
+  console.log(`[perf:ci] fx_puddle draw calls ${counts.join(' ')} (budget ${DRAW_CALL_BUDGET})`);
+  // Before the splash: no fx draw. While droplets live: exactly one more. After the last dies: skipped again.
+  expect(counts[0]).toBe(maxCalls - 1);
+  expect(counts.filter((n) => n === maxCalls).length).toBeGreaterThanOrEqual(SPLASH.lifeMinTicks);
+  expect(counts[counts.length - 1]).toBe(maxCalls - 1);
+  expect(maxCalls, `draw calls per frame with particles (budget ${DRAW_CALL_BUDGET})`).toBeLessThanOrEqual(
+    DRAW_CALL_BUDGET,
+  );
   expect(errors).toEqual([]);
 });
 

@@ -2,7 +2,7 @@
 id: SSP-102
 title: "Add placeholder particles in src/render/fx.ts for dust, splash and sparkle"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: S
 labels: [type:feature, area:render, area:test, size:S, vertical-slice]

@@ -21,8 +21,13 @@
 //                       (itemsBatch.ts, SSP-067). It reads the World, never writes it.
 //
 // Draw calls: city (1) + building shadows (1) + Bessie's drop shadow (1) + actors batch (1) + items batch (1) +
-// the HUD's UI batch (1), then the palette pass and the blit: 8 of the 10 budgeted (§12.7). The items draw is
-// skipped (7) only when no item is in view.
+// the fx particles (1, only while one is alive) + the HUD's UI batch (1), then the palette pass and the blit: 8 of
+// the 10 budgeted without effects, 9 with (§12.7). The items draw is skipped only when no item is in view.
+//
+// FX (SSP-102, src/render/fx.ts): enter() builds the placeholder particle pool, seeded with fxRenderSeed(seed) (a
+// render-side sfc32, never a sim stream), and attaches it to the bus (EV.DustCloud, EV.Splash, EV.PowerUp; Bessie's
+// pose read at drain time); fixedUpdate() hands it the frontages' read-only Clean Sweep flags after each tick, and
+// render() draws the particles alive at the World's tick and the render alpha.
 //
 // HUD (SSP-070, src/ui/hud.ts): enter() also takes the `ui` atlas and Kerbside 5×7 and builds the HUD over one
 // UiSpriteBatch on the UI pass (SceneContext.ui); it subscribes to EV.ComboTier on the event bus for the tier
@@ -69,6 +74,7 @@ import { ACTION, DEFAULT_INPUT_DEVICE, type MenuInputSource } from '../input/act
 import { type BessieSprite, createBessieSprite } from '../render/bessieSprite.ts';
 import { brushSpinFrameAt, createBrushSpin } from '../render/brushSpin.ts';
 import { cameraGroundRect, groundPxPerMetre } from '../render/camera.ts';
+import { FxParticles, fxRenderSeed } from '../render/fx.ts';
 import { bodyVelocity, createPose, createVelocity, interpolatePose } from '../render/interpolate.ts';
 import { ItemsBatch } from '../render/itemsBatch.ts';
 import { createLevelCity, type LevelCity } from '../render/levelCity.ts';
@@ -140,6 +146,7 @@ type Built = {
   readonly items: ItemsBatch;
   readonly hudBatch: UiSpriteBatch;
   readonly hud: Hud;
+  readonly fx: FxParticles;
 };
 
 /** The drive-only shift: one World, its level city and Bessie. */
@@ -170,6 +177,8 @@ export class ShiftScene implements Scene {
   private hud: Hud | null = null;
   private hudBatch: UiSpriteBatch | null = null;
   private unsubscribeHud: Unsubscribe | null = null;
+  private fx: FxParticles | null = null;
+  private unsubscribeFx: Unsubscribe | null = null;
   /** The brush overlay's spin phase (render-side, brushSpin.ts). */
   private readonly brushSpin = createBrushSpin();
   /** The camera's ground rect this frame (the items batch's cull rect before its margin), reused every frame. */
@@ -276,6 +285,11 @@ export class ShiftScene implements Scene {
     return this.items;
   }
 
+  /** The placeholder particles (null before enter() resolves). */
+  get fxParticles(): FxParticles | null {
+    return this.fx;
+  }
+
   /** The HUD (null before enter() resolves). */
   get hudView(): Hud | null {
     return this.hud;
@@ -354,7 +368,7 @@ export class ShiftScene implements Scene {
       assets.atlas('ui'),
       assets.font(HUD_FONT),
     );
-    const { sim, city, bessie, hud, hudBatch } = built;
+    const { sim, city, bessie, hud, hudBatch, fx } = built;
     this.items = built.items;
     if (this.recordInputs) {
       const log = createInputLog();
@@ -370,12 +384,14 @@ export class ShiftScene implements Scene {
     this.hud = hud;
     this.hudBatch = hudBatch;
     this.unsubscribeHud = hud.attach(this.context.events);
+    this.fx = fx;
+    this.unsubscribeFx = fx.attach(this.context.events, sim.vehicle);
     this.unsubscribeHidden = this.context.onHidden(() => this.requestPause(PauseReason.Hidden));
     // A Pause press latched before the shift started (Esc on the card or the tally) must not pause it.
     this.pauseInput?.takeSceneEdges(ACTION.PAUSE);
     this.pausedNow = false;
     this.districtId = district;
-    this.context.root.add(city.group, bessie.group, built.items.mesh);
+    this.context.root.add(city.group, bessie.group, built.items.mesh, fx.mesh);
     this.context.ui.add(hudBatch.mesh);
     this.brushSpin.lastTick = -1;
     // Place the camera over Bessie before the first frame (no render time passes, so no spring moves).
@@ -412,7 +428,14 @@ export class ShiftScene implements Scene {
       });
       const hudBatch = new UiSpriteBatch(ui, HUD_CAPACITY);
       const hud = new Hud(hudBatch, font, DEFAULT_GLYPHS);
-      return { sim, city, bessie, items: itemsBatch, hudBatch, hud };
+      const body = this.currentTuning.vehicle.sweeper.body;
+      const fx = new FxParticles({
+        seed: fxRenderSeed(seed),
+        frontAxleM: body.frontAxleOffsetM,
+        halfWidthM: body.widthM / 2,
+        frontages: level.frontages,
+      });
+      return { sim, city, bessie, items: itemsBatch, hudBatch, hud, fx };
     } catch (error: unknown) {
       itemsBatch?.dispose();
       bessie?.dispose();
@@ -439,6 +462,13 @@ export class ShiftScene implements Scene {
     }
     this.unsubscribeHud?.();
     this.unsubscribeHud = null;
+    this.unsubscribeFx?.();
+    this.unsubscribeFx = null;
+    if (this.fx !== null) {
+      this.context.root.remove(this.fx.mesh);
+      this.fx.dispose();
+      this.fx = null;
+    }
     this.unsubscribeHidden?.();
     this.unsubscribeHidden = null;
     if (this.hudBatch !== null) {
@@ -462,6 +492,7 @@ export class ShiftScene implements Scene {
       if (this.requestPause(PauseReason.Player)) return;
     }
     world.step(input);
+    this.fx?.trackCleanSweeps(world.tidy.cleanSwept, world.tick - 1);
     this.city?.grime?.accumulate(world.dirt);
     this.hud?.tick(world);
   }
@@ -497,6 +528,7 @@ export class ShiftScene implements Scene {
         rig.snappedZ,
       );
     }
+    this.fx?.update(world.tick, alpha);
     const hud = this.hud;
     const batch = this.hudBatch;
     if (hud !== null && batch !== null) {

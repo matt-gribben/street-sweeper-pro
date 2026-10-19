@@ -51,8 +51,11 @@ function teleport(w: World, x: number, y: number, heading: number): void {
 }
 
 function trafficRig(): { cross: World; street: World; step: (t: number) => void; counts: () => number[] } {
-  // The meter fills after five blocks and stays full; Road Rage still records its fact every block.
-  const tuning = endlessShiftTuning();
+  // Road Rage files a complaint every block; since SSP-079 a full meter (5) ends the shift SACKED and freezes the
+  // World, so the meter's cap is raised out of reach and the street keeps honking for the whole window.
+  const tuning = endlessShiftTuning((raw) => {
+    raw.complaints.meter.sackedAt = 1_000_000_000;
+  });
   const cross = createWorld(
     compileTrafficTown(CROSSROADS, {
       densityPerKm: 40,

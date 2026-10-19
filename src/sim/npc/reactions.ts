@@ -56,6 +56,28 @@
 // of either refills both ignore windows, and a touch while either window is open or either is FALLEN is part of
 // the same episode, so hitting the walker and then the dog (or the other way round) costs one hit.
 //
+// Street-life rules (stepStreetLife, right after the actor contacts, so its stimuli are delivered the same tick;
+// GDD §10.3, §8.6, ENTITY_CATALOG §3.4; SSP-095). Both apply to pedestrians only: the person kinds (every kind
+// but the cat and the pigeon), not a companion dog. Bessie's body box is the one stepActorContacts just set up.
+//   Near miss. Each pedestrian has a pass state (store `nearMiss`, NearMissState). The gap is the distance from
+//   its circle to Bessie's body box (the centre's distance to the box less its radius; compared squared, so no
+//   square root). Contact this tick means the circle overlaps the box, the actor-contact window was refilled
+//   this tick (stepActorContacts touched it) or it is FALLEN. Armed: a pass starts when the gap is at most
+//   streetLife.nearMiss.maxGapM (0.5 m) without contact; Passing tracks the smallest gap so far and whether
+//   Bessie's speed sqrt(vLong² + vLat²) was above minSpeedMps (3 m/s) on that tick. On the first tick the gap
+//   does not shrink, the closest approach is behind her: if she was fast there, the near miss is awarded
+//   (EV.NearMiss with streetLife.nearMiss.pts, +25, which phase 9 adds through the bonus API, unmultiplied and
+//   leaving the chain alone; a NearMiss stimulus startles the pedestrian), and either way the pass is Spent.
+//   Contact at any point of a pass also spends it, with no award: a contact is a hit (or a bump), never a near
+//   miss. A spent pass re-arms once the gap exceeds rearmGapM (1.5 m; proposed in SSP-095, owner to review), so
+//   one pass earns at most one award.
+//   Dust coughing. A pedestrian whose centre is within streetLife.dust.radiusM (3 m) of a live dust cloud
+//   (dirt.ts stepDust, phase 6) counts the ticks in a row it stays there (store `dustTicks`); out of range the
+//   count is 0. On every dust.everyS × 60th (120th) tick in range it coughs: a penalty fact (Offence.Dust,
+//   dust.pts −10, no complaint; phase 9 takes the points and resets the chain, GDD §10.2, §20 Q8), EV.Cough and
+//   a Cough stimulus (the generic pedestrian plays its startle frames; Doris never startles). So 240 ticks in
+//   range cost exactly −20, and leaving the range restarts the count.
+//
 // Hot path: stepReactions allocates nothing and passes no doubles across calls, except
 // addLitter's arguments on the rare tick a hit drops shopping (as with the hazard spills, hazards.ts).
 
@@ -76,12 +98,20 @@ import { Stimulus } from './behaviour.ts';
 import { stepPuddleSplash } from './splash.ts';
 import { STEER_TILE } from './steering.ts';
 import { pushStimulus, STIMULUS_EVERYONE } from './stimuli.ts';
-import { NO_NPC_HANDLE, NPC_FLAG, npcHandle, queryNpcs, resolveNpcHandle } from './store.ts';
+import { NO_NPC_HANDLE, NPC_FLAG, NpcOrigin, npcHandle, queryNpcs, resolveNpcHandle } from './store.ts';
 
 /** Dropped items land this far from the actor's centre at least, metres. */
 export const DROP_MIN_M = 0.4;
 /** …and at most this far. */
 export const DROP_MAX_M = 1.2;
+
+/**
+ * A pedestrian's near-miss pass (store `nearMiss`, stepStreetLife; see the header). Passing and PassingFast both
+ * track a pass; PassingFast when Bessie was above the near-miss speed at its closest approach so far. Hashed:
+ * append, never renumber.
+ */
+export const NearMissState = { Armed: 0, Passing: 1, PassingFast: 2, Spent: 3 } as const;
+export type NearMissState = (typeof NearMissState)[keyof typeof NearMissState];
 
 /** The shared reaction state and per-kind tables, built once per shift (createReactions). */
 export type Reactions = {
@@ -100,6 +130,20 @@ export type Reactions = {
   /** Hit and bump episodes this shift. */
   hits: number;
   bumps: number;
+  /** streetLife.nearMiss: the gap a pass needs (m), the squared speed it must beat, the bonus and the re-arm gap. */
+  nearMissGapM: number;
+  nearMissMinSpeed2: number;
+  nearMissPts: number;
+  nearMissRearmGapM: number;
+  /** streetLife.dust: the cough radius squared (m²), the penalty and the ticks per cough (everyS × 60). */
+  dustRadius2: number;
+  dustPts: number;
+  dustEveryTicks: number;
+  /** Near misses awarded and coughs this shift. */
+  nearMisses: number;
+  coughs: number;
+  /** Per NPC kind: 1 for a person (every kind but the cat and the pigeon), whom the street-life rules cover. */
+  readonly isPerson: Uint8Array;
   /** Per NPC kind (NPC_IDS index): 1 when it has a `hit` (it can be hit), its points and complaints. */
   readonly hasHit: Uint8Array;
   readonly hitPts: Int32Array;
@@ -134,6 +178,24 @@ function applyTuning(r: Reactions, tuning: Tuning): void {
     );
   }
   r.ignoreTicks = ignore;
+  const nm = sl.nearMiss;
+  if (!(nm.rearmGapM >= nm.maxGapM)) {
+    throw new Error(
+      `reactions: streetLife.nearMiss.rearmGapM (${nm.rearmGapM} m) must be at least maxGapM (${nm.maxGapM} m)`,
+    );
+  }
+  r.nearMissGapM = nm.maxGapM;
+  r.nearMissMinSpeed2 = nm.minSpeedMps * nm.minSpeedMps;
+  r.nearMissPts = nm.pts;
+  r.nearMissRearmGapM = nm.rearmGapM;
+  const dust = sl.dust;
+  const every = Math.round(dust.everyS * SIM_HZ);
+  if (!(every >= 1 && every <= 0xffff)) {
+    throw new Error(`reactions: streetLife.dust.everyS must be 1..65535 ticks, got ${dust.everyS} s`);
+  }
+  r.dustRadius2 = dust.radiusM * dust.radiusM;
+  r.dustPts = dust.pts;
+  r.dustEveryTicks = every;
 }
 
 /** The reaction state for a shift on `tuning` and `entities`, for a store of `capacity`. Setup only. */
@@ -143,12 +205,14 @@ export function createReactions(tuning: Tuning, entities: Entities, capacity: nu
   const hitPts = new Int32Array(kinds);
   const hitComplaints = new Uint8Array(kinds);
   const yields = new Uint8Array(kinds);
+  const isPerson = new Uint8Array(kinds);
   const dropStart = new Int32Array(kinds + 1);
   const litter: number[] = [];
   const counts: number[] = [];
   for (let k = 0; k < kinds; k += 1) {
     const e = entities.npcs[NPC_IDS[k] as (typeof NPC_IDS)[number]];
     yields[k] = e.yields ? 1 : 0;
+    isPerson[k] = e.behaviour === 'cat' || e.behaviour === 'pigeon' ? 0 : 1;
     dropStart[k] = litter.length;
     if (e.hit === null) continue;
     hasHit[k] = 1;
@@ -174,6 +238,17 @@ export function createReactions(tuning: Tuning, entities: Entities, capacity: nu
     hiVisUntilTick: 0,
     hits: 0,
     bumps: 0,
+    // Fractional first so the fields start as doubles (TECHNICAL_DESIGN §17, deprecated maps).
+    nearMissGapM: 0.5,
+    nearMissMinSpeed2: 0.5,
+    nearMissPts: 0,
+    nearMissRearmGapM: 0.5,
+    dustRadius2: 0.5,
+    dustPts: 0,
+    dustEveryTicks: 0,
+    nearMisses: 0,
+    coughs: 0,
+    isPerson,
     hasHit,
     hitPts,
     hitComplaints,
@@ -414,11 +489,145 @@ function spawnDrops(w: World, i: number, kind: number, count: number): void {
 }
 
 /**
- * Phase 7, after the spawner and before deliverStimuli: the tick's stimuli, then actor contact (header), then the
- * puddle splashes (splash.ts, SSP-094).
+ * Phase 7, after stepActorContacts (which set up Bessie's body box this tick) and before deliverStimuli: the
+ * near-miss passes and the dust coughs of every pedestrian (see the header). Allocation-free.
+ */
+export function stepStreetLife(w: World): void {
+  const npc = w.npc;
+  const n = npc.count;
+  if (n === 0) return;
+  const r = w.npcAi.reactions;
+  const v = w.vehicle;
+  const obb = r.obb;
+  const cx = obb.cx;
+  const cy = obb.cy;
+  const rx = obb.rightX;
+  const ry = obb.rightY;
+  const fx = obb.forwardX;
+  const fy = obb.forwardY;
+  const hw = obb.halfWidthM;
+  const hl = obb.halfLengthM;
+  const fast = v.vLongMps * v.vLongMps + v.vLatMps * v.vLatMps > r.nearMissMinSpeed2;
+  const gapM = r.nearMissGapM;
+  const rearmM = r.nearMissRearmGapM;
+  const touched = r.ignoreTicks;
+  const dust = w.dust;
+  const clouds = dust.count;
+  const head = dust.head;
+  const cap = dust.capacity;
+  const dustR2 = r.dustRadius2;
+  for (let i = 0; i < n; i += 1) {
+    if (r.isPerson[npc.kind[i] as number] !== 1 || npc.origin[i] === NpcOrigin.Companion) continue;
+    const x = npc.x[i] as number;
+    const y = npc.y[i] as number;
+    const rad = npc.radius[i] as number;
+
+    // Near miss: the squared distance from the centre to Bessie's body box (0 inside it).
+    const dx = x - cx;
+    const dy = y - cy;
+    let ax = dx * rx + dy * ry;
+    if (ax < 0) ax = -ax;
+    ax -= hw;
+    if (ax < 0) ax = 0;
+    let ay = dx * fx + dy * fy;
+    if (ay < 0) ay = -ay;
+    ay -= hl;
+    if (ay < 0) ay = 0;
+    const d2 = ax * ax + ay * ay;
+    const contact =
+      d2 <= rad * rad ||
+      (npc.contactIgnore[i] as number) === touched ||
+      ((npc.flags[i] as number) & NPC_FLAG.FALLEN) !== 0;
+    let st = npc.nearMiss[i] as number;
+    if (contact) {
+      st = NearMissState.Spent;
+    } else if (st === NearMissState.Armed) {
+      const reach = gapM + rad;
+      if (d2 <= reach * reach) {
+        st = fast ? NearMissState.PassingFast : NearMissState.Passing;
+        npc.nearMissD2[i] = d2;
+      }
+    } else if (st === NearMissState.Spent) {
+      const reach = rearmM + rad;
+      if (d2 > reach * reach) st = NearMissState.Armed;
+    } else if (d2 < (npc.nearMissD2[i] as number)) {
+      // Still closing: this tick is the closest approach so far.
+      st = fast ? NearMissState.PassingFast : NearMissState.Passing;
+      npc.nearMissD2[i] = d2;
+    } else {
+      // The gap has stopped shrinking: the closest approach was the last tick that set nearMissD2.
+      if (st === NearMissState.PassingFast) awardNearMiss(w, i);
+      st = NearMissState.Spent;
+    }
+    npc.nearMiss[i] = st;
+    if (st !== NearMissState.Passing && st !== NearMissState.PassingFast) npc.nearMissD2[i] = 0;
+
+    // Dust: within the cough radius of any live cloud?
+    let inDust = false;
+    for (let k = 0; k < clouds; k += 1) {
+      const slot = (head + k) % cap;
+      const ex = (dust.x[slot] as number) - x;
+      const ey = (dust.y[slot] as number) - y;
+      if (ex * ex + ey * ey <= dustR2) {
+        inDust = true;
+        break;
+      }
+    }
+    if (!inDust) {
+      npc.dustTicks[i] = 0;
+      continue;
+    }
+    let t = (npc.dustTicks[i] as number) + 1;
+    if (t >= r.dustEveryTicks) {
+      cough(w, i);
+      t = 0;
+    }
+    npc.dustTicks[i] = t;
+  }
+}
+
+/** A near miss on pedestrian `i`: EV.NearMiss (phase 9 awards its points) and a NearMiss stimulus (header). */
+function awardNearMiss(w: World, i: number): void {
+  const npc = w.npc;
+  const r = w.npcAi.reactions;
+  r.nearMisses += 1;
+  const e = emitEvent(w.events, EV.NearMiss, i);
+  w.events.a[e] = npc.x[i] as number;
+  w.events.b[e] = npc.y[i] as number;
+  w.events.c[e] = r.nearMissPts;
+  const q = w.npcAi.stimuli;
+  const s = pushStimulus(q, Stimulus.NearMiss, npcHandle(npc, i));
+  q.x[s] = w.vehicle.xM;
+  q.y[s] = w.vehicle.yM;
+  q.radiusM[s] = 0;
+}
+
+/** Pedestrian `i` coughs in the dust: the Dust penalty fact, EV.Cough and a Cough stimulus (header). */
+function cough(w: World, i: number): void {
+  const npc = w.npc;
+  const r = w.npcAi.reactions;
+  r.coughs += 1;
+  const p = pushPenalty(w.penalties, Offence.Dust, r.dustPts, 0);
+  w.penalties.x[p] = npc.x[i] as number;
+  w.penalties.y[p] = npc.y[i] as number;
+  const e = emitEvent(w.events, EV.Cough, i);
+  w.events.a[e] = npc.x[i] as number;
+  w.events.b[e] = npc.y[i] as number;
+  w.events.c[e] = npc.kind[i] as number;
+  const q = w.npcAi.stimuli;
+  const s = pushStimulus(q, Stimulus.Cough, npcHandle(npc, i));
+  q.x[s] = npc.x[i] as number;
+  q.y[s] = npc.y[i] as number;
+  q.radiusM[s] = 0;
+}
+
+/**
+ * Phase 7, after the spawner and before deliverStimuli: the tick's stimuli, then actor contact, then the
+ * street-life rules (near misses and dust coughs; header), then the puddle splashes (splash.ts, SSP-094).
  */
 export function stepReactions(w: World): void {
   pushReactionStimuli(w);
   stepActorContacts(w);
+  stepStreetLife(w);
   stepPuddleSplash(w);
 }

@@ -2,7 +2,7 @@
 id: SSP-095
 title: "Add the near-miss bonus and dust coughing penalties"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: S
 labels: [type:feature, area:sim, area:gameplay, area:test, size:S, vertical-slice]
@@ -47,10 +47,10 @@ Dust (GDD §8.6, TECHNICAL_DESIGN §10.4)
 
 ## Acceptance criteria
 
-- [ ] Test: passing a pedestrian at 0.4 m and 3.5 m/s awards +25 once and startles them; at 0.6 m, or at 2.9 m/s, no award; contact gives a hit, not a near miss.
-- [ ] Test: the near-miss bonus is not multiplied and does not change the chain length.
-- [ ] Test: a pedestrian standing 2.5 m from continuously emitted dust for 240 ticks costs exactly −20, resets the chain, and adds no complaint.
-- [ ] Test: brushing a dusty tile while spraying emits no dust cloud.
+- [x] Test: passing a pedestrian at 0.4 m and 3.5 m/s awards +25 once and startles them; at 0.6 m, or at 2.9 m/s, no award; contact gives a hit, not a near miss.
+- [x] Test: the near-miss bonus is not multiplied and does not change the chain length.
+- [x] Test: a pedestrian standing 2.5 m from continuously emitted dust for 240 ticks costs exactly −20, resets the chain, and adds no complaint.
+- [x] Test: brushing a dusty tile while spraying emits no dust cloud.
 
 ## Verification
 

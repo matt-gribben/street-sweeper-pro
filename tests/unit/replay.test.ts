@@ -340,6 +340,19 @@ describe('state hash', () => {
     world.pickups.untilTick[0] = 812;
     world.pickups.startTick[0] = 0;
     world.vehicleParams.topSpeedMult = 1.3;
+    // A live dust cloud, a near-miss pass in progress and a dust timer, so the SSP-095 street-life section has a
+    // record of each.
+    world.dust.x[0] = 1.75;
+    world.dust.y[0] = 2.125;
+    world.dust.bornTick[0] = 3;
+    world.dust.count = 1;
+    world.dust.cloudsEmitted = 1;
+    world.dust.waitRight = 4;
+    world.npc.nearMiss[n] = 2;
+    world.npc.nearMissD2[n] = 0.0625;
+    world.npc.dustTicks[n] = 5;
+    world.npcAi.reactions.nearMisses = 1;
+    world.npcAi.reactions.coughs = 2;
     return world;
   }
 
@@ -495,6 +508,33 @@ describe('state hash', () => {
       edit(w);
       expect(hashOf(w), name).not.toBe(base);
     }
+  });
+
+  it('absorbs the street-life state (SSP-095): the live dust clouds, the brushes, near-miss passes and dust timers', () => {
+    const base = hashOf(handSetWorld());
+    const edits: [string, (w: World) => void][] = [
+      ['dust.x', (w) => (w.dust.x[0] = 1.875)],
+      ['dust.y', (w) => (w.dust.y[0] = 2.25)],
+      ['dust.bornTick', (w) => (w.dust.bornTick[0] = 4)],
+      ['dust.count', (w) => (w.dust.count = 0)],
+      ['cloudsEmitted', (w) => (w.dust.cloudsEmitted = 2)],
+      ['waitLeft', (w) => (w.dust.waitLeft = 1)],
+      ['waitRight', (w) => (w.dust.waitRight = 3)],
+      ['nearMiss', (w) => (w.npc.nearMiss[0] = 3)],
+      ['nearMissD2', (w) => (w.npc.nearMissD2[0] = 0.125)],
+      ['dustTicks', (w) => (w.npc.dustTicks[0] = 6)],
+      ['nearMisses', (w) => (w.npcAi.reactions.nearMisses = 2)],
+      ['coughs', (w) => (w.npcAi.reactions.coughs = 3)],
+    ];
+    for (const [name, edit] of edits) {
+      const w = handSetWorld();
+      edit(w);
+      expect(hashOf(w), name).not.toBe(base);
+    }
+    // A ring slot past the live clouds is not hashed.
+    const w = handSetWorld();
+    w.dust.x[1] = 9;
+    expect(hashOf(w)).toBe(base);
   });
 
   it('keeps its canonical byte layout (golden value for a hand-set World)', () => {
@@ -1562,8 +1602,11 @@ describe('state hash', () => {
  * splash crossing and counters, then each NPC's splashEpisode) after the power-ups, and gave the hand-set World a
  * splashed NPC in a running crossing and some smashed and swept glass: 1421aa0f → 7e840dcb (4f2347ac on its branch,
  * before SSP-084, SSP-085, SSP-090, SSP-086 and SSP-096 merged).
+ * SSP-095 appended the street-life section (the dust ring and brush waits, the near-miss and cough counters, and
+ * each NPC's near-miss pass and dust timer) and gave the hand-set World a live dust cloud, a pass in progress and
+ * a dust timer: 7e840dcb → 6e9ef640 (b705c313 on its branch, before SSP-085, SSP-090, SSP-086, SSP-096 and SSP-094 merged).
  */
-const GOLDEN_HAND_SET_HASH = '7e840dcb';
+const GOLDEN_HAND_SET_HASH = '6e9ef640';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

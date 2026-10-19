@@ -44,7 +44,8 @@
 //             entities.json `yields` is false), from Walk, SlowWalk, Idle, Glare or Chase: she parts,
 //             grudgingly, at her walking speed, and after at least YIELD_MIN_TICKS walks on once hi-vis no
 //             longer applies. Spray, horn, Bump and NearMiss leave a yielding Doris alone.
-// Bump, NearMiss and a puddle Splash (SSP-094) never startle her: she is never knocked aside.
+// Bump, NearMiss and a puddle Splash (SSP-094) never startle her: she is never knocked aside. A Cough (SSP-095)
+// leaves her as she is too: she never startles (her dust penalty is still recorded, npc/reactions.ts).
 //
 // Hot path: no allocation, no closures, no double crosses a call (helpers take the World and an index and return
 // booleans); Bessie's body axes come from the reactions' OBB, which stepActorContacts refreshes every tick there
@@ -469,8 +470,8 @@ export function oldWomanStimulus(w: World, i: number, s: Stimulus): void {
       npc.flags[i] = (npc.flags[i] as number) | NPC_FLAG.AWARE;
       return;
     default:
-      // Bump and NearMiss: she is never knocked aside. Splash (a puddle splash, SSP-094): her −50 still applies
-      // (npc/splash.ts), but she has no startle and walks on.
+      // Bump, NearMiss and Cough: she is never knocked aside and never startles. Splash (a puddle splash,
+      // SSP-094): her −50 still applies (npc/splash.ts), but she has no startle and walks on.
       return;
   }
 }

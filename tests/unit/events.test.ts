@@ -76,9 +76,12 @@ describe('EventBus', () => {
       [EV.NpcSplash, 7, 50.5, 42.25, 1],
       [EV.GlassSmash, 5, 20.75, 9.5, 1],
       [EV.GlassSwept, HAZARD_ENTITY_IDS.indexOf('haz.broken_glass'), 21, 7, 20],
+      [EV.NearMiss, 4, 20.25, 30.5, 25],
+      [EV.DustCloud, -1, 81.5, 61.25, -1],
+      [EV.Cough, 6, 79, 58.5, 1],
       [EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0],
     ]);
-    expect(bus.drain(queue)).toBe(28);
+    expect(bus.drain(queue)).toBe(31);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -123,6 +126,9 @@ describe('EventBus', () => {
         kind: 'haz.broken_glass',
         pts: 20,
       },
+      { type: EV.NearMiss, tick: 42, entity: 4, x: 20.25, y: 30.5, pts: 25 },
+      { type: EV.DustCloud, tick: 42, entity: -1, x: 81.5, y: 61.25, side: -1 },
+      { type: EV.Cough, tick: 42, entity: 6, x: 79, y: 58.5, kind: 'npc.old_woman' },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.TimeUp },
     ]);
   });
@@ -250,6 +256,10 @@ describe('EventBus', () => {
     expect(() => bus.drain(sealedQueue(22, [[EV.GlassSwept, HAZARD_ENTITY_IDS.length, 0, 0, 20]]))).toThrow(
       /unknown hazard kind/,
     );
+    expect(() => bus.drain(sealedQueue(23, [[EV.Cough, 0, 0, 0, -1]]))).toThrow(
+      /type 30 .*unknown NPC kind -1/,
+    );
+    expect(() => bus.drain(sealedQueue(24, [[EV.DustCloud, -1, 0, 0, 0]]))).toThrow(/unknown brush side 0/);
   });
 
   it('decodes every EV id the sim defines (a new EV type must be wired into the bus)', () => {
@@ -272,8 +282,8 @@ describe('EventBus', () => {
                   ? DumpSite.Depot
                   : 0,
               0,
-              // Complaint carries its Offence code in `c`.
-              type === EV.Complaint ? Offence.Noise : 0,
+              // Complaint carries its Offence code in `c`, DustCloud its brush side.
+              type === EV.Complaint ? Offence.Noise : type === EV.DustCloud ? 1 : 0,
             ] as const,
         ),
       ),

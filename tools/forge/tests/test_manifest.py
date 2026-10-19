@@ -100,6 +100,8 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "tile.pavement",
         "tile.setts",
         "tile.zebra",
+        "ui.bar_fill",
+        "ui.dump_ring",
         "ui.panel_council",
         "ui.panel_dark",
         "ui.panel_paper",
@@ -167,8 +169,9 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     # 205 M0 frames + 27 SSP-041 facade and roof frames + 85 SSP-040 ground tiles, then SSP-051: the banana
     # skin's 1 frame becomes 12 and 14 more litter IDs add 12 each (180 litter frames in all); SSP-052 adds 12
     # stain variants, 12 grime overlay variants, 3 pickups x 2 bob frames and 3 flat placeholders (33 frames);
-    # + 200 SSP-068 font frames + the 3 SSP-285 placeholder 9-slice panels.
-    assert sum(len(e.frame_ids()) for e in entries) == 732
+    # + 200 SSP-068 font frames + the 3 SSP-285 placeholder 9-slice panels + the SSP-070 HUD bar fill (1) and
+    # dump ring (9).
+    assert sum(len(e.frame_ids()) for e in entries) == 742
     assert sum(len(e.frame_ids()) for e in entries if e.asset_class == "litter") == 180
     for e in raw["assets"]:
         assert list(e) == list(FIELDS) + [k for k in OPTIONAL_FIELDS if k in e], "fields in the documented order"

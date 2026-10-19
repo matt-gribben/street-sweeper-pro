@@ -8,8 +8,9 @@
 //   public/assets/atlas/ui.png), every UI pixel lies inside the 4 px safe margin and inside its element's reserved
 //   box, and the frame takes 5 draw calls (city, building shadows, the one UI draw, palette pass, blit);
 // - the Puddle Lane shift at its first frame: the HUD (timer 4:00, score 0, empty hopper, full tank, full
-//   Dignity) is pixel-exact, and the frame takes 7 draw calls (city, building shadows, Bessie's drop shadow, the
-//   actors batch, the HUD's UI draw, palette pass, blit), within the 10 allowed;
+//   Dignity) is pixel-exact, and the frame takes 8 draw calls (city, building shadows, Bessie's drop shadow, the
+//   actors batch, the items batch (the depot bays, SSP-067), the HUD's UI draw, palette pass, blit), within the 10
+//   allowed;
 // - the hold-to-dump prompt, driven for real (W = 480): Bessie backs out of the depot start, turns into a depot
 //   bay and stops; spraying for half a second leaves the tank below full, so the bay offers a dump and the prompt
 //   appears with an empty ring; holding E for 30 ticks fills the ring to step 4 of 8; at 60 the drain starts and
@@ -38,8 +39,8 @@ const SHIFT_URL = '/?test=1&seed=1&scene=district.puddle_lane&freeze=1';
 
 /** City + building shadows + UI batch + palette pass + blit. */
 const SAMPLE_DRAW_CALLS = 5;
-/** City + building shadows + Bessie's drop shadow + actors batch + HUD batch + palette pass + blit. */
-const SHIFT_DRAW_CALLS = 7;
+/** City + building shadows + Bessie's drop shadow + actors batch + items batch + HUD batch + palette pass + blit. */
+const SHIFT_DRAW_CALLS = 8;
 /** TECHNICAL_DESIGN §12.7. */
 const DRAW_CALL_BUDGET = 10;
 
@@ -181,7 +182,7 @@ for (const viewport of VIEWPORTS) {
     expect(errors).toEqual([]);
   });
 
-  test(`the shift's HUD at W = ${w} is pixel-exact in 7 draw calls`, async ({ page }, testInfo) => {
+  test(`the shift's HUD at W = ${w} is pixel-exact in 8 draw calls`, async ({ page }, testInfo) => {
     const errors = collectPageErrors(page);
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await openTestScene(page, SHIFT_URL);

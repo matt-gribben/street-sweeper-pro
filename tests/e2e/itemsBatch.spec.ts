@@ -3,11 +3,11 @@
 // (open them with Read) and the spec checks what must hold exactly:
 //
 // - Puddle Lane at its start (`?test=1&seed=1&scene=district.puddle_lane&freeze=1`, tick 0), pinned over the
-//   depot bays, each hydrant and the skip: 7 draw calls (city, building shadows, Bessie's drop shadow, actors,
-//   items, palette pass, blit), within 10; litter in all four rotations is in the hydrant views (worked out from
+//   depot bays, each hydrant and the skip: 8 draw calls (city, building shadows, Bessie's drop shadow, actors,
+//   items, the HUD's UI batch since SSP-070, palette pass, blit), within 10; litter in all four rotations is in the hydrant views (worked out from
 //   the same seeded World in Node); hydrant red is drawn where each hydrant stands;
 // - a stain on screen costs no extra draw: on seed 359 Bessie, brush up, drives north from the depot over a dog
-//   mess (a splat stain and its −20, GDD §8.2), backs off, and the camera is pinned over the splat: still 7.
+//   mess (a splat stain and its −20, GDD §8.2), backs off, and the camera is pinned over the splat: still 8.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, type Page, test } from '@playwright/test';
@@ -37,8 +37,8 @@ const SHIFT_URL = '/?test=1&seed=1&scene=district.puddle_lane&freeze=1';
 /** A seed whose shift-start litter puts a dog mess on the depot road, straight north of Bessie's start. */
 const SPLAT_SEED = 359;
 
-/** City + building shadows + Bessie's drop shadow + actors + items + palette pass + blit. */
-const EXPECTED_DRAW_CALLS = 7;
+/** City + building shadows + Bessie's drop shadow + actors + items + the HUD's UI batch (SSP-070) + palette pass + blit. */
+const EXPECTED_DRAW_CALLS = 8;
 
 /** TECHNICAL_DESIGN §12.7. */
 const DRAW_CALL_BUDGET = 10;

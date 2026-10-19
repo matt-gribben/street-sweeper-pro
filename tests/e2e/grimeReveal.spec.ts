@@ -5,13 +5,13 @@
 // - before: with the camera pinned over the road north of the depot, every 2 m ground tile on screen and clear of
 //   buildings and their shadows equals the CPU reference of the ground shader (tests/support/groundReference.ts)
 //   under the grime the World lays for seed 1, cell for cell (skipping the grime cells under the items batch's
-//   litter, stains and markers, SSP-067): grime shows on the route tiles, and on no grass,
+//   litter, stains and markers, SSP-067, and under the HUD's reserved boxes, SSP-070): grime shows on the route tiles, and on no grass,
 //   apron, wall or roof;
 // - a scripted brush-down drive (Space edge, W held, between `__ssp.step(n)` calls) clears a stepped band behind
 //   Bessie: at least 500 pixels in the driven band differ from the before-frame, every grime cell on screen still
 //   shows exactly its initial grime or the clean ground (so the incremental uploads never lose or smear a cell),
 //   the swept cells lie inside the band and the World's own count of cleaned cells covers them;
-// - the frame stays within the draw-call budget (7 of 10 with items in view: grime adds no draw);
+// - the frame stays within the draw-call budget (8 of 10 with items and the SSP-070 HUD in view: grime adds no draw);
 // - the frozen shift frame over the depot (test-results/grime_depot.png) and a view of the park
 //   (test-results/grime_park.png) equal the reference too, away from the items: no grime on the apron or the grass.
 import { expect, type Page, test } from '@playwright/test';
@@ -29,6 +29,7 @@ import {
   overlaps,
   type Rect,
 } from '../support/groundReference.ts';
+import { hudBoxesPx, hudCover } from '../support/hudCover.ts';
 import { collectPageErrors, openTestScene, readTestFrame } from '../support/visualGolden.ts';
 import { saveFrame } from './helpers/saveFrame.ts';
 
@@ -43,8 +44,11 @@ const PARK_CAMERA = { x: 66, y: 16, h: SWEEP_HEIGHT_M } as const;
 /** W at the ci project's 1920×1080 viewport. */
 const WIDTH_PX = 480;
 
-/** City + building shadows + Bessie's drop shadow + actors + items + palette pass + blit (§12.7, SSP-067). */
-const EXPECTED_DRAW_CALLS = 7;
+/**
+ * City + building shadows + Bessie's drop shadow + actors + items + the HUD's UI batch + palette pass + blit
+ * (§12.7, SSP-067, SSP-070).
+ */
+const EXPECTED_DRAW_CALLS = 8;
 const DRAW_CALL_BUDGET = 10;
 
 /** Bessie's start (the depot, facing north) and the grime footprint half-width (tuning.json sweeping.grimeFootprint). */
@@ -70,6 +74,12 @@ const INITIAL_GRIME = initialGrimeMask(level, 1);
 
 /** What the items batch draws over the ground at the start of seed 1 (litter, stains, hydrants, skip, bays). */
 const ITEMS = itemsCover(level, 1);
+
+/** The HUD's reserved boxes in the W = 480 frame (SSP-070): its timer and score change as the drive runs. */
+const HUD_PX = hudBoxesPx(WIDTH_PX);
+
+/** Grime cells the check skips under a camera at (x, y): the items' and the HUD's (which draws over the ground). */
+const skipCells = (x: number, y: number): Rect[] => [...ITEMS, ...hudCover(x, y, WIDTH_PX)];
 
 async function shiftState(page: Page): Promise<ShiftTestState> {
   const state = await page.evaluate((): TestState => {
@@ -119,7 +129,7 @@ test('grime shows on route tiles and a brush-down drive reveals a clean band beh
     blocked,
     INITIAL_GRIME,
     true,
-    ITEMS,
+    skipCells(CAMERA.x, CAMERA.y),
   );
   console.log(
     `[grime] before: ${start.checkedTiles} tiles, ${start.checkedCells} cells (${start.grimyCells} grimy), ` +
@@ -150,7 +160,8 @@ test('grime shows on route tiles and a brush-down drive reveals a clean band beh
   const after = await readTestFrame(page);
   await saveFrame(testInfo, 'grime_after.png', after, { atResultsRoot: true });
 
-  // Pixels that changed, inside and outside the driven band. Items (litter the brush picks up) may change too.
+  // Pixels that changed, inside and outside the driven band. Items (litter the brush picks up) may change too, and
+  // so may the HUD (the timer runs; SSP-070).
   const bandX0 = Math.floor(frameX(BAND.x0));
   const bandX1 = Math.ceil(frameX(BAND.x1));
   const itemPx = ITEMS.map((r) => ({
@@ -168,7 +179,7 @@ test('grime shows on route tiles and a brush-down drive reveals a clean band beh
       for (let c = 0; c < 4; c++) if (before.data[i + c] !== after.data[i + c]) differs = true;
       if (!differs) continue;
       const px: Rect = { x0: x, y0: y, x1: x + 1, y1: y + 1 };
-      if (itemPx.some((r) => overlaps(px, r))) continue;
+      if (itemPx.some((r) => overlaps(px, r)) || HUD_PX.some((r) => overlaps(px, r))) continue;
       if (x >= bandX0 && x < bandX1) inBand++;
       else outside++;
     }
@@ -189,7 +200,7 @@ test('grime shows on route tiles and a brush-down drive reveals a clean band beh
     blocked,
     INITIAL_GRIME,
     false,
-    ITEMS,
+    skipCells(CAMERA.x, CAMERA.y),
   );
   console.log(
     `[grime] after: ${end.cleanCells.length} grimy cells on screen swept clean, ${end.mismatches.length} mismatched`,
@@ -231,7 +242,7 @@ test('no grime on the depot apron, the park grass, walls or roofs (the frozen sh
     [...cityCover(level, depotCamera.x, depotCamera.y, depotCamera.h), nearBessie],
     INITIAL_GRIME,
     true,
-    ITEMS,
+    skipCells(depotCamera.x, depotCamera.y),
   );
 
   await page.evaluate(({ x, y, h }) => window.__ssp?.setCamera(x, y, h), PARK_CAMERA);
@@ -247,7 +258,7 @@ test('no grime on the depot apron, the park grass, walls or roofs (the frozen sh
     cityCover(level, PARK_CAMERA.x, PARK_CAMERA.y, PARK_CAMERA.h),
     INITIAL_GRIME,
     true,
-    ITEMS,
+    skipCells(PARK_CAMERA.x, PARK_CAMERA.y),
   );
 
   const [w] = level.size;

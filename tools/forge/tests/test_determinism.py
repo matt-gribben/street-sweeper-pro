@@ -1,9 +1,9 @@
 """Determinism and acceptance checks over a real build of the committed M0 assets (SSP-009, SSP-010, SSP-014,
-SSP-020, SSP-024, SSP-040, SSP-041, SSP-051, SSP-052, SSP-068).
+SSP-020, SSP-024, SSP-040, SSP-041, SSP-051, SSP-052, SSP-068, SSP-070).
 
 Builds ``assets-src/manifest.json`` twice with the cache off, into two temp dirs, and checks
 that every output file has the same SHA-256 (frames, atlas PNG/JSON, ``src/gen/assets.ts``,
-``asset-hashes.json``, the font metrics); then inspects the built frames: 732 of them, 64x64 Bessie / 96x96
+``asset-hashes.json``, the font metrics); then inspects the built frames: 742 of them, 64x64 Bessie / 96x96
 brush / 24x24 npc.old_woman (8 idle directions, 3 of them mirrored) / 32x32 prop.lamp_post
 (4 sprite-stack slices) / the 15 16x16 litter items (SSP-051: idle x1 + wobble x2 in the
 h00/h08/h16/h24 rotations, 12 frames each, 180 in all; the banana skin is the D-07 sample) / the
@@ -63,6 +63,8 @@ PICKUPS = ("collect.false_teeth", "collect.golden_crisp", "pwr.flask_of_tea")
 SITES = {"site.depot_bay": (64, 96), "site.skip": (64, 32)}
 PANELS = ("ui.panel_council", "ui.panel_dark", "ui.panel_paper")
 """SSP-285: the placeholder 24x24 9-slice panels in the ui atlas, one frame each (sliced in code)."""
+HUD_ART = {"ui.bar_fill": (66, 8), "ui.dump_ring": (20, 20)}
+"""SSP-070: the HUD's placeholder bar fill (1 frame) and dump-hold ring (9 fill steps) in the ui atlas."""
 OVERLAYS = ("tile.double_yellow", "tile.lane_marking", "tile.parking_bay", *STAINS, *GRIME)
 """World-atlas frames that are not opaque cells: road markings, stains and grime."""
 GROUND_MARKINGS = ("site.depot_bay",)
@@ -94,6 +96,7 @@ CELLS = {
     **{t: (32, 32) for t in TILE_FRAMES},
     "font.kerbside5x7": (7, 9),
     **{p: (24, 24) for p in PANELS},
+    **HUD_ART,
     **{t: (32, 32) for t in (*STAINS, *GRIME)},
     **{p: (16, 16) for p in PICKUPS},
     **SITES,
@@ -104,12 +107,13 @@ CELLS = {
     "veh.sweeper": (64, 64),
     "veh.sweeper_brush": (96, 96),
 }
-FRAME_COUNT = 732
+FRAME_COUNT = 742
 ATLAS_OF = {
     **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES, *STAINS, *GRIME)},
     **{a: "items" for a in (*PICKUPS, *SITES, "prop.hydrant")},
     "font.kerbside5x7": "ui",
     **{p: "ui" for p in PANELS},
+    **{h: "ui" for h in HUD_ART},
     **{li: "items" for li in LITTER},
     "npc.old_woman": "actors",
     "prop.lamp_post": "items",
@@ -183,6 +187,8 @@ def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
         **TILE_FRAMES,
         "font.kerbside5x7": 200,
         **{p: 1 for p in PANELS},
+        "ui.bar_fill": 1,
+        "ui.dump_ring": 9,
         **STAINS,
         **GRIME,
         **{p: 2 for p in PICKUPS},
@@ -325,7 +331,7 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
     ]
 
 
-@pytest.mark.parametrize(("name", "count"), [("world", 136), ("actors", 200), ("items", 193), ("ui", 203)])
+@pytest.mark.parametrize(("name", "count"), [("world", 136), ("actors", 200), ("items", 193), ("ui", 213)])
 def test_atlas_holds_every_frame_at_its_rect(
     builds: tuple[BuildResult, Path, Path], name: str, count: int
 ) -> None:

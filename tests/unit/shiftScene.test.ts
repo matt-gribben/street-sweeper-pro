@@ -11,6 +11,7 @@ import { EventBus } from '../../src/app/events.ts';
 import type { SceneContext } from '../../src/app/Game.ts';
 import { createLoop, type LoopClock } from '../../src/app/loop.ts';
 import { SCENE_IDS, SceneManager } from '../../src/app/SceneManager.ts';
+import { ScriptedInput } from '../../src/debug/scriptedInput.ts';
 import {
   installTestHooks,
   isShiftTestState,
@@ -32,7 +33,8 @@ import {
 import { DEG_TO_RAD, DT_S, SHIFT_TICKS } from '../../src/sim/constants.ts';
 import { createInputFrame, PRESSED } from '../../src/sim/inputFrame.ts';
 import { decodeLevel, type Level } from '../../src/sim/map.ts';
-import { readInput } from '../../src/sim/replay.ts';
+import { loadReplay, readInput, runReplay } from '../../src/sim/replay.ts';
+import { snapshotWorld } from '../../src/sim/snapshot.ts';
 import { DEFAULT_TUNING, loadTuning, type Tuning, tuningSourceCopy } from '../../src/sim/tuning.ts';
 import { fakePad, keyEvent, padSource, setTrigger } from '../support/fakeInput.ts';
 import { decodePng } from '../support/png.ts';
@@ -150,10 +152,15 @@ async function browserLike(search: string, options: ShiftSceneOptions = {}) {
   const scenes = new SceneManager();
   const clock = fakeClock();
   let renders = 0;
+  // Game.ts in test mode: every tick samples through the scripted input, by the top ShiftScene's World tick.
+  const scripted = new ScriptedInput(actions, () => {
+    const top = scenes.top;
+    return top instanceof ShiftScene ? top.worldTick : null;
+  });
   const loop = createLoop(
     {
-      beginFrame: () => actions.beginFrame(),
-      sampleForTick: () => actions.sampleForTick(),
+      beginFrame: () => scripted.beginFrame(),
+      sampleForTick: () => scripted.sampleForTick(),
       fixedUpdate: (frame) => scenes.fixedUpdate(frame),
       drainEvents: () => {},
       render: (alpha) => {
@@ -177,6 +184,7 @@ async function browserLike(search: string, options: ShiftSceneOptions = {}) {
     renders: () => renders,
     sceneId: () => scenes.top?.id ?? null,
     sceneHistory: () => scenes.ids(),
+    loadInputs: (log) => scripted.load(log),
   });
   if (hooks === null) throw new Error('hooks not installed');
   loop.start();
@@ -194,6 +202,7 @@ async function browserLike(search: string, options: ShiftSceneOptions = {}) {
     ...s,
     api,
     loop,
+    scripted,
     keyboard,
     pads,
     renders: () => renders,
@@ -695,5 +704,46 @@ describe('__ssp hooks bound to the ShiftScene', () => {
     if (!isShiftTestState(state)) throw new Error('not a shift');
     expect(state.bessie.speed).toBeGreaterThan(1);
     expect(state.bessie.y).toBeLessThan(level.player.y - 0.5);
+  });
+
+  it('loadInputs(inputs, ticks) replays a replay file by World tick, ignoring the live devices (SSP-073)', async () => {
+    const { file, log } = loadReplay(read('tests/replay/replays/m2_full_shift_puddle_lane.json'));
+    expect(file.district).toBe('district.puddle_lane');
+    const page = await browserLike(`?test=1&scene=district.puddle_lane&seed=${file.seed}&freeze=1`);
+    expect(page.scripted.scripted).toBe(false);
+    page.api.loadInputs(file.inputs, file.ticks);
+    expect(page.scripted.scripted).toBe(true);
+    expect(page.scripted.ticks).toBe(file.ticks);
+    // Live keys reach nothing while a log is loaded (full right lock and reverse would wreck the route).
+    page.keyboard.handleKeyDown(keyEvent('KeyS'));
+    page.keyboard.handleKeyDown(keyEvent('KeyD'));
+    page.api.step(300);
+    page.api.step(300);
+    const state = page.api.state();
+    if (!isShiftTestState(state)) throw new Error('not a shift');
+    // The same 600 ticks run headlessly, as `npm run test:replay` runs them.
+    const headless = runReplay(level, DEFAULT_TUNING, file.seed, log, 600);
+    const { camera: _camera, ...sim } = state;
+    expect(sim).toEqual(snapshotWorld(headless.world));
+    expect(state.bessie.y).toBeLessThan(level.player.y - 10); // north up Mangle Street
+  });
+
+  it('loadInputs feeds neutral frames past the log and before a World runs, and rejects a bad log', async () => {
+    const page = await browserLike('?test=1&scene=district.puddle_lane&seed=1001&freeze=1');
+    const api = page.api;
+    expect(() => api.loadInputs('', 0)).toThrow(/ticks must be an integer/);
+    expect(() => api.loadInputs('', 1.5)).toThrow(/ticks must be an integer/);
+    expect(() => api.loadInputs(42 as unknown as string, 10)).toThrow(/base64 string/);
+    expect(() => api.loadInputs('!!!!', 10)).toThrow();
+    expect(page.scripted.scripted).toBe(false);
+    // A neutral log: W held on the keyboard never moves her.
+    api.loadInputs('', 60);
+    page.keyboard.handleKeyDown(keyEvent('KeyW'));
+    api.step(120);
+    const state = api.state();
+    if (!isShiftTestState(state)) throw new Error('not a shift');
+    expect(state.tick).toBe(120);
+    expect(state.bessie.speed).toBe(0);
+    expect(state.bessie.y).toBe(level.player.y);
   });
 });

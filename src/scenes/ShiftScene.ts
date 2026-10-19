@@ -171,6 +171,15 @@ export class ShiftScene implements Scene {
     return this.world?.level ?? null;
   }
 
+  /**
+   * The World tick the next fixedUpdate steps (World.tick), or null before enter() resolves, after exit() and
+   * once the shift has ended (the World is no longer stepped). Test mode's scripted input reads it (SSP-073).
+   */
+  get worldTick(): number | null {
+    const world = this.world;
+    return world === null || world.shift.phase === ShiftPhase.Ended ? null : world.tick;
+  }
+
   /** True once the shift has ended (EV.ShiftEnd fired): the World is no longer stepped. */
   get ended(): boolean {
     return this.world !== null && this.world.shift.phase === ShiftPhase.Ended;

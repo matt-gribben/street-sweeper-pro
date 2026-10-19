@@ -2,7 +2,7 @@
 id: SSP-073
 title: "Add smoke.spec.ts: 60 s scripted sweep and full shift ending on the tally"
 milestone: M2
-status: todo
+status: done
 type: test
 estimate: M
 labels: [type:test, area:test, area:tooling, size:M, vertical-slice]

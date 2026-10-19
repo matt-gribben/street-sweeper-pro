@@ -80,6 +80,11 @@ const game = new Game(canvas, {
         lastReadyRafMs = nowMs;
       }
     : null,
+  // `__ssp.loadInputs` replays a log by the running World's tick (SSP-073): the top ShiftScene's, none otherwise.
+  simTick: () => {
+    const top = game.scenes.top;
+    return top instanceof ShiftScene ? top.worldTick : null;
+  },
 });
 
 // Scene choice. Without `scene`, every build boots the shift flow at the intro card for Puddle Lane (SSP-071),
@@ -204,6 +209,11 @@ const testHooks = installTestHooks(window, search, {
   renders: () => game.renderer.renderCount,
   sceneId: () => game.scenes.top?.id ?? null,
   sceneHistory: () => sceneHistory,
+  loadInputs: (log) => {
+    const scripted = game.scriptedInput;
+    if (scripted === null) throw new Error('__ssp.loadInputs: the Game has no scripted input');
+    scripted.load(log);
+  },
 });
 
 // The loop renders from the first frame; the scene's world draws alone while its atlases load. A bad atlas

@@ -2,8 +2,11 @@
 // Math.exp, Math.atan2 and friends to give bit-identical results across engines, so every sim call goes
 // through this file and nowhere else: tests/unit/simPurity.test.ts fails if another src/sim file calls
 // Math.sin/cos/tan/atan2/exp/sqrt/hypot. Version 1 forwards to Math.* because Node (CI) and Chromium (dev)
-// are both V8. If cross-engine replays are ever needed, this one file swaps to fixed polynomial
-// approximations. `tan` is the one addition to the §7.4 list: the vehicle yaw step uses tan(δ) (§8.2).
+// are both V8. Different V8 versions are not bit-identical either: Math.sin in Chromium 156 and Node 24.21.0
+// differ in the last bit for some arguments (SSP-073, TECHNICAL_DESIGN §18.6), which the replay hash's 1e-4
+// quantisation absorbs (every committed checkpoint matches in both). If cross-engine replays are ever needed,
+// this one file swaps to fixed polynomial approximations. `tan` is the one addition to the §7.4 list: the
+// vehicle yaw step uses tan(δ) (§8.2).
 
 /** Sine of `xRad`. */
 export function sin(xRad: number): number {

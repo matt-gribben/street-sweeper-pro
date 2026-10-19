@@ -11,7 +11,9 @@
 // Gamepad rumble follows EV.Impact on the bus: src/input may not import the bus, so the wiring lives here.
 // Scenes read the frame's pause/map/dev-panel edges from `game.actions.sceneActions` (the dev panel reads F1 from
 // its `afterFrame` hook). `options.input`
-// replaces the whole source (then `actions` is null).
+// replaces the whole source (then `actions` is null). In test mode the ticks sample through a ScriptedInput
+// (src/debug/scriptedInput.ts, SSP-073) that passes the live input through until `__ssp.loadInputs` hands it a
+// replay's input log, which it then replays by World tick.
 //
 // Camera: a scene that follows something (ShiftScene follows Bessie, SSP-046) calls `followCamera` from its
 // render(), with the interpolated pose and velocity, every frame; the rig then moves by that frame's render time
@@ -22,6 +24,7 @@
 // (pinCamera), and a pinned camera ignores followCamera. releaseCamera puts the springs back at rest.
 
 import { Group } from 'three';
+import { ScriptedInput, type SimTickSource } from '../debug/scriptedInput.ts';
 import { TEST_RENDER_STEP_S } from '../debug/testHooks.ts';
 import { Actions } from '../input/actions.ts';
 import { browserPadSource, GamepadDevice } from '../input/gamepad.ts';
@@ -103,6 +106,11 @@ export type GameOptions = {
   readonly onFrameTimed: ((nowMs: number, workMs: number) => void) | null;
   /** The input source; defaults to the keyboard and gamepad merged by src/input/actions.ts. */
   readonly input?: TickInputSource;
+  /**
+   * Test mode: the World tick the next tick feeds (null when no World runs), which `__ssp.loadInputs` replays a
+   * log by (src/debug/scriptedInput.ts, SSP-073). Ignored outside test mode; without it no log can be loaded.
+   */
+  readonly simTick?: SimTickSource;
 };
 
 /** Owns the renderer, scene stack, event bus and loop for the page's lifetime. */
@@ -114,6 +122,11 @@ export class Game {
   readonly drive: DriveSettings;
   /** The keyboard + gamepad merge, or null when `options.input` replaced it. */
   readonly actions: Actions | null;
+  /**
+   * Test mode only (with `options.simTick`): the scripted input every tick samples through, which replays a log
+   * loaded by `__ssp.loadInputs` and passes the live input through until then (SSP-073). Null otherwise.
+   */
+  readonly scriptedInput: ScriptedInput | null;
   readonly sceneContext: SceneContext;
   /**
    * Called once per display frame after the frame is drawn, or null. The dev panel (SSP-048, dev builds only)
@@ -171,9 +184,13 @@ export class Game {
         resetCameraSprings(this.renderer.rig);
       },
     };
+    this.scriptedInput =
+      options.testMode && options.simTick !== undefined
+        ? new ScriptedInput(this.input, options.simTick)
+        : null;
     const scenes = this.scenes;
     const events = this.events;
-    const input = this.input;
+    const input = this.scriptedInput ?? this.input;
     this.loop = createLoop(
       {
         beginFrame: () => input.beginFrame?.(),

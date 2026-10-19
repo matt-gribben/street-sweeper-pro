@@ -169,7 +169,7 @@ The canonical public build will be an HTML5 game on itch.io, pushed with butler 
 
 ## Commands *(partly planned)*
 
-Every script below exists. `npm run audio` is an input-count guard until M5 adds its sources (it reports "0 sources; nothing to render"). `npm run levels` compiles Puddle Lane (since M1), and `npm run test:replay` runs the committed replays: `m1_drive_puddle_lane` (since M1), `m2_full_shift_puddle_lane` and `m2_dump_cycle_puddle_lane` (since M2). `npm run test:e2e` runs only the perf draw-call check until the M2 smoke test exists.
+Every script below exists. `npm run audio` is an input-count guard until M5 adds its sources (it reports "0 sources; nothing to render"). `npm run levels` compiles Puddle Lane (since M1), and `npm run test:replay` runs the committed replays: `m1_drive_puddle_lane` (since M1), `m2_full_shift_puddle_lane` and `m2_dump_cycle_puddle_lane` (since M2). `npm run test:e2e` runs the M2 smoke test (`tests/e2e/smoke.spec.ts`: the full-shift replay's inputs played in the built game, 60 s of sweeping and then the whole shift to the tally) beside the perf draw-call check and the scene specs (flow, HUD, grime, items, text, panels).
 
 ### Assets and content
 
@@ -194,7 +194,7 @@ All forge commands run as `uv run --project tools/forge python -m forge <cmd>`.
 | `npm test` | Vitest unit + property |
 | `npm run test:replay` | Committed replays, each for its own tick count (3,600 standard; the M2 full shift runs 14,600, to the end of the shift), asserting checkpoint and final-state hashes, invariants and zero allocation per tick |
 | `npm run test:visual` (`:update` to approve) | Playwright, reading the internal frame, pixelmatch threshold 0 against `tests/visual/__goldens__/` |
-| `npm run test:e2e` | 60 s scripted smoke: no console errors, score > 0, hopper filled. Perf: ≤ 10 draw calls (the p99 frame-time budget, 20.6 ms, is checked locally by the `gpu` project). |
+| `npm run test:e2e` | 60 s scripted smoke: no console errors, score > 0, hopper filled, ≤ 10 draw calls; then the full shift ends on the tally with state()'s figures. Perf: ≤ 10 draw calls (the p99 frame-time budget, 20.6 ms, is checked locally by the `gpu` project). |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` / `npm run format` | Biome |
 | `npm run ci` | All of the above + `assets:verify` + `assets:lint` |

@@ -61,6 +61,8 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     assert ids == sorted(ids), "manifest entries must be sorted by id"
     assert unsorted_ids(entries) == []
     assert ids == [
+        "collect.false_teeth",
+        "collect.golden_crisp",
         "facade.corner_shop",
         "facade.depot_shed",
         "facade.flats_render",
@@ -70,14 +72,26 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "haz.speed_bump",
         *LITTER_IDS,
         "npc.old_woman",
+        "prop.hydrant",
         "prop.lamp_post",
+        "pwr.flask_of_tea",
         "roof.depot",
         "roof.felt",
         "roof.slate",
+        "site.depot_bay",
+        "site.skip",
+        "stain.chalk_art",
+        "stain.gum",
+        "stain.milkshake",
+        "stain.oil",
+        "stain.splat",
         "tile.apron",
         "tile.asphalt",
         "tile.double_yellow",
         "tile.grass",
+        "tile.grime_asphalt",
+        "tile.grime_gutter",
+        "tile.grime_slab",
         "tile.kerb",
         "tile.lane_marking",
         "tile.parking_bay",
@@ -146,8 +160,9 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "swaps": [],
     }
     # 205 M0 frames + 27 SSP-041 facade and roof frames + 85 SSP-040 ground tiles, then SSP-051: the banana
-    # skin's 1 frame becomes 12 and 14 more litter IDs add 12 each (180 litter frames in all).
-    assert sum(len(e.frame_ids()) for e in entries) == 496
+    # skin's 1 frame becomes 12 and 14 more litter IDs add 12 each (180 litter frames in all); SSP-052 adds 12
+    # stain variants, 12 grime overlay variants, 3 pickups x 2 bob frames and 3 flat placeholders (33 frames).
+    assert sum(len(e.frame_ids()) for e in entries) == 529
     assert sum(len(e.frame_ids()) for e in entries if e.asset_class == "litter") == 180
     for e in raw["assets"]:
         assert list(e) == list(FIELDS), "fields in the documented order"

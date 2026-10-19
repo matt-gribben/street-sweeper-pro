@@ -1,0 +1,11 @@
+{
+  "id": "stain.oil",
+  "generator": "stains.oil",
+  "seed": 5301,
+  "cell": [32, 32],
+  "variants": 2,
+  "params": {
+    "pool": { "index": 1, "radius_px": [9, 11], "rough_px": 2, "centre_px": [15, 16] },
+    "sheen": { "indices": [30, 29], "inset_px": [2, 3], "fraction": 0.7 }
+  }
+}

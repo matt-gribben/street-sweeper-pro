@@ -12,8 +12,9 @@ A procedural manifest entry's ``source`` is a params file under ``assets-src/pro
 
 ``variant``
     ``fn(params, rng, cell, variant) -> (h, w) uint8`` (the ASSET_PIPELINE §6.4 shape), used by
-    surfaces whose frames are seeded variants (``roofs.*``, ``tiles.*``). Overlays (the road
-    markings) return ``int16`` with ``TRANSPARENT`` (-1) for the pixels they leave clear.
+    surfaces and decals whose frames are seeded variants (``roofs.*``, ``tiles.*``,
+    ``stains.*``). Overlays (the road markings, stains and grime) return ``int16`` with
+    ``TRANSPARENT`` (-1) for the pixels they leave clear.
     The params file needs an integer ``seed`` and ``variants``; the manifest entry must have the
     single state ``v`` with ``frames.v == variants``. One ``numpy.random.Generator(PCG64(seed))``
     is shared by every variant in order, so variant ``k`` draws after variants ``0..k-1`` and
@@ -43,7 +44,7 @@ import numpy.typing as npt
 from numpy.random import PCG64, Generator
 
 from forge.palette import PALETTE_SIZE, TRANSPARENT, Palette
-from forge.procedural import facades, roofs, tiles
+from forge.procedural import facades, roofs, stains, tiles
 from forge.procedural.common import Context, ProceduralError
 
 __all__ = [
@@ -89,6 +90,12 @@ GENERATORS: Mapping[str, GeneratorSpec] = {
     "roofs.depot_placeholder": GeneratorSpec("variant", variant=roofs.depot_placeholder),
     "roofs.felt": GeneratorSpec("variant", variant=roofs.felt),
     "roofs.slate": GeneratorSpec("variant", variant=roofs.slate),
+    "stains.chalk_art": GeneratorSpec("variant", variant=stains.chalk_art),
+    "stains.grime": GeneratorSpec("variant", variant=stains.grime),
+    "stains.gum": GeneratorSpec("variant", variant=stains.gum),
+    "stains.milkshake": GeneratorSpec("variant", variant=stains.milkshake),
+    "stains.oil": GeneratorSpec("variant", variant=stains.oil),
+    "stains.splat": GeneratorSpec("variant", variant=stains.splat),
     "tiles.apron": GeneratorSpec("variant", variant=tiles.apron),
     "tiles.asphalt": GeneratorSpec("variant", variant=tiles.asphalt),
     "tiles.grass": GeneratorSpec("variant", variant=tiles.grass),

@@ -1,15 +1,17 @@
 """Determinism and acceptance checks over a real build of the committed M0 assets (SSP-009, SSP-010, SSP-014,
-SSP-020, SSP-024, SSP-040, SSP-041, SSP-051).
+SSP-020, SSP-024, SSP-040, SSP-041, SSP-051, SSP-052).
 
 Builds ``assets-src/manifest.json`` twice with the cache off, into two temp dirs, and checks
 that every output file has the same SHA-256 (frames, atlas PNG/JSON, ``src/gen/assets.ts``,
-``asset-hashes.json``); then inspects the built frames: 496 of them, 64x64 Bessie / 96x96
+``asset-hashes.json``); then inspects the built frames: 529 of them, 64x64 Bessie / 96x96
 brush / 24x24 npc.old_woman (8 idle directions, 3 of them mirrored) / 32x32 prop.lamp_post
 (4 sprite-stack slices) / the 15 16x16 litter items (SSP-051: idle x1 + wobble x2 in the
 h00/h08/h16/h24 rotations, 12 frames each, 180 in all; the banana skin is the D-07 sample) / the
 SSP-041 Puddle Lane facade sets (64x80 lit/base/dark bays) and roof surfaces (32x32 variants) /
 the SSP-040 ground tiles (32x32 variants, the 47 kerb blob tiles and the road-marking overlays),
-Kerbside-32 colours only with binary alpha, the outline rule, no metadata chunks, and a palette
+the SSP-052 stains, grime overlays (32x32 ``v`` variants, world), pickups (16x16 ``bob`` x2), the
+flat hydrant (32x32) and the site placeholders (64x96 depot bay, 64x32 skip), Kerbside-32 colours
+only with binary alpha, the outline rule, no metadata chunks, and a palette
 snap that changed 0 pixels; and the packed ``world``, ``actors`` and ``items`` atlases.
 """
 
@@ -52,7 +54,16 @@ TILE_FRAMES = {
     "tile.setts": 4,
     "tile.zebra": 2,
 }
-OVERLAYS = ("tile.double_yellow", "tile.lane_marking", "tile.parking_bay")
+STAINS = {"stain.chalk_art": 3, "stain.gum": 3, "stain.milkshake": 2, "stain.oil": 2, "stain.splat": 2}
+GRIME = {"tile.grime_asphalt": 4, "tile.grime_gutter": 4, "tile.grime_slab": 4}
+"""SSP-052: ground decals, transparent where the ground shows through (never outlined)."""
+PICKUPS = ("collect.false_teeth", "collect.golden_crisp", "pwr.flask_of_tea")
+"""SSP-052: 2 bob frames each, on a 1 px ground halo ring that is not outlined (ART_BIBLE §8.5)."""
+SITES = {"site.depot_bay": (64, 96), "site.skip": (64, 32)}
+OVERLAYS = ("tile.double_yellow", "tile.lane_marking", "tile.parking_bay", *STAINS, *GRIME)
+"""World-atlas frames that are not opaque cells: road markings, stains and grime."""
+GROUND_MARKINGS = ("site.depot_bay",)
+"""Items-atlas frames painted on the ground (no ink outline, ART_BIBLE §6.3)."""
 LITTER = tuple(
     f"litter.{name}"
     for name in (
@@ -78,21 +89,57 @@ CELLS = {
     **{f: (64, 80) for f in FACADES},
     **{r: (32, 32) for r in ROOF_VARIANTS},
     **{t: (32, 32) for t in TILE_FRAMES},
+    **{t: (32, 32) for t in (*STAINS, *GRIME)},
+    **{p: (16, 16) for p in PICKUPS},
+    **SITES,
+    "prop.hydrant": (32, 32),
     **{li: (16, 16) for li in LITTER},
     "npc.old_woman": (24, 24),
     "prop.lamp_post": (32, 32),
     "veh.sweeper": (64, 64),
     "veh.sweeper_brush": (96, 96),
 }
-FRAME_COUNT = 496
+FRAME_COUNT = 529
 ATLAS_OF = {
-    **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES)},
+    **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES, *STAINS, *GRIME)},
+    **{a: "items" for a in (*PICKUPS, *SITES, "prop.hydrant")},
     **{li: "items" for li in LITTER},
     "npc.old_woman": "actors",
     "prop.lamp_post": "items",
     "veh.sweeper": "actors",
     "veh.sweeper_brush": "actors",
 }
+
+
+HALO_RING = (
+    ".....######.....",
+    "...##......##...",
+    "..#..........#..",
+    ".#............#.",
+    ".#............#.",
+    "#..............#",
+    "#..............#",
+    "#..............#",
+    "#..............#",
+    "#..............#",
+    "#..............#",
+    ".#............#.",
+    ".#............#.",
+    "..#..........#..",
+    "...##......##...",
+    ".....######.....",
+)
+"""The 1 px pickup halo ring of the 16x16 cell (ART_BIBLE §8.5), as the SSP-052 grids draw it."""
+
+
+def _halo_ring(rgba: np.ndarray) -> np.ndarray:
+    """Opaque 16 lemon / 07 chalk pixels on the halo ring cells (where the icon does not cover it)."""
+    ring = np.array([[c == "#" for c in row] for row in HALO_RING])
+    colour = rgba[:, :, :3]
+    lemon_or_chalk = np.zeros(ring.shape, dtype=bool)
+    for i in (7, 16):
+        lemon_or_chalk |= (colour == np.array(PALETTE.rgb[i], dtype=np.uint8)).all(axis=-1)
+    return ring & lemon_or_chalk & (rgba[:, :, 3] == 255)
 
 
 def _hashes(root: Path) -> dict[str, str]:
@@ -127,6 +174,11 @@ def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
         **{f: 3 for f in FACADES},
         **ROOF_VARIANTS,
         **TILE_FRAMES,
+        **STAINS,
+        **GRIME,
+        **{p: 2 for p in PICKUPS},
+        **{s: 1 for s in SITES},
+        "prop.hydrant": 1,
         **{li: 12 for li in LITTER},
         "npc.old_woman": 8,
         "prop.lamp_post": 4,
@@ -161,11 +213,13 @@ def test_no_opaque_non_ink_pixel_touches_transparency(builds: tuple[BuildResult,
 
     Tiling surfaces (facades, roofs, ground tiles) are not outlined (ART_BIBLE §6.3) and fill
     their cell, so they are checked for having no transparent pixel at all instead. The road
-    markings are ground overlays (painted lines, never outlined) and are transparent elsewhere."""
+    markings, stains and grime (SSP-052) are ground overlays (never outlined) and are transparent
+    elsewhere; so are the depot bay markings. A pickup's 1 px halo ring (16 or 07 on the ring
+    cells, ART_BIBLE §8.5) is a ground marking too, so only its icon is checked."""
     _, a, _ = builds
     ink = tuple(int(v) for v in PALETTE.rgb[0])
     for png in sorted((a / "frames").rglob("*.png")):
-        if png.parent.name in OVERLAYS:
+        if png.parent.name in (*OVERLAYS, *GROUND_MARKINGS):
             continue
         if ATLAS_OF[png.parent.name] == "world":
             with Image.open(png) as im:
@@ -177,6 +231,8 @@ def test_no_opaque_non_ink_pixel_touches_transparency(builds: tuple[BuildResult,
         near_clear = clear[:-2, 1:-1] | clear[2:, 1:-1] | clear[1:-1, :-2] | clear[1:-1, 2:]
         is_ink = (rgba[:, :, :3] == np.array(ink, dtype=np.uint8)).all(axis=-1)
         body = (rgba[:, :, 3] == 255) & ~is_ink
+        if png.parent.name in PICKUPS:
+            body &= ~_halo_ring(rgba)
         assert not (body & near_clear).any(), png.name
 
 
@@ -245,7 +301,7 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
     assert names == ["actors.json", "actors.png", "items.json", "items.png", "world.json", "world.png"]
 
 
-@pytest.mark.parametrize(("name", "count"), [("world", 112), ("actors", 200), ("items", 184)])
+@pytest.mark.parametrize(("name", "count"), [("world", 136), ("actors", 200), ("items", 193)])
 def test_atlas_holds_every_frame_at_its_rect(
     builds: tuple[BuildResult, Path, Path], name: str, count: int
 ) -> None:

@@ -1,0 +1,15 @@
+{
+  "id": "tile.grime_gutter",
+  "generator": "stains.grime",
+  "seed": 5603,
+  "cell": [32, 32],
+  "variants": 4,
+  "params": {
+    "grime_cell_px": 4,
+    "coverage_px": [14, 15],
+    "smoothing_passes": 2,
+    "base_index": 8,
+    "blotches": { "index": 1, "fraction": 0.4, "smoothing_passes": 4 },
+    "wrap": true
+  }
+}

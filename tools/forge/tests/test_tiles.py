@@ -83,7 +83,9 @@ def test_tile_ids_are_in_the_sorted_manifest_under_the_world_atlas() -> None:
         assert (e.technique, e.atlas, e.outline, e.cell, e.dirs) == ("procedural", "world", False, (32, 32), ("-",))
         assert (e.states, e.frames) == ((state,), {state: n}), asset_id
         assert e.source.startswith("assets-src/procedural/tiles/")
-    assert {e.id for e in MANIFEST if e.asset_class == "tile"} == {i for i in TILE_IDS if i.startswith("tile.")}
+    # SSP-052 adds the grime overlays (tile.grime_*), tested in test_stains.py.
+    grime = {"tile.grime_asphalt", "tile.grime_gutter", "tile.grime_slab"}
+    assert {e.id for e in MANIFEST if e.asset_class == "tile"} == {i for i in TILE_IDS if i.startswith("tile.")} | grime
 
 
 def test_asphalt_follows_the_documented_manifest_example() -> None:

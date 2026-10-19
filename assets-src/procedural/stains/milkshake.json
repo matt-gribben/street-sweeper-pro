@@ -1,0 +1,13 @@
+{
+  "id": "stain.milkshake",
+  "generator": "stains.milkshake",
+  "seed": 5201,
+  "cell": [32, 32],
+  "variants": 2,
+  "params": {
+    "splash": { "index": 20, "radius_px": [6, 7], "rough_px": 2, "centre_px": [14, 17] },
+    "droplets": { "count": [4, 6], "distance_px": [3, 5] },
+    "core": { "index": 7, "radius_px": [2, 3] },
+    "cup": { "index": 13, "radius_px": 3, "gap_px": 1 }
+  }
+}

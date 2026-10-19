@@ -1,0 +1,42 @@
+id: pwr.flask_of_tea
+cell: 16x16
+palette: kerbside32
+# SSP-052 placeholder (ART_BIBLE §8.5): 26 council_blue flask lit 27 on the NW side, 25 shade, 07 cup lid with an 06 rim and an 07 label band.
+# bob 0: icon down, halo ring 16; bob 1: icon 1 px up, halo ring 07. The ring is a ground
+# marking and has no ink outline; the icon draws its own (manifest outline: false).
+
+frame bob:-:0
+.....gggggg.....
+...gg......gg...
+..g..000000..g..
+.g..07777770..g.
+.g..07777660..g.
+g...00000000...g
+g...0rrqqqp0...g
+g...0rqqqqp0...g
+g...0r7777p0...g
+g...0rqqqqp0...g
+g...0rqqqqp0...g
+.g..0rqqqqp0..g.
+.g..0rqqqpp0..g.
+..g.00000000.g..
+...gg......gg...
+.....gggggg.....
+
+frame bob:-:1
+.....777777.....
+...7700000077...
+..7.07777770.7..
+.7..07777660..7.
+.7..00000000..7.
+7...0rrqqqp0...7
+7...0rqqqqp0...7
+7...0r7777p0...7
+7...0rqqqqp0...7
+7...0rqqqqp0...7
+7...0rqqqqp0...7
+.7..0rqqqpp0..7.
+.7..00000000..7.
+..7..........7..
+...77......77...
+.....777777.....

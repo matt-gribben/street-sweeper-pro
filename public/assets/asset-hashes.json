@@ -1,10 +1,10 @@
 {
   "public/assets/atlas/actors.json": "d5a1aaf089f975c91c0a8ac4408158e600c81065ced5fcbbe665be3998a19721",
   "public/assets/atlas/actors.png": "34f3789ea4a88c43313f262afb7442260f630aeedc3fb5ebc149c753b506d6f1",
-  "public/assets/atlas/items.json": "3322909ab372414eed7d70c20836a6cc3d168ea79359b25832e4d7dcc6a07153",
-  "public/assets/atlas/items.png": "773bcaff341f62613c1bec3d18766db19298129f88fc0e8276010a87eeab317a",
-  "public/assets/atlas/world.json": "e2e53ef8ba868ffd1ceeaa562f178cc486f6c374a481abae9195ddf017cb7e3c",
-  "public/assets/atlas/world.png": "32b754ecad0c3b5d16c81541efe9ad1d33a208c0f79002fd270f7e5a74ce1095",
+  "public/assets/atlas/items.json": "e317b5c397f55c726155cb1ff9d59c275aaf18929a87c2c2b3b728f80abd4970",
+  "public/assets/atlas/items.png": "42e1b888f2f17aa77295ec680a8729ae5431a18f64f3533ce88afb6686cffa0c",
+  "public/assets/atlas/world.json": "bd99d8acdf39dbe600374c60010157be5e9d917e55643608584d6b3f4b7f37d3",
+  "public/assets/atlas/world.png": "a6cfa277b7fd3e756d5fe3544e8b8d580f58db76d5239ddd3a055f1c017b3edb",
   "public/assets/levels/puddle_lane.json": "919b926bb6a3306ab32cbb0bde569a5cfbda52d0a3c322104e840ee8b71125c9",
-  "src/gen/assets.ts": "dd0cdbfe65f814191f543edcc2e88b2c3afda26f0519fe6b46115a39422054af"
+  "src/gen/assets.ts": "54eba241ebda5f72a8876483277ab77069747f05d18a6601ad9d169823551eaa"
 }

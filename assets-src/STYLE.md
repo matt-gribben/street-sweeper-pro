@@ -159,7 +159,8 @@ shadow 00 00 01 01 02 03 04 05 00 08 09 13 11 08 13 14 15 18 19 30 31 01 21 22 2
   every side (Bessie 28×52 → 30×54, measured in D-07).
 - No coloured outlines ("sel-out"). Interior lines use the part's darker ramp step, not ink, except at genuine gaps
   (tyre against body, drain slot).
-- **Not outlined:** ground tiles, roofs, facades, stains, hazards, grime, VFX. Fonts get a generated 8-connected
+- **Not outlined:** ground tiles, roofs, facades, stains, hazards, grime, VFX, and ground markings inside an item sprite
+  (a pickup's halo ring, the depot bay markings; SSP-052). Fonts get a generated 8-connected
   outlined variant for text on the playfield.
 
 ---

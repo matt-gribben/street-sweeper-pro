@@ -9,8 +9,10 @@
 //                       sample, hazard grip overrides included → stepVehicle (handling scaled by the hopper
 //                       fill, top speed by the brush state) → EV.ReverseBeeper → kerb crossing → hazard
 //                       contacts: jolts, LU spills, the open-manhole hard stop (§8.2 steps 1–10; hazards.ts)
-//   3 Static collision  Bessie vs merged solids, map boundary and props: SAT/MTV, restitution, damage, EV.Impact
-//                       (collision/resolveStatic.ts over collision/grid.ts, SSP-036)
+//   3 Static collision  Bessie vs merged solids, map boundary, props, parked cars and moving traffic: SAT/MTV,
+//                       restitution, damage, EV.Impact (collision/resolveStatic.ts over collision/grid.ts,
+//                       SSP-036; vehicles SSP-090), then the parked cars' contact episodes and dents: the flat
+//                       dent HP, EV.Dent and the Offence.Dent penalty fact (applyVehicleContacts, parked.ts)
 //   4 Bodies            stepBodies (bodies.ts, SSP-092): knockable bins, cones, A-boards, trolleys and recycling
 //                       boxes: body vs body, Bessie's contacts (EV.Knock; on a body's first, its penalty fact
 //                       and its litter spill), the swept move against the static grid, ground friction
@@ -47,7 +49,9 @@
 //
 // Shift setup (createWorld, SSP-065): every store is allocated once, at its §7.1 capacity (litter 2,000, stains
 // 256, hazards 64, NPCs 80, knockables 128, vehicles 30, penalty facts 64 per tick), then the shift starts: the
-// initial litter is spawned (spawnInitialLitter), the hazards (spawnHazards, with the oil slicks' paired stains),
+// parked cars are placed on the `traffic` stream (placeParkedCars, SSP-090) before the static grid is built, so
+// their OBBs join it; the initial litter is spawned (spawnInitialLitter), the hazards (spawnHazards, with the
+// oil slicks' paired stains),
 // the level's knockables (spawnKnockables, SSP-092, pushed clear of the static world), the grime is laid
 // (initGrime), the frontage tally is counted and attached (initTidy), the tank is filled (refillWater), the
 // hopper is empty and the complaints meter is at 0; the stain store's penalty hook records into the penalty log.
@@ -124,6 +128,7 @@ import { createZebras, setSteeringTuning, type Zebras, type ZebrasView } from '.
 import { deliverStimuli } from './npc/stimuli.ts';
 import { beginNpcTick, createNpcStore, type NpcStore, type NpcStoreView } from './npc/store.ts';
 import { stepZebras } from './npc/zebraOffence.ts';
+import { applyVehicleContacts, placeParkedCars } from './parked.ts';
 import { createPenaltyHook, createPenaltyLog, type PenaltyLog, type PenaltyLogView } from './penalties.ts';
 import { createStream, type Sfc32 } from './rng.ts';
 import { createScoring, type Scoring, type ScoringView, setScoringTuning, stepScoring } from './scoring.ts';
@@ -280,8 +285,9 @@ export type World = {
    */
   readonly zebras: Zebras;
   /**
-   * The vehicle store (vehicleStore.ts, SSP-089), capacity 30, moving and parked together; empty at shift start.
-   * Phase 8 spawns, drives and despawns the moving vehicles; parked cars are SSP-090.
+   * The vehicle store (vehicleStore.ts, SSP-089), capacity 30, moving and parked together. The parked cars
+   * (parked.ts, SSP-090) are placed at shift start at indices 0..parkedCount−1 and never move; phase 8 spawns,
+   * drives and despawns the moving vehicles.
    */
   readonly vehicles: VehicleStore;
   /**
@@ -380,7 +386,14 @@ export function createWorld(
   const stains = createStainStore(entities, undefined, litter.capacity);
   const eventsRng = createStream(seed >>> 0, 'events');
   const hazards = createHazardStore(level, entities, eventsRng, undefined, litter.capacity);
-  const staticGrid = createStaticGrid(level, tuning.propFootprints);
+  // The vehicle store and traffic first: the parked cars are drawn on the `traffic` stream at shift start, before
+  // any moving vehicle, and their OBBs are static shapes of the grid (SSP-090). Traffic enters at the lane
+  // portals from the first tick's phase 8 on; the kerb gap check reads it (SSP-089).
+  const zebras = createZebras(level);
+  const vehicles = createVehicleStore(level, entities);
+  const traffic = createTraffic(level, seed >>> 0, tuning, entities, zebras);
+  const parked = placeParkedCars(vehicles, level, traffic.rng);
+  const staticGrid = createStaticGrid(level, tuning.propFootprints, parked.boxes);
   const bodies = createBodyStore(entities, tuning, staticGrid, hazards.spill, eventsRng);
   const dirt = createDirt(level, tuning);
   const scoring = createScoring(tuning, entities);
@@ -398,11 +411,7 @@ export function createWorld(
   stains.onPenalty = createPenaltyHook(penalties, Offence.Splat);
   // NPCs spawn from the first tick's phase 7 on (the spawner never places one at shift setup).
   const npc = createNpcStore(level);
-  const zebras = createZebras(level);
   const npcAi = createNpcAi(level, seed >>> 0, tuning, entities, staticGrid, zebras, npc.capacity);
-  // Traffic enters at the lane portals from the first tick's phase 8 on; the kerb gap check reads it (SSP-089).
-  const vehicles = createVehicleStore(level, entities);
-  const traffic = createTraffic(level, seed >>> 0, tuning, entities, zebras);
   npcAi.steering.crossingClear = trafficCrossingClear;
   const world: World = {
     level,
@@ -644,11 +653,21 @@ function emitKerbJolt(events: EventQueue, scratch: KerbCrossings, i: number, v: 
 // without touching stepWorld.
 
 /**
- * Phase 3 (§9.2): resolve Bessie against the static grid (merged solids, map boundary, props) with SAT/MTV,
- * restitution and impact damage, emitting EV.Impact per approaching contact. See collision/resolveStatic.ts.
+ * Phase 3 (§9.2, §9.4): resolve Bessie against the static grid (merged solids, map boundary, props, parked cars)
+ * and the moving traffic with SAT/MTV, restitution and impact damage, emitting EV.Impact per approaching
+ * contact (a parked car's dent: its flat HP and EV.Dent instead; collision/resolveStatic.ts), then the parked
+ * cars' contact episodes and the dents' penalty facts (parked.ts applyVehicleContacts, SSP-090).
  */
 function phaseStaticCollision(world: World): void {
-  resolveStatic(world.staticGrid, world.staticResolver, world.vehicle, world.vehicleParams, world.events);
+  resolveStatic(
+    world.staticGrid,
+    world.staticResolver,
+    world.vehicle,
+    world.vehicleParams,
+    world.events,
+    world.vehicles,
+  );
+  applyVehicleContacts(world);
 }
 
 /**

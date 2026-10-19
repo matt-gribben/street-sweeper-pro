@@ -16,6 +16,21 @@
 //      no damage, no event. That is the answer to the "scraping emits every tick" OPEN in SSP-036 (flagged).
 //   6. TOWED (HP 0 → EV.ShiftEnd once) lives in phase 10, shift.ts (SSP-062).
 //
+// Vehicles (SSP-090, TECHNICAL_DESIGN §9.4). Parked cars are boxes in the static grid (ShapeSource.Parked) and
+// moving traffic is the vehicle store (`vehicles`, when the World passes it): each step's candidates are the
+// grid's shapes, then the moving vehicles whose AABB may touch Bessie's (queryVehicles; shape index
+// grid.shapeCount + vehicle index, so the static world wins a tie). Traffic is kinematic: Bessie resolves
+// against a vehicle exactly as against static geometry (the same MTV, restitution and EV.Impact, from her own
+// velocity only), and phase 8 stops a vehicle rather than move it into her. The responses differ by kind:
+//   - moving traffic: the impact damage above, HP only (no points or complaints, ENTITY_CATALOG §17 Q3);
+//   - a parked car: no impact damage. An approaching contact faster than damageThresholdMps dents the car if
+//     its contact episode has not dented it yet (store.dented, parked.ts): the flat kindDentHp off HP (5, §17
+//     Q4, replacing the impact damage) and EV.Dent {entity = the car, a = x, b = y, c = vn} instead of
+//     EV.Impact; the dent is listed (dentVehicle/dentX/dentY) for parked.ts applyVehicleContacts, which
+//     records the penalty fact. Any other approaching contact with it emits EV.Impact and costs nothing.
+// Every vehicle pushed against is listed in `touched` (its contact episode, parked.ts). Both lists belong to
+// the attempt: undoing an attempt empties them, like the log.
+//
 // Pushing out of the deepest contact first, rather than the first one found, is what makes a flush seam
 // between two merged rects harmless: the wall the OBB is really pressed into goes first and leaves the
 // neighbour merely touching. Ties between equally deep contacts go to the lower shape index (grid order).
@@ -26,9 +41,10 @@
 import { EV, type EventQueue, emitEvent } from '../eventQueue.ts';
 import { cos, sin } from '../fmath.ts';
 import type { VehicleParams, VehicleState } from '../vehicle.ts';
-import { queryStatic, ShapeKind, type StaticGrid, staticContact } from './grid.ts';
+import { queryVehicles, VEHICLE_CAPACITY, VEHICLE_FLAG, type VehicleStore } from '../vehicleStore.ts';
+import { queryStatic, ShapeKind, ShapeSource, type StaticGrid, staticContact } from './grid.ts';
 import { type Aabb, createAabb, createObb, type Obb, obbAabb, obbCorners, refreshObbAxes } from './obb.ts';
-import { type Circle, type Contact, createContact } from './sat.ts';
+import { type Circle, type Contact, createContact, obbVsObb } from './sat.ts';
 import { createPose, createSweep, type Pose, type Sweep, sweepPose, sweepStepCount } from './sweep.ts';
 
 /** MTV iterations per sub-step (§9.2 step 5). */
@@ -47,6 +63,9 @@ export const STOP_BISECTION_STEPS = 16;
 
 /** Contacts the per-tick log keeps; later ones in the same tick are resolved but not logged. */
 export const CONTACT_LOG_CAPACITY = 64;
+
+/** Dents one tick can list (a handful of parked cars at most can touch Bessie at once). */
+export const DENTS_PER_TICK = 8;
 
 /** Corner projections closer than this along the normal count as one face (the contact point averages them). */
 const FACE_TIE_EPS_M = 1e-9;
@@ -109,6 +128,20 @@ export type StaticResolver = {
   savedVLatMps: number;
   savedHp: number;
   savedEventCount: number;
+  /** The vehicle store phase 3 resolves moving traffic from (null: static shapes only). Set per call. */
+  vehicles: VehicleStore | null;
+  /** Moving-vehicle candidates of the current query (queryVehicles) and the OBB and AABB of one of them. */
+  readonly vehicleCandidates: Int32Array;
+  readonly vehicleObb: Obb;
+  readonly vehicleAabb: Aabb;
+  /** Vehicles (store indices) pushed against this tick, each once. */
+  readonly touched: Int32Array;
+  touchedCount: number;
+  /** This tick's dents: the parked car (store index) and the contact point (m). */
+  readonly dentVehicle: Int32Array;
+  readonly dentX: Float64Array;
+  readonly dentY: Float64Array;
+  dentCount: number;
 };
 
 /** Allocate the resolver. Once per World. */
@@ -141,6 +174,16 @@ export function createStaticResolver(): StaticResolver {
     savedVLatMps: 0,
     savedHp: 0,
     savedEventCount: 0,
+    vehicles: null,
+    vehicleCandidates: new Int32Array(VEHICLE_CAPACITY),
+    vehicleObb: createObb(),
+    vehicleAabb: createAabb(),
+    touched: new Int32Array(VEHICLE_CAPACITY),
+    touchedCount: 0,
+    dentVehicle: new Int32Array(DENTS_PER_TICK),
+    dentX: new Float64Array(DENTS_PER_TICK),
+    dentY: new Float64Array(DENTS_PER_TICK),
+    dentCount: 0,
   };
 }
 
@@ -177,7 +220,56 @@ function findDeepest(grid: StaticGrid, r: StaticResolver): boolean {
       r.bestNy = c.normalY;
     }
   }
+  const store = r.vehicles;
+  if (store !== null && store.count > store.parkedCount) {
+    const m = queryVehicles(store, r.aabb, r.vehicleCandidates);
+    for (let k = 0; k < m; k += 1) {
+      const j = r.vehicleCandidates[k] as number;
+      if (((store.flags[j] as number) & VEHICLE_FLAG.PARKED) !== 0) continue; // in the static grid
+      vehicleObbOf(store, j, r.vehicleObb);
+      if (!obbVsObb(r.obb, r.vehicleObb, c)) continue;
+      // A vehicle's shape index follows every static shape, so ties go to the static world.
+      const s = grid.shapeCount + j;
+      if (c.depthM > r.bestDepth || (c.depthM === r.bestDepth && s < r.bestShape)) {
+        r.bestShape = s;
+        r.bestDepth = c.depthM;
+        r.bestNx = c.normalX;
+        r.bestNy = c.normalY;
+      }
+    }
+  }
   return r.bestShape >= 0;
+}
+
+/** Vehicle j's body OBB (pose and half extents from the store) into `out`. */
+function vehicleObbOf(store: VehicleStore, j: number, out: Obb): void {
+  out.cx = store.x[j] as number;
+  out.cy = store.y[j] as number;
+  out.headingRad = store.heading[j] as number;
+  out.halfWidthM = store.halfWidth[j] as number;
+  out.halfLengthM = store.halfLength[j] as number;
+  refreshObbAxes(out);
+}
+
+/** The vehicle-store index behind shape `s` (a parked box or a moving vehicle), or −1 for the static world. */
+function vehicleOfShape(grid: StaticGrid, s: number): number {
+  if (s >= grid.shapeCount) return s - grid.shapeCount;
+  return grid.source[s] === ShapeSource.Parked ? (grid.vehicleIndex[s] as number) : -1;
+}
+
+/** List vehicle j as touched this tick (once). */
+function markTouched(r: StaticResolver, j: number): void {
+  for (let k = 0; k < r.touchedCount; k += 1) if (r.touched[k] === j) return;
+  if (r.touchedCount < r.touched.length) {
+    r.touched[r.touchedCount] = j;
+    r.touchedCount += 1;
+  }
+}
+
+/** True when this attempt has dented vehicle j already. */
+function dentedThisTick(r: StaticResolver, j: number): boolean {
+  for (let k = 0; k < r.dentCount; k += 1) if (r.dentVehicle[k] === j) return true;
+  return false;
 }
 
 /**
@@ -216,7 +308,12 @@ function contactPoint(grid: StaticGrid, r: StaticResolver, s: number): void {
   }
   let x = sumX / ties;
   let y = sumY / ties;
-  const b = grid.bounds[s] as Readonly<Aabb>;
+  let b = (s < grid.shapeCount ? grid.bounds[s] : r.vehicleAabb) as Readonly<Aabb>;
+  if (s >= grid.shapeCount && r.vehicles !== null) {
+    // A moving vehicle: clamp into its body's AABB.
+    vehicleObbOf(r.vehicles, s - grid.shapeCount, r.vehicleObb);
+    b = obbAabb(r.vehicleObb, r.vehicleAabb);
+  }
   const minX = b.minX;
   const maxX = b.maxX;
   const minY = b.minY;
@@ -252,6 +349,8 @@ function undoAttempt(r: StaticResolver, v: VehicleState, events: EventQueue): vo
   }
   events.count = r.savedEventCount;
   r.log.count = 0;
+  r.touchedCount = 0;
+  r.dentCount = 0;
 }
 
 /**
@@ -307,22 +406,55 @@ function resolveSweep(
       const vx = fx * v.vLongMps + rx * v.vLatMps;
       const vy = fy * v.vLongMps + ry * v.vLatMps;
       const vn = -(vx * nx + vy * ny);
+      const veh = vehicleOfShape(grid, r.bestShape);
+      if (veh >= 0) markTouched(r, veh);
       if (vn > 0) {
         const k = (1 + restitution) * vn;
         const ox = vx + k * nx;
         const oy = vy + k * ny;
         v.vLongMps = ox * fx + oy * fy;
         v.vLatMps = ox * rx + oy * ry;
-        // impactDamage, inline.
         const over = vn - col.damageThresholdMps;
-        let hp = over > 0 ? v.hp - over * col.damageHpPerMps * params.damageMult : v.hp;
-        if (hp < 0) hp = 0;
-        if (hp > t.health.maxHp) hp = t.health.maxHp;
-        v.hp = hp;
-        const e = emitEvent(events, EV.Impact, -1);
-        events.a[e] = r.pointX;
-        events.b[e] = r.pointY;
-        events.c[e] = vn;
+        const store = r.vehicles;
+        if (veh >= 0 && r.bestShape < grid.shapeCount) {
+          // A parked car: no impact damage; a hard enough hit dents it once per contact episode (parked.ts).
+          if (
+            over > 0 &&
+            store !== null &&
+            store.dented[veh] === 0 &&
+            r.dentCount < r.dentVehicle.length &&
+            !dentedThisTick(r, veh)
+          ) {
+            let hp = v.hp - (store.kindDentHp[store.kind[veh] as number] as number);
+            if (hp < 0) hp = 0;
+            if (hp > t.health.maxHp) hp = t.health.maxHp;
+            v.hp = hp;
+            const d = r.dentCount;
+            r.dentVehicle[d] = veh;
+            r.dentX[d] = r.pointX;
+            r.dentY[d] = r.pointY;
+            r.dentCount = d + 1;
+            const e = emitEvent(events, EV.Dent, veh);
+            events.a[e] = r.pointX;
+            events.b[e] = r.pointY;
+            events.c[e] = vn;
+          } else {
+            const e = emitEvent(events, EV.Impact, -1);
+            events.a[e] = r.pointX;
+            events.b[e] = r.pointY;
+            events.c[e] = vn;
+          }
+        } else {
+          // impactDamage, inline (walls, props, the map edge and moving traffic).
+          let hp = over > 0 ? v.hp - over * col.damageHpPerMps * params.damageMult : v.hp;
+          if (hp < 0) hp = 0;
+          if (hp > t.health.maxHp) hp = t.health.maxHp;
+          v.hp = hp;
+          const e = emitEvent(events, EV.Impact, -1);
+          events.a[e] = r.pointX;
+          events.b[e] = r.pointY;
+          events.c[e] = vn;
+        }
       }
 
       const i = log.count;
@@ -364,8 +496,9 @@ function startPoseClear(grid: StaticGrid, r: StaticResolver, params: VehiclePara
 }
 
 /**
- * Resolve Bessie against `grid` for this tick (§9.2 steps 1–5): moves `v` out of every static shape, reflects
- * and damages on approaching contacts and emits EV.Impact for each. Reads the move from v.prevXM/prevYM/
+ * Resolve Bessie against `grid` for this tick (§9.2 steps 1–5): moves `v` out of every static shape (and, with
+ * `vehicles`, every moving vehicle: see the header), reflects and damages on approaching contacts and emits
+ * EV.Impact for each (EV.Dent for a parked car's dent). Reads the move from v.prevXM/prevYM/
  * prevHeadingRad (the tick's start pose, copied by stepVehicle) to v.xM/yM/headingRad. Allocation-free.
  *
  * MTV push-out cannot resolve every move (SSP-037's property 1 found both cases): with no angular response a
@@ -383,8 +516,12 @@ export function resolveStatic(
   v: VehicleState,
   params: VehicleParams,
   events: EventQueue,
+  vehicles: VehicleStore | null = null,
 ): void {
+  r.vehicles = vehicles;
   r.log.count = 0;
+  r.touchedCount = 0;
+  r.dentCount = 0;
   r.outcome = ResolveOutcome.Clear;
   const sweep = r.sweep;
   sweep.x0 = v.prevXM;

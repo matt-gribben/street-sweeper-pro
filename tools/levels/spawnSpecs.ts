@@ -52,6 +52,7 @@ import {
   type TrafficSpawn,
   type WeightEntry,
 } from '../../src/sim/map.ts';
+import { countBaySlots } from '../../src/sim/parkingBays.ts';
 import {
   DEFAULT_ENTITIES,
   DISTRICT_IDS,
@@ -643,7 +644,7 @@ export function checkTraffic(
     p.add(
       at('parkedFill'),
       'L000',
-      'traffic.parkedFill must be a number 0..1 (share of parking bays filled)',
+      'traffic.parkedFill must be a number 0..1 (share of parking bays filled; a bay is 2 p tiles)',
     );
   const parkedMix =
     weightTable(p, ctx, value.parkedMix, 'veh', 'traffic.parkedMix', at('parkedMix'), (id) =>
@@ -1336,8 +1337,9 @@ export function compileSpawnSpecs(
   if (specs.traffic !== null) {
     const t = specs.traffic;
     const laneM = laneMetres(level);
-    let parkedBays = 0;
-    for (const b of level.lanes.bays) parkedBays += (b.rect[2] - b.rect[0]) * (b.rect[3] - b.rect[1]);
+    // A bay is one car's 2-tile slot of a run of `p` cells (src/sim/parkingBays.ts, SSP-090): the unit parkedFill
+    // fills and the runtime places, so the vehicle peak is exact.
+    const parkedBays = countBaySlots(level.lanes.bays);
     const busRoute =
       t.busRoute.length === 0 ? [] : laneRoute(t.busRoute, 'traffic.busRoute', ['traffic', 'busRoute']);
     t.taxiRank.forEach(([x, y], i) => {
@@ -1532,7 +1534,7 @@ function waveDelta(events: readonly CheckedEvent[], fromS: number, toS: number, 
  * active in it), plus every named NPC (`count` each), one dog per dog walker (named, and ambient up to the
  * walker's cap), the perched cats, every flock at its largest size, and one market trader per market stall
  * when a `market` event runs. Vehicles: the moving target (densityPerKm × lane-km, rounded up), the parked cars
- * (parking bays × parkedFill, rounded up) and the pavement vehicles.
+ * (parking bays, 2-tile car slots of the `p` runs, × parkedFill, rounded up) and the pavement vehicles.
  */
 export function estimatePeaks(
   specs: CheckedSpecs,

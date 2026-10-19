@@ -284,6 +284,19 @@ export type CaughtEvent = SimEventBase & {
   readonly pts: number;
 };
 
+/**
+ * Bessie dented a parked car (phase 3, parked.ts, SSP-090): once per contact episode with an approaching speed
+ * above 2 m/s. The flat 5 HP and the −100 penalty go with it. Audio plays the car's sfx.dent (`crash`, M5).
+ */
+export type DentEvent = SimEventBase & {
+  readonly type: typeof EV.Dent;
+  /** The contact point, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The normal impact speed, m/s. */
+  readonly vn: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -306,6 +319,7 @@ export type SimEventByType = {
   [EV.CarHorn]: CarHornEvent;
   [EV.HandbagWhack]: HandbagWhackEvent;
   [EV.Caught]: CaughtEvent;
+  [EV.Dent]: DentEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -387,6 +401,7 @@ function createPayloads(): Payloads {
     [EV.CarHorn]: { type: EV.CarHorn, tick: 0, entity: -1, x: 0, y: 0, honk: 1 },
     [EV.HandbagWhack]: { type: EV.HandbagWhack, tick: 0, entity: -1, x: 0, y: 0, hp: 0 },
     [EV.Caught]: { type: EV.Caught, tick: 0, entity: -1, x: 0, y: 0, pts: 0 },
+    [EV.Dent]: { type: EV.Dent, tick: 0, entity: -1, x: 0, y: 0, vn: 0 },
   };
 }
 
@@ -451,7 +466,8 @@ function isEventType(type: number): type is EventType {
     type === EV.NpcHit ||
     type === EV.CarHorn ||
     type === EV.HandbagWhack ||
-    type === EV.Caught
+    type === EV.Caught ||
+    type === EV.Dent
   );
 }
 
@@ -573,6 +589,7 @@ export class EventBus implements UiEventSink, PauseEventSink {
     [EV.CarHorn]: [],
     [EV.HandbagWhack]: [],
     [EV.Caught]: [],
+    [EV.Dent]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -886,6 +903,16 @@ export class EventBus implements UiEventSink, PauseEventSink {
         e.y = b;
         e.pts = c;
         this.emit(EV.Caught, e);
+        return;
+      }
+      case EV.Dent: {
+        const e = this.payloads[EV.Dent];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.vn = c;
+        this.emit(EV.Dent, e);
         return;
       }
     }

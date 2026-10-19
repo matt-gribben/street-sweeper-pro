@@ -70,3 +70,32 @@ export function solidOverlapM(level: Level, body: BodyBox): number {
   }
   return deepest;
 }
+
+/**
+ * SAT penetration depth (m) of two OBBs (0 when any of their four edge normals separates them): the vehicle
+ * overlap of the SSP-090 collision property, test-side and independent of src/sim/collision.
+ */
+export function obbObbPenetrationM(a: BodyBox, b: BodyBox): number {
+  const axesOf = (box: BodyBox): [number, number][] => {
+    const rx = Math.cos(box.headingRad);
+    const ry = Math.sin(box.headingRad);
+    return [
+      [rx, ry],
+      [ry, -rx],
+    ];
+  };
+  const half = (box: BodyBox, nx: number, ny: number): number => {
+    const rx = Math.cos(box.headingRad);
+    const ry = Math.sin(box.headingRad);
+    return (box.widthM / 2) * Math.abs(rx * nx + ry * ny) + (box.lengthM / 2) * Math.abs(ry * nx - rx * ny);
+  };
+  const dx = b.xM - a.xM;
+  const dy = b.yM - a.yM;
+  let depth = Number.POSITIVE_INFINITY;
+  for (const [nx, ny] of [...axesOf(a), ...axesOf(b)]) {
+    const overlap = half(a, nx, ny) + half(b, nx, ny) - Math.abs(dx * nx + dy * ny);
+    if (overlap <= 0) return 0;
+    if (overlap < depth) depth = overlap;
+  }
+  return depth;
+}

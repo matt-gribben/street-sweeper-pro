@@ -71,6 +71,13 @@
 // ones the kind fits, on the `traffic` stream. Despawning only once a vehicle has driven past its exit portal
 // (EXITING) and its OBB is off world.viewRect.
 //
+// Bessie (SSP-090, TECHNICAL_DESIGN §9.4). Traffic is kinematic and stops: phase 3 resolves Bessie against
+// every vehicle as against static geometry, and here a vehicle whose move this tick would overlap her body
+// (the candidate pose at along + v·dt, cornersOverlap) does not move: its speed is 0 and it is held by Bessie
+// (Blocker.Bessie, gap 0), so a vehicle she pins from the side queues and honks like one she blocks ahead.
+// Parked cars (parked.ts) are in the store too: they never drive, and moving vehicles follow them like any
+// other vehicle in their corridor (the compiled lanes swing clear of the parking bays, laneGraph.ts).
+//
 // The kerb gap check (TECHNICAL_DESIGN §11.1): trafficCrossingClear is the steering hook SSP-081 left
 // (createWorld installs it). A pedestrian at the kerb of a crossing waits while any moving vehicle's body is on
 // the crossing, or while one is coming: at a zebra, closer than it can stop in plus ZEBRA_REACTION_S of travel
@@ -206,8 +213,8 @@ const P_BESSIE_HW = 5;
 const P_BESSIE_HL = 6;
 const PARAM_DOUBLES = 7;
 
-/** The mix draw's resolution: a kind is drawn as nextInt(rng, MIX_STEPS) over the weights. */
-const MIX_STEPS = 1 << 20;
+/** The mix draw's resolution: a kind is drawn as nextInt(rng, MIX_STEPS) over the weights (parked.ts too). */
+export const MIX_STEPS = 1 << 20;
 
 /** May vehicles drive over school crossing edge `edge` now? The SSP-213 hook; neverStopForSchoolCrossing until then. */
 export type SchoolCrossingCheck = (w: World, edge: number) => boolean;
@@ -277,6 +284,12 @@ export type Traffic = {
   /** Car honks (EV.CarHorn) and Road Rage penalty facts this shift. */
   carHorns: number;
   roadRageOffences: number;
+  /** Parked-car dents this shift (parked.ts, phase 3). */
+  dents: number;
+  /** Vehicle ticks held still because the move would have overlapped Bessie (the §9.4 stop, SSP-090). */
+  contactStops: number;
+  /** A parked car's dent contact episode ends after this many untouched ticks (streetLife.traffic.dentRearmS). */
+  dentRearmTicks: number;
   /** The school-crossing stop hook (SSP-213). */
   schoolCrossingStop: SchoolCrossingCheck;
   /** The tuning numbers the tick reads (setTrafficTuning): acceleration, deceleration, gaps, Bessie's body. */
@@ -297,6 +310,8 @@ export type Traffic = {
   readonly crossCorners: Float64Array;
   /** An obstacle's corners in a corridor segment's (u, n) frame. */
   readonly quad: Float64Array;
+  /** A vehicle's body at the end of its candidate move (the stop-before-Bessie check). */
+  readonly moveCorners: Float64Array;
   readonly eligible: Int32Array;
   readonly doomed: Uint8Array;
 };
@@ -313,6 +328,8 @@ export type TrafficView = {
   readonly busesSpawned: number;
   readonly carHorns: number;
   readonly roadRageOffences: number;
+  readonly dents: number;
+  readonly contactStops: number;
 };
 
 // ---------------------------------------------------------------------------------------------------------
@@ -635,6 +652,9 @@ export function createTraffic(
     busesSpawned: 0,
     carHorns: 0,
     roadRageOffences: 0,
+    dents: 0,
+    contactStops: 0,
+    dentRearmTicks: 1,
     schoolCrossingStop: neverStopForSchoolCrossing,
     params: new Float64Array(PARAM_DOUBLES),
     honkTicks: 1,
@@ -647,6 +667,7 @@ export function createTraffic(
     clearCorners: new Float64Array(VEHICLE_CORNER_DOUBLES),
     crossCorners: new Float64Array(VEHICLE_CORNER_DOUBLES),
     quad: new Float64Array(8),
+    moveCorners: new Float64Array(VEHICLE_CORNER_DOUBLES),
     eligible: new Int32Array(Math.max(1, portals.length)),
     doomed: new Uint8Array(256),
   };
@@ -673,6 +694,7 @@ export function setTrafficTuning(t: Traffic, tuning: Tuning): void {
   t.rageTicks = Math.max(1, Math.round(tuning.complaints.roadRage.afterBlockedS * SIM_HZ));
   t.clearTicks = Math.max(1, Math.round(tr.clearAfterS * SIM_HZ));
   t.rageComplaints = tuning.complaints.roadRage.complaints;
+  t.dentRearmTicks = Math.max(1, Math.round(tr.dentRearmS * SIM_HZ));
 }
 
 /** The read-only view of `t`. No copy: it is the same object. */
@@ -1035,6 +1057,46 @@ function placeVehicle(t: Traffic, store: VehicleStore, lanes: LaneGraph, i: numb
   store.y[i] = sc[PY] as number;
   store.heading[i] = atan2(fx, -fy);
   updateVehicleCorners(store, i);
+}
+
+/**
+ * Would vehicle i's body, moved sc[ARG] metres on along its plan, overlap Bessie's (t.bessieCorners)? The
+ * candidate pose is placeVehicle's at along + sc[ARG] (the plan is not changed). Allocation-free.
+ */
+function moveHitsBessie(t: Traffic, store: VehicleStore, lanes: LaneGraph, i: number): boolean {
+  const sc = t.sc;
+  const along = store.along[i] as number;
+  store.along[i] = along + (sc[ARG] as number);
+  const hl = store.halfLength[i] as number;
+  sc[ARG] = -hl;
+  pointAlong(t, store, lanes, i);
+  const rx = sc[PX] as number;
+  const ry = sc[PY] as number;
+  const ex = sc[DX] as number;
+  const ey = sc[DY] as number;
+  sc[ARG] = hl;
+  pointAlong(t, store, lanes, i);
+  let fx = (sc[PX] as number) - rx;
+  let fy = (sc[PY] as number) - ry;
+  if (fx * fx + fy * fy < 1e-12) {
+    fx = ex;
+    fy = ey;
+  }
+  sc[ARG] = 0;
+  pointAlong(t, store, lanes, i);
+  store.along[i] = along;
+  // The body: unit forward from the chord, right = (−fy, fx) (forward (sin h, −cos h), right (cos h, sin h)).
+  const fl = sqrt(fx * fx + fy * fy);
+  const ux = fx / fl;
+  const uy = fy / fl;
+  sc[BOX_CX] = sc[PX] as number;
+  sc[BOX_CY] = sc[PY] as number;
+  sc[BOX_FX] = ux;
+  sc[BOX_FY] = uy;
+  sc[BOX_HW] = store.halfWidth[i] as number;
+  sc[BOX_HL] = hl;
+  boxCorners(sc, t.moveCorners);
+  return cornersOverlap(t.moveCorners, 0, t.bessieCorners, 0);
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -1454,6 +1516,18 @@ function driveVehicle(w: World, i: number): void {
   let v = v0 + (params[P_ACCEL] as number) * DT_S;
   if (v > target) v = target;
   if (v < 0) v = 0;
+  // Traffic is kinematic and stops (§9.4, SSP-090): never move into Bessie's body.
+  if (v > 0) {
+    sc[ARG] = v * DT_S;
+    if (moveHitsBessie(t, store, lanes, i)) {
+      t.contactStops += 1;
+      v = 0;
+      target = 0;
+      bind = Blocker.Bessie;
+      bindIndex = -1;
+      bindGap = 0;
+    }
+  }
   const held = bind !== Blocker.None && target < slow;
   store.blocker[i] = held ? bind : Blocker.None;
   store.blockerIndex[i] = held ? bindIndex : -1;

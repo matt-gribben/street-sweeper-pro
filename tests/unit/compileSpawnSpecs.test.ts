@@ -385,9 +385,9 @@ describe('traffic', () => {
     }
     expect(t.laneKm).toBe(Math.round(laneM) / 1000);
     expect(t.moving).toBe(Math.ceil(4 * t.laneKm));
-    // Six `p` cells, half filled: 3 parked cars.
-    expect(t.parkedBays).toBe(6);
-    expect(t.parked).toBe(3);
+    // Six `p` cells are three 2-tile bays (src/sim/parkingBays.ts, SSP-090), half filled: ⌈1.5⌉ = 2 parked cars.
+    expect(t.parkedBays).toBe(3);
+    expect(t.parked).toBe(2);
     expect(t.pavement).toEqual([{ id: 'veh.mobility_scooter', count: 1 }]);
     expect(t.taxiRank).toEqual([[61, 29]]);
     expect(t.busEveryS).toBe(45);
@@ -819,7 +819,7 @@ describe('peaks, dynamic litter and L050 (LEVEL_DESIGN §10.4)', () => {
     const result = compileFixture({ traffic });
     expect(codes(result)).toEqual([
       expect.stringMatching(
-        /^L050 peak vehicles 44 is over the budget of 30 \(moving 40, parked 3, pavement 1\)$/,
+        /^L050 peak vehicles 43 is over the budget of 30 \(moving 40, parked 2, pavement 1\)$/,
       ),
     ]);
     // spawn_specs expects 10 dynamic items: the ambient dog walker's 4 messes and 6 spilled by the knockables.
@@ -838,7 +838,7 @@ describe('the par report', () => {
   it('prints the peak NPC and peak vehicle lines (and groups digits without the locale)', () => {
     const { report } = ok(compileFixture());
     const lines = formatParReport(report);
-    expect(lines).toContain('  peak NPC 22/80   peak vehicles 6/30');
+    expect(lines).toContain('  peak NPC 22/80   peak vehicles 5/30');
     expect(lines[0]).toBe('district.fixture_spawn_specs  40x23  seed 1');
     expect(lines.at(-1)).toBe('  warnings: none');
     expect([groupDigits(0), groupDigits(999), groupDigits(1264), groupDigits(1234567)]).toEqual([
@@ -857,7 +857,7 @@ describe('the CLI', () => {
     const args = ['--src', `${FIXTURES}/spawn_specs`, '--manifest', MANIFEST];
     const a = runCli([...args, '--out', outA]);
     expect(a.status, a.stderr).toBe(0);
-    expect(a.stdout).toContain('  peak NPC 22/80   peak vehicles 6/30\n');
+    expect(a.stdout).toContain('  peak NPC 22/80   peak vehicles 5/30\n');
     const b = runCli([...args, '--out', outB]);
     expect(b.status, b.stderr).toBe(0);
     const file = (root: string): string => join(root, 'public/assets/levels/spawn_specs.json');

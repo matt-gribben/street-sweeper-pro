@@ -316,6 +316,12 @@ describe('state hash', () => {
     world.vehicles.blockTicks[v] = 200;
     world.vehicles.honks[v] = 1;
     world.traffic.carHorns = 1;
+    // SSP-090: a paint slot, a dent episode and a dent.
+    world.vehicles.paint[v] = 5;
+    world.vehicles.touchClear[v] = 7;
+    world.vehicles.dented[v] = 1;
+    world.vehicles.dents[v] = 1;
+    world.traffic.dents = 1;
     return world;
   }
 
@@ -342,6 +348,14 @@ describe('state hash', () => {
       ['carHorns', (w) => (w.traffic.carHorns = 2)],
       ['busesDue', (w) => (w.traffic.busesDue = 1)],
       ['traffic.rng', (w) => (w.traffic.rng.counter += 1)],
+      // SSP-090: the parked-car columns and the dent counter.
+      ['paint', (w) => (w.vehicles.paint[0] = 6)],
+      ['touchClear', (w) => (w.vehicles.touchClear[0] = 8)],
+      ['dented', (w) => (w.vehicles.dented[0] = 0)],
+      ['dents', (w) => (w.vehicles.dents[0] = 2)],
+      ['roofPerch', (w) => (w.vehicles.roofPerch[0] = 3)],
+      ['traffic.dents', (w) => (w.traffic.dents = 2)],
+      ['traffic.contactStops', (w) => (w.traffic.contactStops = 1)],
     ];
     for (const [name, edit] of edits) {
       const w = handSetWorld();
@@ -1465,8 +1479,11 @@ describe('state hash', () => {
  * SSP-085 appended the occupied-zebra offence (the offence count, then whether Bessie is on each zebra) after
  * the traffic, and put Bessie on the hand-set zebra after one offence: 424363e8 → bce018f8 (26b005e9 on its
  * branch, before SSP-089, SSP-083 and SSP-084 merged).
+ * SSP-090 appended the parked-car columns (paint, the dent episode, dents, the roof perch) and the dent counter
+ * after the zebra offence, and gave the vehicle a paint slot and a dented episode: bce018f8 → ef821327 (e6cb8040
+ * on its branch, before SSP-083, SSP-084 and SSP-085 merged).
  */
-const GOLDEN_HAND_SET_HASH = 'bce018f8';
+const GOLDEN_HAND_SET_HASH = 'ef821327';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

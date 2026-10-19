@@ -7,6 +7,9 @@
 //      S strips span the corners, so Bessie can never leave the map, even diagonally.
 //   3. Circle / Box (source Prop): one per `level.props` entry, in file order, with the provisional footprint
 //      from tuning.json → propFootprints (a circle, or a box turned by the prop's `rot`).
+//   4. Box (source Parked): one per parked car placed at shift start (parked.ts, SSP-090), in vehicle-store
+//      order, its OBB the entities.json `body` at the car's pose; `vehicleIndex` names the car. Parked boxes
+//      never lower `subStepMaxM` (their smallest half extent, 0.815 m, is far more than Bessie moves in a tick).
 //
 // Buckets cover the map plus a one-tile ring (where the boundary strips meet the map), as a CSR list: the
 // shapes of extended cell c are cellItems[cellStart[c] .. cellStart[c + 1]). A shape is registered in every
@@ -43,11 +46,21 @@ export const ShapeKind = { Rect: 0, Circle: 1, Box: 2 } as const;
 export type ShapeKind = (typeof ShapeKind)[keyof typeof ShapeKind];
 
 /** Where a shape came from. */
-export const ShapeSource = { Solid: 0, Boundary: 1, Prop: 2 } as const;
+export const ShapeSource = { Solid: 0, Boundary: 1, Prop: 2, Parked: 3 } as const;
 export type ShapeSource = (typeof ShapeSource)[keyof typeof ShapeSource];
 
 /** Thickness of each map-boundary strip, in tiles (8 m: far more than Bessie can travel in a tick). */
 export const BOUNDARY_TILES = 4;
+
+/** A parked car's static OBB (parked.ts): centre (m), heading (rad), half extents (m), its vehicle-store index. */
+export type ParkedBox = {
+  readonly x: number;
+  readonly y: number;
+  readonly heading: number;
+  readonly halfWidthM: number;
+  readonly halfLengthM: number;
+  readonly vehicle: number;
+};
 
 /** The static world, indexed by shape. Everything is sized once by createStaticGrid. */
 export type StaticGrid = {
@@ -74,8 +87,10 @@ export type StaticGrid = {
   readonly circles: readonly Readonly<Circle>[];
   /** Boxes only: the footprint OBB (other shapes hold an unused zero box). */
   readonly boxes: readonly Obb[];
-  /** Props only: the index into level.props; −1 for rects. */
+  /** Props only: the index into level.props; −1 for rects and parked cars. */
   readonly propIndex: Int32Array;
+  /** Parked cars only: the vehicle-store index; −1 for every other shape. */
+  readonly vehicleIndex: Int32Array;
   /** Solid-cell raster over the map plus a one-tile ring (ring cells are solid): (w + 2) × (h + 2). */
   readonly solidCells: Uint8Array;
   /** CSR buckets over the same extended cells: cellStart has (w + 2)·(h + 2) + 1 entries. */
@@ -124,7 +139,8 @@ function cellRange(grid: StaticGrid, box: Readonly<Aabb>): Int32Array {
 /** Shape description gathered before the arrays are sized. */
 type ShapeSpec =
   | { kind: 0; source: 0 | 1; x0: number; y0: number; x1: number; y1: number }
-  | { kind: 1 | 2; prop: number; p: LevelProp; footprint: PropFootprint };
+  | { kind: 1 | 2; source: 2; prop: number; p: LevelProp; footprint: PropFootprint }
+  | { kind: 2; source: 3; car: ParkedBox };
 
 function footprintOf(footprints: PropFootprints, prop: LevelProp, index: number): PropFootprint {
   const shapes: Readonly<Record<string, PropFootprint | undefined>> = footprints.shapes;
@@ -138,10 +154,15 @@ function footprintOf(footprints: PropFootprints, prop: LevelProp, index: number)
 }
 
 /**
- * Build the static world for `level`: merged solids, the map boundary and the props with their footprints.
- * Setup only (allocates). Throws if a prop has no footprint or a non-finite position or rot.
+ * Build the static world for `level`: merged solids, the map boundary, the props with their footprints and the
+ * parked cars (`parked`, parked.ts; none by default). Setup only (allocates). Throws if a prop has no footprint
+ * or a non-finite position or rot, or a parked car a non-finite pose or size.
  */
-export function createStaticGrid(level: Level, footprints: PropFootprints): StaticGrid {
+export function createStaticGrid(
+  level: Level,
+  footprints: PropFootprints,
+  parked: readonly ParkedBox[] = [],
+): StaticGrid {
   const [w, h] = level.size;
   const specs: ShapeSpec[] = [];
   for (const [x0, y0, x1, y1] of level.solids) specs.push({ kind: 0, source: 0, x0, y0, x1, y1 });
@@ -155,8 +176,15 @@ export function createStaticGrid(level: Level, footprints: PropFootprints): Stat
       throw new Error(`createStaticGrid: level prop ${i} (${p.id}) has a non-finite position or rot`);
     }
     const footprint = footprintOf(footprints, p, i);
-    specs.push({ kind: footprint.shape === 'circle' ? 1 : 2, prop: i, p, footprint });
+    specs.push({ kind: footprint.shape === 'circle' ? 1 : 2, source: 2, prop: i, p, footprint });
   });
+  for (const car of parked) {
+    const ok = [car.x, car.y, car.heading, car.halfWidthM, car.halfLengthM].every(Number.isFinite);
+    if (!ok || !(car.halfWidthM > 0 && car.halfLengthM > 0)) {
+      throw new Error(`createStaticGrid: parked car ${car.vehicle} has a non-finite or empty pose or size`);
+    }
+    specs.push({ kind: 2, source: 3, car });
+  }
 
   const n = specs.length;
   const cells = (w + 2) * (h + 2);
@@ -170,6 +198,7 @@ export function createStaticGrid(level: Level, footprints: PropFootprints): Stat
   const circles: Circle[] = specs.map(() => createCircle());
   const boxes = specs.map(() => createObb());
   const propIndex = new Int32Array(n).fill(-1);
+  const vehicleIndex = new Int32Array(n).fill(-1);
   // The solid raster: the map interior starts empty; ring cells stay solid.
   const solidCells = new Uint8Array(cells).fill(1);
   for (let row = 0; row < h; row += 1) {
@@ -198,6 +227,13 @@ export function createStaticGrid(level: Level, footprints: PropFootprints): Stat
       }
       return;
     }
+    if (spec.source === ShapeSource.Parked) {
+      const car = spec.car;
+      source[i] = ShapeSource.Parked;
+      vehicleIndex[i] = car.vehicle;
+      obbAabb(setObb(boxes[i] as Obb, car.x, car.y, car.heading, car.halfWidthM, car.halfLengthM), box);
+      return;
+    }
     source[i] = ShapeSource.Prop;
     propIndex[i] = spec.prop;
     const { p, footprint: fp } = spec;
@@ -217,7 +253,7 @@ export function createStaticGrid(level: Level, footprints: PropFootprints): Stat
 
   let subStepMaxM = SUBSTEP_MAX_M;
   for (const spec of specs) {
-    if (spec.kind === ShapeKind.Rect) continue;
+    if (spec.source !== ShapeSource.Prop) continue;
     const fp = spec.footprint;
     const half = fp.shape === 'circle' ? fp.radiusM : Math.min(fp.widthM, fp.lengthM) / 2;
     if (half < subStepMaxM) subStepMaxM = half;
@@ -238,6 +274,7 @@ export function createStaticGrid(level: Level, footprints: PropFootprints): Stat
     circles,
     boxes,
     propIndex,
+    vehicleIndex,
     solidCells,
     cellStart: new Int32Array(cells + 1),
     cellItems: new Int32Array(0),

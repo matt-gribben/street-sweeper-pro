@@ -30,13 +30,14 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import tuningJson from '../../src/data/tuning.json' with { type: 'json' };
+import { ShapeSource } from '../../src/sim/collision/grid.ts';
 import {
   createStaticResolver,
   ResolveOutcome,
   resolveStatic,
 } from '../../src/sim/collision/resolveStatic.ts';
 import { TILE_M } from '../../src/sim/constants.ts';
-import { createEventQueue, resetEvents } from '../../src/sim/eventQueue.ts';
+import { createEventQueue, EV, resetEvents } from '../../src/sim/eventQueue.ts';
 import {
   BRAKE_MAX,
   createInputFrame,
@@ -47,10 +48,17 @@ import {
 } from '../../src/sim/inputFrame.ts';
 import { COLLIDE, type Level } from '../../src/sim/map.ts';
 import { DEFAULT_TUNING, loadTuning, type Tuning } from '../../src/sim/tuning.ts';
-import type { World } from '../../src/sim/world.ts';
+import { VEHICLE_FLAG } from '../../src/sim/vehicleStore.ts';
+import { createWorld, type World } from '../../src/sim/world.ts';
 import { type CollideGridSpec, worldFromCollideGrid } from '../support/collisionWorld.ts';
 import { assertProperty, reproLine, reproParams } from '../support/fcCheck.ts';
-import { type BodyBox, obbBoundaryPenetrationM, obbRectPenetrationM } from '../support/solidOverlap.ts';
+import {
+  type BodyBox,
+  obbBoundaryPenetrationM,
+  obbObbPenetrationM,
+  obbRectPenetrationM,
+} from '../support/solidOverlap.ts';
+import { compileTrafficTown, PARKING_CROSSROADS, PARKING_STREET } from '../support/trafficTown.ts';
 
 // ---------------------------------------------------------------------------------------------------------
 // Constants
@@ -782,4 +790,322 @@ describe('collision properties (TECHNICAL_DESIGN §9.5, SSP-037)', () => {
     expect(message).toContain('reason: too big: 51');
     expect(reproLine(7, null)).toContain('seed=7 path=""');
   });
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// Vehicles (SSP-090, TECHNICAL_DESIGN §9.4): parked cars and moving traffic
+// ---------------------------------------------------------------------------------------------------------
+
+/** Property 4's scenarios and seed (on top of the M1 suite's 10,000). */
+const VEHICLE_RUNS = 400;
+const VEHICLE_SEED = 0x55_09_0a;
+/** Coverage floors for property 4, well under what the fixed seed gives (see the commit message). */
+const VEHICLE_COVERAGE = {
+  parkedContactShare: 0.3,
+  dentShare: 0.1,
+  movingContactShare: 0.05,
+} as const;
+
+/** The two compiled towns of property 4: every bay full, moving traffic of cars and vans (L050 holds: 26, 23). */
+const VEHICLE_TOWNS: readonly Level[] = [
+  compileTrafficTown(PARKING_STREET, {
+    densityPerKm: 60,
+    mix: { 'veh.hatchback': 40, 'veh.saloon': 30, 'veh.van_white': 30 },
+    parkedFill: 1,
+    parkedMix: {
+      'veh.hatchback_parked': 1,
+      'veh.saloon_parked': 1,
+      'veh.van_white_parked': 1,
+      'veh.taxi_parked': 1,
+    },
+  }),
+  compileTrafficTown(PARKING_CROSSROADS, {
+    densityPerKm: 25,
+    mix: { 'veh.hatchback': 40, 'veh.saloon': 30, 'veh.van_white': 30 },
+    parkedFill: 1,
+    parkedMix: {
+      'veh.hatchback_parked': 1,
+      'veh.saloon_parked': 1,
+      'veh.van_white_parked': 1,
+      'veh.taxi_parked': 1,
+    },
+  }),
+];
+
+type VehicleScenario = {
+  town: number;
+  seed: number;
+  /** Ticks of traffic before Bessie is placed (she waits on the pavement meanwhile). */
+  warmup: number;
+  /** 0: near a lane node, any heading; 1: aimed at a parked car; 2: in front of a moving vehicle. */
+  mode: number;
+  pick: number;
+  distM: number;
+  angleRad: number;
+  aim: number;
+  /** Ticks of full throttle that open the drive (0: the random inputs from the first tick). */
+  opener: number;
+  /** Bessie's speed as the drive starts, m/s (along her heading). */
+  speedMps: number;
+};
+
+/** A double uniform on [min, max) (in steps of (max − min) / 2^20), unbiased. */
+function uniform(min: number, max: number): fc.Arbitrary<number> {
+  const steps = 1 << 20;
+  return fc.noBias(fc.integer({ min: 0, max: steps - 1 })).map((k) => min + ((max - min) * k) / steps);
+}
+
+/** A town, a run seed (the parked cars' placement), a warm-up and a spawn near a lane node, a parked car or traffic. */
+const vehicleScenarioArb: fc.Arbitrary<VehicleScenario> = fc.record({
+  town: fc.integer({ min: 0, max: VEHICLE_TOWNS.length - 1 }),
+  seed: fc.integer({ min: 1, max: 0x7fff_ffff }),
+  warmup: fc.integer({ min: 0, max: 900 }),
+  // Half the drives start aimed at a parked car, three in ten in front of a moving vehicle.
+  mode: fc.integer({ min: 0, max: 9 }).map((k) => (k < 2 ? 0 : k < 7 ? 1 : 2)),
+  // Uniform: fc.double is uniform over the representable doubles, so nearly every draw would be close to 0
+  // (the same car, angle and distance), and its bias favours the bounds.
+  pick: uniform(0, 1),
+  distM: uniform(0.05, 8),
+  angleRad: uniform(-Math.PI, Math.PI),
+  aim: uniform(-1, 1),
+  opener: fc.oneof(fc.constant(0), fc.integer({ min: 10, max: 120 })),
+  speedMps: fc.oneof(fc.constant(0), uniform(0, 12)),
+});
+
+/** Where Bessie waits during the warm-up: a pavement point clear of the traffic (metres). */
+const WAIT_AT: readonly (readonly [number, number])[] = [
+  [64, 3],
+  [8, 27],
+];
+
+function vehicleBody(world: World, i: number): BodyBox {
+  const s = world.vehicles;
+  return {
+    xM: s.x[i] as number,
+    yM: s.y[i] as number,
+    headingRad: s.heading[i] as number,
+    widthM: 2 * (s.halfWidth[i] as number),
+    lengthM: 2 * (s.halfLength[i] as number),
+  };
+}
+
+/** The deepest overlap (m) of Bessie's OBB with any vehicle of the store, and which (−1: none). */
+function deepestVehicleOverlap(world: World, body: BodyBox): { depthM: number; vehicle: number } {
+  let depthM = 0;
+  let vehicle = -1;
+  for (let i = 0; i < world.vehicles.count; i += 1) {
+    const d = obbObbPenetrationM(body, vehicleBody(world, i));
+    if (d > depthM) {
+      depthM = d;
+      vehicle = i;
+    }
+  }
+  return { depthM, vehicle };
+}
+
+/** Teleport Bessie to (x, y, heading), at rest (the previous pose moves too: no sweep, no kerb crossing). */
+function putBessie(world: World, x: number, y: number, headingRad: number): void {
+  const v = world.vehicle;
+  v.xM = x;
+  v.yM = y;
+  v.prevXM = x;
+  v.prevYM = y;
+  v.headingRad = headingRad;
+  v.prevHeadingRad = headingRad;
+  v.vLongMps = 0;
+  v.vLatMps = 0;
+  v.yawRateRadPerS = 0;
+  v.steerRad = 0;
+}
+
+/** The heading whose forward (sin h, −cos h) points along (dx, dy). */
+function headingTo(dx: number, dy: number): number {
+  return Math.atan2(dx, -dy);
+}
+
+/**
+ * The scenario's World after its warm-up with Bessie placed, or null when the spawn overlaps a solid or a
+ * vehicle (the property counts it as skipped).
+ */
+function vehicleWorld(sc: VehicleScenario): World | null {
+  const level = VEHICLE_TOWNS[sc.town] as Level;
+  const world = createWorld(level, sc.seed, DEFAULT_TUNING);
+  const [wx, wy] = WAIT_AT[sc.town] as readonly [number, number];
+  const idle = createInputFrame();
+  for (let t = 0; t < sc.warmup; t += 1) {
+    putBessie(world, wx, wy, Math.PI / 2);
+    world.step(idle);
+  }
+  const s = world.vehicles;
+  let x = wx;
+  let y = wy;
+  let h = sc.angleRad;
+  const moving = s.count - s.parkedCount;
+  if (sc.mode === 1 && s.parkedCount > 0) {
+    // Out on the road beside the car (square to it, on the side of the nearest lane node), aimed at it within
+    // ±60°.
+    const k = Math.floor(sc.pick * s.parkedCount);
+    const cx = s.x[k] as number;
+    const cy = s.y[k] as number;
+    const lanes = level.lanes;
+    let best = Number.POSITIVE_INFINITY;
+    let nx = 0;
+    let ny = 0;
+    for (let n = 0; n < lanes.nodeCount; n += 1) {
+      const dx = (lanes.nodeX[n] as number) - cx;
+      const dy = (lanes.nodeY[n] as number) - cy;
+      const d = dx * dx + dy * dy;
+      if (d < best) {
+        best = d;
+        nx = dx;
+        ny = dy;
+      }
+    }
+    const rx = Math.cos(s.heading[k] as number);
+    const ry = Math.sin(s.heading[k] as number);
+    const sign = rx * nx + ry * ny < 0 ? -1 : 1;
+    const ux = rx * sign;
+    const uy = ry * sign;
+    // 2.6–3.4 m out: on a 3-tile road Bessie (1.625 m half length) fits between the car and the far kerb.
+    const r = 2.6 + sc.distM * 0.1;
+    const side = Math.sin(sc.angleRad) * 3;
+    x = cx + ux * r - uy * side;
+    y = cy + uy * r + ux * side;
+    h = headingTo(cx - x, cy - y) + (sc.aim * Math.PI) / 3;
+  } else if (sc.mode === 2 && moving > 0) {
+    const k = s.parkedCount + Math.floor(sc.pick * moving);
+    const fx = Math.sin(s.heading[k] as number);
+    const fy = -Math.cos(s.heading[k] as number);
+    const ahead = (s.halfLength[k] as number) + HL + sc.distM;
+    x = (s.x[k] as number) + fx * ahead - fy * sc.aim;
+    y = (s.y[k] as number) + fy * ahead + fx * sc.aim;
+    h = sc.angleRad;
+  } else {
+    const lanes = level.lanes;
+    const wM = level.size[0] * TILE_M;
+    const hM = level.size[1] * TILE_M;
+    const inside: number[] = [];
+    for (let n = 0; n < lanes.nodeCount; n += 1) {
+      const nx = lanes.nodeX[n] as number;
+      const ny = lanes.nodeY[n] as number;
+      if (nx > 4 && ny > 4 && nx < wM - 4 && ny < hM - 4) inside.push(n);
+    }
+    const n = inside[Math.floor(sc.pick * inside.length)] as number;
+    x = (lanes.nodeX[n] as number) + Math.cos(sc.angleRad) * Math.min(1.5, sc.distM);
+    y = (lanes.nodeY[n] as number) + Math.sin(sc.angleRad) * Math.min(1.5, sc.distM);
+    h = sc.aim * Math.PI;
+  }
+  putBessie(world, x, y, h);
+  const body = bodyOf(world);
+  if (deepestSolidOverlap(level, body).depthM > 0) return null;
+  // Wait (on the pavement, up to 5 s) for the traffic to clear the spot; a parked car never does.
+  for (let t = 0; deepestVehicleOverlap(world, bodyOf(world)).depthM > 0; t += 1) {
+    if (t >= 300) return null;
+    putBessie(world, wx, wy, Math.PI / 2);
+    world.step(idle);
+    putBessie(world, x, y, h);
+  }
+  world.vehicle.vLongMps = sc.speedMps;
+  return world;
+}
+
+type VehicleCoverage = {
+  scenarios: number;
+  skipped: number;
+  withParkedContact: number;
+  withMovingContact: number;
+  withDent: number;
+  dents: number;
+  contactStops: number;
+  maxVnMps: number;
+};
+
+describe('collision with vehicles (TECHNICAL_DESIGN §9.4, SSP-090)', () => {
+  it(
+    `4. never ends a tick inside a vehicle: ${VEHICLE_RUNS} drives × ${DRIVE_TICKS} ticks among parked cars and traffic, tolerance 1 mm`,
+    () => {
+      const cov: VehicleCoverage = {
+        scenarios: 0,
+        skipped: 0,
+        withParkedContact: 0,
+        withMovingContact: 0,
+        withDent: 0,
+        dents: 0,
+        contactStops: 0,
+        maxVnMps: 0,
+      };
+      assertProperty(
+        fc.property(vehicleScenarioArb, inputsArb(DRIVE_TICKS), topSpeedMultArb, (sc, inputs, mult) => {
+          const world = vehicleWorld(sc);
+          if (world === null) {
+            cov.skipped += 1;
+            return;
+          }
+          world.vehicleParams.topSpeedMult = mult;
+          for (let t = 0; t < sc.opener && t < inputs.length; t += 1) {
+            const f = inputs[t] as InputFrame;
+            f.throttle = THROTTLE_MAX;
+            f.brake = 0;
+          }
+          const grid = world.staticGrid;
+          let parkedContact = false;
+          let movingContact = false;
+          let dented = false;
+          for (let tick = 0; tick < inputs.length; tick += 1) {
+            world.step(inputs[tick] as InputFrame);
+            const log = world.staticResolver.log;
+            for (let k = 0; k < log.count; k += 1) {
+              const s = log.shape[k] as number;
+              if (s >= grid.shapeCount) movingContact = true;
+              else if (grid.source[s] === ShapeSource.Parked) parkedContact = true;
+              const vn = log.vnMps[k] as number;
+              if ((s >= grid.shapeCount || grid.source[s] === ShapeSource.Parked) && vn > cov.maxVnMps) {
+                cov.maxVnMps = vn;
+              }
+            }
+            for (let e = 0; e < world.events.count; e += 1) {
+              if (world.events.type[e] === EV.Dent) {
+                dented = true;
+                cov.dents += 1;
+              }
+            }
+            const body = bodyOf(world);
+            const { depthM, vehicle } = deepestVehicleOverlap(world, body);
+            if (!(depthM <= PENETRATION_TOLERANCE_M)) {
+              const parked = ((world.vehicles.flags[vehicle] as number) & VEHICLE_FLAG.PARKED) !== 0;
+              throw new Error(
+                `tick ${tick}: Bessie overlaps ${parked ? 'parked' : 'moving'} vehicle ${vehicle} by ${depthM} m ` +
+                  `(> 1 mm); ${fmtPose(world)}`,
+              );
+            }
+            const solid = deepestSolidOverlap(world.level, body);
+            if (!(solid.depthM <= PENETRATION_TOLERANCE_M)) {
+              throw new Error(
+                `tick ${tick}: Bessie overlaps rect ${solid.rect} by ${solid.depthM} m; ${fmtPose(world)}`,
+              );
+            }
+          }
+          cov.scenarios += 1;
+          cov.contactStops += world.traffic.contactStops;
+          if (parkedContact) cov.withParkedContact += 1;
+          if (movingContact) cov.withMovingContact += 1;
+          if (dented) cov.withDent += 1;
+        }),
+        { seed: VEHICLE_SEED, numRuns: VEHICLE_RUNS },
+      );
+      if (REPLAYING_ONE_CASE) return; // SSP_FC_PATH replays a single case: no coverage to judge
+      const text = JSON.stringify(cov);
+      expect(cov.scenarios + cov.skipped, text).toBe(VEHICLE_RUNS);
+      expect(cov.scenarios, text).toBeGreaterThan(VEHICLE_RUNS / 2);
+      expect(cov.withParkedContact, text).toBeGreaterThan(
+        cov.scenarios * VEHICLE_COVERAGE.parkedContactShare,
+      );
+      expect(cov.withDent, text).toBeGreaterThan(cov.scenarios * VEHICLE_COVERAGE.dentShare);
+      expect(cov.withMovingContact, text).toBeGreaterThan(
+        cov.scenarios * VEHICLE_COVERAGE.movingContactShare,
+      );
+      expect(cov.contactStops, text).toBeGreaterThan(0);
+    },
+    TEST_TIMEOUT_MS,
+  );
 });

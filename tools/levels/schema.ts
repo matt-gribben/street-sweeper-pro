@@ -162,7 +162,7 @@ export interface TrafficSpec {
   densityPerKm: number;
   /** Lane vehicles `veh.*` → weight: not parked cars, not pavement vehicles. */
   mix: Weights;
-  /** 0..1 of the parking bays (`p` cells) filled at shift start. */
+  /** 0..1 of the parking bays (2-tile car slots of the `p` runs, src/sim/parked.ts) filled at shift start. */
   parkedFill: number;
   /** `veh.*_parked` → weight. */
   parkedMix: Weights;

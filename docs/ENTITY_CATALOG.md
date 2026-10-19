@@ -435,6 +435,8 @@ Bessie's livery (default `upg.livery_council`): body 15 (shade 14), cab 07, stri
 
 **Parked variants** exist for `hatchback`, `saloon`, `taxi`, `van_white`, `police` and `ice_cream_van` (`veh.hatchback_parked` and so on). Buses, bin lorries, bicycles and mobility scooters are never parked props.
 
+*As built (SSP-090, `src/sim/parked.ts`; TECHNICAL_DESIGN §9.4, §11.4):* parked cars fill the level's 2-tile bays to `parkedFill` at shift start (the `traffic` stream picks the bays, the `parkedMix` kind and a hatchback's or saloon's paint swap slot), at the bay's lane heading; they are static OBBs (their parent's `body`) in the 30-vehicle store, and every roof is a cat perch. A dent is an approaching contact faster than **2 m/s** (the `crash` threshold of §3.2) once per **contact episode** (until Bessie has been clear of the car for 0.5 s, `tuning.json` → `streetLife.traffic.dentRearmS`): `rules.dentPts` (−100, through the penalty pipeline, so it resets the chain) and the flat `rules.dentHp` (5 HP, not scaled by `upg.bumper`), with `EV.Dent` instead of `EV.Impact`. A slower nudge, or a second hit in the same episode, is a free bump. Moving traffic costs impact HP only (16 HP at 6 m/s). *Decisions for owner review:* the 2 m/s threshold and the 0.5 s re-arm.
+
 ### 8.3 Traffic car state machine
 
 ```mermaid

@@ -607,7 +607,7 @@ Vehicle-local (origin at the body centre, +y forward, metres). Since SSP-053 the
 
 - Each 32 px tile holds an **8×8 grid of 4 px grime cells**. The district mask is a `Uint8Array` of `(tilesW·8) × (tilesH·8)`. Civic Quarter (128×96 tiles) is 1024×768 = 786,432 bytes.
 - **Encoding:** `0` = clean or never grimy; bits 0–6 = grime intensity 1–127 (drives the overlay strength in the ground shader); **bit 7 = gutter grime** (dense strip along kerbs, 2 pts per cell).
-- **Initial state:** `compile-level.ts` bakes per-cell grime scores and a gutter mask. At shift start `dirt.ts` takes exactly `grime.cells` cells by `(score desc, index asc)` using the `grime` stream ([LEVEL_DESIGN §9.2](LEVEL_DESIGN.md#92-grime)), so the initial grime count, and therefore the Tidy % denominator, is identical on every attempt.
+- **Initial state:** `compile-level.ts` bakes the deterministic components and `dirt.ts` adds the seeded one (the split decided in SSP-054, [LEVEL_DESIGN §9.2](LEVEL_DESIGN.md#92-grime)). The compiler writes, per grime cell, the `gutter` layer's `GRIME_CELL` bits (`OPEN`: grime may spawn here; `GUTTER`: the cell is in the gutter band) and, per tile, the zone density `grimeDensity`; it writes `spawns.grime` = `{ cells, gutterCells, speckle }` ([§15.2](#152-compiled-schema-v1)). At shift start `dirt.ts` scores every `OPEN` cell `grimeDensity[tile] / 255 + speckle × valueNoise(cell)` with lattice value noise seeded from the `grime` stream, then takes exactly `gutterCells` of the `GUTTER` cells and `cells − gutterCells` of the other `OPEN` cells, each by `(score desc, index asc)`. The initial grime count, and therefore the Tidy % denominator, is identical on every attempt, and the gutter share is exact.
 - **Erase:** while collecting, rasterise the grime footprint (rotated rect) into cells each tick. At 6 m/s Bessie moves 0.1 m/tick and the band is 0.9 m deep, so there are no gaps. **Kerb Hugger:** a gutter brush centre within 0.2 m of a kerb edge erases gutter cells.
 - **Tidy %** = `0.6 × (grime cells cleaned ÷ initial grime cells) + 0.4 × (litter collected ÷ litter spawned)`, both counted over the route area (roads + pavements) only. Counters are maintained incrementally; nothing rescans the mask.
 - **GPU upload:** `dirt.ts` records a dirty bounding rectangle per tick. `render/groundLayer.ts` uploads that sub-rectangle of the `R8` `DataTexture` once per rendered frame. If three 0.186's texture update-range API cannot express a sub-rectangle upload, it falls back to a full upload of at most 786 KB (decided in the M0 spike).
@@ -977,8 +977,8 @@ Authoring (ASCII `assets-src/levels/<district>.map.txt`, one character per 2 m t
 2. Resolves the **47-tile kerb blob autotile** index per cell (from the shared table in `assets-src/procedural/tiles/kerb_blob.json`, read by `tools/levels/kerbBlob.ts`) and the road **markings** bits (SSP-034).
 3. Builds the collision grid and merged solid rects ([§9.1](#91-static-world)).
 4. Builds the **lane graph** (traffic) and **pavement nav graph** (pedestrians) from road and pavement cells plus legend annotations.
-5. Bakes grime density, gutter mask and the route-area mask used by Tidy %.
-6. Checks budgets (litter, NPC and vehicle capacities, frontage count, 8–20 pledges) and fails with file:line errors.
+5. Bakes grime density, gutter mask and the route-area mask used by Tidy %, and the litter spawn weight field (SSP-054, `tools/levels/spawnLayers.ts`).
+6. Checks budgets (litter, NPC and vehicle capacities, frontage count, 8–20 pledges) and fails with file:line errors. *As built (SSP-054):* L050's litter part and L051; the NPC and vehicle peaks need the M3 specs.
 7. Writes JSON with stable key order and no timestamps, so the output is byte-reproducible and verified by `assets:verify`.
 
 ### 15.2 Compiled schema (v1)
@@ -1003,8 +1003,8 @@ Grid layers are base64-encoded raw `Uint8` arrays in row-major order (compact an
     "wall":     "<base64 Uint8[w*h]>",    // 0 = none, else 1-based index into wallIds
     "collide":  "<base64 Uint8[w*h]>",    // SOLID + KERB_EDGE bits
     "route":    "<base64 Uint8[w*h]>",    // 1 = counts toward Tidy %
-    "grimeDensity": "<base64 Uint8[w*h]>",
-    "gutter":   "<base64 Uint8[(w*8)*(h*8)]>"
+    "grimeDensity": "<base64 Uint8[w*h]>",   // zone density 0..255 = 0..1 on route tiles (SSP-054)
+    "gutter":   "<base64 Uint8[(w*8)*(h*8)]>"   // GRIME_CELL bits per grime cell: OPEN, GUTTER (SSP-054)
   },
   "solids": [[x0, y0, x1, y1]],           // merged rects in tiles, x1/y1 exclusive
   "props":  [{ "id": "prop.hydrant", "x": 21.0, "y": 14.0, "rot": 0 }],
@@ -1012,7 +1012,17 @@ Grid layers are base64-encoded raw `Uint8` arrays in row-major order (compact an
   "frontages": [{ "id": "fr_10_3", "pledge": true, "rect": [10, 3, 14, 4], "face": "s" }],  // fr_<x>_<y>, LEVEL_DESIGN §7.10
   "lanes":  { "nodes": [[x, y]], "edges": [[from, to, speedLimit, flags]] },
   "nav":    { "nodes": [[x, y]], "edges": [[from, to, flags]] },
-  "spawns": { "litter": [...], "npc": [...], "traffic": [...], "pickups": [...] },
+  "spawns": {                             // keys sorted
+    "grime": { "cells": 9000, "gutterCells": 1350, "speckle": 0.03 },              // SSP-054
+    "litter": {                                                                    // SSP-054
+      "initial": 130,
+      "minSpacingM": 0.5,
+      "table": [{ "id": "litter.crisp_packet", "weight": 30, "requires": 0 }],   // sorted by id
+      "places": "<base64 Uint8[(w*4)*(h*4)]>",        // LITTER_PLACE bits per 0.5 m sub-cell
+      "weights": "<base64 Uint16 little-endian[(w*4)*(h*4)]>"   // relative, heaviest = 65535
+    },
+    "npc": [...], "traffic": [...], "pickups": [...]                               // M3 (SSP-077)
+  },
   "schedules": [...],
   "weather": "clear",
   "timerS": 240,
@@ -1034,7 +1044,14 @@ Grid layers are base64-encoded raw `Uint8` arrays in row-major order (compact an
 
 **Audio theme (SSP-033).** `music` (`mus.*`) and `ambience` (`amb.*`) are copied from level.json ([LEVEL_DESIGN §8.4](LEVEL_DESIGN.md#84-leveljson-schema)) and omitted when the level names none (the Depot Yard has no `music`). `map.ts` exports their shapes (`MUSIC_ID_PATTERN` `^mus\.[a-z0-9_]+$`, `AMBIENCE_ID_PATTERN` `^amb\.[a-z0-9_]+$`); the encoder and decoder reject a malformed value and the compiler reports one as L005. Whether the id names a rendered song or bed is checked once music.json/amb.json exist (M5). M5's music.ts and the ambience bed player read them from the compiled level.
 
-**Encoding (SSP-032).** `encodeLevel` writes the keys in the order above, layers as padded standard base64, one top-level key per line, one list entry per line (each entry compact) and a trailing newline; spawn and schedule entries, whose shape later milestones define, are written with their object keys sorted. `decodeLevel` accepts the text or the parsed value, checks every field with hand-written guards, the layer lengths (`gutter` is (w·8)·(h·8)) and the id ranges, and throws a message naming the field. Re-encoding a decoded level is byte-identical (`tests/unit/map.test.ts`).
+**Spawn layers (SSP-054).** The compiler bakes grime and litter as data the sim samples at shift start; it never places items. The decisions, with the rules in [LEVEL_DESIGN §9.1–§9.2](LEVEL_DESIGN.md#91-litter):
+- **`gutter`** holds `GRIME_CELL` bits per 0.25 m grime cell (`map.ts`): bit 0 `OPEN` (a route-area tile, not a `site.skip`, and no solid prop footprint from `tuning.json` → `propFootprints` overlapping the cell) and bit 1 `GUTTER` (an `OPEN` cell of a road tile in the **2-cell (0.5 m, 8 px) band** on the road side of one of its `KERB_EDGE` sides). Every other cell is 0. The encoder and decoder reject unknown bits and `GUTTER` without `OPEN`. The grime cells are geometric, so they are baked for every level, with or without a `grime` spec.
+- **`grimeDensity`** is the zone component per tile: the highest `grime.zones` density covering a route tile, × 255 and rounded; 0 off route. With no `grime` spec it is all 0.
+- **`spawns.grime`** is `{ cells, gutterCells, speckle }`, with `gutterCells = round(cells × gutterShare)` computed once by the compiler, so `dirt.ts` never re-rounds a float ([§10.3](#103-grime-mask-srcsimdirtts) has the selection). Omitted when level.json has no `grime`.
+- **`spawns.litter`** is one object, not a list: `initial` and `minSpacingM` from level.json, the type `table` (`{ id, weight, requires }` sorted by id, `requires` = the `LITTER_PLACE` bits a sub-cell needs for that type), `places` (base64 `Uint8`, `LITTER_PLACE` bits per 0.5 m sub-cell: 0 `GUTTER` road within 1 tile of a raised kerb, 1 `PAVEMENT`, 2 `NEAR_TREE` within 4 m of a `prop.tree`, 3 `NEAR_KERB` within 2 tiles of a raised kerb) and `weights` (base64 of little-endian `Uint16`, one per sub-cell, row-major over (w·4) × (h·4)). Weights are relative: the heaviest sub-cell is 65,535, any non-zero weight is at least 1, and 0 means litter never spawns there. Integer weights keep the shift-start sampler free of float sums. Omitted when level.json has no `litter`.
+- `map.ts` decodes both into the typed `Level.litter` (`places: Uint8Array`, `weights: Uint16Array`) and `Level.grime`; `Level.spawns` keeps only the M3 list kinds and may not use the names `litter` or `grime`. The fields were added to v1 with a regenerated Puddle Lane and no reader yet, so the version stays 1.
+
+**Encoding (SSP-032).** `encodeLevel` writes the keys in the order above, layers as padded standard base64, one top-level key per line, one list entry per line (each entry compact) and a trailing newline; spawn and schedule entries, whose shape later milestones define, are written with their object keys sorted. `spawns.grime` and `spawns.litter` (SSP-054) are written with their keys in the order shown above. `decodeLevel` accepts the text or the parsed value, checks every field with hand-written guards, the layer lengths (`gutter` is (w·8)·(h·8)) and the id ranges, and throws a message naming the field. Re-encoding a decoded level is byte-identical (`tests/unit/map.test.ts`).
 
 ---
 

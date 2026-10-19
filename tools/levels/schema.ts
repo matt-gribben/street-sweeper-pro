@@ -3,17 +3,20 @@
 // with hand-written guards (CLAUDE.md §5.1: no schema library) and reports a mismatch as L000.
 //
 // Schema decisions (SSP-033):
-// - `pledges`, `litter` and `grime` are OPTIONAL here although §8.4 lists them as required. Nothing reads
-//   them before M2 (frontages, litter spawns and grime baking: SSP-054/SSP-055), and requiring them now would
-//   force M1 levels to carry placeholder data. M2 makes them required for `mode: "shift"` and adds L030/L051.
-//   (SSP-033 open question 2.)
+// - `pledges`, `litter` and `grime` are OPTIONAL here although §8.4 lists them as required. Nothing read
+//   them before M2, and requiring them would have forced M1 levels to carry placeholder data (SSP-033 open
+//   question 2). SSP-054 validates `litter` and `grime` fully when present (L000, L005 litter ids, L050,
+//   L051) and bakes them, but still leaves them optional: Puddle Lane gets its values in SSP-056, which is
+//   the first point at which a shift level could be required to carry them. A level without them compiles
+//   with no `spawns.litter`/`spawns.grime` (its grime cells are still baked).
 // - The map size is checked against `size` here, not against src/data/districts.json (TECHNICAL_DESIGN
 //   §15.1), because no M1 task creates districts.json. (SSP-033 open question 1.)
 // - The compiler validates only the fields M1 consumes (identity, mode, map, size, timer, seed, timeOfDay,
-//   weather, music, ambience, start, depot, legend, buildings, anchors). The spawn-side fields (`junctions`,
-//   `frontageWidth`, `stains`, `hazards`, `knockables`, `powerups`, `collectibles`, `npcs`, `traffic`,
-//   `events`, `skipRun`, `par`) are typed for authors but passed over unchecked until the tasks that consume
-//   them (M2 SSP-054/055, M3 SSP-076/077, M6 SSP-190) add their guards.
+//   weather, music, ambience, start, depot, legend, buildings, anchors), plus `litter` and `grime` since
+//   SSP-054. The other spawn-side fields (`junctions`, `frontageWidth`, `stains`, `hazards`, `knockables`,
+//   `powerups`, `collectibles`, `npcs`, `traffic`, `events`, `skipRun`, `par`) are typed for authors but
+//   passed over unchecked until the tasks that consume them (M2 SSP-055, M3 SSP-076/077, M6 SSP-190) add
+//   their guards.
 // - `legend` keys are single printable ASCII characters. A level may add or override entries but never
 //   redefine `A`–`Z`, `0`–`9` or `@` (§8.3). A legend entry without `ground` inherits its ground (§8.3).
 // - `start.heading` is an integer heading index 0..31 (h00 = north, clockwise); the compiler converts it to
@@ -84,18 +87,36 @@ export interface Building {
   frontageWidth?: number;
 }
 
+/**
+ * A `near` reference (litter hotspots, grime zones; SSP-054): `prop.<id>` (every such prop), `site.<id>` (every
+ * cell of that site), `use:<BuildingUse>` (every cell of a building with that use) or an anchor name from
+ * `anchors`. Anything else is L000.
+ */
+export type NearRef = string;
+
+/** level.json → litter (LEVEL_DESIGN §8.4, §9.1). Checked and baked by SSP-054. */
 export interface LitterSpec {
+  /** Items at shift start; with the expected dynamic litter at most 1,000 (L050). */
   initial: number;
+  /** `litter.*` id → weight > 0; ids must be in entities.json and allowed in the district (L005). */
   table: Weights;
+  /** 0..1: the share of the litter weight the road gutter (road within 1 tile of a raised kerb) holds. */
   gutterBias: number;
-  minSpacingM: number;
-  hotspots?: { near: string; radius: number; mult: number }[];
+  /** Metres between items; default 0.5. */
+  minSpacingM?: number;
+  /** Weight multipliers: `radius` in tiles (> 0), `mult` > 0. */
+  hotspots?: { near: NearRef; radius: number; mult: number }[];
 }
 
+/** level.json → grime (LEVEL_DESIGN §8.4, §9.2). Checked and baked by SSP-054. */
 export interface GrimeSpec {
+  /** Exact initial grime cell count; at most the OPEN grime cells (L051). */
   cells: number;
+  /** 0..1: round(cells × gutterShare) of them are gutter-band cells (L051 if the band is too small). */
   gutterShare: number;
-  zones: { rect?: [number, number, number, number]; near?: string; radius?: number; density: number }[];
+  /** Exactly one of `rect` ([x, y, w, h] in tiles) or `near` + `radius` (tiles); density 0..1. */
+  zones: { rect?: [number, number, number, number]; near?: NearRef; radius?: number; density: number }[];
+  /** Background noise amplitude 0..0.1, added by dirt.ts at shift start. */
   speckle: number;
 }
 
@@ -174,9 +195,9 @@ export interface LevelFile {
   frontageWidth?: Partial<Record<BuildingUse, number>>;
   /** Optional until M2 (see the decisions above). */
   pledges?: string[];
-  /** Optional until M2 (see the decisions above). */
+  /** Optional (see the decisions above). */
   litter?: LitterSpec;
-  /** Optional until M2 (see the decisions above). */
+  /** Optional (see the decisions above). */
   grime?: GrimeSpec;
   stains?: { count: number; table: Weights; near?: string[] };
   hazards?: {

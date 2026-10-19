@@ -889,15 +889,15 @@ interface Building {
 interface LitterSpec {
   initial: number;
   table: Weights;                                // litter.* → weight
-  gutterBias: number;                            // 0..1 share placed within 1 tile of a kerb
-  minSpacingM: number;                           // default 0.5
-  hotspots?: { near: string; radius: number; mult: number }[];   // "prop.litter_bin", "use:takeaway", anchor names…
+  gutterBias: number;                            // 0..1 share placed in the road gutter (road within 1 tile of a raised kerb)
+  minSpacingM?: number;                          // default 0.5
+  hotspots?: { near: string; radius: number; mult: number }[];   // "prop.litter_bin", "use:takeaway", anchor names…; radius in tiles
 }
 
 interface GrimeSpec {
   cells: number;                                 // exact initial grime cell count
   gutterShare: number;                           // share of cells in the kerb gutter band
-  zones: { rect?: [number, number, number, number]; near?: string; radius?: number; density: number }[];
+  zones: { rect?: [number, number, number, number]; near?: string; radius?: number; density: number }[];  // rect x, y, w, h or near + radius, in tiles; density 0..1
   speckle: number;                               // background density 0..0.1
 }
 
@@ -1172,11 +1172,22 @@ All spawning is a pure function of `(seed, compiled level, elapsed ticks, sim st
 6. **Rotation:** one of the 4 code-generated rotations, from the same stream.
 7. **Dynamic litter** (NPC drops, events, burst bin bags, spills) uses the same tables and the `events` or `npc` stream. Every dynamic item counts toward "litter spawned" in Tidy %, and the live total is capped at the 2,000-item budget (the compiler checks `initial + expected dynamic ≤ 1,000` so there is always headroom).
 
+*As built (SSP-054):* the compiler (`tools/levels/spawnLayers.ts`) emits the weight field and the type table, not placements; `litter.ts` (SSP-057) samples them at shift start (rules 4 and 6). The compiled shape is in [TECHNICAL_DESIGN §15.2](TECHNICAL_DESIGN.md#152-compiled-schema-v1). Decisions:
+- **Candidates** are the 0.5 m sub-cells of route-area tiles (rule 1), minus `site.skip` tiles and any sub-cell a solid prop's footprint (`tuning.json` → `propFootprints`) overlaps.
+- **Road gutter** is a road sub-cell whose centre is within 1 tile (2 m) of a raised kerb edge (`KERB_EDGE`); other road is road centre. Precinct is cobbles (`:`). Grounds outside rule 2 (grass, apron) are never route area anyway.
+- **Order:** base weight × the `mult` of every hotspot whose radius covers the sub-cell centre, then 0 where no type of the level's table may go (rule 5), then the gutter rescale: the road gutter weights are scaled so they hold exactly `gutterBias` of the total weight (0 empties the gutter, 1 empties everything else). Rescaling after the hotspots is what makes the requested share land there.
+- **`near`** (hotspots and grime zones) names `prop.<id>` (each prop), `site.<id>` (each site cell), `use:<building use>` (each cell of such a building) or an anchor name from `anchors`; anything else is L000. `radius` is in tiles, measured from source tile centre (or prop position) to sub-cell centre, inclusive. A reference that matches nothing on the map is allowed and covers nothing.
+- **Constraints** (rule 5) are compiled as each table entry's `requires` bits over the sub-cell `places` bits: `leaf_pile` needs `NEAR_TREE` (within 4 m of a `prop.tree`), `bin_bag` `NEAR_KERB` (within 2 tiles of a raised kerb), `dog_mess` `PAVEMENT` (grass is never route area, so pavement is all that remains of "pavements and grass").
+- **Quantisation:** the heaviest sub-cell becomes 65,535 (`Uint16`) and every other weight scales with it, rounded, at least 1 when non-zero.
+- **Validation:** `litter.table` ids must be `litter.*` ids in `src/data/entities.json` and, for a district in `entities.json`, list that district (L005). `minSpacingM` is optional (0.5 m).
+
 ### 9.2 Grime
 
-1. Score every route-area grime cell (4 px = 0.25 m): `score = zoneDensity(cell) + gutterBonus(cell) + speckle × valueNoise(cell)`. Here `valueNoise` is a hand-written lattice value noise seeded from the `grime` stream (no simplex-noise dependency).
-2. Sort cells by `(score desc, index asc)` and take exactly `grime.cells` of them, with gutter-band cells topped up to `gutterShare`. The result is an exact, deterministic count, so Tidy % denominators are identical on every attempt.
+1. Score every open route-area grime cell (4 px = 0.25 m): `score = zoneDensity(cell) + speckle × valueNoise(cell)`. Here `valueNoise` is a hand-written lattice value noise seeded from the `grime` stream (no simplex-noise dependency). The gutter takes its share by quota (step 2) instead of a score bonus.
+2. Take exactly `grime.cells` cells: `round(cells × gutterShare)` from the gutter band and the rest from the other open cells, each part sorted by `(score desc, index asc)`. The result is an exact, deterministic count with an exact gutter share, so Tidy % denominators are identical on every attempt.
 3. Grime never spawns under solid props, on grass, on aprons (`+`) or in footways.
+
+*As built (SSP-054), the split between compiler and sim:* the compiler bakes the deterministic components and `dirt.ts` (SSP-060) adds the seeded noise and makes the selection at shift start. The compiler writes the per-tile `grimeDensity` (the zone component: the highest covering `zones` density, 0..1 as 0..255, 0 off route), the per-grime-cell `gutter` layer bits (`OPEN`: may be grimy; `GUTTER`: in the gutter band) and `spawns.grime` = `{ cells, gutterCells, speckle }` ([TECHNICAL_DESIGN §10.3, §15.2](TECHNICAL_DESIGN.md#103-grime-mask-srcsimdirtts)). A cell is **open** when its tile is route area, not a `site.skip`, and no solid prop footprint (`tuning.json` → `propFootprints`) overlaps it; that covers rule 3 (grass, aprons and footways are not route area). The **gutter band** is **2 grime cells (0.5 m, 8 px) on the road side of every raised kerb edge**, the top of ART_BIBLE's 4–8 px range ([§9.2](ART_BIBLE.md#92-grime-and-the-clean-reveal)) and the band of §7.2: wide enough to read at 1× and to be swept by a gutter brush hugging the kerb. Dropped kerbs and flush edges (alley, yard, apron) have no band. Zones combine by maximum, not sum, so overlapping zones never exceed density 1.
 
 ### 9.3 Stains and hazards
 
@@ -1238,6 +1249,8 @@ flowchart LR
 
 *As built (SSP-034):* the compiler also writes `autotile` (kerb blob index, §7.2), `markings` (§7.1), `collide` (`SOLID` on every cell Bessie may not drive on: buildings, `w e r`, water, sand, void and 1-tile footways; the `KERB_EDGE` bits of §7.2) and `solids` (the SOLID cells merged by `mergeSolids`, TECHNICAL_DESIGN §9.1). Static props are not SOLID cells: they stay in `props` and become collision shapes at runtime (SSP-036). It then runs the layout checks L014, L015 and L020–L022 (§10.3) on every level. The kerb blob table is read from `assets-src/procedural/tiles/kerb_blob.json`.
 
+*As built (SSP-054):* the compiler bakes the M2 spawn layers (`tools/levels/spawnLayers.ts`, §9.1–§9.2): the `gutter` grime cell bits on every level, `grimeDensity` and `spawns.grime` when `level.json` has `grime`, and `spawns.litter` (the litter weight field) when it has `litter`. Both specs stay optional so a level can compile before its sweeping content is authored (Puddle Lane's arrives in SSP-056). It checks their shape (L000), the litter ids (L005), L050's litter budget and L051.
+
 *As built (SSP-042):* after compiling, the CLI lists every `public/assets/levels/*.json` under the output root in that root's `public/assets/asset-hashes.json` (when the root has one), so `assets:verify` treats compiled levels as listed generated files ([ASSET_PIPELINE §9.3](ASSET_PIPELINE.md#93-packing-and-outputs)).
 
 `public/assets/levels/<name>.json` is byte-deterministic (stable key order, no timestamps). Its schema (v1, base64 `Uint8` grid layers) is specified in [TECHNICAL_DESIGN §15.2](TECHNICAL_DESIGN.md#152-compiled-schema-v1). The compiler also prints the par report (§10.4).
@@ -1281,6 +1294,8 @@ Errors fail `npm run levels` (and so CI). Warnings print but do not fail. Messag
 | L081 | warning | Last scheduled event later than 200 s elapsed |
 
 *As built (SSP-034):* path distances are BFS over drivable tiles (4-connected), 2 m per step. **L014** measures dead ends as described in §7.4. **L015** is the footway-mouth rule of §7.3. **L020** counts depot bays as 4-connected groups of `$` cells; the skip rule (at least 40 m from every bay) applies to shift levels only, because the Skip Run's skips are set dressing (§8.6); dump sites are depot bays and skips; one message names the farthest route tile and how many are over. **L021** sources are hydrants (`prop.hydrant`) and depot bays, reported the same way. **L022**: a hydrant needs a carriageway tile (§7.4) with no prop orthogonally beside it; a skip (each 4-connected group of `s` cells) needs a drivable tile with no prop or skip along a long side (any side when square). Messages: `L014 dead end of 8 tiles without a 5×5 turning head (max 6)`, `L015 1-tile alley mouth Bessie can enter: put a bollard (!) in it or close it with buildings`, `L020 1 depot bay(s) ($); a level needs at least 2`, `L020 skip is 4 m (path) from the nearest depot bay; skips must be at least 40 m away`, `L020 route tile is 212 m (path) from the nearest dump site (depot bay or skip); the limit is 200 m (37 route tile(s) over)`, `L021 route tile is 170 m (path) from the nearest hydrant or depot bay; the limit is 150 m (40 route tile(s) over)`, `L022 hydrant has no stopping tile beside it (…)`, `L022 skip has no stopping tile beside it (…)`. Each has a failing fixture in `tests/fixtures/levels/`.
+
+*As built (SSP-054):* **L050** checks `litter.initial` + expected dynamic litter ≤ 1,000; the expected dynamic litter comes from the NPC and event specs, so it is 0 until M3 (SSP-077) adds them, together with the peak NPC and vehicle checks. **L051** fires when `grime.cells` exceeds the open grime cells (§9.2), when `round(cells × gutterShare)` exceeds the gutter-band cells, or when the remaining non-gutter cells exceed the open cells outside the band. Both point at the level.json key: `l050_litter.level.json:47:5 L050 litter.initial 1001 + expected dynamic litter 0 = 1001 is over the budget of 1000`, `l051_grime.level.json:75:5 L051 grime.cells 6000 exceeds the 5716 route-area grime cells available`, `L051 grime.gutterShare 1 asks for 193 gutter cells; the gutter band has 192`, `L051 grime.cells 1152 leaves 1152 non-gutter cells; only 960 are available`. **L005** also covers `litter.table` ids (canonical `litter.*` ids in entities.json, allowed in the district). L050 and L051 have failing fixtures (`tests/fixtures/levels/l050_litter`, `l051_grime`); the other L051 variants, L005 and the guards are unit-tested in `tests/unit/compileSpawns.test.ts`.
 
 ### 10.4 Par report
 

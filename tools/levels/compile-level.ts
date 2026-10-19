@@ -3,7 +3,10 @@
 // ground inheritance, building columns, surface and route layers, props/sites/anchors/start, the M1 checks
 // (L000–L006, L010, L013) and the v1 encoding through src/sim/map.ts. SSP-034 adds the kerb blob autotile,
 // collide bits, road markings and merged solids (tileLayers.ts, with the shared table read by kerbBlob.ts)
-// and L014/L015/L020–L022 (layoutChecks.ts); M2/M3/M6 add frontages, spawns, graphs and budgets.
+// and L014/L015/L020–L022 (layoutChecks.ts). SSP-054 adds the M2 spawn layers (spawnLayers.ts): the grime
+// `gutter` cells and zone `grimeDensity`, the litter weight field (`spawns.litter`), the grime counts
+// (`spawns.grime`), the LitterSpec/GrimeSpec guards and L050/L051. M2/M3/M6 add frontages, the other
+// spawns, graphs and the remaining budgets.
 //
 // Run: node tools/levels/compile-level.ts [--out <dir>] [--src <dir>] [--manifest <file>]
 //   --out <dir>       output ROOT; levels go to <dir>/public/assets/levels/ (forge verify passes build/tmp/verify)
@@ -29,6 +32,7 @@ import {
   type Level,
   type LevelProp,
   type LevelSite,
+  type LitterTableEntry,
   MAX_STOREYS,
   MUSIC_ID_PATTERN,
   mergeSolids,
@@ -36,9 +40,27 @@ import {
   type TileRect,
   type Weather,
 } from '../../src/sim/map.ts';
+import {
+  DEFAULT_ENTITIES,
+  DEFAULT_TUNING,
+  DISTRICT_IDS,
+  LITTER_IDS,
+  type PropFootprint,
+  STATIC_PROP_IDS,
+} from '../../src/sim/tuning.ts';
 import { KERB_BLOB_PATH, type KerbBlob, readKerbBlob } from './kerbBlob.ts';
 import { checkLayout, type LayoutCode } from './layoutChecks.ts';
 import type { Building, BuildingUse, Day, GroundName, LegendEntry, Mode, TimeOfDay } from './schema.ts';
+import {
+  computeGrimeCells,
+  computeGrimeDensity,
+  computeLitterField,
+  LITTER_REQUIRES,
+  type Point,
+  type ResolvedHotspot,
+  type ResolvedZone,
+  type SpawnContext,
+} from './spawnLayers.ts';
 import { computeTileLayers, isRoadGround } from './tileLayers.ts';
 
 export { isRoadGround };
@@ -166,8 +188,10 @@ function isPlainGround(def: LegendDef): boolean {
 
 /**
  * A validation code. L000 (this compiler) is a level file pair or level.json that does not match schema.ts;
- * the rest are LEVEL_DESIGN §10.3. L005 covers only the music/ambience shape until entities.json (M2).
- * L014, L015 and L020–L022 are the layout checks (layoutChecks.ts, SSP-034).
+ * the rest are LEVEL_DESIGN §10.3. L005 covers the music/ambience shape and, since SSP-054, the
+ * `litter.table` ids (canonical litter ids in entities.json, allowed in a known district).
+ * L014, L015 and L020–L022 are the layout checks (layoutChecks.ts, SSP-034). L050 (the litter part) and
+ * L051 are the SSP-054 budgets.
  */
 export type LevelCode =
   | 'L000'
@@ -179,6 +203,8 @@ export type LevelCode =
   | 'L006'
   | 'L010'
   | 'L013'
+  | 'L050'
+  | 'L051'
   | LayoutCode;
 
 export type Diagnostic = {
@@ -318,6 +344,41 @@ export const MODE_TIMER_S: { readonly [mode in Mode]: number } = { shift: SHIFT_
 /** Storey limits (L004): 1..6, or 1..MAX_STOREYS (8) with `landmark: true`. */
 export const MAX_STOREYS_ORDINARY = 6;
 
+/** L050: `litter.initial` + expected dynamic litter may not exceed this (LEVEL_DESIGN §9.1 rule 7, §10.3). */
+export const LITTER_BUDGET = 1000;
+
+/** `litter.minSpacingM` when level.json leaves it out (LEVEL_DESIGN §8.4, §9.1). */
+export const DEFAULT_LITTER_SPACING_M = 0.5;
+
+/** Most a `grime.speckle` may be (LEVEL_DESIGN §8.4: background density 0..0.1). */
+export const MAX_SPECKLE = 0.1;
+
+/**
+ * Expected dynamic litter (NPC drops, events, burst bin bags) for L050. It is derived from the NPC and event
+ * specs, which arrive in M3 (SSP-077), so it is 0 until then.
+ */
+export const EXPECTED_DYNAMIC_LITTER = 0;
+
+/** A litter hotspot after the guards; `near` is resolved to points once the map is known. */
+type CheckedHotspot = { near: string; radius: number; mult: number };
+
+/** level.json → litter after the guards (schema.ts LitterSpec), the table sorted by id. */
+type CheckedLitter = {
+  initial: number;
+  table: { id: string; weight: number }[];
+  gutterBias: number;
+  minSpacingM: number;
+  hotspots: CheckedHotspot[];
+};
+
+/** A grime zone after the guards: a tile rect `[x, y, w, h]`, or a `near` reference and radius in tiles. */
+type CheckedZone =
+  | { rect: [number, number, number, number]; density: number }
+  | { near: string; radius: number; density: number };
+
+/** level.json → grime after the guards (schema.ts GrimeSpec). */
+type CheckedGrime = { cells: number; gutterShare: number; zones: CheckedZone[]; speckle: number };
+
 /** The level.json fields the M1 compiler consumes, after the guards. */
 type CheckedLevel = {
   id: string;
@@ -333,6 +394,8 @@ type CheckedLevel = {
   legend: { [char: string]: LegendDef };
   buildings: { [letter: string]: Building };
   anchors: { [digit: string]: string };
+  litter: CheckedLitter | null;
+  grime: CheckedGrime | null;
 };
 
 class Reporter {
@@ -538,6 +601,232 @@ function checkAnchors(r: Reporter, value: unknown): { [digit: string]: string } 
   return out;
 }
 
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * Whether `near` is a reference the spawn layers can resolve: `prop.<id>`, `site.<id>`, `use:<building use>`
+ * or the name of an anchor in level.json → anchors.
+ */
+function nearOk(near: unknown, anchorNames: ReadonlySet<string>): near is string {
+  if (typeof near !== 'string') return false;
+  if (/^(prop|site)\.[a-z0-9_]+$/.test(near)) return true;
+  if (near.startsWith('use:')) return USES.some((u) => `use:${u}` === near);
+  return anchorNames.has(near);
+}
+
+const NEAR_RULE = 'must be prop.<id>, site.<id>, use:<building use> or an anchor name from anchors';
+
+/** Report every unknown key of an object at `path`; returns whether there were none. */
+function onlyKeys(
+  r: Reporter,
+  o: JsonObject,
+  allowed: readonly string[],
+  path: readonly string[],
+  where: string,
+): boolean {
+  let ok = true;
+  for (const key of Object.keys(o)) {
+    if (!allowed.includes(key)) {
+      r.key([...path, key], 'L000', `${where}.${key} is not a field (${allowed.join(', ')})`);
+      ok = false;
+    }
+  }
+  return ok;
+}
+
+/** Guard level.json → litter (schema.ts LitterSpec) and its L005 ids; null when absent or invalid. */
+function checkLitter(
+  r: Reporter,
+  value: unknown,
+  districtId: unknown,
+  anchorNames: ReadonlySet<string>,
+): CheckedLitter | null {
+  if (value === undefined) return null;
+  if (!isObject(value)) {
+    r.key(['litter'], 'L000', 'litter must be an object');
+    return null;
+  }
+  let ok = onlyKeys(
+    r,
+    value,
+    ['initial', 'table', 'gutterBias', 'minSpacingM', 'hotspots'],
+    ['litter'],
+    'litter',
+  );
+  const at = (field: string): readonly string[] =>
+    value[field] === undefined ? ['litter'] : ['litter', field];
+  const { initial, table, gutterBias, minSpacingM, hotspots } = value;
+  if (!isInt(initial) || initial < 0) {
+    r.key(at('initial'), 'L000', 'litter.initial must be a non-negative integer');
+    ok = false;
+  }
+  const entries: { id: string; weight: number }[] = [];
+  if (!isObject(table)) {
+    r.key(at('table'), 'L000', 'litter.table must be an object of litter.* id → weight');
+    ok = false;
+  } else {
+    for (const id of Object.keys(table)) {
+      const weight = table[id];
+      if (!isNum(weight) || weight <= 0) {
+        r.key(['litter', 'table', id], 'L000', `litter.table ${id} weight must be a positive number`);
+        ok = false;
+      } else if (!LITTER_IDS.some((l) => l === id)) {
+        r.key(
+          ['litter', 'table', id],
+          'L005',
+          `litter.table ${JSON.stringify(id)} is not a litter id in src/data/entities.json`,
+        );
+        ok = false;
+      } else {
+        const known = DISTRICT_IDS.find((d) => d === districtId);
+        const entity = DEFAULT_ENTITIES.litter[id as keyof typeof DEFAULT_ENTITIES.litter];
+        if (known !== undefined && !entity.districts.includes(known)) {
+          r.key(
+            ['litter', 'table', id],
+            'L005',
+            `litter.table ${id} is not allowed in ${known} (entities.json districts)`,
+          );
+          ok = false;
+        } else entries.push({ id, weight });
+      }
+    }
+    if (ok && isInt(initial) && initial > 0 && entries.length === 0) {
+      r.key(
+        ['litter', 'table'],
+        'L000',
+        'litter.table must name at least one litter type when litter.initial > 0',
+      );
+      ok = false;
+    }
+  }
+  if (!isNum(gutterBias) || gutterBias < 0 || gutterBias > 1) {
+    r.key(at('gutterBias'), 'L000', 'litter.gutterBias must be a number 0..1');
+    ok = false;
+  }
+  if (minSpacingM !== undefined && (!isNum(minSpacingM) || minSpacingM <= 0)) {
+    r.key(['litter', 'minSpacingM'], 'L000', 'litter.minSpacingM must be a positive number of metres');
+    ok = false;
+  }
+  const checkedHotspots: CheckedHotspot[] = [];
+  if (hotspots !== undefined) {
+    if (!Array.isArray(hotspots)) {
+      r.key(['litter', 'hotspots'], 'L000', 'litter.hotspots must be an array');
+      ok = false;
+    } else {
+      hotspots.forEach((hs: unknown, i) => {
+        const where = `litter.hotspots[${i}]`;
+        const path = ['litter', 'hotspots'];
+        if (!isObject(hs)) {
+          r.key(path, 'L000', `${where} must be an object`);
+          ok = false;
+          return;
+        }
+        if (!onlyKeys(r, hs, ['near', 'radius', 'mult'], path, where)) ok = false;
+        if (!nearOk(hs.near, anchorNames)) {
+          r.key(path, 'L000', `${where}.near ${JSON.stringify(hs.near ?? null)} ${NEAR_RULE}`);
+          ok = false;
+        } else if (!isNum(hs.radius) || hs.radius <= 0) {
+          r.key(path, 'L000', `${where}.radius must be a positive number of tiles`);
+          ok = false;
+        } else if (!isNum(hs.mult) || hs.mult <= 0) {
+          r.key(path, 'L000', `${where}.mult must be a positive number`);
+          ok = false;
+        } else checkedHotspots.push({ near: hs.near, radius: hs.radius, mult: hs.mult });
+      });
+    }
+  }
+  if (!ok || !isInt(initial) || !isNum(gutterBias)) return null;
+  entries.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return {
+    initial,
+    table: entries,
+    gutterBias,
+    minSpacingM: isNum(minSpacingM) ? minSpacingM : DEFAULT_LITTER_SPACING_M,
+    hotspots: checkedHotspots,
+  };
+}
+
+/** Guard level.json → grime (schema.ts GrimeSpec); null when absent or invalid. */
+function checkGrime(
+  r: Reporter,
+  value: unknown,
+  size: readonly [number, number] | null,
+  anchorNames: ReadonlySet<string>,
+): CheckedGrime | null {
+  if (value === undefined) return null;
+  if (!isObject(value)) {
+    r.key(['grime'], 'L000', 'grime must be an object');
+    return null;
+  }
+  let ok = onlyKeys(r, value, ['cells', 'gutterShare', 'zones', 'speckle'], ['grime'], 'grime');
+  const at = (field: string): readonly string[] =>
+    value[field] === undefined ? ['grime'] : ['grime', field];
+  const { cells, gutterShare, zones, speckle } = value;
+  if (!isInt(cells) || cells < 0) {
+    r.key(at('cells'), 'L000', 'grime.cells must be a non-negative integer');
+    ok = false;
+  }
+  if (!isNum(gutterShare) || gutterShare < 0 || gutterShare > 1) {
+    r.key(at('gutterShare'), 'L000', 'grime.gutterShare must be a number 0..1');
+    ok = false;
+  }
+  if (!isNum(speckle) || speckle < 0 || speckle > MAX_SPECKLE) {
+    r.key(at('speckle'), 'L000', `grime.speckle must be a number 0..${MAX_SPECKLE}`);
+    ok = false;
+  }
+  const checkedZones: CheckedZone[] = [];
+  if (!Array.isArray(zones)) {
+    r.key(at('zones'), 'L000', 'grime.zones must be an array');
+    ok = false;
+  } else {
+    zones.forEach((zone: unknown, i) => {
+      const where = `grime.zones[${i}]`;
+      const path = ['grime', 'zones'];
+      if (!isObject(zone)) {
+        r.key(path, 'L000', `${where} must be an object`);
+        ok = false;
+        return;
+      }
+      if (!onlyKeys(r, zone, ['rect', 'near', 'radius', 'density'], path, where)) ok = false;
+      const { rect, near, radius, density } = zone;
+      if (!isNum(density) || density < 0 || density > 1) {
+        r.key(path, 'L000', `${where}.density must be a number 0..1`);
+        ok = false;
+        return;
+      }
+      if ((rect === undefined) === (near === undefined)) {
+        r.key(path, 'L000', `${where} must have exactly one of rect or near`);
+        ok = false;
+      } else if (rect !== undefined) {
+        const valid = Array.isArray(rect) && rect.length === 4 && rect.every(isInt);
+        const [x = 0, y = 0, w = 0, h = 0] = valid ? rect : [];
+        if (
+          !valid ||
+          w < 1 ||
+          h < 1 ||
+          x < 0 ||
+          y < 0 ||
+          (size !== null && (x + w > size[0] || y + h > size[1]))
+        ) {
+          r.key(path, 'L000', `${where}.rect must be [x, y, w, h] in tiles with w, h ≥ 1, inside the map`);
+          ok = false;
+        } else if (radius !== undefined) {
+          r.key(path, 'L000', `${where}.radius goes with near, not rect`);
+          ok = false;
+        } else checkedZones.push({ rect: [x, y, w, h], density });
+      } else if (!nearOk(near, anchorNames)) {
+        r.key(path, 'L000', `${where}.near ${JSON.stringify(near)} ${NEAR_RULE}`);
+        ok = false;
+      } else if (!isNum(radius) || radius <= 0) {
+        r.key(path, 'L000', `${where}.radius must be a positive number of tiles`);
+        ok = false;
+      } else checkedZones.push({ near, radius, density });
+    });
+  }
+  if (!ok || !isInt(cells) || !isNum(gutterShare) || !isNum(speckle)) return null;
+  return { cells, gutterShare, zones: checkedZones, speckle };
+}
+
 /** Guard a parsed level.json against schema.ts; null when a field the map checks need is unusable. */
 function checkLevelFile(
   r: Reporter,
@@ -618,9 +907,9 @@ function checkLevelFile(
     !(Array.isArray(root.pledges) && root.pledges.every((p) => typeof p === 'string'))
   )
     bad('pledges', 'must be an array of frontage ids');
-  for (const field of ['litter', 'grime'] as const) {
-    if (root[field] !== undefined && !isObject(root[field])) bad(field, 'must be an object');
-  }
+  const anchorNames = new Set(Object.values(anchors));
+  const litter = checkLitter(r, root.litter, id, anchorNames);
+  const grime = checkGrime(r, root.grime, sizeOk ? [size[0], size[1]] : null, anchorNames);
 
   if (typeof id !== 'string' || mode === undefined || !sizeOk || timer === undefined || weather === undefined)
     return null;
@@ -637,6 +926,8 @@ function checkLevelFile(
     legend,
     buildings,
     anchors,
+    litter,
+    grime,
   };
 }
 
@@ -1043,7 +1334,8 @@ export function compileLevel(input: CompileInput): CompileResult {
   L.collide.set(tiles.collide);
   L.markings.set(tiles.markings);
   level.solids = mergeSolids(L.collide, w, h);
-  // grimeDensity and gutter stay 0 until SSP-054; lanes/nav stay empty stubs until M3 (SSP-076).
+  // grimeDensity, gutter and the litter field are the spawn layers below (SSP-054); lanes/nav stay empty
+  // stubs until M3 (SSP-076).
 
   // Props: one per cell, at the tile centre in metres, rot 0, row-major.
   const props: LevelProp[] = [];
@@ -1091,7 +1383,120 @@ export function compileLevel(input: CompileInput): CompileResult {
     heading: (lvl.headingIndex * Math.PI) / 16,
   };
 
+  // Spawn layers (SSP-054): grime cells, zone density, the litter field, and the L050/L051 budgets.
+  const skipTiles = siteMasks.get('site.skip') ?? new Uint8Array(w * h);
+  const ctx: SpawnContext = {
+    map,
+    route,
+    collide: L.collide,
+    skip: skipTiles.map((v) => (v !== 0 ? 1 : 0)),
+    props,
+    footprintOf: propFootprint,
+  };
+  const grimeCells = computeGrimeCells(ctx);
+  L.gutter.set(grimeCells.cells);
+  const resolveNear = (near: string): Point[] => nearPoints(near, map, buildings, props, anchors);
+  if (lvl.grime !== null) {
+    const g = lvl.grime;
+    const zones = g.zones.map(
+      (z): ResolvedZone =>
+        'rect' in z
+          ? { rect: z.rect, density: z.density }
+          : { points: resolveNear(z.near), radius: z.radius, density: z.density },
+    );
+    L.grimeDensity.set(computeGrimeDensity(ctx, zones));
+    const gutterCells = Math.round(g.cells * g.gutterShare);
+    const where = ['grime', 'cells'];
+    if (g.cells > grimeCells.open)
+      lr.key(
+        where,
+        'L051',
+        `grime.cells ${g.cells} exceeds the ${grimeCells.open} route-area grime cells available`,
+      );
+    if (gutterCells > grimeCells.gutter)
+      lr.key(
+        ['grime', 'gutterShare'],
+        'L051',
+        `grime.gutterShare ${g.gutterShare} asks for ${gutterCells} gutter cells; the gutter band has ${grimeCells.gutter}`,
+      );
+    const otherOpen = grimeCells.open - grimeCells.gutter;
+    if (g.cells <= grimeCells.open && g.cells - gutterCells > otherOpen)
+      lr.key(
+        where,
+        'L051',
+        `grime.cells ${g.cells} leaves ${g.cells - gutterCells} non-gutter cells; only ${otherOpen} are available`,
+      );
+    level.grime = { cells: g.cells, gutterCells: Math.min(gutterCells, g.cells), speckle: g.speckle };
+  }
+  if (lvl.litter !== null) {
+    const spec = lvl.litter;
+    const total = spec.initial + EXPECTED_DYNAMIC_LITTER;
+    if (total > LITTER_BUDGET)
+      lr.key(
+        ['litter', 'initial'],
+        'L050',
+        `litter.initial ${spec.initial} + expected dynamic litter ${EXPECTED_DYNAMIC_LITTER} = ${total} is over the budget of ${LITTER_BUDGET}`,
+      );
+    const table: LitterTableEntry[] = spec.table.map((e) => ({
+      id: e.id,
+      weight: e.weight,
+      requires: LITTER_REQUIRES[e.id] ?? 0,
+    }));
+    const hotspots = spec.hotspots.map(
+      (hs): ResolvedHotspot => ({ points: resolveNear(hs.near), radius: hs.radius, mult: hs.mult }),
+    );
+    const field = computeLitterField(ctx, table, spec.gutterBias, hotspots);
+    level.litter = {
+      initial: spec.initial,
+      minSpacingM: spec.minSpacingM,
+      table,
+      places: field.places,
+      weights: field.weights,
+    };
+  }
+
+  // A budget error (L050/L051) fails the level before it is encoded.
+  if (lr.diagnostics.length > 0) return finish(null);
   return finish({ level, text: encodeLevel(level), buildings, anchors, map });
+}
+
+/** The solid footprint of a static prop (tuning.json → propFootprints), or undefined for any other id. */
+function propFootprint(id: string): PropFootprint | undefined {
+  const known = STATIC_PROP_IDS.find((p) => p === id);
+  return known === undefined ? undefined : DEFAULT_TUNING.propFootprints.shapes[known];
+}
+
+/**
+ * The source points (metres) of a `near` reference (nearOk): each `prop.<id>` position, each `site.<id>` cell
+ * centre, each cell centre of a building with that `use:`, or the anchor's tile centre. Row-major order.
+ */
+export function nearPoints(
+  near: string,
+  map: ResolvedMap,
+  buildings: readonly BuildingInstance[],
+  props: readonly LevelProp[],
+  anchors: readonly AnchorPoint[],
+): Point[] {
+  const centre = (i: number): Point => [((i % map.w) + 0.5) * TILE_M, (Math.floor(i / map.w) + 0.5) * TILE_M];
+  if (near.startsWith('prop.')) return props.filter((p) => p.id === near).map((p): Point => [p.x, p.y]);
+  const out: Point[] = [];
+  if (near.startsWith('site.')) {
+    for (let i = 0; i < map.w * map.h; i += 1) {
+      const def = map.defs[i] ?? null;
+      if (def !== null && (def.site === near || def.haz === near)) out.push(centre(i));
+    }
+    return out;
+  }
+  if (near.startsWith('use:')) {
+    const use = near.slice(4);
+    for (let i = 0; i < map.w * map.h; i += 1) {
+      const b = buildings[map.building[i] ?? -1];
+      if (b !== undefined && b.use === use) out.push(centre(i));
+    }
+    return out;
+  }
+  for (const a of anchors) if (a.name === near) out.push(centre(a.tile[1] * map.w + a.tile[0]));
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------------------

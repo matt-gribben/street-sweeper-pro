@@ -1,6 +1,7 @@
 // Level compiler core (LEVEL_DESIGN §8, §10; TECHNICAL_DESIGN §15; SSP-033): the CLI on plain Node type
 // stripping, the fixture per validation code, ground inheritance, building merge, layers and the audio header.
-// The kerb, collide, markings and layout checks of SSP-034 are in compileLayout.test.ts.
+// The kerb, collide, markings and layout checks of SSP-034 are in compileLayout.test.ts; the SSP-054 spawn
+// layers (grime cells, density, litter field) and L050/L051 in compileSpawns.test.ts.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -8,7 +9,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { COLLIDE, decodeLevel, encodeLevel, Ground, mergeSolids, Surface } from '../../src/sim/map.ts';
+import {
+  COLLIDE,
+  decodeLevel,
+  encodeLevel,
+  GRIME_CELL,
+  Ground,
+  GUTTER_CELLS_PER_TILE,
+  mergeSolids,
+  Surface,
+} from '../../src/sim/map.ts';
 import {
   type CompileResult,
   compileLevel,
@@ -217,6 +227,14 @@ describe('one failing fixture per implemented code', () => {
       'l022_stop',
       'l022_stop.map.txt:1:6 L022 hydrant has no stopping tile beside it (a road, apron, cobble, yard, alley or dropped-kerb tile with no prop)',
     ],
+    [
+      'l050_litter',
+      'l050_litter.level.json:47:5 L050 litter.initial 1001 + expected dynamic litter 0 = 1001 is over the budget of 1000',
+    ],
+    [
+      'l051_grime',
+      'l051_grime.level.json:75:5 L051 grime.cells 6000 exceeds the 5716 route-area grime cells available',
+    ],
   ] as const;
 
   it.each(cases)('%s fails with the exact file:row:col message and a non-zero exit', (fixture, expected) => {
@@ -303,7 +321,7 @@ describe('the valid fixture', () => {
     expect(layerRows(level.layers.surface, 20)[7]).toBe('22222111000000000000');
   });
 
-  it('marks every non-drivable cell SOLID and merges them, leaves the M2 layers zero and stubs the graphs', () => {
+  it('marks every non-drivable cell SOLID and merges them, opens grime only on route, stubs the rest', () => {
     const { level, map } = out();
     for (let i = 0; i < 20 * 12; i += 1) {
       expect(((level.layers.collide[i] ?? 0) & COLLIDE.SOLID) !== 0).toBe(map.drivable[i] === 0);
@@ -314,9 +332,17 @@ describe('the valid fixture', () => {
       [10, 0, 20, 2],
       [0, 6, 6, 7],
     ]);
-    for (const name of ['grimeDensity', 'gutter'] as const) {
-      expect(level.layers[name].every((v) => v === 0)).toBe(true);
-    }
+    // No grime spec: no zone density and no spawns.grime/litter, but the grime cells are geometric and always
+    // baked (SSP-054): OPEN cells lie only on route tiles.
+    expect(level.layers.grimeDensity.every((v) => v === 0)).toBe(true);
+    const gw = 20 * GUTTER_CELLS_PER_TILE;
+    level.layers.gutter.forEach((v, k) => {
+      const t = Math.floor(k / gw / 8) * 20 + Math.floor((k % gw) / 8);
+      if ((v & GRIME_CELL.OPEN) !== 0) expect(level.layers.route[t]).toBe(1);
+    });
+    expect(level.layers.gutter.some((v) => (v & GRIME_CELL.GUTTER) !== 0)).toBe(true);
+    expect(level.litter).toBeNull();
+    expect(level.grime).toBeNull();
     expect(level.frontages).toEqual([]);
     expect(level.lanes).toEqual({ nodes: [], edges: [] });
     expect(level.nav).toEqual({ nodes: [], edges: [] });
@@ -649,13 +675,21 @@ describe('level.json guards (L000)', () => {
     ]);
   });
 
-  it('keeps pledges, litter and grime optional until M2 but checks their shape when present', () => {
+  it('keeps pledges, litter and grime optional but checks their shape when present', () => {
     const rows = ['@.'];
-    expect(
-      messages(compileInline(rows, { pledges: ['fr_1_1'], litter: { initial: 0 }, grime: { cells: 0 } })),
-    ).toEqual([]);
+    const litter = { initial: 0, table: {}, gutterBias: 0.5 };
+    const grime = { cells: 0, gutterShare: 0, zones: [], speckle: 0 };
+    expect(messages(compileInline(rows))).toEqual([]);
+    expect(messages(compileInline(rows, { pledges: ['fr_1_1'], litter, grime }))).toEqual([]);
     expect(messages(compileInline(rows, { pledges: 'fr_1_1' }))).toEqual([
       expect.stringMatching(/L000 pledges must be an array of frontage ids$/),
+    ]);
+    expect(messages(compileInline(rows, { litter: { initial: 0 }, grime: { cells: 0 } }))).toEqual([
+      expect.stringMatching(/L000 litter\.table must be an object of litter\.\* id → weight$/),
+      expect.stringMatching(/L000 litter\.gutterBias must be a number 0\.\.1$/),
+      expect.stringMatching(/L000 grime\.gutterShare must be a number 0\.\.1$/),
+      expect.stringMatching(/L000 grime\.speckle must be a number 0\.\.0\.1$/),
+      expect.stringMatching(/L000 grime\.zones must be an array$/),
     ]);
   });
 

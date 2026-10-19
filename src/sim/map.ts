@@ -6,7 +6,7 @@
 // Units (TECHNICAL_DESIGN §15.2): grid layers, `size`, `solids` and every `rect` are in tiles (2 m);
 // `props[].x/y` and `player.x/y` are sim metres; `props[].rot` and `player.heading` are radians (0 = north,
 // clockwise, §4). level.json (LEVEL_DESIGN §8.4) authors tile coordinates; the compiler converts.
-import { decodeBase64, encodeBase64 } from './base64.ts';
+import { decodeBase64, decodeBase64Uint16, encodeBase64, encodeBase64Uint16 } from './base64.ts';
 import { GRIME_CELL_M, SHIFT_S, TILE_M } from './constants.ts';
 
 /** The compiled file's `format` tag. */
@@ -165,6 +165,56 @@ export const MAX_STYLES = 255;
 export const GUTTER_CELLS_PER_TILE = TILE_M / GRIME_CELL_M;
 
 /**
+ * Bits of the `gutter` layer, one byte per 0.25 m grime cell (SSP-054; TECHNICAL_DESIGN §10.3 and §15.2,
+ * LEVEL_DESIGN §9.2). The compiler bakes them; dirt.ts reads them at shift start.
+ * - OPEN: grime may spawn in this cell: it lies on a route-area tile, not on a `site.skip` tile and not under
+ *   any part of a solid prop's footprint. Every other cell (off route, grass, aprons, footways, under props)
+ *   is 0 and never grimy.
+ * - GUTTER: the cell is in the gutter band, the 2 grime cells (0.5 m, 8 px) on the road side of a raised kerb
+ *   edge. Always set together with OPEN.
+ * The values are written into compiled files: append new bits, never renumber.
+ */
+export const GRIME_CELL = {
+  OPEN: 1 << 0,
+  GUTTER: 1 << 1,
+} as const;
+export type GrimeCellBit = (typeof GRIME_CELL)[keyof typeof GRIME_CELL];
+
+/** Every defined grime cell bit; a `gutter` value with any other bit set is rejected. */
+export const GRIME_CELL_ALL_BITS = GRIME_CELL.OPEN | GRIME_CELL.GUTTER;
+
+/** Edge of one litter spawn sub-cell in metres (LEVEL_DESIGN §9.1): a tile split into 4×4. */
+export const LITTER_CELL_M = 0.5;
+
+/** Litter sub-cells per tile edge: 2 m / 0.5 m = 4. The litter fields are (w·4) × (h·4). */
+export const LITTER_CELLS_PER_TILE = TILE_M / LITTER_CELL_M;
+
+/**
+ * Bits of the compiled litter `places` field, one byte per 0.5 m sub-cell (SSP-054, LEVEL_DESIGN §9.1). They
+ * describe the sub-cell; a litter table entry's `requires` names the bits a sub-cell must all have for that
+ * type to spawn there (leaf piles near trees, bin bags near kerbs, dog mess on pavements).
+ * - GUTTER: a road sub-cell within 1 tile (2 m) of a raised kerb edge (the base weight 3.0 and `gutterBias`).
+ * - PAVEMENT: on pavement ground (slabs, including dropped kerbs).
+ * - NEAR_TREE: within 4 m of a `prop.tree`.
+ * - NEAR_KERB: within 2 tiles (4 m) of a raised kerb edge.
+ * The values are written into compiled files: append new bits, never renumber.
+ */
+export const LITTER_PLACE = {
+  GUTTER: 1 << 0,
+  PAVEMENT: 1 << 1,
+  NEAR_TREE: 1 << 2,
+  NEAR_KERB: 1 << 3,
+} as const;
+export type LitterPlaceBit = (typeof LITTER_PLACE)[keyof typeof LITTER_PLACE];
+
+/** Every defined litter place bit; a `places` value or `requires` mask with any other bit is rejected. */
+export const LITTER_PLACE_ALL_BITS =
+  LITTER_PLACE.GUTTER | LITTER_PLACE.PAVEMENT | LITTER_PLACE.NEAR_TREE | LITTER_PLACE.NEAR_KERB;
+
+/** Largest compiled litter weight: the heaviest sub-cell of a level is scaled to this (Uint16). */
+export const LITTER_WEIGHT_MAX = 65535;
+
+/**
  * The asset id (`roof.*` or `facade.*`) a roof/wall layer value names, or null for STYLE_NONE.
  * Throws if the value is past the end of the table.
  */
@@ -203,9 +253,12 @@ export type LevelLayers = {
   collide: Uint8Array;
   /** 1 = counts toward Tidy %. */
   route: Uint8Array;
-  /** Baked grime density per tile (M2, SSP-054). */
+  /**
+   * Zone grime density per tile, 0..255 = 0..1 (SSP-054): the highest `grime.zones` density covering a route
+   * tile, 0 off route. dirt.ts adds the seeded speckle noise (LEVEL_DESIGN §9.2).
+   */
   grimeDensity: Uint8Array;
-  /** Gutter mask, one byte per grime cell: (w·8)·(h·8) long (M2, SSP-054). */
+  /** GRIME_CELL bits (OPEN, GUTTER), one byte per grime cell: (w·8)·(h·8) long (SSP-054). */
   gutter: Uint8Array;
 };
 
@@ -252,6 +305,45 @@ export type NavGraph = {
   edges: [from: number, to: number, flags: number][];
 };
 
+/** One compiled litter type: its id, its `litter.table` weight and the LITTER_PLACE bits it requires. */
+export type LitterTableEntry = { id: string; weight: number; requires: number };
+
+/**
+ * The compiled litter spawn field (`spawns.litter`, SSP-054; LEVEL_DESIGN §9.1). The compiler emits weights,
+ * not placements: litter.ts samples them at shift start with the seed's `litter` stream. `places` and
+ * `weights` are row-major over (w·4) × (h·4) sub-cells of 0.5 m. A weight is relative (the heaviest sub-cell
+ * is LITTER_WEIGHT_MAX); 0 means litter never spawns there (off route, under a prop, or no table type allowed).
+ */
+export type LitterSpawn = {
+  /** Items placed at shift start (`litter.initial`). */
+  initial: number;
+  /** Minimum distance between items in metres (`litter.minSpacingM`, default 0.5). */
+  minSpacingM: number;
+  /** The type table, sorted by id. */
+  table: LitterTableEntry[];
+  /** LITTER_PLACE bits per sub-cell. */
+  places: Uint8Array;
+  /** Relative spawn weight per sub-cell, 0..LITTER_WEIGHT_MAX. */
+  weights: Uint16Array;
+};
+
+/**
+ * The compiled grime selection (`spawns.grime`, SSP-054; LEVEL_DESIGN §9.2): dirt.ts takes exactly `cells`
+ * OPEN grime cells, `gutterCells` of them from the GUTTER band and the rest from the other OPEN cells, each
+ * part by (score desc, index asc).
+ */
+export type GrimeSpawn = {
+  /** Exact initial grime cell count (`grime.cells`). */
+  cells: number;
+  /** How many of them are gutter cells: round(cells × gutterShare). */
+  gutterCells: number;
+  /** Background noise amplitude 0..0.1 (`grime.speckle`). */
+  speckle: number;
+};
+
+/** Spawn kinds with a typed field on Level (`litter`, `grime`); `Level.spawns` may not use these names. */
+export const TYPED_SPAWN_KINDS: readonly string[] = ['grime', 'litter'];
+
 /** Compiled weather. `inherit` (the Depot Yard) takes the weather of the day it is played on. */
 export type Weather = 'clear' | 'rain' | 'wind' | 'gusts' | 'inherit';
 
@@ -282,8 +374,15 @@ export type Level = {
   frontages: Frontage[];
   lanes: LaneGraph;
   nav: NavGraph;
-  /** Spawn tables by kind (litter, npc, traffic, pickups); entry shape defined in M3 (SSP-077). */
+  /**
+   * Spawn lists by kind (npc, traffic, pickups); entry shape defined in M3 (SSP-077). Litter and grime are
+   * the typed `litter` and `grime` fields below, written under `spawns.litter` and `spawns.grime`.
+   */
   spawns: { [kind: string]: JsonValue[] };
+  /** The litter weight field (`spawns.litter`), or null when level.json has no `litter`. */
+  litter: LitterSpawn | null;
+  /** The grime selection counts (`spawns.grime`), or null when level.json has no `grime`. */
+  grime: GrimeSpawn | null;
   /** NPC schedules; entry shape defined in M3. */
   schedules: JsonValue[];
   weather: Weather;
@@ -301,6 +400,11 @@ const FACES: readonly Face[] = ['n', 'e', 's', 'w'];
 /** Expected byte length of a layer for a w × h tile map. */
 export function layerLength(name: LayerName, w: number, h: number): number {
   return name === 'gutter' ? w * GUTTER_CELLS_PER_TILE * (h * GUTTER_CELLS_PER_TILE) : w * h;
+}
+
+/** Length of the litter `places` and `weights` fields for a w × h tile map: (w·4)·(h·4). */
+export function litterFieldLength(w: number, h: number): number {
+  return w * LITTER_CELLS_PER_TILE * (h * LITTER_CELLS_PER_TILE);
 }
 
 /**
@@ -336,6 +440,8 @@ export function createBlankLevel(id: string, w: number, h: number): Level {
     lanes: { nodes: [], edges: [] },
     nav: { nodes: [], edges: [] },
     spawns: {},
+    litter: null,
+    grime: null,
     schedules: [],
     weather: 'clear',
     timerS: SHIFT_S,
@@ -454,6 +560,14 @@ function checkLayerValues(
     'unknown collide bits',
   );
   checkLayer(where, 'route', layers.route, w, (v) => v <= 1, 'route must be 0 or 1');
+  checkLayer(
+    where,
+    'gutter',
+    layers.gutter,
+    w * GUTTER_CELLS_PER_TILE,
+    (v) => (v & ~GRIME_CELL_ALL_BITS) === 0 && ((v & GRIME_CELL.GUTTER) === 0 || (v & GRIME_CELL.OPEN) !== 0),
+    'unknown grime cell bits or GUTTER without OPEN (the tile is a grime cell)',
+  );
 }
 
 function finite(value: number, path: string): number {
@@ -516,6 +630,55 @@ function audioIdOut(id: string | undefined, key: string, pattern: RegExp): { [ke
   return { [key]: id };
 }
 
+function grimeOut(grime: GrimeSpawn, w: number, h: number): JsonValue {
+  const { cells, gutterCells, speckle } = grime;
+  const max = layerLength('gutter', w, h);
+  if (!Number.isInteger(cells) || cells < 0 || cells > max)
+    throw new Error(`encodeLevel: grime.cells must be an integer 0..${max} (got ${cells})`);
+  if (!Number.isInteger(gutterCells) || gutterCells < 0 || gutterCells > cells)
+    throw new Error(`encodeLevel: grime.gutterCells must be an integer 0..cells (got ${gutterCells})`);
+  if (!(speckle >= 0 && speckle <= 1))
+    throw new Error(`encodeLevel: grime.speckle must be 0..1 (got ${speckle})`);
+  return { cells, gutterCells, speckle };
+}
+
+function litterOut(litter: LitterSpawn, w: number, h: number): JsonValue {
+  const n = litterFieldLength(w, h);
+  for (const [name, field] of [
+    ['places', litter.places],
+    ['weights', litter.weights],
+  ] as const) {
+    if (field.length !== n)
+      throw new Error(`encodeLevel: litter.${name} has ${field.length} entries, expected ${n}`);
+  }
+  if (!Number.isInteger(litter.initial) || litter.initial < 0)
+    throw new Error(`encodeLevel: litter.initial must be a non-negative integer (got ${litter.initial})`);
+  if (!(litter.minSpacingM > 0) || !Number.isFinite(litter.minSpacingM))
+    throw new Error(`encodeLevel: litter.minSpacingM must be a positive number (got ${litter.minSpacingM})`);
+  for (let i = 0; i < n; i += 1) {
+    if (((litter.places[i] ?? 0) & ~LITTER_PLACE_ALL_BITS) !== 0)
+      throw new Error(`encodeLevel: litter.places[${i}] has unknown place bits`);
+  }
+  let previous = '';
+  const table = litter.table.map((entry, i): JsonValue => {
+    const path = `litter.table[${i}]`;
+    if (i > 0 && !(entry.id > previous)) throw new Error(`encodeLevel: ${path} is not sorted by unique id`);
+    previous = entry.id;
+    if (!(entry.weight > 0) || !Number.isFinite(entry.weight))
+      throw new Error(`encodeLevel: ${path}.weight must be a positive number`);
+    if (!Number.isInteger(entry.requires) || (entry.requires & ~LITTER_PLACE_ALL_BITS) !== 0)
+      throw new Error(`encodeLevel: ${path}.requires has unknown place bits`);
+    return { id: entry.id, weight: entry.weight, requires: entry.requires };
+  });
+  return {
+    initial: litter.initial,
+    minSpacingM: litter.minSpacingM,
+    table,
+    places: encodeBase64(litter.places),
+    weights: encodeBase64Uint16(litter.weights),
+  };
+}
+
 /**
  * Encode a level as compiled JSON text (TECHNICAL_DESIGN §15.2): keys in the canonical order, layers as
  * base64 Uint8, a trailing newline, no timestamps. The output depends only on the level's contents, so
@@ -542,10 +705,16 @@ export function encodeLevel(level: Level): string {
     layers[name] = encodeBase64(bytes);
   }
   checkLayerValues('encodeLevel', level.layers, w, level.roofIds.length, level.wallIds.length);
-  const spawns: { [key: string]: JsonValue } = {};
-  for (const kind of Object.keys(level.spawns).sort()) {
-    spawns[kind] = canonicalJson(level.spawns[kind] ?? [], `spawns.${kind}`);
+  const spawnKinds: { [key: string]: JsonValue } = {};
+  for (const kind of Object.keys(level.spawns)) {
+    if (TYPED_SPAWN_KINDS.includes(kind))
+      throw new Error(`encodeLevel: spawns.${kind} must be set through level.${kind}, not level.spawns`);
+    spawnKinds[kind] = canonicalJson(level.spawns[kind] ?? [], `spawns.${kind}`);
   }
+  if (level.grime !== null) spawnKinds.grime = grimeOut(level.grime, w, h);
+  if (level.litter !== null) spawnKinds.litter = litterOut(level.litter, w, h);
+  const spawns: { [key: string]: JsonValue } = {};
+  for (const kind of Object.keys(spawnKinds).sort()) spawns[kind] = spawnKinds[kind] ?? null;
   const doc: JsonValue = {
     format: LEVEL_FORMAT,
     version: LEVEL_VERSION,
@@ -692,6 +861,57 @@ function audioIdIn(value: unknown, path: string, pattern: RegExp): string {
   return id;
 }
 
+function grimeIn(value: unknown, w: number, h: number): GrimeSpawn {
+  const g = obj(value, 'spawns.grime');
+  const cells = int(g.cells, 'spawns.grime.cells');
+  const max = layerLength('gutter', w, h);
+  if (cells < 0 || cells > max) fail('spawns.grime.cells', `must be 0..${max} (got ${cells})`);
+  const gutterCells = int(g.gutterCells, 'spawns.grime.gutterCells');
+  if (gutterCells < 0 || gutterCells > cells)
+    fail('spawns.grime.gutterCells', `must be 0..cells (got ${gutterCells})`);
+  const speckle = num(g.speckle, 'spawns.grime.speckle');
+  if (speckle < 0 || speckle > 1) fail('spawns.grime.speckle', `must be 0..1 (got ${speckle})`);
+  return { cells, gutterCells, speckle };
+}
+
+function litterIn(value: unknown, w: number, h: number): LitterSpawn {
+  const l = obj(value, 'spawns.litter');
+  const initial = int(l.initial, 'spawns.litter.initial');
+  if (initial < 0) fail('spawns.litter.initial', 'must not be negative');
+  const minSpacingM = num(l.minSpacingM, 'spawns.litter.minSpacingM');
+  if (minSpacingM <= 0) fail('spawns.litter.minSpacingM', 'must be positive');
+  let previous = '';
+  const table = arr(l.table, 'spawns.litter.table').map((v, i): LitterTableEntry => {
+    const path = `spawns.litter.table[${i}]`;
+    const e = obj(v, path);
+    const id = str(e.id, `${path}.id`);
+    if (i > 0 && !(id > previous)) fail(`${path}.id`, 'must be sorted and unique');
+    previous = id;
+    const weight = num(e.weight, `${path}.weight`);
+    if (weight <= 0) fail(`${path}.weight`, 'must be positive');
+    const requires = int(e.requires, `${path}.requires`);
+    if (requires < 0 || (requires & ~LITTER_PLACE_ALL_BITS) !== 0)
+      fail(`${path}.requires`, 'has unknown place bits');
+    return { id, weight, requires };
+  });
+  const n = litterFieldLength(w, h);
+  let places: Uint8Array;
+  let weights: Uint16Array;
+  try {
+    places = decodeBase64(str(l.places, 'spawns.litter.places'));
+    weights = decodeBase64Uint16(str(l.weights, 'spawns.litter.weights'));
+  } catch (error) {
+    throw new Error(`decodeLevel: spawns.litter: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (places.length !== n) fail('spawns.litter.places', `has ${places.length} entries, expected ${n}`);
+  if (weights.length !== n) fail('spawns.litter.weights', `has ${weights.length} entries, expected ${n}`);
+  for (let i = 0; i < n; i += 1) {
+    if (((places[i] ?? 0) & ~LITTER_PLACE_ALL_BITS) !== 0)
+      fail('spawns.litter.places', `has unknown place bits at sub-cell ${i}`);
+  }
+  return { initial, minSpacingM, table, places, weights };
+}
+
 /**
  * Decode compiled level JSON (the text, or the value `JSON.parse`/`fetch().json()` returned) into typed
  * arrays. Validates the format tag, version, every field's type, every layer's length and the value range
@@ -750,8 +970,11 @@ export function decodeLevel(input: unknown): Level {
   const spawnSrc = obj(root.spawns, 'spawns');
   const spawns: { [kind: string]: JsonValue[] } = {};
   for (const kind of Object.keys(spawnSrc)) {
+    if (TYPED_SPAWN_KINDS.includes(kind)) continue;
     spawns[kind] = arr(spawnSrc[kind], `spawns.${kind}`).map((v, i) => jsonIn(v, `spawns.${kind}[${i}]`));
   }
+  const grime = spawnSrc.grime === undefined ? null : grimeIn(spawnSrc.grime, w, h);
+  const litter = spawnSrc.litter === undefined ? null : litterIn(spawnSrc.litter, w, h);
   const player = obj(root.player, 'player');
   const audio: { music?: string; ambience?: string } = {};
   if (root.music !== undefined) audio.music = audioIdIn(root.music, 'music', MUSIC_ID_PATTERN);
@@ -801,6 +1024,8 @@ export function decodeLevel(input: unknown): Level {
       }),
     },
     spawns,
+    litter,
+    grime,
     schedules: arr(root.schedules, 'schedules').map((v, i) => jsonIn(v, `schedules[${i}]`)),
     weather: oneOf(root.weather, WEATHERS, 'weather'),
     timerS: num(root.timerS, 'timerS'),

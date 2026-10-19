@@ -21,6 +21,13 @@
 // Scene-layer actions (PAUSE, MAP, DEV_PANEL) never enter the sim frame: pausing and the map overlay are not
 // part of a replay. beginFrame() moves their edges into `sceneActions`, which holds them for that one frame.
 //
+// Menu actions (MENU_UP, MENU_DOWN, MENU_SELECT, MENU_BACK; SSP-071) never enter the sim frame either. They share
+// keys and buttons with driving (Space is BRUSH and MENU_SELECT, W/↑ THROTTLE and MENU_UP), so a device reports
+// both bits and each consumer takes its own. A menu scene (ShiftIntroScene, TallyScene) takes them once per tick
+// from its fixedUpdate with takeMenuEdges(): they stay latched in the device until taken, so a menu press is
+// never lost to a frame that ran no tick, and step(n) in test mode sees it on its first tick. Nothing takes them
+// while a shift runs, so a menu scene discards what is latched when it enters (takeMenuEdges() and drop it).
+//
 // src/input may import only the InputFrame module from src/sim (TECHNICAL_DESIGN §2.1,
 // tests/unit/inputImports.test.ts). The composition root (src/app/Game.ts) builds the devices, passes the tick
 // length and wires gamepad rumble to the event bus.
@@ -40,7 +47,8 @@ import {
 
 /**
  * Digital actions a device can report, as bits. BRUSH and HORN reach the sim as rising edges, SPRAY and
- * INTERACT as held buttons; MAP, PAUSE and DEV_PANEL are scene-layer only and never reach the sim.
+ * INTERACT as held buttons; MAP, PAUSE and DEV_PANEL are scene-layer only and never reach the sim, nor do the
+ * MENU_* bits (menu navigation, taken per tick by menu scenes through takeMenuEdges).
  */
 export const ACTION = {
   BRUSH: 1 << 0,
@@ -50,6 +58,10 @@ export const ACTION = {
   MAP: 1 << 4,
   PAUSE: 1 << 5,
   DEV_PANEL: 1 << 6,
+  MENU_UP: 1 << 7,
+  MENU_DOWN: 1 << 8,
+  MENU_SELECT: 1 << 9,
+  MENU_BACK: 1 << 10,
 } as const;
 export type Action = (typeof ACTION)[keyof typeof ACTION];
 
@@ -61,6 +73,21 @@ export const SIM_HELD_ACTIONS = ACTION.SPRAY | ACTION.INTERACT;
 
 /** Actions consumed by the scene layer: never in the sim frame (§13.1). */
 export const SCENE_ACTIONS = ACTION.MAP | ACTION.PAUSE | ACTION.DEV_PANEL;
+
+/** Menu navigation actions (SSP-071): taken per tick by menu scenes, never in the sim frame. */
+export const MENU_ACTIONS = ACTION.MENU_UP | ACTION.MENU_DOWN | ACTION.MENU_SELECT | ACTION.MENU_BACK;
+
+/** Every ACTION bit. */
+export const ALL_ACTIONS = SIM_EDGE_ACTIONS | SIM_HELD_ACTIONS | SCENE_ACTIONS | MENU_ACTIONS;
+
+/**
+ * Where menu scenes read their input: the rising edges of the MENU_ACTIONS bits latched since the last call
+ * (Actions implements it; tests pass a fake). Taking clears them.
+ */
+export type MenuInputSource = { takeMenuEdges(): number };
+
+/** A menu source that never reports anything (a Game whose input is not the keyboard and gamepad). */
+export const NO_MENU_INPUT: MenuInputSource = Object.freeze({ takeMenuEdges: () => 0 });
 
 /** See the quantisation rule at the top of this file. */
 export const QUANTISE_EPS = 1e-6;
@@ -103,7 +130,7 @@ export function quantiseUnit(value: number, max: number): number {
 }
 
 /** Merges devices into one InputFrame per tick. One per Game. */
-export class Actions {
+export class Actions implements MenuInputSource {
   private readonly devices: readonly InputDevice[];
   private readonly frame: InputFrame = createInputFrame();
   private sceneEdges = 0;
@@ -131,6 +158,17 @@ export class Actions {
       edges |= device.takeEdges(SCENE_ACTIONS);
     }
     this.sceneEdges = edges;
+  }
+
+  /**
+   * The menu edges (MENU_ACTIONS bits) every device latched since the last call, OR-ed; taking clears them. A
+   * menu scene calls it once per tick from fixedUpdate (and once on enter, to drop presses made before it showed).
+   */
+  takeMenuEdges(): number {
+    const devices = this.devices;
+    let edges = 0;
+    for (let i = 0; i < devices.length; i += 1) edges |= devices[i]?.takeEdges(MENU_ACTIONS) ?? 0;
+    return edges;
   }
 
   /**

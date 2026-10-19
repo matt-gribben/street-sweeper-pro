@@ -175,6 +175,8 @@ async function browserLike(search: string, options: ShiftSceneOptions = {}) {
     camera: () => ({ x: 0, y: 0, h: 31.5, leadX: 0, leadY: 0, pinned: false }),
     drawCalls: () => 6,
     renders: () => renders,
+    sceneId: () => scenes.top?.id ?? null,
+    sceneHistory: () => scenes.ids(),
   });
   if (hooks === null) throw new Error('hooks not installed');
   loop.start();
@@ -412,7 +414,48 @@ describe('ShiftScene', () => {
     input.steer = 0;
     for (let i = 10; i < SHIFT_TICKS + 30; i++) shift.fixedUpdate(input);
     expect(log.length).toBe(SHIFT_TICKS);
-    expect(shift.snapshot()?.tick).toBe(SHIFT_TICKS + 30);
+    // Bessie is at rest when the timer runs out (tick 14,399), so the shift ends on that tick (SSP-062).
+    expect(shift.snapshot()?.shift).toMatchObject({
+      phase: 'ended',
+      endReason: 'time_up',
+      endTick: SHIFT_TICKS - 1,
+    });
+  });
+
+  it('stops stepping the World once the shift has ended, so the tally sees the final state (SSP-071)', async () => {
+    const { scene: shift } = scene();
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    const input = createInputFrame();
+    input.throttle = 255;
+    let ticks = 0;
+    while (!shift.ended) {
+      shift.fixedUpdate(input);
+      ticks += 1;
+      if (ticks > SHIFT_TICKS + 1200) throw new Error('the shift never ended');
+    }
+    const end = shift.snapshot();
+    expect(end?.shift.phase).toBe('ended');
+    expect(end?.tick).toBe((end?.shift.endTick ?? -2) + 1);
+    for (let i = 0; i < 120; i++) shift.fixedUpdate(input);
+    expect(shift.snapshot()).toEqual(end);
+    expect(shift.level?.id).toBe(DEFAULT_DISTRICT);
+  });
+
+  it('enters with a preloaded level without fetching it (SSP-071)', async () => {
+    const c = context();
+    const shift = new ShiftScene(c.ctx, {
+      level,
+      levelSource: async () => {
+        throw new Error('fetched the level');
+      },
+    });
+    await shift.enter({ seed: 4, district: DEFAULT_DISTRICT });
+    expect(shift.level).toBe(level);
+    expect(c.loaded.sort()).toEqual(['actors', 'world']);
+    const other = new ShiftScene(context().ctx, { level });
+    await expect(other.enter({ seed: 4, district: 'district.high_street' })).rejects.toThrow(
+      /holds 'district.puddle_lane'/,
+    );
   });
 
   it('releases the world pass, the camera and the World on exit', async () => {
@@ -601,6 +644,7 @@ describe('__ssp hooks bound to the ShiftScene', () => {
       'litter',
       'npcs',
       'score',
+      'shift',
       'stars',
       'tick',
       'tidy',

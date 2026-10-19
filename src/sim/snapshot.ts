@@ -11,11 +11,14 @@
 //   M2 (SSP-065)  score, tidy, stars, hopper { lu, capacityLu, full }, water { units, capacity },
 //                 combo { chain, multiplier, timerTicks, bestChain }, litter { spawned, collected },
 //                 grime { initial, cleaned }, frontages [{ id, clean, cleanSwept }];
+//   M2 (SSP-071)  shift { phase, ticksRemaining, endReason, endTick }: the tally reads why the shift ended;
 //   M3 (SSP-080)  npcs [{ id, origin, x, y, heading, state, stateTicks }];
 //   M3 (SSP-078)  complaints.
 //
 // Load-time / test-time code: it allocates a fresh object per call and is never called per tick.
 import { NPC_IDS } from './entities.ts';
+import { ShiftEndReason } from './eventQueue.ts';
+import { ShiftPhase } from './shift.ts';
 import type { WorldView } from './world.ts';
 
 /** Bessie's part of a SimSnapshot: body centre and heading straight from the sim (not interpolated). */
@@ -82,6 +85,37 @@ export type SimNpcSnapshot = {
   readonly stateTicks: number;
 };
 
+/** The shift's phase (shift.ts ShiftPhase) as a JSON-friendly name. */
+export type SimShiftPhase = 'rollout' | 'running' | 'knock_off' | 'ended';
+
+/** Why the shift ended (EV.ShiftEnd's reason) as a JSON-friendly name; null while it runs. */
+export type SimShiftEndReason = 'time_up' | 'towed';
+
+/** The shift timer and its end (shift.ts, SSP-062; in the snapshot since SSP-071). */
+export type SimShiftSnapshot = {
+  readonly phase: SimShiftPhase;
+  /** Timer ticks left (14,400 until the timer starts, 0 from the knock-off). */
+  readonly ticksRemaining: number;
+  /** Why the shift ended, or null while it runs. */
+  readonly endReason: SimShiftEndReason | null;
+  /** The tick EV.ShiftEnd fired, or −1 while the shift runs. */
+  readonly endTick: number;
+};
+
+/** ShiftPhase → its snapshot name. */
+const SHIFT_PHASE_NAMES: { readonly [P in ShiftPhase]: SimShiftPhase } = {
+  [ShiftPhase.Rollout]: 'rollout',
+  [ShiftPhase.Running]: 'running',
+  [ShiftPhase.KnockOff]: 'knock_off',
+  [ShiftPhase.Ended]: 'ended',
+};
+
+/** ShiftEndReason → its snapshot name. */
+const SHIFT_END_REASON_NAMES: { readonly [R in ShiftEndReason]: SimShiftEndReason } = {
+  [ShiftEndReason.TimeUp]: 'time_up',
+  [ShiftEndReason.Towed]: 'towed',
+};
+
 /** What `__ssp.state()` reports about the sim: M1 fields, then the M2 sweeping state (SSP-065). */
 export type SimSnapshot = {
   /** Ticks completed since shift start (World.tick). */
@@ -103,6 +137,7 @@ export type SimSnapshot = {
   /** Grime cells laid at shift start and cleaned since. */
   readonly grime: { readonly initial: number; readonly cleaned: number };
   readonly frontages: readonly SimFrontageSnapshot[];
+  readonly shift: SimShiftSnapshot;
   /** Every live NPC, in store index order (SSP-080). */
   readonly npcs: readonly SimNpcSnapshot[];
 };
@@ -179,6 +214,12 @@ export function snapshotWorld(world: WorldView): SimSnapshot {
       cleaned: jsonNumber(world.dirt.cleanedCells, 'grime.cleaned'),
     },
     frontages,
+    shift: {
+      phase: SHIFT_PHASE_NAMES[world.shift.phase],
+      ticksRemaining: jsonNumber(world.shift.ticksRemaining, 'shift.ticksRemaining'),
+      endReason: world.shift.endReason === 0 ? null : SHIFT_END_REASON_NAMES[world.shift.endReason],
+      endTick: jsonNumber(world.shift.endTick, 'shift.endTick'),
+    },
     npcs,
   };
 }

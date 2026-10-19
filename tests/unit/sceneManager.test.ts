@@ -152,6 +152,27 @@ describe('SceneManager', () => {
     expect(scenes.ids()).toEqual(['week_map']);
   });
 
+  it('calls onEntered as each scene joins the stack, after enter() and before the old top exits (SSP-071)', async () => {
+    const log: string[] = [];
+    const scenes = new SceneManager();
+    scenes.onEntered = (scene) => log.push(`joined ${scene.id}`);
+    await scenes.push(new LogScene('title', log), SEED);
+    await scenes.replace(new LogScene('week', log, { id: 'week_map' }), SEED);
+    const broken = new LogScene('broken', log, { id: 'tally' });
+    broken.enterGate = Promise.reject(new Error('atlas failed'));
+    await expect(scenes.replace(broken, SEED)).rejects.toThrow('atlas failed');
+    expect(log).toEqual([
+      'title enter',
+      'title entered',
+      'joined title',
+      'week enter',
+      'week entered',
+      'joined week_map',
+      'title exit',
+      'broken enter',
+    ]);
+  });
+
   it('refuses a second transition while one is pending, and a scene already on the stack', async () => {
     const log: string[] = [];
     const scenes = new SceneManager();

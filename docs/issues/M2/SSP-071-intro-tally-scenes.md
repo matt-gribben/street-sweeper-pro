@@ -2,7 +2,7 @@
 id: SSP-071
 title: "Add ShiftIntroScene placeholder card and numbers-only TallyScene with retry"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:ui, area:gameplay, area:input, size:M, vertical-slice]

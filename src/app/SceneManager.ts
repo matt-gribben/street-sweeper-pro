@@ -93,6 +93,11 @@ export class SceneManager {
   private readonly updated: (Scene | null)[] = [];
   private updatedCount = 0;
   private transitioning = false;
+  /**
+   * Called with each scene as it joins the stack (after its enter() resolved, before the old top exits on a
+   * replace), or null. main.ts records the IDs for `__ssp.sceneHistory()` in test mode (SSP-071); it only observes.
+   */
+  onEntered: ((scene: Scene) => void) | null = null;
 
   /** The top scene, or null when the stack is empty. */
   get top(): Scene | null {
@@ -120,6 +125,7 @@ export class SceneManager {
     try {
       await scene.enter(params);
       this.stack.push(scene);
+      this.onEntered?.(scene);
     } finally {
       this.transitioning = false;
     }
@@ -132,6 +138,7 @@ export class SceneManager {
       await scene.enter(params);
       const old = this.stack.pop();
       this.stack.push(scene);
+      this.onEntered?.(scene);
       old?.exit();
     } finally {
       this.transitioning = false;

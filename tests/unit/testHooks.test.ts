@@ -13,12 +13,16 @@ import {
 } from '../../src/debug/testHooks.ts';
 
 /** A host that records calls: a tick counter, a camera and a 2x1 "frame" holding the tick. */
-function fakeHost(snapshot: TestHookHost['snapshot'] = () => null): TestHookHost & { calls: string[] } {
+function fakeHost(
+  snapshot: TestHookHost['snapshot'] = () => null,
+): TestHookHost & { calls: string[]; history: string[] } {
   let tick = 0;
+  const history: string[] = [];
   let camera: TestCamera = { x: 0, y: 0, h: 31.5, leadX: 0, leadY: 0, pinned: false };
   const calls: string[] = [];
   return {
     calls,
+    history,
     tick: () => tick,
     advance: (n) => {
       calls.push(`advance ${n}`);
@@ -36,6 +40,8 @@ function fakeHost(snapshot: TestHookHost['snapshot'] = () => null): TestHookHost
     drawCalls: () => 6,
     snapshot,
     renders: () => calls.filter((c) => c === 'render').length,
+    sceneId: () => history[history.length - 1] ?? null,
+    sceneHistory: () => history,
   };
 }
 
@@ -140,10 +146,28 @@ describe('installTestHooks with test=1', () => {
       'perfReset',
       'readFrame',
       'ready',
+      'scene',
+      'sceneHistory',
       'setCamera',
       'state',
       'step',
     ]);
+  });
+
+  it('scene() is the active scene ID and sceneHistory() a copy of every scene entered (SSP-071)', () => {
+    const target: TestHookTarget = {};
+    const host = fakeHost();
+    installTestHooks(target, '?test=1', host);
+    const api = target.__ssp;
+    expect(api?.scene()).toBeNull();
+    expect(api?.sceneHistory()).toEqual([]);
+    host.history.push('shift_intro', 'shift', 'tally', 'shift');
+    expect(api?.scene()).toBe('shift');
+    const history = api?.sceneHistory();
+    expect(history).toEqual(['shift_intro', 'shift', 'tally', 'shift']);
+    history?.push('mutated');
+    expect(host.history).toHaveLength(4);
+    expect(JSON.parse(JSON.stringify(history?.slice(0, 4)))).toEqual(host.history);
   });
 
   it('reports ready only after markReady()', () => {
@@ -183,6 +207,7 @@ describe('installTestHooks with test=1', () => {
       litter: { spawned: 130, collected: 9 },
       grime: { initial: 9000, cleaned: 450 },
       frontages: [{ id: 'frontage.test', clean: 0.5, cleanSwept: false }],
+      shift: { phase: 'running' as const, ticksRemaining: 14_000, endReason: null, endTick: -1 },
       npcs: [
         { id: 'npc.shopper', origin: 'ambient' as const, x: 3, y: 4, heading: 0, state: 0, stateTicks: 9 },
       ],

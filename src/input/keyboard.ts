@@ -13,7 +13,7 @@
 //   never sticks.
 // - Losing focus (window blur) releases every key: the browser sends no key-ups to a window it has left.
 
-import { ACTION, type InputDevice } from './actions.ts';
+import { ACTION, ALL_ACTIONS, type InputDevice } from './actions.ts';
 
 /** Time for digital steering to go from centre to full lock, in seconds. */
 export const STEER_RAMP_S = 0.08;
@@ -27,24 +27,29 @@ export const DRIVE = {
 } as const;
 
 /**
- * Default bindings (TECHNICAL_DESIGN §13.1, GDD §6.1): KeyboardEvent.code → one DRIVE or ACTION bit. Remapping
- * is M7 (SSP-236).
+ * Default bindings (TECHNICAL_DESIGN §13.1, GDD §6.1): KeyboardEvent.code → its DRIVE and ACTION bits. A key
+ * carries one driving or action bit, plus the menu bit of GDD §6.1's menu navigation where it has one (SSP-071):
+ * W/↑ and S/↓ move the menu focus, Space and Enter select, Esc and Backspace go back. Menu bits never reach the sim
+ * (actions.ts). Remapping is M7 (SSP-236); the menu keys stay fixed.
  */
 export const KEY_BINDINGS: ReadonlyMap<string, number> = new Map<string, number>([
-  ['KeyW', DRIVE.THROTTLE],
-  ['ArrowUp', DRIVE.THROTTLE],
-  ['KeyS', DRIVE.BRAKE],
-  ['ArrowDown', DRIVE.BRAKE],
+  ['KeyW', DRIVE.THROTTLE | ACTION.MENU_UP],
+  ['ArrowUp', DRIVE.THROTTLE | ACTION.MENU_UP],
+  ['KeyS', DRIVE.BRAKE | ACTION.MENU_DOWN],
+  ['ArrowDown', DRIVE.BRAKE | ACTION.MENU_DOWN],
   ['KeyA', DRIVE.STEER_LEFT],
   ['ArrowLeft', DRIVE.STEER_LEFT],
   ['KeyD', DRIVE.STEER_RIGHT],
   ['ArrowRight', DRIVE.STEER_RIGHT],
-  ['Space', ACTION.BRUSH],
+  ['Space', ACTION.BRUSH | ACTION.MENU_SELECT],
+  ['Enter', ACTION.MENU_SELECT],
+  ['NumpadEnter', ACTION.MENU_SELECT],
   ['ShiftLeft', ACTION.SPRAY],
   ['KeyH', ACTION.HORN],
   ['KeyE', ACTION.INTERACT],
   ['Tab', ACTION.MAP],
-  ['Escape', ACTION.PAUSE],
+  ['Escape', ACTION.PAUSE | ACTION.MENU_BACK],
+  ['Backspace', ACTION.MENU_BACK],
   ['KeyP', ACTION.PAUSE],
   ['F1', ACTION.DEV_PANEL],
 ]);
@@ -66,9 +71,6 @@ export type KeyEventTarget = {
   removeEventListener(type: 'keydown' | 'keyup', listener: (event: KeyboardEvent) => void): void;
   removeEventListener(type: 'blur', listener: () => void): void;
 };
-
-const ALL_ACTIONS =
-  ACTION.BRUSH | ACTION.SPRAY | ACTION.HORN | ACTION.INTERACT | ACTION.MAP | ACTION.PAUSE | ACTION.DEV_PANEL;
 
 /** The keyboard as an InputDevice. */
 export class KeyboardDevice implements InputDevice {

@@ -132,6 +132,12 @@ export type ReplaySource = Pick<
 >;
 
 /**
+ * The shift the panel edits and saves: a ShiftScene, or the shift flow's stand-in for whichever ShiftScene is
+ * running (src/app/shiftFlow.ts devShift, SSP-071), so tuning edits carry over into Try Again.
+ */
+export type DevShift = ReplaySource & Pick<ShiftScene, 'tuning' | 'setTuning'>;
+
+/**
  * Save replay's verdict: 'ok'; 'empty' (nothing to save); or 'refused', with the reasons, when the file would
  * not be a faithful corpus replay. A refused save goes ahead only on a second click.
  */
@@ -221,8 +227,8 @@ export function shiftReadout(shift: ReplaySource & Pick<ShiftScene, 'tuning'>, t
 export type DevPanelHost = {
   /** Camera settings the M0 controls edit in place (Game.drive). */
   readonly drive: DriveSettings;
-  /** The drive-only shift, or null in the spike scenes (no tuning or replay section then). */
-  readonly shift: ShiftScene | null;
+  /** The shift (the flow's stand-in, SSP-071), or null in the spike scenes (no tuning or replay section then). */
+  readonly shift: DevShift | null;
   /** Renderer and scene status lines (camera, `draw calls N`, spike actors). */
   status(): string;
 };

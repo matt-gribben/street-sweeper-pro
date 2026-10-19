@@ -11,9 +11,11 @@
 //   M2 (SSP-065)  score, tidy, stars, hopper { lu, capacityLu, full }, water { units, capacity },
 //                 combo { chain, multiplier, timerTicks, bestChain }, litter { spawned, collected },
 //                 grime { initial, cleaned }, frontages [{ id, clean, cleanSwept }];
+//   M3 (SSP-080)  npcs [{ id, origin, x, y, heading, state, stateTicks }];
 //   M3 (SSP-078)  complaints.
 //
 // Load-time / test-time code: it allocates a fresh object per call and is never called per tick.
+import { NPC_IDS } from './entities.ts';
 import type { WorldView } from './world.ts';
 
 /** Bessie's part of a SimSnapshot: body centre and heading straight from the sim (not interpolated). */
@@ -60,6 +62,26 @@ export type SimFrontageSnapshot = {
   readonly cleanSwept: boolean;
 };
 
+/** Where an NPC came from (npc/store.ts NpcOrigin), by name. */
+export const NPC_ORIGIN_NAMES = ['ambient', 'named', 'perch', 'flock', 'companion'] as const;
+export type NpcOriginName = (typeof NPC_ORIGIN_NAMES)[number];
+
+/** One live NPC (npc/store.ts), in store index order. */
+export type SimNpcSnapshot = {
+  /** Its entities.json id (a dog walker's dog carries the walker's id, with origin `companion`). */
+  readonly id: string;
+  readonly origin: NpcOriginName;
+  /** Position, sim metres (+x east, +y south). */
+  readonly x: number;
+  readonly y: number;
+  /** Heading in radians, 0 = north, clockwise. */
+  readonly heading: number;
+  /** Behaviour state id (the kind's behaviour module's states). */
+  readonly state: number;
+  /** Ticks spent in that state, this tick included. */
+  readonly stateTicks: number;
+};
+
 /** What `__ssp.state()` reports about the sim: M1 fields, then the M2 sweeping state (SSP-065). */
 export type SimSnapshot = {
   /** Ticks completed since shift start (World.tick). */
@@ -81,6 +103,8 @@ export type SimSnapshot = {
   /** Grime cells laid at shift start and cleaned since. */
   readonly grime: { readonly initial: number; readonly cleaned: number };
   readonly frontages: readonly SimFrontageSnapshot[];
+  /** Every live NPC, in store index order (SSP-080). */
+  readonly npcs: readonly SimNpcSnapshot[];
 };
 
 /** `value` as a JSON-safe number: −0 becomes 0; NaN and ±Infinity throw, naming `field`. */
@@ -100,6 +124,23 @@ export function snapshotWorld(world: WorldView): SimSnapshot {
       id: tidy.frontageIds[z] as string,
       clean: jsonNumber(tidy.frontageClean[z] as number, `frontages[${z}].clean`),
       cleanSwept: tidy.cleanSwept[z] === 1,
+    });
+  }
+  const npc = world.npc;
+  const npcs: SimNpcSnapshot[] = [];
+  for (let i = 0; i < npc.count; i += 1) {
+    const id = NPC_IDS[npc.kind[i] as number];
+    const origin = NPC_ORIGIN_NAMES[npc.origin[i] as number];
+    if (id === undefined || origin === undefined)
+      throw new Error(`SimSnapshot: npcs[${i}] has a bad kind or origin`);
+    npcs.push({
+      id,
+      origin,
+      x: jsonNumber(npc.x[i] as number, `npcs[${i}].x`),
+      y: jsonNumber(npc.y[i] as number, `npcs[${i}].y`),
+      heading: jsonNumber(npc.heading[i] as number, `npcs[${i}].heading`),
+      state: npc.state[i] as number,
+      stateTicks: npc.stateTicks[i] as number,
     });
   }
   return {
@@ -138,5 +179,6 @@ export function snapshotWorld(world: WorldView): SimSnapshot {
       cleaned: jsonNumber(world.dirt.cleanedCells, 'grime.cleaned'),
     },
     frontages,
+    npcs,
   };
 }

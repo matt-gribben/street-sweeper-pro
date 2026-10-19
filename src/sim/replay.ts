@@ -417,6 +417,14 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     pledgeMet, and its zone counters grimeInitial, grimeCleaned, litterSpawned, litterCollected
  *   I shift.phase, ticksRun, timerStartTick, ticksRemaining, knockOffTick, endReason, endTick, dumpState,
  *     dumpSite, holdTicks; F shift.drainLuDumpedAtStart; B shift.dumpNeedsRelease; I shift.dumpsCompleted
+ *   SSP-080 appends the NPC state (npc/):
+ *   I npc.count, npcsAdded, npcsRemoved, freeCount, then freeSlots[0..freeCount), then slotGen of every slot;
+ *     then per NPC: I kind, state, stateTicks; F x, y, prevX, prevY, heading, speed; I targetNode, swap,
+ *     flags; F radius; I origin, group, link; F seenDistM, pathGapM, pathEtaS; I perceivedTick, handleSlot
+ *   I npcAi.rng a, b, c, counter; I stimuli.count, stimuli.delivered, then per queued stimulus: I type,
+ *     target; F x, y, radiusM
+ *   I spawner.perchPending, flocksPlaced, ambientSpawned, ambientRetired, ambientCount, then namedRemaining
+ *     per named NPC, flockRemaining per flock spec and perchUsed per wall perch
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -470,6 +478,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbDirt(hasher, world);
   absorbScoring(hasher, world);
   absorbShift(hasher, world);
+  absorbNpcs(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -492,7 +501,7 @@ function mixWords(hasher: StateHasher, n: number): void {
   hasher.state[0] = h;
 }
 
-/** Words a section may write after its last flush check (the longest per-entity record is 19). */
+/** Words a section may write after its last flush check (the longest per-entity record is 21, an NPC). */
 const SECTION_SLACK = 32;
 const FLUSH_AT = HASH_WORDS - SECTION_SLACK;
 
@@ -755,6 +764,114 @@ function absorbShift(hasher: StateHasher, world: World): void {
   w[11] = sh.dumpNeedsRelease ? 1 : 0;
   w[12] = sh.dumpsCompleted | 0;
   mixWords(hasher, 13);
+}
+
+function absorbNpcs(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const q = HASH_QUANTUM;
+  const npc = world.npc;
+  const n = npc.count;
+  w[0] = n | 0;
+  w[1] = npc.npcsAdded | 0;
+  w[2] = npc.npcsRemoved | 0;
+  w[3] = npc.freeCount | 0;
+  let k = 4;
+  for (let s = 0; s < npc.freeCount; s += 1) {
+    w[k] = (npc.freeSlots[s] as number) | 0;
+    k += 1;
+  }
+  for (let s = 0; s < npc.capacity; s += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (npc.slotGen[s] as number) | 0;
+    k += 1;
+  }
+  for (let i = 0; i < n; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (npc.kind[i] as number) | 0;
+    w[k + 1] = (npc.state[i] as number) | 0;
+    w[k + 2] = (npc.stateTicks[i] as number) | 0;
+    w[k + 3] = Math.round((npc.x[i] as number) * q) | 0;
+    w[k + 4] = Math.round((npc.y[i] as number) * q) | 0;
+    w[k + 5] = Math.round((npc.prevX[i] as number) * q) | 0;
+    w[k + 6] = Math.round((npc.prevY[i] as number) * q) | 0;
+    w[k + 7] = Math.round((npc.heading[i] as number) * q) | 0;
+    w[k + 8] = Math.round((npc.speed[i] as number) * q) | 0;
+    w[k + 9] = (npc.targetNode[i] as number) | 0;
+    w[k + 10] = (npc.swap[i] as number) | 0;
+    w[k + 11] = (npc.flags[i] as number) | 0;
+    w[k + 12] = Math.round((npc.radius[i] as number) * q) | 0;
+    w[k + 13] = (npc.origin[i] as number) | 0;
+    w[k + 14] = (npc.group[i] as number) | 0;
+    w[k + 15] = (npc.link[i] as number) | 0;
+    w[k + 16] = Math.round((npc.seenDistM[i] as number) * q) | 0;
+    w[k + 17] = Math.round((npc.pathGapM[i] as number) * q) | 0;
+    w[k + 18] = Math.round((npc.pathEtaS[i] as number) * q) | 0;
+    w[k + 19] = (npc.perceivedTick[i] as number) | 0;
+    w[k + 20] = (npc.handleSlot[i] as number) | 0;
+    k += 21;
+  }
+  mixWords(hasher, k);
+  const ai = world.npcAi;
+  const r = ai.rng;
+  const st = ai.stimuli;
+  w[0] = r.a | 0;
+  w[1] = r.b | 0;
+  w[2] = r.c | 0;
+  w[3] = r.counter | 0;
+  w[4] = st.count | 0;
+  w[5] = st.delivered | 0;
+  k = 6;
+  for (let s = 0; s < st.count; s += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (st.type[s] as number) | 0;
+    w[k + 1] = (st.target[s] as number) | 0;
+    w[k + 2] = Math.round((st.x[s] as number) * q) | 0;
+    w[k + 3] = Math.round((st.y[s] as number) * q) | 0;
+    w[k + 4] = Math.round((st.radiusM[s] as number) * q) | 0;
+    k += 5;
+  }
+  mixWords(hasher, k);
+  const sp = ai.spawner;
+  w[0] = sp.perchPending | 0;
+  w[1] = sp.flocksPlaced | 0;
+  w[2] = sp.ambientSpawned | 0;
+  w[3] = sp.ambientRetired | 0;
+  w[4] = sp.ambientCount | 0;
+  k = 5;
+  for (let s = 0; s < sp.namedCount; s += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (sp.namedRemaining[s] as number) | 0;
+    k += 1;
+  }
+  for (let s = 0; s < sp.flockSpecCount; s += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (sp.flockRemaining[s] as number) | 0;
+    k += 1;
+  }
+  for (let s = 0; s < sp.perchCount; s += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (sp.perchUsed[s] as number) | 0;
+    k += 1;
+  }
+  mixWords(hasher, k);
 }
 
 /** The hasher's current value as a uint32. */

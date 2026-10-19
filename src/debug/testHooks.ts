@@ -23,7 +23,8 @@
 //   step(n)       advance n ticks synchronously (also while frozen), then render exactly once;
 //   state()       a JSON-safe snapshot: in a shift, the World's SimSnapshot (src/sim/snapshot.ts: tick,
 //                 bessie { x, y, heading, speed }, hp; since SSP-065 score, tidy, stars, hopper, water, combo,
-//                 litter and grime counts and the frontages' clean %) plus the camera (focus x, y, height h,
+//                 litter and grime counts and the frontages' clean %; since SSP-080 the live NPCs' ids,
+//                 origins, positions, headings and states) plus the camera (focus x, y, height h,
 //                 look-ahead offset leadX, leadY, pinned); in a scene without a sim, the loop's tick count plus
 //                 the camera;
 //   readFrame()   the raw W×270 palette-mapped RGBA frame, row 0 at the top (Renderer.readFrame);

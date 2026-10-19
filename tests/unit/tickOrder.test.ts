@@ -1,4 +1,4 @@
-// The canonical tick order (TECHNICAL_DESIGN §5.2) as the systems are actually called (SSP-065). The phase
+// The canonical tick order (TECHNICAL_DESIGN §5.2) as the systems are actually called (SSP-065; SSP-080 phase 7). The phase
 // trace in tests/unit/world.test.ts proves the eleven phase slots run in order; this file wraps every system
 // function World.step calls, records each call, and checks the full per-tick sequence, so a system that moved
 // to another phase (or swapped places inside one) fails here. Changing this order changes replay hashes and
@@ -63,6 +63,24 @@ vi.mock('../../src/sim/water.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['stepWater', 'cleanStainsInCone']),
 );
 vi.mock('../../src/sim/dirt.ts', async (importOriginal) => wrap(await importOriginal(), ['stepDirt']));
+vi.mock('../../src/sim/npc/store.ts', async (importOriginal) =>
+  wrap(await importOriginal(), ['beginNpcTick']),
+);
+vi.mock('../../src/sim/viewRect.ts', async (importOriginal) =>
+  wrap(await importOriginal(), ['updateViewRect']),
+);
+vi.mock('../../src/sim/npc/spawner.ts', async (importOriginal) =>
+  wrap(await importOriginal(), ['stepNpcSpawner']),
+);
+vi.mock('../../src/sim/npc/stimuli.ts', async (importOriginal) =>
+  wrap(await importOriginal(), ['deliverStimuli']),
+);
+vi.mock('../../src/sim/npc/perception.ts', async (importOriginal) =>
+  wrap(await importOriginal(), ['perceiveNpcs']),
+);
+vi.mock('../../src/sim/npc/npcAi.ts', async (importOriginal) =>
+  wrap(await importOriginal(), ['tickNpcBehaviours']),
+);
 vi.mock('../../src/sim/scoring.ts', async (importOriginal) => wrap(await importOriginal(), ['stepScoring']));
 vi.mock('../../src/sim/tidy.ts', async (importOriginal) => wrap(await importOriginal(), ['stepTidy']));
 
@@ -92,6 +110,12 @@ const ONE_TICK = [
   'stepDirt',
   'cleanStainsInCone',
   'phase 7',
+  'beginNpcTick',
+  'updateViewRect',
+  'stepNpcSpawner',
+  'deliverStimuli',
+  'perceiveNpcs',
+  'tickNpcBehaviours',
   'phase 8',
   'phase 9',
   'stepScoring',
@@ -103,6 +127,24 @@ const ONE_TICK = [
 ];
 
 describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065)', () => {
+  it('runs phase 7 (NPC AI, SSP-080) after phase 6 (dirt) and before phase 8 (traffic)', () => {
+    const at = (name: string): number => ONE_TICK.indexOf(name);
+    const npcSystems = [
+      'beginNpcTick',
+      'updateViewRect',
+      'stepNpcSpawner',
+      'deliverStimuli',
+      'perceiveNpcs',
+      'tickNpcBehaviours',
+    ];
+    expect(at('phase 6')).toBeLessThan(at('phase 7'));
+    expect(at('cleanStainsInCone')).toBeLessThan(at('phase 7')); // the last dirt system
+    for (const name of npcSystems) {
+      expect(at(name), name).toBeGreaterThan(at('phase 7'));
+      expect(at(name), name).toBeLessThan(at('phase 8'));
+    }
+  });
+
   it('calls every system of phases 1–11 in the documented order, every tick', () => {
     const level = decodeLevel(
       readFileSync(

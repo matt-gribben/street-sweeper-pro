@@ -1,10 +1,13 @@
 // SSP-046: the JSON-safe SimSnapshot that `__ssp.state()` returns in a shift (TECHNICAL_DESIGN §18.5); SSP-065
-// adds the M2 sweeping state (score, Tidy %, stars, hopper, water, combo, litter and grime counts, frontages).
+// adds the M2 sweeping state (score, Tidy %, stars, hopper, water, combo, litter and grime counts, frontages);
+// SSP-080 the live NPCs.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { NPC_IDS } from '../../src/sim/entities.ts';
 import { BUTTON, createInputFrame, PRESSED } from '../../src/sim/inputFrame.ts';
 import { decodeLevel } from '../../src/sim/map.ts';
+import { addNpcAt, NpcOrigin, setNpcState } from '../../src/sim/npc/store.ts';
 import { snapshotWorld } from '../../src/sim/snapshot.ts';
 import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import { createWorld } from '../../src/sim/world.ts';
@@ -57,6 +60,7 @@ describe('snapshotWorld', () => {
       'litter',
       'grime',
       'frontages',
+      'npcs',
     ]);
     expect(Object.keys(snap.bessie)).toEqual(['x', 'y', 'heading', 'speed']);
     expect(Object.keys(snap.hopper)).toEqual(['lu', 'capacityLu', 'full']);
@@ -132,5 +136,25 @@ describe('snapshotWorld', () => {
     world.vehicle.headingRad = 0;
     world.vehicle.hp = Number.POSITIVE_INFINITY;
     expect(() => snapshotWorld(world)).toThrow(/hp is Infinity/);
+  });
+
+  it('lists every live NPC with its id, origin, position, heading and state (SSP-080)', () => {
+    const world = createWorld(puddleLane(), 1, DEFAULT_TUNING);
+    expect(snapshotWorld(world).npcs).toEqual([]);
+    const cat = NPC_IDS.indexOf('npc.cat');
+    const walker = NPC_IDS.indexOf('npc.dog_walker');
+    addNpcAt(world.npc, cat, NpcOrigin.Perch, 12.5, 30.25);
+    const d = addNpcAt(world.npc, walker, NpcOrigin.Companion, 4, 5);
+    world.npc.heading[d] = 1.5;
+    setNpcState(world.npc, d, 3);
+    world.npc.stateTicks[d] = 17;
+    const snap = snapshotWorld(world);
+    expect(snap.npcs).toEqual([
+      { id: 'npc.cat', origin: 'perch', x: 12.5, y: 30.25, heading: 0, state: 0, stateTicks: 0 },
+      { id: 'npc.dog_walker', origin: 'companion', x: 4, y: 5, heading: 1.5, state: 3, stateTicks: 17 },
+    ]);
+    expect(JSON.parse(JSON.stringify(snap))).toEqual(snap);
+    world.npc.x[0] = Number.NaN;
+    expect(() => snapshotWorld(world)).toThrow(/npcs\[0\]\.x is NaN/);
   });
 });

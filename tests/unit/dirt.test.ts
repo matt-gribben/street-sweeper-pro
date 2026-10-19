@@ -122,21 +122,28 @@ describe('initial grime on Puddle Lane (LEVEL_DESIGN §9.2)', () => {
     const L = PUDDLE_LANE.layers;
     const solidProps = PUDDLE_LANE.props.filter((p) => (STATIC_PROP_IDS as readonly string[]).includes(p.id));
     expect(solidProps.length).toBeGreaterThan(0);
+    // Violations are collected and asserted once: one `expect` per grime cell (about 600k calls over three
+    // seeds) took 2.7 s alone and timed out under parallel load, with no extra coverage.
+    const bad: string[] = [];
+    const ban = [Ground.Grass, Ground.Apron, Ground.Void, Ground.Water, Ground.Sand] as readonly number[];
     for (const seed of SEEDS.slice(0, 3)) {
       const dirt = laid(PUDDLE_LANE, seed);
       for (let i = 0; i < dirt.mask.length; i++) {
         const v = dirt.mask[i] as number;
         if (v === 0) continue;
         const cell = L.gutter[i] as number;
-        expect(cell & GRIME_CELL.OPEN).not.toBe(0);
+        if ((cell & GRIME_CELL.OPEN) === 0) bad.push(`seed ${seed}: grime cell ${i} is not open`);
         // The gutter bit is set exactly on gutter-band cells.
-        expect((v & GRIME_GUTTER_BIT) !== 0).toBe((cell & GRIME_CELL.GUTTER) !== 0);
+        if (((v & GRIME_GUTTER_BIT) !== 0) !== ((cell & GRIME_CELL.GUTTER) !== 0)) {
+          bad.push(`seed ${seed}: grime cell ${i} gutter bit disagrees with the gutter band`);
+        }
         const { x, y } = cellCentre(i, dirt.maskW);
         const t = Math.floor(y / TILE_M) * w + Math.floor(x / TILE_M);
         const ground = L.ground[t] as number;
-        expect([Ground.Grass, Ground.Apron, Ground.Void, Ground.Water, Ground.Sand]).not.toContain(ground);
-        expect(L.route[t]).toBe(1);
-        expect((L.collide[t] as number) & COLLIDE.SOLID).toBe(0);
+        if (ban.includes(ground)) bad.push(`seed ${seed}: grime cell ${i} on banned ground ${ground}`);
+        if (L.route[t] !== 1) bad.push(`seed ${seed}: grime cell ${i} off route`);
+        if (((L.collide[t] as number) & COLLIDE.SOLID) !== 0)
+          bad.push(`seed ${seed}: grime cell ${i} on a solid tile`);
         for (const p of solidProps) {
           const fp = DEFAULT_TUNING.propFootprints.shapes[p.id as StaticPropId];
           const { lx, ly } = toLocal({ xM: p.x, yM: p.y, headingRad: p.rot }, x, y);
@@ -144,10 +151,11 @@ describe('initial grime on Puddle Lane (LEVEL_DESIGN §9.2)', () => {
             fp.shape === 'circle'
               ? lx * lx + ly * ly < fp.radiusM * fp.radiusM
               : Math.abs(lx) < fp.widthM / 2 && Math.abs(ly) < fp.lengthM / 2;
-          expect(inside, `${p.id} at (${p.x}, ${p.y}) covers grime cell ${i}`).toBe(false);
+          if (inside) bad.push(`seed ${seed}: ${p.id} at (${p.x}, ${p.y}) covers grime cell ${i}`);
         }
       }
     }
+    expect(bad).toEqual([]);
   });
 
   it('takes each part by (score desc, index asc)', () => {

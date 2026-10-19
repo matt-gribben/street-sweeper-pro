@@ -27,7 +27,8 @@
 //                       → deliverStimuli → perceiveNpcs (index mod 4 == tick mod 4) → tickNpcBehaviours
 //                       (npc/, SSP-080; the behaviours steer with npc/steering.ts, SSP-081); the litterbug's
 //                       Caught! emits EV.Caught and flags the tick's honk here (markHornCaught, SSP-084) →
-//                       updateZebraOccupancy (world.zebras, SSP-081)
+//                       stepZebras (npc/zebraOffence.ts: updateZebraOccupancy, world.zebras, SSP-081; then
+//                       Bessie driving onto an occupied zebra, a penalty fact, SSP-085)
 //   8 Traffic           stepTraffic (traffic.ts, SSP-089): the bus schedule, every vehicle's drive along the
 //                       lane graph (car following behind Bessie and vehicles, zebra, junction and bus stops,
 //                       the Queue/Honk/RoadRage block timer: EV.CarHorn, the Road Rage penalty fact), despawns
@@ -119,15 +120,10 @@ import { createNpcAi, type NpcAi, tickNpcBehaviours } from './npc/npcAi.ts';
 import { perceiveNpcs } from './npc/perception.ts';
 import { setReactionTuning, stepReactions } from './npc/reactions.ts';
 import { setNpcSpawnerTuning, stepNpcSpawner } from './npc/spawner.ts';
-import {
-  createZebras,
-  setSteeringTuning,
-  updateZebraOccupancy,
-  type Zebras,
-  type ZebrasView,
-} from './npc/steering.ts';
+import { createZebras, setSteeringTuning, type Zebras, type ZebrasView } from './npc/steering.ts';
 import { deliverStimuli } from './npc/stimuli.ts';
 import { beginNpcTick, createNpcStore, type NpcStore, type NpcStoreView } from './npc/store.ts';
+import { stepZebras } from './npc/zebraOffence.ts';
 import { createPenaltyHook, createPenaltyLog, type PenaltyLog, type PenaltyLogView } from './penalties.ts';
 import { createStream, type Sfc32 } from './rng.ts';
 import { createScoring, type Scoring, type ScoringView, setScoringTuning, stepScoring } from './scoring.ts';
@@ -278,8 +274,9 @@ export type World = {
    */
   readonly npcAi: NpcAi;
   /**
-   * Per-zebra occupancy (npc/steering.ts, SSP-081): every site.zebra and how many NPCs stand on it, counted at
-   * the end of phase 7. A zebra is OCCUPIED while its count is above 0 (traffic, SSP-089; the penalty, SSP-085).
+   * Per-zebra occupancy (npc/steering.ts, SSP-081) and the occupied-zebra offence state (npc/zebraOffence.ts,
+   * SSP-085): every site.zebra and how many NPCs stand on it, counted at the end of phase 7, and whether
+   * Bessie is on it. A zebra is OCCUPIED while its count is above 0 (traffic, SSP-089; the penalty, SSP-085).
    */
   readonly zebras: Zebras;
   /**
@@ -491,7 +488,7 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   setTidyTuning(world.tidy, tuning, world.dirt, world.litter);
   setNpcSpawnerTuning(world, tuning, world.npcAi.entities);
   setComplaintsTuning(world.complaints, tuning);
-  setSteeringTuning(world.npcAi.steering, world.level, world.staticGrid, tuning);
+  setSteeringTuning(world.npcAi.steering, world.level, world.staticGrid, tuning, world.npcAi.entities);
   setBodiesTuning(world.bodies, tuning, world.npcAi.entities);
   setReactionTuning(world.npcAi.reactions, tuning);
   setTrafficTuning(world.traffic, tuning);
@@ -725,7 +722,9 @@ function phaseDirt(world: World): void {
  *   5. deliverStimuli: the queued stimuli, in push order.
  *   6. perceiveNpcs: the perception query of every NPC with index mod 4 == tick mod 4.
  *   7. tickNpcBehaviours: each NPC's behaviour tick, in index order (behaviours steer with npc/steering.ts).
- *   8. updateZebraOccupancy: how many NPCs stand on each zebra (world.zebras), for phases 8 and 9.
+ *   8. stepZebras (npc/zebraOffence.ts): updateZebraOccupancy, how many NPCs stand on each zebra (world.zebras),
+ *      for phases 8 and 9; then the occupied-zebra offence (SSP-085): Bessie's OBB entering an occupied zebra
+ *      records a penalty fact (phase 9 applies it), once per entry.
  * The litterbug behaviour (SSP-084) emits EV.Caught for a honk that lands its Caught! and flags that honk with
  * markHornCaught (complaints.ts, SSP-078), so phase 9 scores the bonus and does not count the honk toward horn
  * spam.
@@ -738,7 +737,7 @@ function phaseNpc(world: World): void {
   deliverStimuli(world);
   perceiveNpcs(world);
   tickNpcBehaviours(world);
-  updateZebraOccupancy(world);
+  stepZebras(world);
 }
 
 /**

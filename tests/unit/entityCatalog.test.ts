@@ -318,6 +318,14 @@ const RULE_MIRRORS: readonly (readonly [string, string, string, string | null, R
   ['npc.businessman', 'noticeM', '### 6.2 Behaviours', 'npc.businessman', /until (\d+) m/, 1],
   ['npc.postie', 'doorStopS', '### 6.2 Behaviours', 'npc.postie', /stops at doors for (\d+) s/, 1],
   [
+    'npc.mum_pushchair',
+    'footprintRadiusM',
+    '### 6.2 Behaviours',
+    'npc.mum_pushchair',
+    /footprint is a circle of radius (\d+\.\d+) m/,
+    1,
+  ],
+  [
     'npc.cat',
     'dartMinM',
     '### 7.2 Cat (`npc.cat`)',

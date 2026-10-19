@@ -306,7 +306,11 @@ const NPC_RULES = {
   },
   /** Ignores Bessie until noticeM. */
   'npc.businessman': { noticeM: 'positive' },
-  'npc.mum_pushchair': {},
+  /**
+   * Her contact and separation footprint (§6.2: the pushchair widens it) is a circle of footprintRadiusM,
+   * centred on her cell, in place of the human circle (proposed in SSP-085, owner to review).
+   */
+  'npc.mum_pushchair': { footprintRadiusM: 'positive' },
   /** Stops at doors for doorStopS. */
   'npc.postie': { doorStopS: 'positive' },
   'npc.market_trader': {},

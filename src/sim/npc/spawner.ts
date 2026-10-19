@@ -35,9 +35,10 @@
 // not yet spawned and every cat and bird not yet placed, so the store's NPC_CAPACITY (80, flock birds counted
 // one by one) is never what stops an authored NPC; nothing ever pushes the store past its capacity.
 //
-// "Touches the view" is circleTouchesViewRect on the NPC's radius (tuning.json → streetLife.npcRadius:
-// humanM for people, catM for cats and pigeons, which have no radius of their own, dogM for dogs); spawn
-// points are tested with the largest of them. world.viewRect already holds LEVEL_DESIGN §9.4's 4 m margin.
+// "Touches the view" is circleTouchesViewRect on the NPC's radius (footprint.ts: tuning.json →
+// streetLife.npcRadius humanM for people, the mum's wider pushchair footprint from entities.json since SSP-085,
+// catM for cats and pigeons, which have no radius of their own, dogM for dogs); spawn points are tested with
+// the largest of them. world.viewRect already holds LEVEL_DESIGN §9.4's 4 m margin.
 //
 // Hot path: stepNpcSpawner allocates nothing and passes no doubles across calls.
 import { SIM_HZ } from '../constants.ts';
@@ -48,6 +49,7 @@ import type { Tuning } from '../tuning.ts';
 import { circleTouchesViewRect } from '../viewRect.ts';
 import type { World } from '../world.ts';
 import type { Behaviour } from './behaviour.ts';
+import { largestNpcRadiusM, npcKindRadiusM } from './footprint.ts';
 import {
   addNpc,
   NO_NPC_HANDLE,
@@ -141,11 +143,8 @@ function kindIndex(id: string, where: string): number {
 /** Fill the per-kind radii and the spawn-point and flock radii from the tuning. */
 function fillRadii(sp: NpcSpawner, tuning: Tuning, entities: Entities): void {
   const r = tuning.streetLife.npcRadius;
-  for (let k = 0; k < NPC_IDS.length; k += 1) {
-    const behaviour = entities.npcs[NPC_IDS[k] as (typeof NPC_IDS)[number]].behaviour;
-    sp.radiusByKind[k] = behaviour === 'cat' || behaviour === 'pigeon' ? r.catM : r.humanM;
-  }
-  sp.radii[0] = Math.max(r.humanM, r.catM, r.dogM);
+  for (let k = 0; k < NPC_IDS.length; k += 1) sp.radiusByKind[k] = npcKindRadiusM(tuning, entities, k);
+  sp.radii[0] = largestNpcRadiusM(tuning, entities);
   sp.radii[1] = r.dogM;
   sp.radii[2] = FLOCK_SPREAD_M * Math.SQRT2 + r.catM;
 }

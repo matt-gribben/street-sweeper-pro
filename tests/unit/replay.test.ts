@@ -279,6 +279,9 @@ describe('state hash', () => {
     world.npcAi.reactions.hits = 1;
     world.npcAi.reactions.bumps = 2;
     world.zebras.occupancy[0] = 1;
+    // Bessie on that zebra after one occupied-zebra offence (SSP-085).
+    world.zebras.bessieOn[0] = 1;
+    world.zebras.offences = 1;
     const k = pushStimulus(world.npcAi.stimuli, Stimulus.Horn, NO_NPC_HANDLE);
     world.npcAi.stimuli.x[k] = 3.25;
     world.npcAi.stimuli.y[k] = 4.5;
@@ -389,6 +392,19 @@ describe('state hash', () => {
       ['hiVisUntilTick', (w) => (w.npcAi.reactions.hiVisUntilTick = 701)],
       ['hits', (w) => (w.npcAi.reactions.hits = 2)],
       ['bumps', (w) => (w.npcAi.reactions.bumps = 3)],
+    ];
+    for (const [name, edit] of edits) {
+      const w = handSetWorld();
+      edit(w);
+      expect(hashOf(w), name).not.toBe(base);
+    }
+  });
+
+  it('absorbs the occupied-zebra offence state (SSP-085): the offence count and whether Bessie is on each zebra', () => {
+    const base = hashOf(handSetWorld());
+    const edits: [string, (w: World) => void][] = [
+      ['zebras.offences', (w) => (w.zebras.offences = 2)],
+      ['zebras.bessieOn', (w) => (w.zebras.bessieOn[0] = 0)],
     ];
     for (const [name, edit] of edits) {
       const w = handSetWorld();
@@ -1446,8 +1462,11 @@ describe('state hash', () => {
  * 68d953a7 → 424363e8 (5ed1888a on its branch, before SSP-089 merged).
  * SSP-084 keeps the litterbug's drop countdown in timerA, so it adds no field (on its branch it appended a
  * timerTicks column, b31a23d9 → c32cfcb1, folded into timerA at its merge).
+ * SSP-085 appended the occupied-zebra offence (the offence count, then whether Bessie is on each zebra) after
+ * the traffic, and put Bessie on the hand-set zebra after one offence: 424363e8 → bce018f8 (26b005e9 on its
+ * branch, before SSP-089, SSP-083 and SSP-084 merged).
  */
-const GOLDEN_HAND_SET_HASH = '424363e8';
+const GOLDEN_HAND_SET_HASH = 'bce018f8';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

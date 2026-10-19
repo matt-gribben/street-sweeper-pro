@@ -43,6 +43,12 @@ export type Behaviour = {
    * Every other kind keeps its centre off the road except while it is on a crossing edge of the nav graph.
    */
   readonly jaywalks: boolean;
+  /**
+   * NAV_FLAG bits (map.ts) of the nav edges this kind never plans a path over (SSP-085): steering's path search
+   * skips them (steering.ts findNavPath). The old man sets DROPPED_KERB | SCHOOL_CROSSING, so he crosses only at
+   * zebras. Absent or 0: every edge.
+   */
+  readonly navAvoid?: number;
   /** Advance NPC `i` by one tick. */
   tick(w: World, i: number): void;
   /**

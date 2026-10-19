@@ -26,10 +26,13 @@
 // Paths. findNavPath is A* over the compiled pavement nav graph (map.ts NavGraph) with integer edge costs in
 // millimetres and an admissible, consistent heuristic (⌊0.999 × straight-line mm⌋), so it returns a shortest
 // path; ties pop the lower f, then the lower node index, and a node's parent is only replaced by a strictly
-// cheaper one, so the node sequence is a pure function of the graph and the two nodes. Buffers (g, parent,
-// visit stamps, a binary heap of 2·edges + 1 entries) are allocated once per shift. An NPC holds up to
-// NPC_PATH_NODES nodes of its path at a time (store.ts `path`), its cursor `pathAt` and `targetNode` =
-// path[pathAt]; reaching the segment's last node before the goal plans the next segment from there.
+// cheaper one, so the node sequence is a pure function of the graph and the two nodes. A behaviour may forbid
+// edges by NAV_FLAG (Behaviour.navAvoid, SSP-085: the old man crosses only at zebras), which every plan and
+// re-plan of its NPCs then skips; the heuristic stays admissible, so the path is the shortest allowed one.
+// Buffers (g, parent, visit stamps, a binary heap of 2·edges + 1 entries) are allocated once per shift. An NPC
+// holds up to NPC_PATH_NODES nodes of its path at a time (store.ts `path`), its cursor `pathAt` and
+// `targetNode` = path[pathAt]; reaching the segment's last node before the goal plans the next segment from
+// there.
 //
 // Crossings (LEVEL_DESIGN §7.2, §7.5). A path edge with a NAV_FLAG_CROSSING flag (site.zebra,
 // site.school_crossing, a dropped kerb) is the only way a non-jaywalker crosses a road: it walks to the kerb
@@ -44,7 +47,7 @@
 // double crosses a call: positions and vectors go through typed arrays (the `v` scratch and the store's
 // columns), as in the rest of the sim (TECHNICAL_DESIGN §17, trap 1).
 import { queryStatic, ShapeKind, ShapeSource, type StaticGrid } from '../collision/grid.ts';
-import { type Aabb, createAabb, type Obb } from '../collision/obb.ts';
+import { type Aabb, createAabb, createObb, type Obb } from '../collision/obb.ts';
 import {
   type Circle,
   type Contact,
@@ -53,11 +56,13 @@ import {
   obbVsCircleShape,
 } from '../collision/sat.ts';
 import { DEG_TO_RAD, DT_S, SIM_HZ, TILE_M } from '../constants.ts';
+import type { Entities } from '../entities.ts';
 import { atan2, cos, sin, sqrt } from '../fmath.ts';
 import { COLLIDE, Ground, type Level, NAV_FLAG, NAV_FLAG_CROSSING, type NavGraph } from '../map.ts';
 import type { Tuning } from '../tuning.ts';
 import type { World } from '../world.ts';
 import type { Behaviour } from './behaviour.ts';
+import { largestNpcRadiusM } from './footprint.ts';
 import { PERCEPTION_PATH_S } from './perception.ts';
 import { NPC_PATH_NODES, queryNpcs, updateNpcCell } from './store.ts';
 
@@ -136,6 +141,17 @@ export type Zebras = {
   readonly maxY: Float64Array;
   /** NPCs whose centre is on the zebra after this tick's phase 7: OCCUPIED while above 0. */
   readonly occupancy: Int32Array;
+  /**
+   * The occupied-zebra offence (zebraOffence.ts, SSP-085): 1 while Bessie's body OBB overlaps the zebra, from
+   * the tick she entered it to the last tick before she has fully left it (one entry episode).
+   */
+  readonly bessieOn: Uint8Array;
+  /** Occupied-zebra offences this shift. */
+  offences: number;
+  /** Scratch for the offence check: Bessie's OBB, a zebra rect, the SAT contact. */
+  readonly obb: Obb;
+  readonly rect: Aabb;
+  readonly contact: Contact;
 };
 
 /** What render, traffic's readers outside the sim and tests may see: the same object, read-only. */
@@ -147,9 +163,11 @@ export type ZebrasView = {
   readonly maxX: Float64Array;
   readonly maxY: Float64Array;
   readonly occupancy: Int32Array;
+  readonly bessieOn: Uint8Array;
+  readonly offences: number;
 };
 
-/** The zebras of `level` with no occupancy. Setup only. */
+/** The zebras of `level` with no occupancy and Bessie on none of them. Setup only. */
 export function createZebras(level: Level): Zebras {
   const idx: number[] = [];
   level.sites.forEach((s, k) => {
@@ -165,6 +183,11 @@ export function createZebras(level: Level): Zebras {
     maxX: rectM(2),
     maxY: rectM(3),
     occupancy: new Int32Array(idx.length),
+    bessieOn: new Uint8Array(idx.length),
+    offences: 0,
+    obb: createObb(),
+    rect: createAabb(),
+    contact: createContact(),
   };
 }
 
@@ -229,8 +252,11 @@ export type Steering = {
   readonly corridorY1: Int16Array;
   /** How close a node counts as reached, metres: arriveRadiusM, or more where a prop stands on the node. */
   readonly nodeArriveM: Float64Array;
-  /** The largest NPC radius (the neighbour query reach), metres. */
+  /** The largest NPC radius (the neighbour query reach; footprint.ts, the mum's pushchair since SSP-085), metres. */
   maxRadiusM: number;
+  /** The human radius the prop-adjusted arrive radii are computed for, and the plain arrive radius, metres. */
+  humanRadiusM: number;
+  arriveRadiusM: number;
   /** Each static shape's bounding radius about its centre, metres (props only; prop avoidance reads it). */
   readonly propBoundM: Float64Array;
   /** A* buffers. */
@@ -261,7 +287,8 @@ const TWO_PI = 2 * Math.PI;
 
 /**
  * Steering for a shift on `level`: the tile tables, the edge costs, zebras and corridors, the per-node arrive
- * radii (props from `grid`), and the search buffers. `capacity` is the NPC store's. Setup only.
+ * radii (props from `grid`), and the search buffers. `capacity` is the NPC store's; `entities` gives the NPC
+ * footprints (footprint.ts). Setup only.
  */
 export function createSteering(
   level: Level,
@@ -269,6 +296,7 @@ export function createSteering(
   zebras: Zebras,
   tuning: Tuning,
   capacity: number,
+  entities: Entities,
 ): Steering {
   const [w, h] = level.size;
   const nav = level.nav;
@@ -342,6 +370,8 @@ export function createSteering(
     corridorY1,
     nodeArriveM: new Float64Array(nav.nodeCount),
     maxRadiusM: 0.5,
+    humanRadiusM: 0.5,
+    arriveRadiusM: 0.5,
     propBoundM: Float64Array.from({ length: grid.shapeCount }, (_, s) => {
       if (grid.source[s] !== ShapeSource.Prop) return 0;
       if (grid.kind[s] === ShapeKind.Circle) return (grid.circles[s] as Circle).radiusM;
@@ -365,20 +395,28 @@ export function createSteering(
     circle: createCircle(),
     contact: createContact(),
   };
-  setSteeringTuning(st, level, grid, tuning);
+  setSteeringTuning(st, level, grid, tuning, entities);
   return st;
 }
 
 /**
- * Re-read the tuning (setWorldTuning): the neighbour reach from the NPC radii and each node's arrive radius,
- * arriveRadiusM, or, where a prop's footprint keeps a human-sized circle off the node, the distance from the
- * node to the footprint's far side plus the radius and a margin, so standing against the prop counts as
- * reached. Setup only.
+ * Re-read the tuning (setWorldTuning): the neighbour reach from the NPC footprints (footprint.ts) and each
+ * node's arrive radius, arriveRadiusM, or, where a prop's footprint keeps a human-sized circle off the node,
+ * the distance from the node to the footprint's far side plus the radius and a margin, so standing against the
+ * prop counts as reached (steerFollowPath widens that by the difference for a wider NPC). Setup only.
  */
-export function setSteeringTuning(st: Steering, level: Level, grid: StaticGrid, tuning: Tuning): void {
+export function setSteeringTuning(
+  st: Steering,
+  level: Level,
+  grid: StaticGrid,
+  tuning: Tuning,
+  entities: Entities,
+): void {
   const r = tuning.streetLife.npcRadius;
-  st.maxRadiusM = Math.max(r.humanM, r.catM, r.dogM);
+  st.maxRadiusM = largestNpcRadiusM(tuning, entities);
+  st.humanRadiusM = r.humanM;
   const arrive = tuning.streetLife.npcSteering.arriveRadiusM;
+  st.arriveRadiusM = arrive;
   const nav = level.nav;
   st.nodeArriveM.fill(arrive);
   const human = r.humanM;
@@ -482,10 +520,11 @@ function heapPop(st: Steering): number {
 }
 
 /**
- * The shortest path on `nav` from node `from` to node `to` (A*, see the file comment). Writes its first
- * min(length, maxNodes) nodes, `from` first, into out[outStart …] and returns the path's full length in nodes
- * (1 when from = to), or −1 when `to` cannot be reached (out is left as it was). Deterministic and
- * allocation-free.
+ * The shortest path on `nav` from node `from` to node `to` (A*, see the file comment) that takes no edge with
+ * any of the NAV_FLAG bits in `avoid` (0, the default, avoids nothing; the old man avoids every crossing but
+ * the zebra, Behaviour.navAvoid). Writes its first min(length, maxNodes) nodes, `from` first, into
+ * out[outStart …] and returns the path's full length in nodes (1 when from = to), or −1 when `to` cannot be
+ * reached (out is left as it was). Deterministic and allocation-free.
  */
 export function findNavPath(
   st: Steering,
@@ -495,6 +534,7 @@ export function findNavPath(
   out: Int32Array,
   outStart: number,
   maxNodes: number,
+  avoid = 0,
 ): number {
   if (!(from >= 0 && from < nav.nodeCount && to >= 0 && to < nav.nodeCount)) return -1;
   st.searches += 1;
@@ -512,6 +552,7 @@ export function findNavPath(
   const adjStart = nav.adjStart;
   const adjNode = nav.adjNode;
   const adjEdge = nav.adjEdge;
+  const edgeFlags = nav.edgeFlags;
   const cost = st.edgeCostMm;
   st.heapSize = 0;
   g[from] = 0;
@@ -528,7 +569,9 @@ export function findNavPath(
     for (let k = adjStart[u] as number; k < end; k += 1) {
       const m = adjNode[k] as number;
       if (done[m] === stamp) continue;
-      const gm = gu + (cost[adjEdge[k] as number] as number);
+      const e = adjEdge[k] as number;
+      if (((edgeFlags[e] as number) & avoid) !== 0) continue;
+      const gm = gu + (cost[e] as number);
       if (seen[m] === stamp && gm >= (g[m] as number)) continue;
       seen[m] = stamp;
       g[m] = gm;
@@ -593,6 +636,11 @@ function startNode(w: World, i: number): number {
   return best;
 }
 
+/** The NAV_FLAG bits of the edges NPC `i`'s behaviour never plans over (Behaviour.navAvoid; 0 for most). */
+function navAvoidOf(w: World, i: number): number {
+  return (w.npcAi.behaviours[w.npc.kind[i] as number] as Behaviour).navAvoid ?? 0;
+}
+
 /**
  * Give NPC `i` a path to nav node `goal` from the node nearest it (on a crossing, the crossing's nearer end).
  * Returns false (NavState.NoPath, no path held) when there is none. Its state becomes Walking (or stays
@@ -606,7 +654,8 @@ export function requestNavPath(w: World, i: number, goal: number): boolean {
   if (npc.navState[i] === NavState.KerbWait) npc.crossEdge[i] = -1;
   const from = startNode(w, i);
   const base = i * NPC_PATH_NODES;
-  const len = from < 0 ? -1 : findNavPath(st, nav, from, goal, npc.path, base, NPC_PATH_NODES);
+  const avoid = navAvoidOf(w, i);
+  const len = from < 0 ? -1 : findNavPath(st, nav, from, goal, npc.path, base, NPC_PATH_NODES, avoid);
   const prev = npc.navState[i] as number;
   npc.goalNode[i] = goal;
   if (len < 0) {
@@ -911,7 +960,11 @@ export function steerFollowPath(w: World, i: number): number {
   }
   const base = i * NPC_PATH_NODES;
   const goal = npc.goalNode[i] as number;
-  const jaywalks = (w.npcAi.behaviours[npc.kind[i] as number] as Behaviour).jaywalks;
+  const behaviour = w.npcAi.behaviours[npc.kind[i] as number] as Behaviour;
+  const jaywalks = behaviour.jaywalks;
+  const avoid = behaviour.navAvoid ?? 0;
+  // An NPC wider than a human (the mum's pushchair) stands further off a node a prop stands on.
+  const wider = (npc.radius[i] as number) - st.humanRadiusM;
   const x = npc.x[i] as number;
   const y = npc.y[i] as number;
   let at = npc.pathAt[i] as number;
@@ -931,7 +984,8 @@ export function steerFollowPath(w: World, i: number): number {
     const tx = nav.nodeX[target] as number;
     const ty = nav.nodeY[target] as number;
     const d2 = (tx - x) * (tx - x) + (ty - y) * (ty - y);
-    const arrive = st.nodeArriveM[target] as number;
+    let arrive = st.nodeArriveM[target] as number;
+    if (wider > 0 && arrive > st.arriveRadiusM) arrive += wider;
     let reached = d2 <= arrive * arrive;
     if (!reached && state === NavState.Walking && at + 1 < len) {
       // Passed it on the way to the next node (not a crossing: the kerb node is always reached).
@@ -961,7 +1015,7 @@ export function steerFollowPath(w: World, i: number): number {
         break;
       }
       // The segment's last node: plan the next segment from it (its first node is this one).
-      const full = findNavPath(st, nav, target, goal, npc.path, base, NPC_PATH_NODES);
+      const full = findNavPath(st, nav, target, goal, npc.path, base, NPC_PATH_NODES, avoid);
       if (full < 0) {
         len = 0;
         state = NavState.NoPath;

@@ -2,7 +2,7 @@
 id: SSP-085
 title: "Implement old man, mum with pushchair and postie, and the occupied-zebra penalty"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:ai-npc, area:gameplay, area:test, size:M, vertical-slice]

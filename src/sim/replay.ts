@@ -449,6 +449,7 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     junction box its claim and claim edge and per slot its holder and holder edge
  *   SSP-083 appends the behaviour timers: per NPC, after stateLimit, I timerA, timerB (SSP-084's litterbug keeps
  *     his drop countdown in timerA, so it adds no field)
+ *   SSP-085 appends the occupied-zebra offence (npc/zebraOffence.ts): I zebras.offences, then per zebra B bessieOn
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -508,6 +509,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbBodies(hasher, world);
   absorbReactions(hasher, world);
   absorbTraffic(hasher, world);
+  absorbZebraOffences(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -1101,6 +1103,23 @@ function absorbTraffic(hasher: StateHasher, world: World): void {
       w[k + 1] = (t.boxHolderEdge[b * BOX_SLOTS + slot] as number) | 0;
       k += 2;
     }
+  }
+  mixWords(hasher, k);
+}
+
+/** SSP-085: the occupied-zebra offence (npc/zebraOffence.ts): the offence count, then each zebra's bessieOn. */
+function absorbZebraOffences(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const z = world.zebras;
+  w[0] = z.offences | 0;
+  let k = 1;
+  for (let i = 0; i < z.count; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (z.bessieOn[i] as number) | 0;
+    k += 1;
   }
   mixWords(hasher, k);
 }

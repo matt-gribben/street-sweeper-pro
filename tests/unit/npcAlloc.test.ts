@@ -4,7 +4,8 @@
 // dogs, a pigeon flock and two perched cats) on the open district of tests/support/npcTown.ts, 192 m square.
 //
 // Everything phase 7 does runs inside the window: the spawner spawns and retires people every second as
-// Bessie circles and is moved round four spots of the map every 20 s, the behaviours walk them (a test
+// Bessie circles and is moved round four spots of the map every 20 s (and, between those, driven at an NPC
+// every 10 s, so actor hits run in the window), the behaviours walk them (a test
 // behaviour, below: walk straight, turn back at the map edge, hurry for a second when honked at, moving them
 // through the spatial hash), the harness pushes a Horn stimulus every 0.5 s and a Hit at one NPC every 1.5 s,
 // and a quarter of the store runs its perception query every tick. Runs in the Vitest unit project, whose
@@ -79,10 +80,12 @@ const HOPS = new Float64Array([48, 48, 144, 48, 144, 144, 48, 144]);
 const DORIS_KIND = NPC_IDS.indexOf('npc.old_woman');
 /** Where the Doris rig puts her: 2 m ahead of Bessie's front bumper, from her body centre, metres. */
 const AHEAD_M = 1.625 + 2;
+/** Bessie is only aimed at NPCs at least this far inside the map, metres. */
+const AIM_MARGIN_M = 24;
 
 /**
  * The rig: `generic` keeps the registry's behaviours (the SSP-082 generic pedestrian for the people, the SSP-084
- * shopper, businessman and litterbug, the no-op for the animals) instead of the test walker, so the reaction
+ * shopper, businessman and litterbug, the SSP-085 old man, mum and postie, the no-op for the animals) instead of the test walker, so the reaction
  * model's states run in the window, with the shoppers' sidesteps, the businessmen's 2 m startles, the litterbugs'
  * drops and, under the harness's horn, their Caught! (EV.Caught, the bonus in phase 9) and slinking off. `doris`
  * adds Doris (SSP-083) to the mix and sprays for 2 s of every 4 (the tank topped up), so her glare, fist shake,
@@ -96,8 +99,10 @@ function npcRig(generic = false, doris = false): { world: World; step: (t: numbe
       { id: 'npc.dog_walker', weight: 20 },
       ...(doris ? [{ id: 'npc.old_woman' as const, weight: 40 }] : []),
       { id: 'npc.litterbug', weight: 10 },
+      { id: 'npc.mum_pushchair', weight: 10 },
+      { id: 'npc.old_man_frame', weight: 10 },
       { id: 'npc.postie', weight: 20 },
-      { id: 'npc.shopper', weight: 35 },
+      { id: 'npc.shopper', weight: 15 },
     ],
     caps: [{ id: 'npc.dog_walker', cap: 8 }],
     perches: {
@@ -130,6 +135,25 @@ function npcRig(generic = false, doris = false): { world: World; step: (t: numbe
       const k = ((t / 1200) & 3) * 2;
       v.xM = HOPS[k] as number;
       v.yM = HOPS[k + 1] as number;
+    } else if (t % 600 === 0 && world.npc.count > 0) {
+      // Every 10 s (between the hops), aim her at an NPC from 3 m south of it, heading north at 5 m/s, so the
+      // window always holds actor hits (SSP-085: before, they depended on where the crowd happened to stand).
+      // Only at one well inside the map, so she never runs into its edge (the crash damage would tow her).
+      const npc = world.npc;
+      for (let k = 0; k < npc.count; k++) {
+        const j = (t / 600 + k) % npc.count;
+        const x = npc.x[j] as number;
+        const y = npc.y[j] as number;
+        if (x < AIM_MARGIN_M || y < AIM_MARGIN_M || x > SIZE_M - AIM_MARGIN_M || y > SIZE_M - AIM_MARGIN_M)
+          continue;
+        v.xM = x;
+        v.yM = y + 3;
+        v.headingRad = 0;
+        v.vLongMps = 5;
+        v.vLatMps = 0;
+        v.yawRateRadPerS = 0;
+        break;
+      }
     }
     input.throttle = v.vLongMps < 5 ? THROTTLE_MAX : 0;
     if (doris) {

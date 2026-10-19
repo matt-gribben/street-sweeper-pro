@@ -417,7 +417,7 @@
     "sprite": "npc.mum_pushchair",
     "sfx": { "hit": "ped_oi" },
     "districts": ["district.puddle_lane", "district.conker_hill", "district.civic_quarter"],
-    "rules": {},
+    "rules": { "footprintRadiusM": 0.55 },
     "milestone": "M3"
   },
   "npc.postie": {

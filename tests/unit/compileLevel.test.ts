@@ -1,5 +1,6 @@
 // Level compiler core (LEVEL_DESIGN §8, §10; TECHNICAL_DESIGN §15; SSP-033): the CLI on plain Node type
 // stripping, the fixture per validation code, ground inheritance, building merge, layers and the audio header.
+// The kerb, collide, markings and layout checks of SSP-034 are in compileLayout.test.ts.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -7,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AUTOTILE_NONE, decodeLevel, encodeLevel, Ground, Surface } from '../../src/sim/map.ts';
+import { COLLIDE, decodeLevel, encodeLevel, Ground, mergeSolids, Surface } from '../../src/sim/map.ts';
 import {
   type CompileResult,
   compileLevel,
@@ -20,11 +21,16 @@ import {
   readManifestIds,
   runCompileLevel,
 } from '../../tools/levels/compile-level.ts';
+import { KERB_BLOB_PATH, readKerbBlob } from '../../tools/levels/kerbBlob.ts';
+import type { LayoutCode } from '../../tools/levels/layoutChecks.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const FIXTURES = 'tests/fixtures/levels';
 const MANIFEST = `${FIXTURES}/manifest.json`;
 const KNOWN = readManifestIds(join(REPO_ROOT, MANIFEST));
+const KERB_BLOB = readKerbBlob(join(REPO_ROOT, KERB_BLOB_PATH));
+/** The SSP-034 layout codes, skipped for the tiny inline maps here (they have no depot bays or hydrants). */
+const LAYOUT_CODES: readonly LayoutCode[] = ['L014', 'L015', 'L020', 'L021', 'L022'];
 
 const tempDirs: string[] = [];
 function tempDir(): string {
@@ -84,7 +90,14 @@ function compileInline(
   extra: Record<string, unknown> = {},
   mapText: string = rows.map((r) => `${r}\n`).join(''),
 ): CompileResult {
-  return compileLevel({ name: 't', mapText, levelText: levelJson('t', rows, extra), knownAssetIds: KNOWN });
+  return compileLevel({
+    name: 't',
+    mapText,
+    levelText: levelJson('t', rows, extra),
+    knownAssetIds: KNOWN,
+    kerbBlob: KERB_BLOB,
+    skipCodes: LAYOUT_CODES,
+  });
 }
 
 function messages(result: CompileResult): string[] {
@@ -186,6 +199,23 @@ describe('one failing fixture per implemented code', () => {
       'l010_disconnected.map.txt:1:7 L010 drivable area of 4 tile(s) not reachable from @',
     ],
     ['l013_isolated', 'l013_isolated.map.txt:1:7 L013 isolated road tile'],
+    [
+      'l014_dead_end',
+      'l014_dead_end.map.txt:13:17 L014 dead end of 8 tiles without a 5×5 turning head (max 6)',
+    ],
+    [
+      'l015_footway',
+      'l015_footway.map.txt:7:16 L015 1-tile alley mouth Bessie can enter: put a bollard (!) in it or close it with buildings',
+    ],
+    ['l020_bays', 'l020_bays.map.txt:8:7 L020 1 depot bay(s) ($); a level needs at least 2'],
+    [
+      'l021_water',
+      'l021_water.map.txt:2:90 L021 route tile is 170 m (path) from the nearest hydrant or depot bay; the limit is 150 m (40 route tile(s) over)',
+    ],
+    [
+      'l022_stop',
+      'l022_stop.map.txt:1:6 L022 hydrant has no stopping tile beside it (a road, apron, cobble, yard, alley or dropped-kerb tile with no prop)',
+    ],
   ] as const;
 
   it.each(cases)('%s fails with the exact file:row:col message and a non-zero exit', (fixture, expected) => {
@@ -212,6 +242,7 @@ describe('the valid fixture', () => {
         mapText: read('valid.map.txt'),
         levelText: read('valid.level.json'),
         knownAssetIds: KNOWN,
+        kerbBlob: KERB_BLOB,
       }),
     );
 
@@ -271,13 +302,20 @@ describe('the valid fixture', () => {
     expect(layerRows(level.layers.surface, 20)[7]).toBe('22222111000000000000');
   });
 
-  it('leaves autotile 255, collide and the M2 layers zero, and stubs the graphs', () => {
-    const { level } = out();
-    expect(level.layers.autotile.every((v) => v === AUTOTILE_NONE)).toBe(true);
-    for (const name of ['collide', 'grimeDensity', 'gutter'] as const) {
+  it('marks every non-drivable cell SOLID and merges them, leaves the M2 layers zero and stubs the graphs', () => {
+    const { level, map } = out();
+    for (let i = 0; i < 20 * 12; i += 1) {
+      expect(((level.layers.collide[i] ?? 0) & COLLIDE.SOLID) !== 0).toBe(map.drivable[i] === 0);
+    }
+    expect(level.solids).toEqual(mergeSolids(level.layers.collide, 20, 12));
+    expect(level.solids.slice(0, 3)).toEqual([
+      [0, 0, 8, 2],
+      [10, 0, 20, 2],
+      [0, 6, 6, 7],
+    ]);
+    for (const name of ['grimeDensity', 'gutter'] as const) {
       expect(level.layers[name].every((v) => v === 0)).toBe(true);
     }
-    expect(level.solids).toEqual([]);
     expect(level.frontages).toEqual([]);
     expect(level.lanes).toEqual({ nodes: [], edges: [] });
     expect(level.nav).toEqual({ nodes: [], edges: [] });
@@ -307,7 +345,6 @@ describe('the valid fixture', () => {
       { id: 'site.zebra', rect: [9, 3, 11, 5] },
       { id: 'site.depot_bay', rect: [9, 7, 11, 10] },
       { id: 'site.depot_bay', rect: [12, 7, 14, 10] },
-      { id: 'site.skip', rect: [16, 7, 18, 8] },
     ]);
     expect(anchors).toEqual([
       { char: '1', name: 'doris_home', tile: [4, 2] },
@@ -324,7 +361,7 @@ describe('music and ambience', () => {
     const text = readFileSync(join(REPO_ROOT, FIXTURES, 'valid/valid.map.txt'), 'utf8');
     const levelText = readFileSync(join(REPO_ROOT, FIXTURES, 'valid/valid.level.json'), 'utf8');
     const { text: json } = ok(
-      compileLevel({ name: 'valid', mapText: text, levelText, knownAssetIds: KNOWN }),
+      compileLevel({ name: 'valid', mapText: text, levelText, knownAssetIds: KNOWN, kerbBlob: KERB_BLOB }),
     );
     const root = JSON.parse(json) as Record<string, unknown>;
     expect(root.music).toBe('mus.puddle_lane');
@@ -340,6 +377,7 @@ describe('music and ambience', () => {
         mapText: read('no_audio.map.txt'),
         levelText: read('no_audio.level.json'),
         knownAssetIds: KNOWN,
+        kerbBlob: KERB_BLOB,
       }),
     );
     const root = JSON.parse(text) as Record<string, unknown>;
@@ -592,6 +630,7 @@ describe('level.json guards (L000)', () => {
       mapText: '@\n',
       levelText: '{\n  "schema": 1,\n}\n',
       knownAssetIds: KNOWN,
+      kerbBlob: KERB_BLOB,
     });
     expect(messages(r)).toEqual([expect.stringMatching(/^t\.level\.json:\d+:\d+ L000 not valid JSON/)]);
   });

@@ -1274,7 +1274,7 @@ Every recipe starts and ends the same way:
 1. Add or extend params in `assets-src/procedural/{tiles,roofs,stains,fx}/<name>.json`. If no existing generator fits, add one in `tools/forge/forge/procedural/` with a pytest covering seam and determinism.
 2. New variants go at the end (the rule in §6.4). Bump `variants`, never reorder.
 3. Run the common end steps. Lint's seam check covers tiles. Also Read the sheet's 3×3 tiled preview, which `forge sheets` draws for every `wrap: true` tile.
-4. Kerb blob autotile: never hand-edit the 47 tiles. Change the rule params in `kerb_blob.json`.
+4. Kerb blob autotile: never hand-edit the 47 tiles. Change the rule params in `kerb_blob.json`. Its `params.blob_masks` (the 47 reduced neighbour masks; frame `tile.kerb:blob:-:n` draws entry *n*) and `params.mask_bits` are the one index ↔ mask table, shared with the level compiler (SSP-034, [LEVEL_DESIGN §7.2](LEVEL_DESIGN.md#72-pavements-and-kerbs)): never reorder or copy it.
 
 ### 10.9 Facade module (grid + procedural assembly)
 

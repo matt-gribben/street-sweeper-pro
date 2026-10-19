@@ -121,7 +121,7 @@ The layout is canonical. New top-level directories need an ADR.
 │  ├─ forge/      pyproject.toml, uv.lock, forge/{__main__,build,ingest,pixelize,palette,outline,
 │  │              pack,lint,sheets,blender,genai}.py, forge/procedural/*.py, tests/
 │  ├─ audio/      render-sfx.ts, render-music.ts, synth/*.ts, wav.ts
-│  └─ levels/     compile-level.ts
+│  └─ levels/     compile-level.ts, schema.ts, kerbBlob.ts, tileLayers.ts, layoutChecks.ts
 ├─ public/assets/ atlas/, fonts/, art/, audio/{sfx,music}/, levels/, asset-hashes.json   (GENERATED, committed)
 ├─ tests/
 │  ├─ unit/       *.test.ts (Vitest)
@@ -501,7 +501,7 @@ Hand-written, synchronous, deterministic. Rapier2D stays a documented escape hat
 
 ### 9.1 Static world
 
-- `compile-level.ts` produces a per-cell **collision grid** (`Uint8`: `SOLID`, `KERB_EDGE_N/E/S/W` bits, surface type in a parallel grid) and merges solid cells into **maximal rectangles** (greedy merge). Merging removes the internal edges that cause "ghost" snagging when sliding along a terrace. The bit constants (`COLLIDE`) and the merge (`mergeSolids`) live in `src/sim/map.ts`, shared by the compiler, static collision and the property tests: in fixed row-major order, the first unclaimed SOLID cell grows right as far as it can, then down while the whole span stays SOLID, so the rects cover the SOLID cells exactly, never overlap and come out in the same order every time.
+- `compile-level.ts` produces a per-cell **collision grid** (`Uint8`: `SOLID`, `KERB_EDGE_N/E/S/W` bits, surface type in a parallel grid) and merges solid cells into **maximal rectangles** (greedy merge). Merging removes the internal edges that cause "ghost" snagging when sliding along a terrace. The bit constants (`COLLIDE`) and the merge (`mergeSolids`) live in `src/sim/map.ts`, shared by the compiler, static collision and the property tests: in fixed row-major order, the first unclaimed SOLID cell grows right as far as it can, then down while the whole span stays SOLID, so the rects cover the SOLID cells exactly, never overlap and come out in the same order every time. *As built (SSP-034):* SOLID is every cell Bessie may not drive on (buildings, `w e r`, water, sand, void and 1-tile footways); a raised kerb (road ↔ pavement, cobbles or grass, never a dropped kerb `d`) sets `KERB_EDGE_<side>` on both cells ([LEVEL_DESIGN §7.2](LEVEL_DESIGN.md#72-pavements-and-kerbs)).
 - Static props (`prop.lamp_post`, `prop.bollard`, `prop.bench`, `prop.bus_shelter`, `prop.phone_box`, `prop.post_box`, `prop.hydrant`, `prop.tree`, `prop.planter`, `prop.market_stall`, `prop.litter_bin`, `prop.roadworks_barrier`) are OBBs or circles registered in `collision/grid.ts` buckets (one bucket per tile).
 - Parked vehicles (`veh.<type>_parked`) are static OBBs. Denting one costs −100 and 5 HP.
 
@@ -926,7 +926,7 @@ Authoring (ASCII `assets-src/levels/<district>.map.txt`, one character per 2 m t
 `npm run levels` → `node tools/levels/compile-level.ts` → `public/assets/levels/<district>.json`. The compiler:
 
 1. Parses the map and legend; validates map size against `districts.json` (for example Puddle Lane 64×48, Civic Quarter 128×96). Until a task creates `districts.json`, the size is checked against `level.json` → `size` (SSP-033).
-2. Resolves the **47-tile kerb blob autotile** index per cell.
+2. Resolves the **47-tile kerb blob autotile** index per cell (from the shared table in `assets-src/procedural/tiles/kerb_blob.json`, read by `tools/levels/kerbBlob.ts`) and the road **markings** bits (SSP-034).
 3. Builds the collision grid and merged solid rects ([§9.1](#91-static-world)).
 4. Builds the **lane graph** (traffic) and **pavement nav graph** (pedestrians) from road and pavement cells plus legend annotations.
 5. Bakes grime density, gutter mask and the route-area mask used by Tidy %.
@@ -948,6 +948,7 @@ Grid layers are base64-encoded raw `Uint8` arrays in row-major order (compact an
   "layers": {
     "ground":   "<base64 Uint8[w*h]>",    // ground tile type id
     "autotile": "<base64 Uint8[w*h]>",    // kerb blob index 0..46, 255 = none
+    "markings": "<base64 Uint8[w*h]>",    // MARKING bits: bay, double yellow, centre line (SSP-034)
     "surface":  "<base64 Uint8[w*h]>",    // surface id: asphalt | pavement | grass (+ M3 hazard ids)
     "storeys":  "<base64 Uint8[w*h]>",    // 0 = no building, 1..8
     "roof":     "<base64 Uint8[w*h]>",    // 0 = none, else 1-based index into roofIds
@@ -979,7 +980,9 @@ Grid layers are base64-encoded raw `Uint8` arrays in row-major order (compact an
 
 **Style tables (SSP-032).** `roofIds` and `wallIds` are header string tables of `roof.*` and `facade.*` asset ids. A `roof`/`wall` layer value of 0 means no building and n names entry n − 1, so the renderer resolves frames without a hard-coded list (`resolveStyle`) and a level can name at most 255 styles of each.
 
-**Id tables (SSP-032).** `map.ts` owns the numeric ids written into the layers, as `as const` objects that may be appended to but never renumbered: `Ground` (0 void, 1 road, 2–5 one-way road flowing E/W/N/S, 6 pavement, 7 cobbles, 8 alley, 9 grass, 10 yard, 11 apron, 12 water, 13 sand), `Surface` (0 asphalt, 1 pavement, 2 grass; 3 puddle, 4 wet leaves and 5 oil are reserved for the M3 runtime hazard overrides and never baked), the ground → surface table `GROUND_SURFACE` (cobbles and apron take asphalt; yard and, provisionally, alley take pavement; solid grounds read as asphalt), `COLLIDE` (bit 0 `SOLID`, bits 1–4 `KERB_EDGE_N/E/S/W`), `AUTOTILE_NONE = 255` and `STYLE_NONE = 0`.
+**Id tables (SSP-032).** `map.ts` owns the numeric ids written into the layers, as `as const` objects that may be appended to but never renumbered: `Ground` (0 void, 1 road, 2–5 one-way road flowing E/W/N/S, 6 pavement, 7 cobbles, 8 alley, 9 grass, 10 yard, 11 apron, 12 water, 13 sand), `Surface` (0 asphalt, 1 pavement, 2 grass; 3 puddle, 4 wet leaves and 5 oil are reserved for the M3 runtime hazard overrides and never baked), the ground → surface table `GROUND_SURFACE` (cobbles and apron take asphalt; yard and, provisionally, alley take pavement; solid grounds read as asphalt), `COLLIDE` (bit 0 `SOLID`, bits 1–4 `KERB_EDGE_N/E/S/W`), `MARKING` (SSP-034, below), `AUTOTILE_NONE = 255` and `STYLE_NONE = 0`.
+
+**Markings (SSP-034).** The `markings` layer is how road markings reach the renderer ([LEVEL_DESIGN §7.1](LEVEL_DESIGN.md#71-roads) has the decision and its reasons): the compiler derives them, the procedural tile set (SSP-040) draws them and `groundLayer.ts` (SSP-045) maps bits to frames. `MARKING` bits: 0 `PARKING_BAY` (a `p` cell), 1 `DOUBLE_YELLOW` (along each `KERB_EDGE` side of the cell's `collide` value), 2 `CENTRE_NS` and 3 `CENTRE_EW` (a two-way road's centre line through the middle of the cell), 4 `CENTRE_E_EDGE` and 5 `CENTRE_S_EDGE` (along the cell's east or south edge, for even road widths). Bits 6–7 are reserved for M3's give-way lines and one-way arrows. Zebras, school crossings, bus boxes and depot bays are `sites`, not markings. The encoder and decoder reject unknown bits. The layer was added to v1 before any compiled level was committed, so the version stays 1.
 
 **Audio theme (SSP-033).** `music` (`mus.*`) and `ambience` (`amb.*`) are copied from level.json ([LEVEL_DESIGN §8.4](LEVEL_DESIGN.md#84-leveljson-schema)) and omitted when the level names none (the Depot Yard has no `music`). `map.ts` exports their shapes (`MUSIC_ID_PATTERN` `^mus\.[a-z0-9_]+$`, `AMBIENCE_ID_PATTERN` `^amb\.[a-z0-9_]+$`); the encoder and decoder reject a malformed value and the compiler reports one as L005. Whether the id names a rendered song or bed is checked once music.json/amb.json exist (M5). M5's music.ts and the ambience bed player read them from the compiled level.
 

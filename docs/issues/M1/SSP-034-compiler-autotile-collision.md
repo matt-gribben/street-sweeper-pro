@@ -2,7 +2,7 @@
 id: SSP-034
 title: "Add kerb blob autotile, kerb edges, collision bits and merged solids to compiler"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:tooling, area:physics, area:test, size:L, vertical-slice]

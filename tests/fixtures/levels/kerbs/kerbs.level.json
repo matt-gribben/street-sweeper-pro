@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "id": "district.fixture_kerbs",
+  "name": "Fixture kerbs",
+  "day": "mon",
+  "mode": "shift",
+  "map": "kerbs.map.txt",
+  "size": [16, 10],
+  "timer": 240,
+  "seed": 1,
+  "timeOfDay": "morning",
+  "weather": "clear",
+  "start": {
+    "heading": 0
+  },
+  "depot": {
+    "rect": [10, 4, 6, 6]
+  },
+  "buildings": {
+    "A": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house"
+    },
+    "B": {
+      "storeys": 2,
+      "roof": "roof.felt",
+      "wall": "facade.corner_shop",
+      "use": "shop"
+    }
+  }
+}

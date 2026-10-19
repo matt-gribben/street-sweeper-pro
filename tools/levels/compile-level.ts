@@ -1,14 +1,16 @@
 // Level compiler: assets-src/levels/<name>.map.txt + <name>.level.json → public/assets/levels/<name>.json
 // (LEVEL_DESIGN §8, §10; TECHNICAL_DESIGN §15). SSP-033 builds the core: map parse, legend and overrides,
 // ground inheritance, building columns, surface and route layers, props/sites/anchors/start, the M1 checks
-// (L000–L006, L010, L013) and the v1 encoding through src/sim/map.ts. SSP-034 adds autotile, collide bits,
-// merged solids and L014/L015/L020–L022; M2/M3/M6 add frontages, spawns, graphs and budgets.
+// (L000–L006, L010, L013) and the v1 encoding through src/sim/map.ts. SSP-034 adds the kerb blob autotile,
+// collide bits, road markings and merged solids (tileLayers.ts, with the shared table read by kerbBlob.ts)
+// and L014/L015/L020–L022 (layoutChecks.ts); M2/M3/M6 add frontages, spawns, graphs and budgets.
 //
 // Run: node tools/levels/compile-level.ts [--out <dir>] [--src <dir>] [--manifest <file>]
 //   --out <dir>       output ROOT; levels go to <dir>/public/assets/levels/ (forge verify passes build/tmp/verify)
 //   --src <dir>       directory of map/level pairs (default assets-src/levels)
 //   --manifest <file> asset manifest for the roof and facade id check (default assets-src/manifest.json)
 // Relative paths resolve against the working directory. Exit status: 0 ok, 1 a level has errors, 2 usage.
+// The kerb blob table is always assets-src/procedural/tiles/kerb_blob.json (KERB_BLOB_PATH).
 //
 // Runs on plain Node 24 type stripping (no tsx): erasable syntax only, explicit `.ts` imports, Node built-ins
 // and src/sim/** only (never three or src/render). Output is byte-deterministic: no timestamps, fixed order.
@@ -32,7 +34,12 @@ import {
   type TileRect,
   type Weather,
 } from '../../src/sim/map.ts';
+import { KERB_BLOB_PATH, type KerbBlob, readKerbBlob } from './kerbBlob.ts';
+import { checkLayout, type LayoutCode } from './layoutChecks.ts';
 import type { Building, BuildingUse, Day, GroundName, LegendEntry, Mode, TimeOfDay } from './schema.ts';
+import { computeTileLayers, isRoadGround } from './tileLayers.ts';
+
+export { isRoadGround };
 
 // ---------------------------------------------------------------------------------------------------------
 // Legend (LEVEL_DESIGN §8.3)
@@ -74,15 +81,10 @@ function idTable(pick: (g: GroundInfo) => boolean): boolean[] {
   return out;
 }
 
-/** True for the road grounds (two-way and one-way), the tiles L013 checks. */
-export function isRoadGround(ground: number): boolean {
-  return ground >= Ground.Road && ground <= Ground.RoadOneWayS;
-}
-
 /**
- * Compiler-internal markers a default legend entry may carry beyond the authorable LegendEntry fields.
- * They are not map outputs in M1: `dropped_kerb` is read by SSP-034 (no kerb edge), `parking_bay` by the M3
- * parked-car spawns (SSP-077). Levels cannot author them.
+ * Compiler-internal markers a default legend entry may carry beyond the authorable LegendEntry fields:
+ * `dropped_kerb` (no kerb edge or kerb tile, SSP-034) and `parking_bay` (the PARKING_BAY marking, SSP-034;
+ * parked-car spawns in M3, SSP-077). Levels cannot author them.
  */
 export type LegendMark = 'dropped_kerb' | 'parking_bay';
 
@@ -163,8 +165,19 @@ function isPlainGround(def: LegendDef): boolean {
 /**
  * A validation code. L000 (this compiler) is a level file pair or level.json that does not match schema.ts;
  * the rest are LEVEL_DESIGN §10.3. L005 covers only the music/ambience shape until entities.json (M2).
+ * L014, L015 and L020–L022 are the layout checks (layoutChecks.ts, SSP-034).
  */
-export type LevelCode = 'L000' | 'L001' | 'L002' | 'L003' | 'L004' | 'L005' | 'L006' | 'L010' | 'L013';
+export type LevelCode =
+  | 'L000'
+  | 'L001'
+  | 'L002'
+  | 'L003'
+  | 'L004'
+  | 'L005'
+  | 'L006'
+  | 'L010'
+  | 'L013'
+  | LayoutCode;
 
 export type Diagnostic = {
   /** File basename, e.g. `puddle_lane.map.txt`. */
@@ -869,6 +882,13 @@ export type CompileInput = {
   levelText: string;
   /** Asset ids from assets-src/manifest.json (the roof and facade id check, L004). */
   knownAssetIds: ReadonlySet<string>;
+  /** The kerb blob table (readKerbBlob(KERB_BLOB_PATH)); the compiler never holds its own copy. */
+  kerbBlob: KerbBlob;
+  /**
+   * Layout codes not to check. Only unit tests set it, to compile tiny maps that exercise other rules
+   * without two depot bays and a hydrant; the CLI always checks everything.
+   */
+  skipCodes?: readonly LayoutCode[];
 };
 
 export type CompileOutput = {
@@ -986,6 +1006,16 @@ export function compileLevel(input: CompileInput): CompileResult {
   }
   if (mr.diagnostics.length > 0) return finish(null);
 
+  // Layout checks (L014, L015, L020–L022) over the route mask.
+  const route = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i += 1)
+    route[i] = map.drivable[i] === 1 && GROUND_ROUTE[map.ground[i] ?? 0] === true ? 1 : 0;
+  const skip = new Set<LevelCode>(input.skipCodes ?? []);
+  for (const f of checkLayout(map, route, lvl.mode)) {
+    if (!skip.has(f.code)) mr.at(f.y + 1, f.x + 1, f.code, f.message);
+  }
+  if (mr.diagnostics.length > 0) return finish(null);
+
   // Layers.
   const level = createBlankLevel(lvl.id, w, h);
   const L = level.layers;
@@ -997,7 +1027,7 @@ export function compileLevel(input: CompileInput): CompileResult {
     const g = map.ground[i] ?? 0;
     L.ground[i] = g;
     L.surface[i] = surfaceOfGround(g);
-    L.route[i] = map.drivable[i] === 1 && GROUND_ROUTE[g] === true ? 1 : 0;
+    L.route[i] = route[i] ?? 0;
     const b = buildings[map.building[i] ?? -1];
     if (b !== undefined) {
       L.storeys[i] = b.storeys;
@@ -1005,8 +1035,13 @@ export function compileLevel(input: CompileInput): CompileResult {
       L.wall[i] = wallIds.indexOf(b.wall) + 1;
     }
   }
-  // autotile (all 255), collide (0), grimeDensity and gutter (0) stay as createBlankLevel left them: SSP-034
-  // fills autotile/collide/solids, SSP-054 grime and gutter. lanes/nav stay empty stubs until M3 (SSP-076).
+  // Kerb blob autotile, collide bits and road markings (SSP-034); SOLID cells merged into rects.
+  const tiles = computeTileLayers(map, input.kerbBlob);
+  L.autotile.set(tiles.autotile);
+  L.collide.set(tiles.collide);
+  L.markings.set(tiles.markings);
+  level.solids = mergeSolids(L.collide, w, h);
+  // grimeDensity and gutter stay 0 until SSP-054; lanes/nav stay empty stubs until M3 (SSP-076).
 
   // Props: one per cell, at the tile centre in metres, rot 0, row-major.
   const props: LevelProp[] = [];
@@ -1180,6 +1215,14 @@ export function runCompileLevel(
     io.error(`compile-level: cannot read manifest ${shown(manifestPath)}: ${String(error)}`);
     return 1;
   }
+  const kerbBlobPath = join(repoRoot, KERB_BLOB_PATH);
+  let kerbBlob: KerbBlob;
+  try {
+    kerbBlob = readKerbBlob(kerbBlobPath);
+  } catch (error) {
+    io.error(`compile-level: cannot read the kerb blob table ${shown(kerbBlobPath)}: ${String(error)}`);
+    return 1;
+  }
 
   const outDir = join(outRoot, LEVELS_OUT_DIR);
   let compiled = 0;
@@ -1189,6 +1232,7 @@ export function runCompileLevel(
       mapText: readFileSync(join(srcDir, name + MAP_SUFFIX), 'utf8'),
       levelText: readFileSync(join(srcDir, name + LEVEL_SUFFIX), 'utf8'),
       knownAssetIds: known,
+      kerbBlob,
     });
     for (const d of result.diagnostics) (d.severity === 'error' ? io.error : io.log)(formatDiagnostic(d));
     if (result.output === null) {

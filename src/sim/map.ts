@@ -221,6 +221,13 @@ export type NavGraph = {
 /** Compiled weather. `inherit` (the Depot Yard) takes the weather of the day it is played on. */
 export type Weather = 'clear' | 'rain' | 'wind' | 'gusts' | 'inherit';
 
+/**
+ * Shape of the optional audio theme ids a level names (LEVEL_DESIGN §8.4, AUDIO_DESIGN): `music` is a
+ * `mus.*` song and `ambience` an `amb.*` bed. Only the shape is checked until music.json/amb.json exist (M5).
+ */
+export const MUSIC_ID_PATTERN = /^mus\.[a-z0-9_]+$/;
+export const AMBIENCE_ID_PATTERN = /^amb\.[a-z0-9_]+$/;
+
 /** Bessie's start pose: x/y in metres, heading in radians (0 = north, clockwise). */
 export type PlayerStart = { x: number; y: number; heading: number };
 
@@ -247,6 +254,10 @@ export type Level = {
   schedules: JsonValue[];
   weather: Weather;
   timerS: number;
+  /** Level music (`mus.*`, MUSIC_ID_PATTERN); absent when the level names none (the Depot Yard, SSP-033). */
+  music?: string;
+  /** Ambience bed (`amb.*`, AMBIENCE_ID_PATTERN); absent when the level names none (SSP-033). */
+  ambience?: string;
   player: PlayerStart;
 };
 
@@ -451,6 +462,14 @@ function formatJson(value: JsonValue, indent: string, insideArray: boolean): str
   return `{\n${lines.join(',\n')}\n${indent}}`;
 }
 
+/** `{ [key]: id }` for a present audio id (shape-checked), `{}` for an absent one, so the key is omitted. */
+function audioIdOut(id: string | undefined, key: string, pattern: RegExp): { [key: string]: JsonValue } {
+  if (id === undefined) return {};
+  if (!pattern.test(id))
+    throw new Error(`encodeLevel: ${key} ${JSON.stringify(id)} does not match ${pattern}`);
+  return { [key]: id };
+}
+
 /**
  * Encode a level as compiled JSON text (TECHNICAL_DESIGN §15.2): keys in the canonical order, layers as
  * base64 Uint8, a trailing newline, no timestamps. The output depends only on the level's contents, so
@@ -521,6 +540,8 @@ export function encodeLevel(level: Level): string {
     schedules: canonicalJson(level.schedules, 'schedules'),
     weather: level.weather,
     timerS: finite(level.timerS, 'timerS'),
+    ...audioIdOut(level.music, 'music', MUSIC_ID_PATTERN),
+    ...audioIdOut(level.ambience, 'ambience', AMBIENCE_ID_PATTERN),
     player: {
       x: finite(level.player.x, 'player.x'),
       y: finite(level.player.y, 'player.y'),
@@ -619,6 +640,12 @@ function stylesIn(value: unknown, path: string): string[] {
   return list;
 }
 
+function audioIdIn(value: unknown, path: string, pattern: RegExp): string {
+  const id = str(value, path);
+  if (!pattern.test(id)) fail(path, `must match ${pattern} (got ${JSON.stringify(id)})`);
+  return id;
+}
+
 /**
  * Decode compiled level JSON (the text, or the value `JSON.parse`/`fetch().json()` returned) into typed
  * arrays. Validates the format tag, version, every field's type, every layer's length and the value range
@@ -679,6 +706,9 @@ export function decodeLevel(input: unknown): Level {
     spawns[kind] = arr(spawnSrc[kind], `spawns.${kind}`).map((v, i) => jsonIn(v, `spawns.${kind}[${i}]`));
   }
   const player = obj(root.player, 'player');
+  const audio: { music?: string; ambience?: string } = {};
+  if (root.music !== undefined) audio.music = audioIdIn(root.music, 'music', MUSIC_ID_PATTERN);
+  if (root.ambience !== undefined) audio.ambience = audioIdIn(root.ambience, 'ambience', AMBIENCE_ID_PATTERN);
 
   return {
     id,
@@ -727,6 +757,7 @@ export function decodeLevel(input: unknown): Level {
     schedules: arr(root.schedules, 'schedules').map((v, i) => jsonIn(v, `schedules[${i}]`)),
     weather: oneOf(root.weather, WEATHERS, 'weather'),
     timerS: num(root.timerS, 'timerS'),
+    ...audio,
     player: {
       x: num(player.x, 'player.x'),
       y: num(player.y, 'player.y'),

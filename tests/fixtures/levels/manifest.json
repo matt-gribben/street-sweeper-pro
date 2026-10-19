@@ -1,0 +1,25 @@
+{
+  "assets": [
+    {
+      "id": "facade.corner_shop"
+    },
+    {
+      "id": "facade.depot_shed"
+    },
+    {
+      "id": "facade.terrace_brick"
+    },
+    {
+      "id": "facade.terrace_brick_bay"
+    },
+    {
+      "id": "roof.depot"
+    },
+    {
+      "id": "roof.felt"
+    },
+    {
+      "id": "roof.slate"
+    }
+  ]
+}

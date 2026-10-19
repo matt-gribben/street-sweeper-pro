@@ -794,7 +794,7 @@ The compiler's built-in legend (`DEFAULT_LEGEND` in `tools/levels/compile-level.
 | `p` | Parking bay (road-edge tile) |
 | `=` | `haz.speed_bump` |
 
-**Props and sites.** Ground is **inherited**: the most common ground among the tile's four orthogonal neighbours that are plain ground characters, ties going to pavement.
+**Props and sites.** Ground is **inherited**: the most common ground among the tile's four orthogonal neighbours that are plain ground characters, ties going to pavement. A plain ground character fixes ground and nothing else (the ground table above, plus any level legend entry with only `ground`); road features, `d`, props, sites, walls, anchors, `@` and buildings do not count. *As built (SSP-033):* a tie that does not include pavement goes to the lowest ground id (road before cobbles before grass, the `Ground` order in `src/sim/map.ts`), and a tile with no plain-ground neighbour gets pavement. Building cells have ground void.
 
 | Char | Entity | Char | Entity |
 |---|---|---|---|
@@ -1213,6 +1213,8 @@ flowchart LR
 
 ### 10.2 Output
 
+*As built (SSP-033):* the compiler core writes `ground`, `surface`, `storeys`/`roof`/`wall` (style tables sorted by id), `route`, `props` (one per character, at the tile centre in metres, `rot` 0), `sites` (each id's cells merged into maximal rectangles, sorted north-west first; map-placed hazards such as `=` `haz.speed_bump` are written as sites too, because they are static tile features), `player`, `weather`, `timerS` and, when `level.json` names them, `music` and `ambience`. `autotile` (255), `collide`, `solids` (SSP-034), `grimeDensity`, `gutter` (M2), `frontages` (M2), `lanes`/`nav` (M3), `spawns` and `schedules` (M3) stay empty until their tasks. Anchors are resolved (digit, name, tile) but are not written in v1: the M3 nav graph tags anchor nodes (SSP-076). `p` parking bays and `d` dropped kerbs are road and pavement ground with a compiler marker that SSP-034 (kerb edges) and M3 (parked cars) read. The map size is checked against `level.json` → `size` until `districts.json` exists. `npm run levels -- --src <dir> --manifest <file> --out <root>` compiles another directory of pairs (the fixtures in `tests/fixtures/levels/`).
+
 `public/assets/levels/<name>.json` is byte-deterministic (stable key order, no timestamps). Its schema (v1, base64 `Uint8` grid layers) is specified in [TECHNICAL_DESIGN §15.2](TECHNICAL_DESIGN.md#152-compiled-schema-v1). The compiler also prints the par report (§10.4).
 
 ### 10.3 Validation rules
@@ -1221,11 +1223,12 @@ Errors fail `npm run levels` (and so CI). Warnings print but do not fail. Messag
 
 | Code | Severity | Rule |
 |---|---|---|
+| L000 | error | A `map.txt` without its `level.json` (or the reverse), invalid JSON, or a `level.json` that does not match `tools/levels/schema.ts`: a missing, mistyped or unknown field, `map` not naming the pair's own map, `depot.rect` outside the map, `start.heading` outside 0–31 (SSP-033) |
 | L001 | error | Map is not exactly `size` (rows × columns), or contains non-ASCII characters, tabs or trailing whitespace |
 | L002 | error | Unknown character (not in the default legend, `level.json` → `legend`, `buildings` or `anchors`) |
 | L003 | error | Not exactly one `@`, or `@` outside `depot.rect` |
 | L004 | error | Building storeys outside 1–6 (1–8 with `landmark: true`), or unknown `roof.*`/`facade.*` ID |
-| L005 | error | An ID that is not canonical, or an entity whose `entities.json` → `districts` list excludes this district |
+| L005 | error | An ID that is not canonical, or an entity whose `entities.json` → `districts` list excludes this district. Until entities.json (M2), only the shape of `music` (`mus.*`) and `ambience` (`amb.*`) is checked (SSP-033) |
 | L006 | error | Campaign `timer` ≠ 240, or Skip Run `timer` ≠ 45 |
 | L007 | error | The spawn list contains an entity whose `entities.json` → `milestone` is later than the milestone that delivers this district (Mon–Tue: M3; Wed–Sun and the Depot Yard: M6) |
 | L010 | error | Drivable area not a single connected region reachable from `@` |

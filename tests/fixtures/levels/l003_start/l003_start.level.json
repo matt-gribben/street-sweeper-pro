@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "district.fixture_l003_start",
+  "name": "Fixture l003_start",
+  "day": "mon",
+  "mode": "shift",
+  "map": "l003_start.map.txt",
+  "size": [8, 5],
+  "timer": 240,
+  "seed": 1,
+  "timeOfDay": "morning",
+  "weather": "clear",
+  "start": {
+    "heading": 0
+  },
+  "depot": {
+    "rect": [0, 4, 8, 1]
+  },
+  "buildings": {
+    "A": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house"
+    }
+  }
+}

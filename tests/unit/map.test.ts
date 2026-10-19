@@ -1,10 +1,11 @@
-// Compiled-level codec, id tables and solid merge (TECHNICAL_DESIGN §9.1, §15.2; SSP-032).
+// Compiled-level codec, id tables and solid merge (TECHNICAL_DESIGN §9.1, §15.2; SSP-032; audio header SSP-033).
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { decodeBase64, encodeBase64 } from '../../src/sim/base64.ts';
 import {
+  AMBIENCE_ID_PATTERN,
   AUTOTILE_NONE,
   COLLIDE,
   COLLIDE_ALL_BITS,
@@ -21,6 +22,7 @@ import {
   type Level,
   layerLength,
   MAX_STYLES,
+  MUSIC_ID_PATTERN,
   mergeSolids,
   resolveStyle,
   SURFACE_COUNT,
@@ -501,5 +503,34 @@ describe('purity and Node type stripping', () => {
     expect(result.error).toBeUndefined();
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('map.ts solids=[[0,0,3,1]] roundTrip=true');
+  });
+});
+
+describe('music and ambience header fields (SSP-033)', () => {
+  it('writes them after timerS when present, omits them when absent and round-trips both ways', () => {
+    const level = handBuiltLevel();
+    const without = encodeLevel(level);
+    expect(without).not.toContain('"music"');
+    expect('music' in decodeLevel(without)).toBe(false);
+    level.music = 'mus.puddle_lane';
+    level.ambience = 'amb.town_morning';
+    const text = encodeLevel(level);
+    const root = JSON.parse(text) as Record<string, unknown>;
+    expect(Object.keys(root)).toEqual([...TOP_LEVEL_KEYS.slice(0, -1), 'music', 'ambience', 'player']);
+    const decoded = decodeLevel(text);
+    expect(decoded.music).toBe('mus.puddle_lane');
+    expect(decoded.ambience).toBe('amb.town_morning');
+    expect(encodeLevel(decoded)).toBe(text);
+  });
+
+  it('rejects ids of the wrong shape on both sides', () => {
+    expect(MUSIC_ID_PATTERN.test('mus.puddle_lane')).toBe(true);
+    expect(AMBIENCE_ID_PATTERN.test('mus.puddle_lane')).toBe(false);
+    const level = handBuiltLevel();
+    level.music = 'puddle_lane';
+    expect(() => encodeLevel(level)).toThrow(/music "puddle_lane" does not match/);
+    const root = JSON.parse(encodeLevel(handBuiltLevel())) as Record<string, unknown>;
+    expect(() => decodeLevel({ ...root, ambience: 'amb.Town' })).toThrow(/ambience must match/);
+    expect(() => decodeLevel({ ...root, music: 7 })).toThrow(/music must be a string/);
   });
 });

@@ -43,7 +43,7 @@ import { createInputFrame, type InputFrame } from './inputFrame.ts';
 import { createKerbCrossings, findKerbCrossings, type KerbCrossings } from './kerb.ts';
 import type { Level } from './map.ts';
 import { createSurfaceTable, type SurfaceTable, sampleSurface } from './surface.ts';
-import type { SweeperTuning, Tuning } from './tuning.ts';
+import { type SweeperTuning, type Tuning, tuningsEqual } from './tuning.ts';
 import {
   createVehicleParams,
   createVehicleState,
@@ -88,7 +88,8 @@ export type PhaseTrace = (phase: Phase, world: WorldView) => void;
 /** All mutable shift state. Create with createWorld; advance with stepWorld. */
 export type World = {
   readonly level: Level;
-  readonly tuning: Tuning;
+  /** The tuning the World runs on. Replace it only through setWorldTuning, between ticks. */
+  tuning: Tuning;
   /** The run seed (uint32). Subsystem RNG streams are derived from it as they arrive (§7.3). */
   readonly seed: number;
   /** Ticks completed since shift start. Integer; a 240 s shift is 14,400 ticks (§5.1). */
@@ -171,6 +172,30 @@ export function createWorld(level: Level, seed: number, tuning: Tuning): World {
 /** The read-only view of `world` for render, audio and UI. No copy: it is the same object. */
 export function viewWorld(world: World): WorldView {
   return world;
+}
+
+/**
+ * Hand the World a new tuning between ticks (the dev panel's live tuning, SSP-048): the parameter boundary of
+ * CLAUDE.md hard rule 2, so the panel never writes sim state itself. Every phase reads its handling numbers
+ * through `world.tuning` and `world.vehicleParams.tuning` each tick, and the per-surface table is refilled in
+ * place, so the next tick runs on the new values. Bessie's pose, speed and gear carry on; her HP is clamped to
+ * the new health.maxHp. The static grid was built from `propFootprints` at creation, so a tuning whose
+ * footprints differ needs a new World: this throws instead of half-applying it.
+ *
+ * A replay is `f(seed, district, inputs)` under one tuning, so ticks run after a change no longer reproduce
+ * against tuning.json; ShiftScene tracks that for Save replay. Allocates (the surface table); never per tick.
+ */
+export function setWorldTuning(world: World, tuning: Tuning): void {
+  if (!tuningsEqual(tuning.propFootprints, world.tuning.propFootprints)) {
+    throw new Error('setWorldTuning: propFootprints differ; the static grid needs a new World (createWorld)');
+  }
+  const sweeper = tuning.vehicle.sweeper;
+  const table = createSurfaceTable(sweeper);
+  world.tuning = tuning;
+  world.vehicleParams.tuning = sweeper;
+  world.surfaceTable.gripPerSById.set(table.gripPerSById);
+  world.surfaceTable.rollMultById.set(table.rollMultById);
+  if (world.vehicle.hp > sweeper.health.maxHp) world.vehicle.hp = sweeper.health.maxHp;
 }
 
 /** Advance the world by one tick (DT_S) under `input`, running the 11 phases of §5.2 in order. */

@@ -360,7 +360,7 @@ Each milestone has the same shape:
 - [ ] `src/render/camera.ts`: look-ahead (up to 3.0 m, damped spring) and speed zoom from real speed.
 - [x] `src/app/loop.ts`, `Game.ts`, `SceneManager.ts`, `events.ts` (typed event bus), and `ShiftScene` (drive-only). *(SSP-043: loop, Game, SceneManager, event bus; SSP-046: `src/scenes/ShiftScene.ts` loads Puddle Lane, steps a seeded World from real input and draws the interpolated Bessie; it is the default boot scene.)*
 - [ ] `src/input/actions.ts`, `keyboard.ts`, `gamepad.ts` (standard mapping, left-stick deadzone 0.15).
-- [ ] `src/debug/devPanel.ts` (F1, dev builds only): live-edit tuning values, show speed, steer angle and surface.
+- [x] `src/debug/devPanel.ts` (F1, dev builds only): live-edit tuning values, show speed, steer angle and surface. *(SSP-048: plus Save replay with a tuning-diverged guard and Copy tuning JSON; lead decision on the issue's OPEN point recorded in [TECHNICAL_DESIGN §18.3](TECHNICAL_DESIGN.md#183-deterministic-replay-tests). It grew past 50 lines: every vehicle.sweeper value gets a field, and the pure helpers are unit-tested.)*
 
 **Explicitly deferred.** Brush, litter and grime (M2). NPCs and traffic (M3). Real tile art (M4). Engine sound (M5).
 

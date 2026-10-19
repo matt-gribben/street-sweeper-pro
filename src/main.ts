@@ -142,31 +142,31 @@ game.scenes.push(scene, sceneParams).then(
   },
 );
 
+// The F1 dev panel (SSP-048): dev builds only, never in test mode. The dynamic import sits behind
+// `import.meta.env.DEV`, so release builds drop the module (and its marker string) entirely.
 if (import.meta.env.DEV && !testMode) {
   void import('./debug/devPanel.ts').then(({ mountDevPanel }) => {
-    mountDevPanel(game.drive, () => {
-      const renderer = game.renderer;
-      const rig = renderer.rig;
-      return [
-        `H ${rig.height.value.toFixed(2)} m  W ${rig.internalWidth}  scale ${renderer.upscale}x`,
-        `cam ${rig.snappedX.toFixed(4)}, ${rig.snappedZ.toFixed(4)} m  frac ${rig.fractionX.toFixed(3)}, ${rig.fractionY.toFixed(3)} px`,
-        `draw calls ${renderer.drawCalls} (world + palette + blit)  night ${renderer.night ? 'on' : 'off'}`,
-        sceneReadout(),
-      ].join('\n');
+    const panel = mountDevPanel({
+      drive: game.drive,
+      shift: scene instanceof ShiftScene ? scene : null,
+      status: () => {
+        const renderer = game.renderer;
+        const rig = renderer.rig;
+        const lines = [
+          `H ${rig.height.value.toFixed(2)} m  W ${rig.internalWidth}  scale ${renderer.upscale}x`,
+          `cam ${rig.snappedX.toFixed(4)}, ${rig.snappedZ.toFixed(4)} m  frac ${rig.fractionX.toFixed(3)}, ${rig.fractionY.toFixed(3)} px`,
+          `draw calls ${renderer.drawCalls} (world + palette + blit)  night ${renderer.night ? 'on' : 'off'}`,
+        ];
+        if (scene instanceof SpikeScene) {
+          lines.push(
+            `actor frame ${scene.drawnFrame}${scene.hasSprites ? '' : ' (no actors)'}  ticks ${game.loop.ticks}`,
+          );
+        } else if (!(scene instanceof ShiftScene)) {
+          lines.push(`scene ${scene.id}  ticks ${game.loop.ticks}`);
+        }
+        return lines.join('\n');
+      },
     });
+    game.afterFrame = () => panel.frame(game.actions?.sceneActions ?? 0);
   });
-}
-
-/** The dev panel's scene line: the spike actors' frame, or Bessie's sim state in a shift. */
-function sceneReadout(): string {
-  if (scene instanceof SpikeScene) {
-    return `actor frame ${scene.drawnFrame}${scene.hasSprites ? '' : ' (no actors)'}  ticks ${game.loop.ticks}`;
-  }
-  const sim = scene instanceof ShiftScene ? scene.snapshot() : null;
-  if (!(scene instanceof ShiftScene) || sim === null) return `scene ${scene.id}  ticks ${game.loop.ticks}`;
-  const b = sim.bessie;
-  return [
-    `${scene.id} tick ${sim.tick}  hp ${sim.hp.toFixed(1)}  input log ${scene.inputLog?.length ?? 0}`,
-    `bessie ${b.x.toFixed(2)}, ${b.y.toFixed(2)} m  heading ${b.heading.toFixed(3)} rad  ${b.speed.toFixed(2)} m/s`,
-  ].join('\n');
 }

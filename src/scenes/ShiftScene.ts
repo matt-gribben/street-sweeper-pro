@@ -22,6 +22,11 @@
 // dev panel can save the shift as a replay (SSP-048). M1's drive-only shift never ends: once the log is full
 // (SHIFT_TICKS, 240 s) recording stops and the sim carries on.
 //
+// Live tuning (SSP-048): setTuning(tuning) hands the World an edited copy between ticks (world.ts
+// setWorldTuning), never writing sim state itself. A replay reproduces only under one tuning, so the scene
+// remembers whether any recorded tick ran on a tuning that differs from tuning.json (`logMatchesCommittedTuning`);
+// the dev panel's Save replay refuses (or asks twice) when it does.
+//
 // No HUD, timer or shift end (M2), no look-ahead or zoom (SSP-047), no audio (M5).
 import type { SceneContext } from '../app/Game.ts';
 import { type LevelSource, loadLevel } from '../app/levelLoader.ts';
@@ -35,8 +40,8 @@ import type { InputFrame } from '../sim/inputFrame.ts';
 import type { Level } from '../sim/map.ts';
 import { appendInput, createInputLog, DISTRICT_ID_PATTERN, type InputLog } from '../sim/replay.ts';
 import { type SimSnapshot, snapshotWorld } from '../sim/snapshot.ts';
-import { DEFAULT_TUNING, type Tuning } from '../sim/tuning.ts';
-import { createWorld, viewWorld, type World, type WorldView } from '../sim/world.ts';
+import { DEFAULT_TUNING, type Tuning, tuningsEqual } from '../sim/tuning.ts';
+import { createWorld, setWorldTuning, viewWorld, type World, type WorldView } from '../sim/world.ts';
 
 /** The district `npm run dev` boots into in M1. */
 export const DEFAULT_DISTRICT = 'district.puddle_lane';
@@ -70,7 +75,11 @@ export class ShiftScene implements Scene {
   readonly blocksUpdateBelow = false;
   private readonly context: SceneContext;
   private readonly levelSource: LevelSource | undefined;
-  private readonly tuning: Tuning;
+  private currentTuning: Tuning;
+  /** The tick from which the World has run on a tuning that differs from tuning.json, or null while it does not. */
+  private offTuningSinceTick: number | null;
+  /** True once an earlier off-tuning span covered at least one recorded tick. */
+  private offTuningRecorded = false;
   private readonly recordInputs: boolean;
   private world: World | null = null;
   private city: LevelCity | null = null;
@@ -85,7 +94,8 @@ export class ShiftScene implements Scene {
   constructor(context: SceneContext, options: ShiftSceneOptions = {}) {
     this.context = context;
     this.levelSource = options.levelSource;
-    this.tuning = options.tuning ?? DEFAULT_TUNING;
+    this.currentTuning = options.tuning ?? DEFAULT_TUNING;
+    this.offTuningSinceTick = tuningsEqual(this.currentTuning, DEFAULT_TUNING) ? null : 0;
     this.recordInputs = options.recordInputs ?? false;
   }
 
@@ -122,6 +132,45 @@ export class ShiftScene implements Scene {
   /** Frames this scene has posed (render() calls). */
   get renderCount(): number {
     return this.frames;
+  }
+
+  /** The tuning the World runs on: tuning.json, the constructor's copy, or the last setTuning. */
+  get tuning(): Tuning {
+    return this.currentTuning;
+  }
+
+  /** True while the current tuning equals the committed tuning.json (DEFAULT_TUNING). */
+  get tuningIsCommitted(): boolean {
+    return this.offTuningSinceTick === null;
+  }
+
+  /**
+   * True when every tick recorded so far ran on the committed tuning.json, so a replay of the input log
+   * reproduces what was driven (`npm run test:replay` runs replays on tuning.json). Without a log, the ticks run.
+   */
+  get logMatchesCommittedTuning(): boolean {
+    if (this.offTuningRecorded) return false;
+    const since = this.offTuningSinceTick;
+    return since === null || this.recordedTicks() <= since;
+  }
+
+  /**
+   * Run the World on `tuning` from the next tick (the dev panel's live edit, SSP-048). Before enter() it only
+   * replaces the tuning the World will be created with. Throws, changing nothing, if the World cannot take it
+   * (setWorldTuning: different propFootprints).
+   */
+  setTuning(tuning: Tuning): void {
+    if (this.world !== null) setWorldTuning(this.world, tuning);
+    const since = this.offTuningSinceTick;
+    if (since !== null && this.recordedTicks() > since) this.offTuningRecorded = true;
+    this.currentTuning = tuning;
+    if (tuningsEqual(tuning, DEFAULT_TUNING)) this.offTuningSinceTick = null;
+    else if (since === null || this.recordedTicks() > since) this.offTuningSinceTick = this.world?.tick ?? 0;
+  }
+
+  /** Ticks that count for a replay: the input log's length, or the ticks run when not recording. */
+  private recordedTicks(): number {
+    return this.log?.length ?? this.world?.tick ?? 0;
   }
 
   /** JSON-safe snapshot of the World for `__ssp.state()` (null before enter() resolves). */
@@ -170,10 +219,10 @@ export class ShiftScene implements Scene {
 
   /** The World, the level city and Bessie's sprites; releases whatever it built if a later step throws. */
   private build(level: Level, seed: number, world: SpriteAtlas, actors: SpriteAtlas): Built {
-    const sim = createWorld(level, seed, this.tuning);
+    const sim = createWorld(level, seed, this.currentTuning);
     const city = createLevelCity(level, world);
     try {
-      const bessie = createBessieSprite(actors, this.tuning.vehicle.sweeper.health.dentedBelowHp);
+      const bessie = createBessieSprite(actors, this.currentTuning.vehicle.sweeper.health.dentedBelowHp);
       return { sim, city, bessie };
     } catch (error: unknown) {
       city.dispose();

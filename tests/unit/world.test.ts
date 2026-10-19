@@ -33,7 +33,7 @@ import { nextInt, sfc32 } from '../../src/sim/rng.ts';
 import { createSurfaceTable, sampleSurface, surfaceAt } from '../../src/sim/surface.ts';
 import { DEFAULT_TUNING, loadTuning, type Tuning } from '../../src/sim/tuning.ts';
 import type { VehicleState, VehicleSurface } from '../../src/sim/vehicle.ts';
-import { createWorld, Phase, stepWorld, viewWorld, type World } from '../../src/sim/world.ts';
+import { createWorld, Phase, setWorldTuning, stepWorld, viewWorld, type World } from '../../src/sim/world.ts';
 import { assertHeapDeltaWithinThresholds, measureHeapDelta } from '../support/heapDelta.ts';
 
 const sweeper = DEFAULT_TUNING.vehicle.sweeper;
@@ -166,6 +166,66 @@ describe('createWorld', () => {
     expect(view).toBe(world);
     expect(view.vehicle).toBe(world.vehicle);
     expect(view.events).toBe(world.events);
+  });
+});
+
+describe('setWorldTuning (SSP-048 live tuning)', () => {
+  it('runs the next tick on the new tuning, keeping Bessie where she is', () => {
+    const world = createWorld(kerbStrip(false), 1, DEFAULT_TUNING);
+    world.vehicle.vLongMps = 4;
+    world.step(NEUTRAL);
+    expect(world.vehicle.vLongMps).toBeLessThan(4); // drag
+    const x = world.vehicle.xM;
+    const speed = world.vehicle.vLongMps;
+    const tuning = tuningWithNoDrag();
+    setWorldTuning(world, tuning);
+    expect(world.tuning).toBe(tuning);
+    expect(world.vehicleParams.tuning).toBe(tuning.vehicle.sweeper);
+    expect(world.vehicle.xM).toBe(x);
+    world.step(NEUTRAL);
+    expect(world.vehicle.vLongMps).toBe(speed); // no drag from this tick on
+  });
+
+  it('refills the per-surface grip and drag table in place', () => {
+    const world = createWorld(kerbStrip(false), 1, DEFAULT_TUNING);
+    const table = world.surfaceTable;
+    const raw = structuredClone(tuningJson);
+    raw.vehicle.sweeper.lateralGripPerS.grass = 2;
+    raw.vehicle.sweeper.drag.grassRollingMul = 4;
+    setWorldTuning(world, loadTuning(raw));
+    expect(world.surfaceTable).toBe(table);
+    expect(table.gripPerSById[Surface.Grass]).toBe(2);
+    expect(table.rollMultById[Surface.Grass]).toBe(4);
+    expect(table.gripPerSById[Surface.Asphalt]).toBe(sweeper.lateralGripPerS.asphalt);
+  });
+
+  it('clamps HP to a lowered health.maxHp', () => {
+    const world = createWorld(kerbStrip(false), 1, DEFAULT_TUNING);
+    const raw = structuredClone(tuningJson);
+    raw.vehicle.sweeper.health.maxHp = 60;
+    setWorldTuning(world, loadTuning(raw));
+    expect(world.vehicle.hp).toBe(60);
+  });
+
+  it('switched before the first tick, runs exactly like a World created with that tuning', () => {
+    const tuning = tuningWithNoDrag();
+    const a = createWorld(kerbStrip(true), 9, tuning);
+    const b = createWorld(kerbStrip(true), 9, DEFAULT_TUNING);
+    setWorldTuning(b, tuning);
+    const input = frame(255, 0, 60);
+    for (let i = 0; i < 120; i++) {
+      a.step(input);
+      b.step(input);
+    }
+    expect(b.vehicle).toEqual(a.vehicle);
+  });
+
+  it('refuses different prop footprints without changing anything', () => {
+    const world = createWorld(kerbStrip(false), 1, DEFAULT_TUNING);
+    const raw = structuredClone(tuningJson);
+    raw.propFootprints.shapes['prop.tree'].radiusM = 1;
+    expect(() => setWorldTuning(world, loadTuning(raw))).toThrow(/propFootprints differ/);
+    expect(world.tuning).toBe(DEFAULT_TUNING);
   });
 });
 

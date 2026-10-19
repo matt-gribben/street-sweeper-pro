@@ -72,7 +72,8 @@ export type VehicleState = {
 
 /** Per-run vehicle parameters: the tuning plus hooks that power-ups and upgrades plug into later. */
 export type VehicleParams = {
-  readonly tuning: SweeperTuning;
+  /** Replaced only by setWorldTuning (world.ts), between ticks. */
+  tuning: SweeperTuning;
   /** Hopper capacity in LU. Fill fraction f = hopperLU / capacity (upg.hopper raises it; SSP-058 owns it). */
   hopperCapacityLU: number;
   /** Top-speed multiplier on vTopBase (pwr.bacon_butty, upg.engine plug in later). Default 1. */

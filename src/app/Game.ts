@@ -9,7 +9,8 @@
 // Input (SSP-044): the Game builds the keyboard (listening on the window) and the standard gamepad, merges them
 // in src/input/actions.ts, polls once per frame (beginFrame) and samples one quantised InputFrame per tick.
 // Gamepad rumble follows EV.Impact on the bus: src/input may not import the bus, so the wiring lives here.
-// Scenes read the frame's pause/map/dev-panel edges from `game.actions.sceneActions`. `options.input`
+// Scenes read the frame's pause/map/dev-panel edges from `game.actions.sceneActions` (the dev panel reads F1 from
+// its `afterFrame` hook). `options.input`
 // replaces the whole source (then `actions` is null).
 //
 // Camera: a scene that follows something (ShiftScene follows Bessie, SSP-046) calls `followCamera` from its
@@ -98,6 +99,11 @@ export class Game {
   /** The keyboard + gamepad merge, or null when `options.input` replaced it. */
   readonly actions: Actions | null;
   readonly sceneContext: SceneContext;
+  /**
+   * Called once per display frame after the frame is drawn, or null. The dev panel (SSP-048, dev builds only)
+   * sets it to read the frame's scene-layer F1 edge and refresh its readouts; it only observes.
+   */
+  afterFrame: (() => void) | null = null;
   private readonly root: Group;
   private readonly input: TickInputSource;
   private cameraPinned = false;
@@ -212,5 +218,6 @@ export class Game {
     this.scenes.render(alpha);
     this.frameRenderS = 0;
     renderer.render();
+    this.afterFrame?.();
   }
 }

@@ -2,7 +2,7 @@
 id: SSP-048
 title: "Add the F1 dev panel for live tuning, telemetry and Save replay"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: S
 labels: [type:feature, area:tooling, area:ui, size:S]

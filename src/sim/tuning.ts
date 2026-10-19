@@ -446,3 +446,33 @@ export function loadTuning(raw: unknown): Tuning {
  * into the sim explicitly; sim code must take a Tuning parameter instead of importing this.
  */
 export const DEFAULT_TUNING: Tuning = loadTuning(tuningJson);
+
+/**
+ * A deep copy of the committed src/data/tuning.json as parsed JSON (degrees, not radians). The dev panel
+ * (SSP-048) edits such a copy, validates it with loadTuning and hands the result to the World; comparing the
+ * copy with a fresh one tells it which values differ from the committed file. Load-time code: allocates.
+ */
+export function tuningSourceCopy(): unknown {
+  return JSON.parse(JSON.stringify(tuningJson));
+}
+
+/**
+ * True when two values of plain JSON-like data (numbers, strings, booleans, null, arrays, and objects with the
+ * same own keys) are equal all the way down. Numbers compare with Object.is, so −0 differs from 0 (a Tuning
+ * holds no −0 or NaN). Tells whether a Tuning is the committed one (DEFAULT_TUNING). Not for the tick path.
+ */
+export function tuningsEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (!isPlainData(a) || !isPlainData(b)) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const keysA = Object.keys(a);
+  if (keysA.length !== Object.keys(b).length) return false;
+  for (const key of keysA) {
+    if (!Object.hasOwn(b, key) || !tuningsEqual(Reflect.get(a, key), Reflect.get(b, key))) return false;
+  }
+  return true;
+}
+
+function isPlainData(value: unknown): value is object {
+  return typeof value === 'object' && value !== null;
+}

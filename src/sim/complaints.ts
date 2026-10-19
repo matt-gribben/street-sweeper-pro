@@ -18,7 +18,7 @@
 //     streetLife.horn.radiusM, 8 m, or twoToneRadiusM, 12 m, with upg.two_tone_horn). Phase 7 delivers the
 //     stimulus to the NPCs in range (SSP-082).
 //   Phase 7 (markHornCaught): a honk that lands a litterbug's Caught! is flagged here by the litterbug behaviour
-//     (SSP-0xx, M3) and is then not counted toward horn spam.
+//     (npc/behaviours/litterbug.ts, SSP-084) and is then not counted toward horn spam.
 //   Phase 9 (stepHornSpam, first in the phase): an unflagged honk joins the sliding window: the ring of counted
 //     honk ticks keeps those of the last `windowTicks` (complaints.hornSpam.windowS × 60 = 300) ticks, this one
 //     included (a honk at tick t keeps those at t − 299 .. t). More than `maxHonks` in it (3, or 5 with the

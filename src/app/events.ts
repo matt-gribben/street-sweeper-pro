@@ -244,6 +244,20 @@ export type NpcHitEvent = SimEventBase & {
   readonly kind: NpcId;
 };
 
+/**
+ * A litterbug was caught by a honk within 6 m (phase 7, npc/behaviours/litterbug.ts, SSP-084): once per
+ * litterbug. Phase 9 has already added its points as a style bonus. The "Caught!" popup (SSP-288), the bonus
+ * sparkle (sfx.combo_tier:bonus) and his "huh" (sfx.ped_oi:huh, M5) read it.
+ */
+export type CaughtEvent = SimEventBase & {
+  readonly type: typeof EV.Caught;
+  /** The litterbug's centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The style bonus (entities.json npc.litterbug rules.caughtPts, +100), unmultiplied. */
+  readonly pts: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -263,6 +277,7 @@ export type SimEventByType = {
   [EV.Horn]: HornEvent;
   [EV.Knock]: KnockEvent;
   [EV.NpcHit]: NpcHitEvent;
+  [EV.Caught]: CaughtEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -341,6 +356,7 @@ function createPayloads(): Payloads {
     [EV.Horn]: { type: EV.Horn, tick: 0, entity: -1, x: 0, y: 0, radiusM: 0 },
     [EV.Knock]: { type: EV.Knock, tick: 0, entity: -1, x: 0, y: 0, kind: 'prop.wheelie_bin' },
     [EV.NpcHit]: { type: EV.NpcHit, tick: 0, entity: -1, x: 0, y: 0, kind: 'npc.shopper' },
+    [EV.Caught]: { type: EV.Caught, tick: 0, entity: -1, x: 0, y: 0, pts: 0 },
   };
 }
 
@@ -402,7 +418,8 @@ function isEventType(type: number): type is EventType {
     type === EV.Complaint ||
     type === EV.Horn ||
     type === EV.Knock ||
-    type === EV.NpcHit
+    type === EV.NpcHit ||
+    type === EV.Caught
   );
 }
 
@@ -521,6 +538,7 @@ export class EventBus implements UiEventSink, PauseEventSink {
     [EV.Horn]: [],
     [EV.Knock]: [],
     [EV.NpcHit]: [],
+    [EV.Caught]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -804,6 +822,16 @@ export class EventBus implements UiEventSink, PauseEventSink {
         e.y = b;
         e.kind = npcKindOf(c, tick);
         this.emit(EV.NpcHit, e);
+        return;
+      }
+      case EV.Caught: {
+        const e = this.payloads[EV.Caught];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.pts = c;
+        this.emit(EV.Caught, e);
         return;
       }
     }

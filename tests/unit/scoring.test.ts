@@ -49,6 +49,8 @@ type Facts = {
   kerb?: boolean;
   draining?: boolean;
   penalties?: readonly number[];
+  /** EV.Caught points, emitted in phase 7 (SSP-084). */
+  caught?: readonly number[];
 };
 
 type Rig = {
@@ -76,6 +78,7 @@ function tick(r: Rig, f: Facts = {}): void {
   resetEvents(q, r.t);
   for (const id of f.litter ?? []) pushEvent(q, EV.LitterCollected, 0, 1, 2, lit(id));
   for (const id of f.stains ?? []) pushEvent(q, EV.StainCleaned, STAIN_IDS.indexOf(id), 3, 4, stainPts(id));
+  for (const pts of f.caught ?? []) pushEvent(q, EV.Caught, 2, 5, 6, pts);
   for (const pts of f.penalties ?? []) addPenalty(r.s, pts);
   r.dirt.tickCleanedCells = f.cells ?? 0;
   r.dirt.tickCleanedGutterCells = f.gutter ?? 0;
@@ -286,6 +289,25 @@ describe('bonus API (GDD §10.3)', () => {
     expect([r.s.combo.chain, r.s.combo.timerTicks]).toEqual([30, timer]);
     expect(() => awardBonus(r.s, 0)).toThrow(/positive integer/);
     expect(() => awardBonus(r.s, 2.5)).toThrow(/positive integer/);
+  });
+
+  it('scores EV.Caught (SSP-084) as a +100 style bonus: unmultiplied at ×3, the chain and its timer untouched', () => {
+    const r = rig();
+    tick(r, { litter: Array(30).fill('litter.spilled_shopping') });
+    expect(r.s.combo.multiplier).toBe(3);
+    const timer = r.s.combo.timerTicks;
+    // Caught! between two ticks' worth of chain: the timer counts down once, nothing refreshes it.
+    expect(delta(r, { caught: [DEFAULT_ENTITIES.npcs['npc.litterbug'].rules.caughtPts] })).toBe(100);
+    expect(r.s.bonusPts).toBe(100);
+    expect([r.s.combo.chain, r.s.combo.multiplier, r.s.combo.timerTicks]).toEqual([30, 3, timer - 1]);
+    // In the same tick as a pickup, the pickup takes the multiplier and the Caught! does not.
+    expect(delta(r, { litter: ['litter.drink_can'], caught: [100] })).toBe(15 * 3 + 100);
+    expect(r.s.combo.chain).toBe(31);
+    expect(r.tiers).toEqual([
+      [0, 2, 1, 10],
+      [0, 3, 2, 25],
+    ]);
+    expectPartsSum(r.s);
   });
 });
 

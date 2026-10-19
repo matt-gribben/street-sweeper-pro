@@ -14,7 +14,15 @@ import {
   NPC_SPAWN_EVERY_TICKS,
   populationTarget,
 } from '../../src/sim/npc/spawner.ts';
-import { NPC_CAPACITY, NpcOrigin, npcHandle, resolveNpcHandle } from '../../src/sim/npc/store.ts';
+import {
+  addNpcAt,
+  NPC_CAPACITY,
+  NPC_FLAG,
+  NpcOrigin,
+  npcHandle,
+  resolveNpcHandle,
+  updateNpcCell,
+} from '../../src/sim/npc/store.ts';
 import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import { circleTouchesViewRect } from '../../src/sim/viewRect.ts';
 import { createWorld, type World } from '../../src/sim/world.ts';
@@ -377,6 +385,65 @@ describe('NPC spawner (LEVEL_DESIGN §9.4)', () => {
     const a = run(5);
     expect(run(5)).toEqual(a);
     expect(run(6)).not.toEqual(a);
+  });
+
+  it('retires a LEAVING NPC (SSP-084) on its first run off the view, whatever its origin, and none in view', () => {
+    const { level } = npcTown(64, {});
+    const world = createWorld(level, 7, DEFAULT_TUNING);
+    world.npcAi.behaviours.fill(noopBehaviour);
+    // Bessie at the centre (64, 64): a named NPC 10 m away (in view) and an ambient one 50 m away (out of view),
+    // both leaving, and a third out of view that is not.
+    const near = npcHandle(world.npc, addNpcAt(world.npc, kind('npc.litterbug'), NpcOrigin.Named, 74, 64));
+    const far = npcHandle(world.npc, addNpcAt(world.npc, kind('npc.litterbug'), NpcOrigin.Ambient, 114, 64));
+    const stays = npcHandle(world.npc, addNpcAt(world.npc, kind('npc.shopper'), NpcOrigin.Named, 120, 64));
+    for (const h of [near, far, stays]) world.npc.radius[resolveNpcHandle(world.npc, h)] = 0.3;
+    for (const h of [near, far]) {
+      const i = resolveNpcHandle(world.npc, h);
+      world.npc.flags[i] = (world.npc.flags[i] as number) | NPC_FLAG.LEAVING;
+    }
+    world.step(createInputFrame());
+    expect(world.tick).toBe(1);
+    expect(resolveNpcHandle(world.npc, far)).toBe(-1);
+    expect(resolveNpcHandle(world.npc, near)).toBeGreaterThanOrEqual(0);
+    expect(resolveNpcHandle(world.npc, stays)).toBeGreaterThanOrEqual(0);
+    // The near one walks out of view (moved by hand): gone on the next once-a-second run, not before.
+    const i = resolveNpcHandle(world.npc, near);
+    world.npc.x[i] = 100;
+    updateNpcCell(world.npc, i);
+    while (world.tick < NPC_SPAWN_EVERY_TICKS) {
+      world.step(createInputFrame());
+      expect(resolveNpcHandle(world.npc, near)).toBeGreaterThanOrEqual(0);
+    }
+    world.step(createInputFrame());
+    expect(resolveNpcHandle(world.npc, near)).toBe(-1);
+    expect(resolveNpcHandle(world.npc, stays)).toBeGreaterThanOrEqual(0);
+    expect(world.npc.npcsRemoved).toBe(2);
+  });
+
+  it('calls the behaviour’s onSpawn (SSP-084) once per NPC as it is added, the dog walker’s dog included', () => {
+    const { level } = npcTown(64, {
+      population: [{ fromS: 0, toS: 1000, target: 6 }],
+      mix: [
+        { id: 'npc.dog_walker', weight: 1 },
+        { id: 'npc.postie', weight: 1 },
+      ],
+    });
+    const world = createWorld(level, 9, DEFAULT_TUNING);
+    const spawned: [number, number, number][] = [];
+    world.npcAi.behaviours.fill({
+      ...noopBehaviour,
+      onSpawn(w, i) {
+        spawned.push([npcHandle(w.npc, i), w.npc.origin[i] as number, w.npc.state[i] as number]);
+        w.npc.swap[i] = 5;
+      },
+    });
+    for (let t = 0; t < 600; t++) world.step(createInputFrame());
+    expect(world.npc.count).toBeGreaterThan(0);
+    // Every NPC added this shift was seen once, as it was added, in its initial state, before any tick.
+    expect(spawned.length).toBe(world.npc.npcsAdded);
+    expect(new Set(spawned.map((s) => s[0])).size).toBe(spawned.length);
+    expect(spawned.some((s) => s[1] === NpcOrigin.Companion)).toBe(true);
+    for (let i = 0; i < world.npc.count; i++) expect(world.npc.swap[i]).toBe(5);
   });
 
   it('refuses a spec naming an NPC kind entities.json does not have', () => {

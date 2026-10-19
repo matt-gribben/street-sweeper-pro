@@ -271,6 +271,8 @@ describe('state hash', () => {
     // Its reaction columns and a running hi-vis with one hit and two bumps (SSP-082).
     world.npc.contactIgnore[n] = 42;
     world.npc.stateLimit[n] = 30;
+    // Its behaviour countdown (SSP-084: the litterbug's drop timer).
+    world.npc.timerTicks[n] = 120;
     world.npcAi.reactions.hiVisUntilTick = 700;
     world.npcAi.reactions.hits = 1;
     world.npcAi.reactions.bumps = 2;
@@ -327,11 +329,12 @@ describe('state hash', () => {
     expect(hashOf(w)).toBe(base);
   });
 
-  it('absorbs the reaction state (SSP-082): the per-NPC contact window and state limit, and the shared rules', () => {
+  it('absorbs the reaction state (SSP-082): the per-NPC contact window, state limit and behaviour timer (SSP-084), and the shared rules', () => {
     const base = hashOf(handSetWorld());
     const edits: [string, (w: World) => void][] = [
       ['contactIgnore', (w) => (w.npc.contactIgnore[0] = 41)],
       ['stateLimit', (w) => (w.npc.stateLimit[0] = 54)],
+      ['timerTicks', (w) => (w.npc.timerTicks[0] = 121)],
       ['awarenessRadiusM', (w) => (w.npcAi.reactions.awarenessRadiusM = 10)],
       ['ledBeacon', (w) => (w.npcAi.reactions.ledBeacon = true)],
       ['minClosingSpeedMps', (w) => (w.npcAi.reactions.minClosingSpeedMps = 1.5)],
@@ -1390,8 +1393,10 @@ describe('state hash', () => {
  * SSP-082 appended the reaction model (the shared rules' state, then each NPC's contact window and state limit)
  * and gave the NPC a contact window and a state limit, and the World a hi-vis, a hit and two bumps: bd46e7bd →
  * b31a23d9 (f20bff33 on its branch, before SSP-092 merged).
+ * SSP-084 appended each NPC's behaviour countdown (timerTicks, after its state limit) and gave the NPC one:
+ * b31a23d9 → c32cfcb1.
  */
-const GOLDEN_HAND_SET_HASH = 'b31a23d9';
+const GOLDEN_HAND_SET_HASH = 'c32cfcb1';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

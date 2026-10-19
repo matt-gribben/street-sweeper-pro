@@ -5,7 +5,7 @@
 //
 // Worlds are the open district of tests/support/npcTown.ts (48 × 48 tiles, a nav grid every 8 m, no population, so
 // the spawner adds nobody), with Bessie at its centre (48, 48) facing north. People are added by hand with the
-// registry's behaviours (the generic pedestrian for every person kind).
+// registry's behaviours (the generic pedestrian, which the SSP-084 shopper, businessman and litterbug extend).
 import { describe, expect, it } from 'vitest';
 import { createObb, refreshObbAxes } from '../../src/sim/collision/obb.ts';
 import { obbVsCircle } from '../../src/sim/collision/sat.ts';
@@ -374,8 +374,8 @@ describe('horn stimulus (ENTITY_CATALOG §3.4)', () => {
   it('a horn moves an Aware pedestrian to Startle, a yielding one included', () => {
     // Doris within the awareness radius: Aware (the AWARE mark) but walking, since she never yields.
     expect(honkAt('npc.old_woman', 5, 3)).toEqual({ state: PED.Startle, aware: true });
-    // The businessman is told only by the horn.
-    expect(honkAt('npc.businessman', 5, 3)).toEqual({ state: PED.Startle, aware: true });
+    // The businessman is told only by the horn: he never takes the awareness radius (SSP-084).
+    expect(honkAt('npc.businessman', 5, 3)).toEqual({ state: PED.Startle, aware: false });
     // A shopper in the radius has already started yielding; the horn startles him out of it.
     const world = townWorld();
     const i = addPerson(world, 'npc.shopper', 53, 48);
@@ -441,8 +441,13 @@ describe('awareness, BeaconYield and HiVis (ENTITY_CATALOG §3.4, §12)', () => 
       for (const h of [doris, biz]) {
         const j = resolveNpcHandle(world.npc, h);
         expect(world.npc.state[j]).not.toBe(PED.Yield);
-        expect((world.npc.flags[j] as number) & NPC_FLAG.AWARE).toBe(NPC_FLAG.AWARE);
       }
+      // Doris is Aware (she ignores it in her own way, SSP-083); the businessman, on his phone, is not even
+      // that (SSP-084).
+      expect((world.npc.flags[resolveNpcHandle(world.npc, doris)] as number) & NPC_FLAG.AWARE).toBe(
+        NPC_FLAG.AWARE,
+      );
+      expect((world.npc.flags[resolveNpcHandle(world.npc, biz)] as number) & NPC_FLAG.AWARE).toBe(0);
     }
   });
 

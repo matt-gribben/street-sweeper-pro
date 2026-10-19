@@ -438,6 +438,7 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     F x, y, heading, prevX, prevY, prevHeading, vx, vy, omega
  *   SSP-082 appends the reaction model (npc/reactions.ts): F reactions.awarenessRadiusM; B ledBeacon;
  *     F minClosingSpeedMps; I ignoreTicks, hiVisUntilTick, hits, bumps; then per NPC: I contactIgnore, stateLimit
+ *   SSP-084 appends, per NPC after stateLimit: I timerTicks (a behaviour's own countdown: the litterbug's drops)
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -1006,7 +1007,8 @@ function absorbReactions(hasher: StateHasher, world: World): void {
     }
     w[k] = (npc.contactIgnore[i] as number) | 0;
     w[k + 1] = (npc.stateLimit[i] as number) | 0;
-    k += 2;
+    w[k + 2] = (npc.timerTicks[i] as number) | 0;
+    k += 3;
   }
   mixWords(hasher, k);
 }

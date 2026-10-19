@@ -43,7 +43,10 @@ export const NPC_PATH_NODES = 32;
  * AWARE and HI_VIS, the two per-tick stimulus marks of the reaction model (npc/reactions.ts): phase 7 clears both
  * on every NPC before it delivers the tick's stimuli, and a behaviour that takes BeaconYield (Bessie within the
  * awareness radius) sets AWARE, one that takes HiVis (pwr.hi_vis running) sets HI_VIS. A FALLEN or ON_ROOF NPC
- * cannot be hit (actor contact skips it).
+ * cannot be hit (actor contact skips it). SSP-084 appends DODGED, a per-approach latch (the shopper's 4 m
+ * sidestep and the businessman's 2 m startle fire once per approach of Bessie, and the latch clears once she is
+ * outside the trigger distance), and LEAVING: the NPC is on its way off the map (the caught litterbug slinking
+ * off), and the spawner retires it on its next run with its circle off the view, whatever its origin.
  */
 export const NPC_FLAG = {
   FALLEN: 1,
@@ -51,6 +54,8 @@ export const NPC_FLAG = {
   YIELDING: 4,
   AWARE: 8,
   HI_VIS: 16,
+  DODGED: 32,
+  LEAVING: 64,
 } as const;
 export type NpcFlagBit = (typeof NPC_FLAG)[keyof typeof NPC_FLAG];
 
@@ -130,6 +135,11 @@ export type NpcStore = {
   readonly contactIgnore: Uint8Array;
   /** The planned length of its current state in ticks, set by its behaviour (0 = none; an idle, a startle). */
   readonly stateLimit: Uint16Array;
+  /**
+   * A behaviour's own countdown that runs across state changes (SSP-084): the litterbug's ticks to his next
+   * drop. 0 until the behaviour arms it. Its meaning is the kind's behaviour module's.
+   */
+  readonly timerTicks: Uint16Array;
   /** Handle slot of each live index. */
   readonly handleSlot: Int32Array;
   /** Live index of each handle slot, −1 while the slot is free. */
@@ -182,6 +192,7 @@ export type NpcStoreView = {
   readonly navState: Uint8Array;
   readonly contactIgnore: Uint8Array;
   readonly stateLimit: Uint16Array;
+  readonly timerTicks: Uint16Array;
   readonly handleSlot: Int32Array;
   readonly slotGen: Uint32Array;
 };
@@ -234,6 +245,7 @@ export function createNpcStore(level: Level, capacity: number = NPC_CAPACITY): N
     navTicks: new Uint32Array(capacity),
     contactIgnore: new Uint8Array(capacity),
     stateLimit: new Uint16Array(capacity),
+    timerTicks: new Uint16Array(capacity),
     handleSlot: new Int32Array(capacity).fill(-1),
     slotIndex: new Int32Array(capacity).fill(-1),
     slotGen: new Uint32Array(capacity),
@@ -370,7 +382,7 @@ export function queryNpcs(store: NpcStore, box: Readonly<Aabb>, out: Int32Array)
 /**
  * Add an NPC of `kind` (NPC_IDS index) and `origin`, spawned from spec entry `group` (−1 for none), at
  * (xs[j], ys[j]), at rest, facing north, in state 0 with no target node, flags, link, perception, path, contact
- * window or state limit, and radius and walking speed 0 (the spawner sets the state, radius and speed). Returns its index, or −1 (changing nothing) when the store
+ * window, state limit or behaviour timer, and radius and walking speed 0 (the spawner sets the state, radius and speed). Returns its index, or −1 (changing nothing) when the store
  * is full. Takes the position through arrays so no double crosses the call.
  */
 export function addNpc(
@@ -421,6 +433,7 @@ export function addNpc(
   store.navTicks[i] = 0;
   store.contactIgnore[i] = 0;
   store.stateLimit[i] = 0;
+  store.timerTicks[i] = 0;
   linkCell(store, i, npcCellIndex(store, i));
   return i;
 }
@@ -480,6 +493,7 @@ export function removeNpc(store: NpcStore, i: number): void {
     store.navTicks[i] = store.navTicks[last] as number;
     store.contactIgnore[i] = store.contactIgnore[last] as number;
     store.stateLimit[i] = store.stateLimit[last] as number;
+    store.timerTicks[i] = store.timerTicks[last] as number;
     const movedSlot = store.handleSlot[last] as number;
     store.handleSlot[i] = movedSlot;
     store.slotIndex[movedSlot] = i;

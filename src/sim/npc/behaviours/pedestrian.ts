@@ -3,7 +3,8 @@
 // businessman and litterbug, SSP-085 old man, mum and postie, SSP-086 dog walker, SSP-088 market trader) extend
 // it: they keep the shared states and timings below, override transitions in their own tick and onStimulus,
 // and call the exported pieces (tickPedestrian, pedestrianStimulus, enterPedestrianState, wantsToYield) for the
-// rest. Until a kind's module lands, the registry gives it one of the three behaviours at the bottom.
+// rest (SSP-084: tickPedestrian's `doorGoals` sends the shopper from frontage door to frontage door). Until a
+// kind's module lands, the registry gives it one of the behaviours at the bottom.
 //
 // States (PED, the TECHNICAL_DESIGN §11.1 shared set; `state` in the store). They map 1:1 to the animation
 // states (walk 4, idle 2, startle 2, fall 3, angry 2 frames; Walk and Cross both play walk, Yield plays idle,
@@ -147,8 +148,23 @@ function resume(w: World, i: number, stationary: boolean): void {
   else enterPedestrianState(w, i, PED.Walk, 0);
 }
 
-/** Walk and Cross: heel (a companion), or wander the nav graph. */
-function walkTick(w: World, i: number): void {
+/**
+ * A wander goal: a frontage door (one `npc` draw among the nav graph's doors) when `doorGoals` and the
+ * graph has doors, else any nav node (one draw). −1 when the graph is empty (no draw).
+ */
+function wanderGoal(w: World, doorGoals: boolean): number {
+  const nav = w.level.nav;
+  const doors = nav.doors;
+  if (doorGoals && doors.length > 0) {
+    const door = doors[nextInt(w.npcAi.rng, doors.length)];
+    if (door !== undefined) return door.node;
+  }
+  if (nav.nodeCount === 0) return -1;
+  return nextInt(w.npcAi.rng, nav.nodeCount);
+}
+
+/** Walk and Cross: heel (a companion), or wander the nav graph (to frontage doors when `doorGoals`). */
+function walkTick(w: World, i: number, doorGoals: boolean): void {
   const npc = w.npc;
   if (npc.origin[i] === NpcOrigin.Companion) {
     heel(w, i);
@@ -161,12 +177,12 @@ function walkTick(w: World, i: number): void {
     return;
   }
   if (ns === NavState.Idle) {
-    const nodes = w.level.nav.nodeCount;
-    if (nodes === 0) {
+    const goal = wanderGoal(w, doorGoals);
+    if (goal < 0) {
       stand(w, i);
       return;
     }
-    if (!requestNavPath(w, i, nextInt(w.npcAi.rng, nodes))) {
+    if (!requestNavPath(w, i, goal)) {
       stand(w, i);
       enterIdle(w, i);
       return;
@@ -229,9 +245,11 @@ function faceBessie(w: World, i: number): void {
 
 /**
  * The generic pedestrian's tick for NPC `i` (see the file comment); `stationary` for a type that never walks
- * (market_trader): it idles, startles and falls where it stands and never yields.
+ * (market_trader): it idles, startles and falls where it stands and never yields. `doorGoals` (SSP-084, the
+ * shopper) makes it wander from frontage door to frontage door, idling at each (shop windows), instead of to
+ * any nav node; on a nav graph without doors it wanders as usual.
  */
-export function tickPedestrian(w: World, i: number, stationary: boolean): void {
+export function tickPedestrian(w: World, i: number, stationary: boolean, doorGoals = false): void {
   const npc = w.npc;
   const t = npc.stateTicks[i] as number;
   switch (npc.state[i] as number) {
@@ -247,7 +265,7 @@ export function tickPedestrian(w: World, i: number, stationary: boolean): void {
         yieldStep(w, i);
         return;
       }
-      walkTick(w, i);
+      walkTick(w, i, doorGoals);
       return;
     case PED.Idle:
       if (stationary) {
@@ -282,7 +300,7 @@ export function tickPedestrian(w: World, i: number, stationary: boolean): void {
       }
       if (t >= YIELD_MIN_TICKS && !wantsToYield(w, i)) {
         enterPedestrianState(w, i, PED.Walk, 0);
-        walkTick(w, i);
+        walkTick(w, i, doorGoals);
         return;
       }
       yieldStep(w, i);
@@ -342,18 +360,6 @@ export function pedestrianStimulus(w: World, i: number, s: Stimulus, stationary:
 export const pedestrianBehaviour: Behaviour = {
   initial: PED.Walk,
   jaywalks: false,
-  tick(w: World, i: number): void {
-    tickPedestrian(w, i, false);
-  },
-  onStimulus(w: World, i: number, s: Stimulus): void {
-    pedestrianStimulus(w, i, s, false);
-  },
-};
-
-/** The generic pedestrian of a kind that jaywalks (the businessman until SSP-084). */
-export const pedestrianJaywalkBehaviour: Behaviour = {
-  initial: PED.Walk,
-  jaywalks: true,
   tick(w: World, i: number): void {
     tickPedestrian(w, i, false);
   },

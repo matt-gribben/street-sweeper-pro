@@ -21,8 +21,8 @@ export const EVENTS_PER_TICK = 512;
  * Event type ids (`type`, Uint16). 0 is never a valid type. The values are hashed into replays: append new
  * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
  * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd, SSP-093 HazardJolt and HazardStop, SSP-063
- * ComboTier, SSP-078 Complaint and Horn, SSP-092 Knock, SSP-082 NpcHit; later issues append the rest of the §7.2
- * list.
+ * ComboTier, SSP-078 Complaint and Horn, SSP-092 Knock, SSP-082 NpcHit, SSP-084 Caught; later issues append the
+ * rest of the §7.2 list.
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036).
@@ -70,6 +70,12 @@ export const EVENTS_PER_TICK = 512;
  *   Phase 7 (npc/reactions.ts stepActorContacts, SSP-082), once per contact episode in which Bessie's closing
  *   speed toward the actor is at least streetLife.actorHit.minClosingSpeedMps (1.0 m/s); the penalty fact is
  *   recorded with it. The hit SFX (entities.json sfx.hit, M5), VFX and juice read it.
+ * - Caught: entity = the litterbug's NPC store index, a = x, b = y (his centre, m), c = the style bonus's points
+ *   (entities.json npc.litterbug rules.caughtPts, +100). Phase 7 (npc/behaviours/litterbug.ts, SSP-084), once
+ *   per litterbug, on the honk within rules.caughtRadiusM (6 m) of him that catches him; that honk is not counted
+ *   toward horn spam (complaints.ts markHornCaught). Phase 9 (scoring.ts stepScoring) awards the points through
+ *   the bonus API: never multiplied, never touching the chain (GDD §10.3). The "Caught!" popup, the bonus
+ *   sparkle (sfx.combo_tier:bonus) and his "huh" (sfx.ped_oi:huh) read it.
  */
 export const EV = {
   Impact: 1,
@@ -89,6 +95,7 @@ export const EV = {
   Horn: 15,
   Knock: 16,
   NpcHit: 17,
+  Caught: 18,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

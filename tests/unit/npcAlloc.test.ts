@@ -125,7 +125,7 @@ function npcRig(
   generic = false,
   doris = false,
 ): { world: World; step: (t: number) => void; tangles: Int32Array } {
-  const { level } = npcTown(TILES, {
+  const { level, home } = npcTown(TILES, {
     population: [{ fromS: 0, toS: 100_000, target: 80 }],
     mix: [
       { id: 'npc.businessman', weight: 15 },
@@ -149,6 +149,13 @@ function npcRig(
     },
     flocks: [{ id: 'npc.pigeon', count: 1, size: [6, 10], points: [[96, 180]] }],
   });
+  // One named dog walker (who never despawns, wandering from the town's middle) so the window always holds a
+  // walker for the lead placement below. The ambient ones need two free slots at once in a full store, so whether
+  // any were alive in the window was chance: none were at the SSP-088 merge, once the pigeons stopped being no-ops.
+  if (level.npc === null) throw new Error('npcTown always sets level.npc');
+  level.npc.named = [
+    { id: 'npc.dog_walker', count: 1, spawnAtS: 0, anchor: home, route: [home], loop: false },
+  ];
   // Bessie knocks people over as she circles (SSP-082's actor hits run inside the window too), so the meter
   // must never reach SACKED, which would freeze the World.
   const world = createWorld(

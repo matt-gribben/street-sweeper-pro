@@ -17,7 +17,7 @@
     "includes": [
       "**",
       "!src/gen/assets.ts",
-      "!public/assets",
+      "!public/assets/**",
       "!assets-src/ai/**/meta.json",
       "!assets-src/rendered/**/render.json"
     ]

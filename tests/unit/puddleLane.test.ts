@@ -1,0 +1,266 @@
+// Puddle Lane, the M1 street (SSP-042; LEVEL_DESIGN §5.1, §8.5, §12): the authored map.txt / level.json pair
+// compiles with no diagnostics, keeps the §8.5 excerpt byte for byte, places the depot, skip, hydrants and
+// anchors the later milestones rely on, and gives every raised-kerb cell a kerb blob autotile index.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { TILE_M } from '../../src/sim/constants.ts';
+import { AUTOTILE_COUNT, AUTOTILE_NONE, COLLIDE, decodeLevel, Ground } from '../../src/sim/map.ts';
+import { compileLevel, readManifestIds } from '../../tools/levels/compile-level.ts';
+import { KERB_BLOB_PATH, readKerbBlob } from '../../tools/levels/kerbBlob.ts';
+import { carriagewayMask, pathSteps, squareCover } from '../../tools/levels/layoutChecks.ts';
+import { isRaisedKerbCell, isRoadCell } from '../../tools/levels/tileLayers.ts';
+import { tileLayerViolations } from '../support/levelInvariants.ts';
+
+const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const read = (rel: string): string => readFileSync(join(REPO_ROOT, rel), 'utf8');
+
+const MAP_TEXT = read('assets-src/levels/puddle_lane.map.txt');
+const LEVEL_TEXT = read('assets-src/levels/puddle_lane.level.json');
+const KNOWN = readManifestIds(join(REPO_ROOT, 'assets-src/manifest.json'));
+const BLOB = readKerbBlob(join(REPO_ROOT, KERB_BLOB_PATH));
+const W = 64;
+const H = 48;
+/** level.json → depot.rect, [x, y, w, h] in tiles (LEVEL_DESIGN §5.1). */
+const DEPOT: readonly [number, number, number, number] = [0, 38, 14, 10];
+
+function compile(mapText: string = MAP_TEXT) {
+  return compileLevel({
+    name: 'puddle_lane',
+    mapText,
+    levelText: LEVEL_TEXT,
+    knownAssetIds: KNOWN,
+    kerbBlob: BLOB,
+  });
+}
+
+const RESULT = compile();
+const OUT = (() => {
+  if (RESULT.output === null) throw new Error('puddle_lane does not compile');
+  return RESULT.output;
+})();
+const { level, map } = OUT;
+const ROWS = MAP_TEXT.slice(0, -1).split('\n');
+
+/** The first fenced block of LEVEL_DESIGN §8.5: the north-west 40×20 tiles of the map. */
+function excerpt(): string[] {
+  const doc = read('docs/LEVEL_DESIGN.md');
+  const section = doc.slice(doc.indexOf('### 8.5 '));
+  const block = /```\n([\s\S]*?)```/.exec(section)?.[1];
+  if (block === undefined) throw new Error('no code block in LEVEL_DESIGN §8.5');
+  return block.slice(0, -1).split('\n');
+}
+
+const tile = (x: number, y: number): number => y * W + x;
+
+describe('puddle_lane compiles', () => {
+  it('with no diagnostics at all, at 64×48', () => {
+    expect(RESULT.diagnostics).toEqual([]);
+    expect(level.id).toBe('district.puddle_lane');
+    expect(level.size).toEqual([W, H]);
+  });
+
+  it('matches the committed public/assets/levels/puddle_lane.json byte for byte', () => {
+    const committed = read('public/assets/levels/puddle_lane.json');
+    expect(committed).toBe(OUT.text);
+    const decoded = decodeLevel(committed);
+    expect(decoded.music).toBe('mus.puddle_lane');
+    expect(decoded.ambience).toBe('amb.town_morning');
+    expect(decoded.weather).toBe('clear');
+    expect(decoded.timerS).toBe(240);
+  });
+
+  it('is plain ASCII, LF, 48 rows of 64 characters and a final newline (LEVEL_DESIGN §8.2)', () => {
+    expect(MAP_TEXT.endsWith('\n')).toBe(true);
+    expect(MAP_TEXT).not.toMatch(/[^\x20-\x7e\n]/);
+    expect(ROWS).toHaveLength(H);
+    for (const row of ROWS) expect(row).toHaveLength(W);
+    expect(MAP_TEXT).not.toMatch(/ \n/);
+  });
+});
+
+describe('the LEVEL_DESIGN §8.5 excerpt', () => {
+  it('is rows 0–19 × columns 0–39 of the map, byte for byte', () => {
+    const want = excerpt();
+    expect(want).toHaveLength(20);
+    for (const row of want) expect(row).toHaveLength(40);
+    expect(ROWS.slice(0, 20).map((row) => row.slice(0, 40))).toEqual(want);
+  });
+
+  it('keeps anchors 1–3 where §8.5 puts them and adds the dog walker loop 4–7 outside it', () => {
+    const byName = Object.fromEntries(OUT.anchors.map((a) => [a.char, { name: a.name, tile: a.tile }]));
+    expect(byName).toEqual({
+      '1': { name: 'doris_home', tile: [4, 3] },
+      '2': { name: 'zebra_puddle_s', tile: [17, 7] },
+      '3': { name: 'corner_shop_door', tile: [21, 8] },
+      '4': { name: 'pump_green_ne', tile: [40, 7] },
+      '5': { name: 'pump_green_east_walk', tile: [40, 14] },
+      '6': { name: 'pump_green_se', tile: [40, 20] },
+      '7': { name: 'pump_green_sw', tile: [25, 20] },
+    });
+  });
+});
+
+describe('sites, props and the start (LEVEL_DESIGN §5.1, §7.7)', () => {
+  const sites = (id: string) => level.sites.filter((s) => s.id === id).map((s) => s.rect);
+  const props = (id: string) =>
+    level.props.filter((p) => p.id === id).map((p) => [p.x / TILE_M - 0.5, p.y / TILE_M - 0.5]);
+
+  it('has at least 2 depot bays of 2×3 tiles inside the depot rect', () => {
+    const bays = sites('site.depot_bay');
+    expect(bays.length).toBeGreaterThanOrEqual(2);
+    const [dx, dy, dw, dh] = DEPOT;
+    for (const [x0, y0, x1, y1] of bays) {
+      expect([x1 - x0, y1 - y0]).toEqual([2, 3]);
+      expect(x0 >= dx && y0 >= dy && x1 <= dx + dw && y1 <= dy + dh).toBe(true);
+    }
+  });
+
+  it('has exactly 1 skip (2×1) and exactly 2 hydrants, at the §8.5 tiles', () => {
+    const skips = sites('site.skip');
+    expect(skips).toHaveLength(1);
+    const [x0, y0, x1, y1] = skips[0] ?? [0, 0, 0, 0];
+    expect([x1 - x0, y1 - y0]).toEqual([2, 1]);
+    expect(props('prop.hydrant')).toEqual([
+      [38, 3],
+      [25, 7],
+    ]);
+  });
+
+  it('has 3 speed-bump rows, and 2 zebras (Puddle Lane and Gutter Row)', () => {
+    expect(sites('haz.speed_bump')).toHaveLength(3);
+    expect(sites('site.zebra')).toEqual([
+      [17, 4, 19, 7],
+      [22, 11, 25, 13],
+    ]);
+  });
+
+  it('starts Bessie inside depot.rect, facing north up Mangle Street', () => {
+    const [dx, dy, dw, dh] = DEPOT;
+    const tx = level.player.x / TILE_M;
+    const ty = level.player.y / TILE_M;
+    expect(tx > dx && tx < dx + dw && ty > dy && ty < dy + dh).toBe(true);
+    expect(level.player.heading).toBe(0);
+    // Straight ahead (north) of the start: depot apron, then the 3-tile Mangle Street (x 2–4) to row 21.
+    const sx = Math.floor(tx);
+    for (let y = Math.floor(ty); y >= 21; y -= 1) expect(map.drivable[tile(sx, y)], `(${sx}, ${y})`).toBe(1);
+    for (let y = 21; y <= 38; y += 1) {
+      for (let x = 2; x <= 4; x += 1) expect(map.ground[tile(x, y)], `(${x}, ${y})`).toBe(Ground.Road);
+      expect(isRaisedKerbCell(map, tile(1, y)), `west kerb (1, ${y})`).toBe(true);
+    }
+  });
+
+  it('has the depot shed as a 2-storey landmark and nothing taller than 3 storeys', () => {
+    const depot = OUT.buildings.filter((b) => b.use === 'depot');
+    expect(depot.map((b) => [b.letter, b.storeys, b.roof, b.wall])).toEqual([
+      ['P', 2, 'roof.depot', 'facade.depot_shed'],
+    ]);
+    const [dx, dy, dw, dh] = DEPOT;
+    const [x0, y0, x1, y1] = depot[0]?.bounds ?? [0, 0, 0, 0];
+    expect(x0 >= dx && y0 >= dy && x1 <= dx + dw && y1 <= dy + dh).toBe(true);
+    for (const b of OUT.buildings) expect(b.storeys, b.letter).toBeLessThanOrEqual(3);
+    expect(OUT.buildings.filter((b) => b.storeys === 3).map((b) => b.letter)).toContain('C');
+  });
+});
+
+describe('the Gutter Row alley, skip and Golden Crisp reservation (LEVEL_DESIGN §5.1)', () => {
+  const crisp = tile(44, 30);
+  const carriageway = carriagewayMask(map);
+
+  it('reserves (44.5, 30.5) on drivable carriageway inside a 5×5 turning head', () => {
+    expect(map.drivable[crisp]).toBe(1);
+    expect(carriageway[crisp]).toBe(1);
+    expect(squareCover(carriageway, W, H, 5)[crisp]).toBe(1);
+  });
+
+  it('puts the skip in the 2-tile alley between Gutter Row and the crisp, at least 40 m from the bays', () => {
+    const skip = level.sites.find((s) => s.id === 'site.skip')?.rect ?? [0, 0, 0, 0];
+    const fromGutterRow = pathSteps(map, [tile(24, 30), tile(24, 31)]);
+    const skipSteps = fromGutterRow[tile(skip[0], skip[1])] ?? -1;
+    expect(skipSteps).toBeGreaterThan(0);
+    expect(fromGutterRow[crisp]).toBeGreaterThan(skipSteps);
+    // The alley (rows 30–31) is 2 tiles of drivable setts.
+    for (let x = 26; x < skip[0]; x += 1) {
+      expect(map.ground[tile(x, 30)]).toBe(Ground.Alley);
+      expect(map.drivable[tile(x, 30)]).toBe(1);
+      expect(map.drivable[tile(x, 31)]).toBe(1);
+    }
+    const bays: number[] = [];
+    for (let i = 0; i < W * H; i += 1) if (map.defs[i]?.site === 'site.depot_bay') bays.push(i);
+    expect((pathSteps(map, bays)[tile(skip[0], skip[1])] ?? 0) * TILE_M).toBeGreaterThanOrEqual(40);
+  });
+
+  it('needs its turning head: without it the alley is an L014 dead end', () => {
+    const rows = [...ROWS];
+    for (const y of [28, 29, 32]) {
+      const row = rows[y] ?? '';
+      rows[y] = `${row.slice(0, 40)}RRRRR${row.slice(45)}`;
+    }
+    const broken = compile(`${rows.join('\n')}\n`);
+    expect(broken.diagnostics.map((d) => d.code)).toContain('L014');
+  });
+});
+
+describe('kerbs (LEVEL_DESIGN §7.2, ROADMAP M1 level-compile check)', () => {
+  const { autotile, collide } = level.layers;
+  const KERB = COLLIDE.KERB_EDGE_N | COLLIDE.KERB_EDGE_E | COLLIDE.KERB_EDGE_S | COLLIDE.KERB_EDGE_W;
+
+  it('gives every raised-kerb boundary cell an autotile index in 0..46', () => {
+    let boundary = 0;
+    for (let y = 0; y < H; y += 1) {
+      for (let x = 0; x < W; x += 1) {
+        const i = tile(x, y);
+        let roadNear = false;
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            const nx = x + dx;
+            const ny = y + dy;
+            if ((dx || dy) && nx >= 0 && ny >= 0 && nx < W && ny < H && isRoadCell(map, tile(nx, ny)))
+              roadNear = true;
+          }
+        }
+        const raisedEdge = !isRoadCell(map, i) && ((collide[i] ?? 0) & KERB) !== 0;
+        if (raisedEdge) expect(isRaisedKerbCell(map, i), `(${x}, ${y})`).toBe(true);
+        if (!(isRaisedKerbCell(map, i) && roadNear)) continue;
+        boundary += 1;
+        const a = autotile[i] ?? AUTOTILE_NONE;
+        expect(a, `(${x}, ${y})`).toBeLessThan(AUTOTILE_COUNT);
+      }
+    }
+    // ...and nothing else carries one: the boundary cells are exactly the cells with an index.
+    expect(autotile.filter((a) => a !== AUTOTILE_NONE)).toHaveLength(boundary);
+    expect(boundary).toBeGreaterThan(400);
+    expect(tileLayerViolations(level, map, BLOB)).toEqual([]);
+  });
+
+  it('uses these kerb blob indices (the configurations the map contains)', () => {
+    const used = [...new Set(autotile)].filter((a) => a !== AUTOTILE_NONE).sort((a, b) => a - b);
+    expect(used).toEqual([4, 10, 12, 26, 31, 33, 34, 36, 41, 42, 44, 45]);
+  });
+
+  it('has at least three straight kerb runs of 15+ tiles, two of them along Mangle Street', () => {
+    /** Longest run of consecutive raised-kerb cells carrying `bit`, along a row (dx) or a column (dy). */
+    const run = (x0: number, y0: number, dx: number, dy: number, n: number, bit: number): number => {
+      let best = 0;
+      let cur = 0;
+      for (let k = 0; k < n; k += 1) {
+        const i = tile(x0 + dx * k, y0 + dy * k);
+        cur = isRaisedKerbCell(map, i) && ((collide[i] ?? 0) & bit) !== 0 ? cur + 1 : 0;
+        best = Math.max(best, cur);
+      }
+      return best;
+    };
+    const runs: number[] = [];
+    for (let y = 0; y < H; y += 1) {
+      runs.push(run(0, y, 1, 0, W, COLLIDE.KERB_EDGE_N), run(0, y, 1, 0, W, COLLIDE.KERB_EDGE_S));
+    }
+    for (let x = 0; x < W; x += 1) {
+      runs.push(run(x, 0, 0, 1, H, COLLIDE.KERB_EDGE_E), run(x, 0, 0, 1, H, COLLIDE.KERB_EDGE_W));
+    }
+    expect(runs.filter((n) => n >= 15).length).toBeGreaterThanOrEqual(3);
+    // Mangle Street's first 30 m from the depot gate (row 38) is a straight kerb on both sides.
+    expect(run(1, 24, 0, 1, 15, COLLIDE.KERB_EDGE_E)).toBe(15);
+    expect(run(5, 24, 0, 1, 15, COLLIDE.KERB_EDGE_W)).toBe(15);
+  });
+});

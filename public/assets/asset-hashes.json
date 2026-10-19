@@ -5,5 +5,6 @@
   "public/assets/atlas/items.png": "df3fae37642660fc77d0379d112523f2f49aafd4c94ec54f857e8bd023d5c8f3",
   "public/assets/atlas/world.json": "247d921c9a9a120e168085a6d042922028c221ead46e494cf5cfaa5c366459c9",
   "public/assets/atlas/world.png": "6aba5635ae277f894a6e461c341fb22d57bed181724dd4b09a9e9086a29bb2ee",
+  "public/assets/levels/puddle_lane.json": "919b926bb6a3306ab32cbb0bde569a5cfbda52d0a3c322104e840ee8b71125c9",
   "src/gen/assets.ts": "b585c4ada8c393134a13e78e6dcb5bb01d4d93f7d61d616a97c8feaba830a23d"
 }

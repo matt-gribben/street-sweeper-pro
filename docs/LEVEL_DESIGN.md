@@ -220,6 +220,19 @@ Each district below lists its layout, density, hazards and NPC mix. The numbers 
 - A ring of back streets (**Drain Close**, **Soapsud Terrace**) completes a figure-of-eight loop, so no route ever needs a three-point turn.
 - **Heights:** 2-storey terraces (`roof.slate`), a 3-storey parade on Puddle Lane. No street is flanked by more than 3 storeys.
 
+*As built (SSP-042, layout calls pending owner review):* `assets-src/levels/puddle_lane.map.txt`, with the §8.5 excerpt in its north-west corner. Streets are 3-tile two-way roads with 1-tile pavements; x is the column, y the row.
+
+- **Depot** `[0, 38, 14, 10]`: a walled concrete yard with the 2-storey shed `P` (`roof.depot`, landmark) along its north wall, two 2×3 bays (`$`) in front of it, `@` at (3, 44) facing north, and a 12×6 apron that is the 5×5 turning head at Mangle Street's south end. The gate is Mangle Street itself (row 38).
+- **Mangle Street** x 2–4, rows 21–38: straight, kerbed on both sides for 15+ tiles from the gate (the first 30 m), garden walls (`w`, cat perches) on the west edge, terrace `L` on the east. It turns east into Soapsud Terrace at its north end.
+- **Soapsud Terrace** rows 21–23, from Mangle Street to x 60–62, where it turns north up the east edge to Puddle Lane's east end. So neither Puddle Lane's east end nor Soapsud runs off the map.
+- **Gutter Row** x 22–24, rows 7–41, and **Drain Close** x 50–52, rows 7–41, joined at the back by a road on rows 39–41: with Puddle Lane and Soapsud Terrace they make the figure-of-eight (two loops sharing Soapsud between Gutter Row and Drain Close).
+- **The skip alley**: rows 30–31, 2 tiles of setts off Gutter Row's east pavement (dropped kerbs at x 25). The skip is at (38–39, 31) in its south lane, with the north lane beside it as the stopping tile, 118 m (path) from the bays. The alley ends in a 5×5 yard (`%`, x 40–44, rows 28–32) that is the turning head and holds the Golden Crisp tile (44, 30).
+- **Pump Green east walk**: a 1-tile footway at x 40, rows 8–19, bollarded at both ends, carrying the dog walker's anchor `5`.
+- **Parking:** 24 bays: Puddle Lane south kerb x 28–33 and x 41–46, Drain Close west kerb rows 11–16 and east kerb rows 30–35 (60% fill ≈ 14 parked), each 3+ tiles clear of a junction. **Speed bumps:** Puddle Lane x 8 and x 56, Drain Close row 27.
+- **Heights:** 2-storey slate terraces, plus 3-storey `C` (parade), `D` (corner shop), `F` and `X` (flats).
+- **Compile report:** route area 1,264 tiles, max dump distance 158 m, max water distance 108 m, kerb blob indices used 4, 10, 12, 26, 31, 33, 34, 36, 41, 42, 44, 45.
+- **Deviation:** Puddle Lane's west end (x 0, fixed by the §8.5 excerpt) and the 2-tile alley at x 12–13 (rows 0–2) run off the map edge. L014 treats an edge as "the town goes on", so they pass, but Puddle Lane west of Gutter Row is not part of a loop: driving west, Bessie meets the map edge. What the edge does is the runtime's call (SSP-036/SSP-045).
+
 **Density and resources.**
 
 | Item | Value |
@@ -1050,6 +1063,8 @@ The matching parts of `puddle_lane.level.json` (an excerpt: the real file also d
 
 The mobility scooter, the postie's round, the dog walker's anchors `4`–`7`, the skip, the Golden Crisp and the depot sit in parts of the map outside this excerpt.
 
+*As built (SSP-042):* the committed `assets-src/levels/puddle_lane.map.txt` contains this excerpt byte for byte (`tests/unit/puddleLane.test.ts` reads it from this section). The M1 `puddle_lane.level.json` carries only the fields the M1 compiler reads (identity, timer, seed, time of day, weather, music, ambience, start, depot, buildings `A`–`Z` and anchors `1`–`7`). The spawn-side values above (pledges, litter, grime, hazards, knockables, power-ups, collectibles, NPCs, traffic, events, par) stay here until SSP-056 (M2) and SSP-104 (M3) author them into the file. Anchors `4`–`7` are the corners of the dog walker's loop around Pump Green and the flats: `4` `pump_green_ne` (40, 7), `5` `pump_green_east_walk` (40, 14) on the bollarded footway east of the hedge, `6` `pump_green_se` (40, 20) and `7` `pump_green_sw` (25, 20).
+
 ### 8.6 Worked example 2: the Depot Yard (complete)
 
 `assets-src/levels/depot_yard.map.txt` (32×24, complete):
@@ -1222,6 +1237,8 @@ flowchart LR
 *As built (SSP-033):* the compiler core writes `ground`, `surface`, `storeys`/`roof`/`wall` (style tables sorted by id), `route`, `props` (one per character, at the tile centre in metres, `rot` 0), `sites` (each id's cells merged into maximal rectangles, sorted north-west first; map-placed hazards such as `=` `haz.speed_bump` are written as sites too, because they are static tile features), `player`, `weather`, `timerS` and, when `level.json` names them, `music` and `ambience`. `autotile` (255), `collide`, `solids` (SSP-034), `grimeDensity`, `gutter` (M2), `frontages` (M2), `lanes`/`nav` (M3), `spawns` and `schedules` (M3) stay empty until their tasks. Anchors are resolved (digit, name, tile) but are not written in v1: the M3 nav graph tags anchor nodes (SSP-076). `p` parking bays and `d` dropped kerbs are road and pavement ground with a compiler marker that SSP-034 (kerb edges) and M3 (parked cars) read. The map size is checked against `level.json` → `size` until `districts.json` exists. `npm run levels -- --src <dir> --manifest <file> --out <root>` compiles another directory of pairs (the fixtures in `tests/fixtures/levels/`).
 
 *As built (SSP-034):* the compiler also writes `autotile` (kerb blob index, §7.2), `markings` (§7.1), `collide` (`SOLID` on every cell Bessie may not drive on: buildings, `w e r`, water, sand, void and 1-tile footways; the `KERB_EDGE` bits of §7.2) and `solids` (the SOLID cells merged by `mergeSolids`, TECHNICAL_DESIGN §9.1). Static props are not SOLID cells: they stay in `props` and become collision shapes at runtime (SSP-036). It then runs the layout checks L014, L015 and L020–L022 (§10.3) on every level. The kerb blob table is read from `assets-src/procedural/tiles/kerb_blob.json`.
+
+*As built (SSP-042):* after compiling, the CLI lists every `public/assets/levels/*.json` under the output root in that root's `public/assets/asset-hashes.json` (when the root has one), so `assets:verify` treats compiled levels as listed generated files ([ASSET_PIPELINE §9.3](ASSET_PIPELINE.md#93-packing-and-outputs)).
 
 `public/assets/levels/<name>.json` is byte-deterministic (stable key order, no timestamps). Its schema (v1, base64 `Uint8` grid layers) is specified in [TECHNICAL_DESIGN §15.2](TECHNICAL_DESIGN.md#152-compiled-schema-v1). The compiler also prints the par report (§10.4).
 

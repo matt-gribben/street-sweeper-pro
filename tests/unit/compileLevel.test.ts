@@ -3,7 +3,7 @@
 // The kerb, collide, markings and layout checks of SSP-034 are in compileLayout.test.ts.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,7 @@ import {
   parseArgs,
   readManifestIds,
   runCompileLevel,
+  syncLevelHashes,
 } from '../../tools/levels/compile-level.ts';
 import { KERB_BLOB_PATH, readKerbBlob } from '../../tools/levels/kerbBlob.ts';
 import type { LayoutCode } from '../../tools/levels/layoutChecks.ts';
@@ -663,6 +664,62 @@ describe('level.json guards (L000)', () => {
     expect(messages(compileInline(['@.'], { start: { heading: 32 } }))).toEqual([
       expect.stringMatching(/L000 start must be \{ heading: 0\.\.31 \}$/),
     ]);
+  });
+});
+
+describe('the asset-hashes listing (SSP-042)', () => {
+  const HASHES = 'public/assets/asset-hashes.json';
+  const quiet = { log: () => {}, error: () => {} };
+  const args = (out: string): string[] => [
+    '--src',
+    `${FIXTURES}/valid`,
+    '--manifest',
+    MANIFEST,
+    '--out',
+    out,
+  ];
+
+  it('replaces the level entries of an existing listing and keeps the rest, sorted, in the forge format', () => {
+    const out = tempDir();
+    mkdirSync(join(out, 'public/assets'), { recursive: true });
+    const before = {
+      'public/assets/atlas/world.json': 'a'.repeat(64),
+      'public/assets/levels/gone.json': 'b'.repeat(64),
+      'src/gen/assets.ts': 'c'.repeat(64),
+    };
+    writeFileSync(join(out, HASHES), `${JSON.stringify(before, null, 2)}\n`);
+    expect(runCompileLevel(args(out), REPO_ROOT, REPO_ROOT, quiet)).toBe(0);
+    const text = readFileSync(join(out, HASHES), 'utf8');
+    // Python's json.dumps(doc, indent=2) + "\n", which forge build writes.
+    expect(text).toBe(
+      [
+        '{',
+        `  "public/assets/atlas/world.json": "${'a'.repeat(64)}",`,
+        `  "public/assets/levels/valid.json": "${sha256(join(out, 'public/assets/levels/valid.json'))}",`,
+        `  "src/gen/assets.ts": "${'c'.repeat(64)}"`,
+        '}',
+        '',
+      ].join('\n'),
+    );
+    // A second run changes nothing.
+    expect(runCompileLevel(args(out), REPO_ROOT, REPO_ROOT, quiet)).toBe(0);
+    expect(readFileSync(join(out, HASHES), 'utf8')).toBe(text);
+    expect(syncLevelHashes(out)).toBe(1);
+  });
+
+  it('leaves an output root without a listing alone', () => {
+    const out = tempDir();
+    expect(runCompileLevel(args(out), REPO_ROOT, REPO_ROOT, quiet)).toBe(0);
+    expect(existsSync(join(out, HASHES))).toBe(false);
+    expect(syncLevelHashes(out)).toBeNull();
+  });
+
+  it('lists every committed level in the committed asset-hashes.json with its SHA-256', () => {
+    const listing = JSON.parse(readFileSync(join(REPO_ROOT, HASHES), 'utf8')) as Record<string, string>;
+    const { names } = listLevelPairs(join(REPO_ROOT, 'assets-src/levels'));
+    const listed = Object.keys(listing).filter((k) => k.startsWith('public/assets/levels/'));
+    expect(listed).toEqual(names.map((n) => `public/assets/levels/${n}.json`));
+    for (const key of listed) expect(listing[key], key).toBe(sha256(join(REPO_ROOT, key)));
   });
 });
 

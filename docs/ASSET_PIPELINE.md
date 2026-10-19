@@ -1170,6 +1170,7 @@ export type AssetId = "veh.sweeper" | "npc.old_woman" | "litter.crisp_packet" /*
 ```
 
 - **Hashes:** `public/assets/asset-hashes.json` maps every generated file to its SHA-256. `assets:verify` compares against it. Keys are repo-relative paths, sorted, and include `src/gen/assets.ts` but not the hashes file itself.
+  - *As built (SSP-042):* `forge build` writes the file with its own outputs; the level compiler, which `npm run assets` runs after it, then replaces the `public/assets/levels/` entries with the SHA-256 of every compiled level under the same output root (`syncLevelHashes` in `tools/levels/compile-level.ts`, same format, other entries kept). So the listing is complete after `npm run assets`, and the `forge verify` rebuild produces the same file. An `--out` root without a hash listing (the level fixtures) is left alone. The audio tools add their WAV hashes the same way from M5 ([AUDIO_DESIGN](AUDIO_DESIGN.md)).
 
 ### 9.4 `forge lint`
 

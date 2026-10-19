@@ -17,16 +17,16 @@
 // Static: nothing depends on the tick. Draw calls: city mesh, building shadows, the UI batch (3), plus the palette
 // pass and the blit: 5 of the 10 allowed (TECHNICAL_DESIGN §12.7).
 import { Group } from 'three';
+import type { FontName } from '../app/assetRegistry.ts';
 import type { SceneContext } from '../app/Game.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
 import { SWEEP_HEIGHT_M } from '../render/camera.ts';
 import { mergeBoxes } from '../render/cityMesh.ts';
 import { createPlaceholderCityMesh, parseCityGrid } from '../render/placeholderCity.ts';
 import { createBuildingShadows } from '../render/shadows.ts';
-import type { SpriteAtlas } from '../render/spriteAtlas.ts';
 import { UiSpriteBatch } from '../render/spriteBatch.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
-import { type BitmapFont, LineSpacing, loadBitmapFont, TextAlign, TextVariant } from '../ui/bitmapText.ts';
+import { type BitmapFont, LineSpacing, TextAlign, TextVariant } from '../ui/bitmapText.ts';
 import {
   ButtonState,
   buttonWidthFor,
@@ -38,7 +38,7 @@ import {
 import { TEXT_SAMPLE_ORIGIN_M, TEXT_SAMPLE_ROWS } from './TextSampleScene.ts';
 
 /** The font button labels use (`public/assets/fonts/kerbside5x7.json`). */
-export const PANEL_SAMPLE_FONT = 'kerbside5x7';
+export const PANEL_SAMPLE_FONT: FontName = 'kerbside5x7';
 
 /** UI quads the scene can draw per frame (it draws about 1,000). */
 export const PANEL_SAMPLE_CAPACITY = 2048;
@@ -162,7 +162,6 @@ export class PanelSampleScene implements Scene {
   readonly simEvents = null;
   private readonly context: SceneContext;
   private readonly world: Group;
-  private atlas: SpriteAtlas | null = null;
   private batch: UiSpriteBatch | null = null;
   private panels: Panels | null = null;
   private items: readonly PanelSampleItem[] = [];
@@ -185,16 +184,12 @@ export class PanelSampleScene implements Scene {
   }
 
   async enter(_params: SceneParams): Promise<void> {
-    const [atlas, font] = await Promise.all([
-      this.context.loadAtlas('ui'),
-      loadBitmapFont(PANEL_SAMPLE_FONT),
-    ]);
+    // The atlas and the font are the asset registry's (BootScene, SSP-284): never loaded or released here.
+    const atlas = this.context.assets.atlas('ui');
+    const font = this.context.assets.font(PANEL_SAMPLE_FONT);
     if (font.metrics.atlas !== atlas.name) {
-      atlas.texture.dispose();
-      atlas.swapTexture.dispose();
       throw new Error(`panel_sample: ${font.metrics.id} draws from atlas '${font.metrics.atlas}', not 'ui'`);
     }
-    this.atlas = atlas;
     const batch = new UiSpriteBatch(atlas, PANEL_SAMPLE_CAPACITY);
     const sink: PanelSink = batch;
     this.batch = batch;
@@ -211,11 +206,6 @@ export class PanelSampleScene implements Scene {
       this.context.ui.remove(this.batch.mesh);
       this.batch.dispose();
       this.batch = null;
-    }
-    if (this.atlas !== null) {
-      this.atlas.texture.dispose();
-      this.atlas.swapTexture.dispose();
-      this.atlas = null;
     }
     this.panels = null;
   }

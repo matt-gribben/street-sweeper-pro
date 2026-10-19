@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Group } from 'three';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import type { Assets } from '../../src/app/assetRegistry.ts';
 import { EventBus } from '../../src/app/events.ts';
 import type { SceneContext } from '../../src/app/Game.ts';
 import { SceneManager } from '../../src/app/SceneManager.ts';
@@ -16,7 +17,6 @@ import { GamepadDevice, PAD_BUTTON } from '../../src/input/gamepad.ts';
 import { KeyboardDevice } from '../../src/input/keyboard.ts';
 import { PointerDevice } from '../../src/input/pointer.ts';
 import type { Renderer } from '../../src/render/Renderer.ts';
-import { type AtlasName, loadAtlas, type RgbaImage } from '../../src/render/spriteAtlas.ts';
 import { clientToInternalPx, computeViewportLayout, INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
 import { ShiftIntroScene } from '../../src/scenes/ShiftIntroScene.ts';
 import { DEFAULT_DISTRICT, ShiftScene } from '../../src/scenes/ShiftScene.ts';
@@ -26,23 +26,16 @@ import { EV } from '../../src/sim/eventQueue.ts';
 import type { SimSnapshot } from '../../src/sim/snapshot.ts';
 import { IntroStatus } from '../../src/ui/introCard.ts';
 import { TallyButton, tallyButtonRects } from '../../src/ui/tallyPage.ts';
+import { checkoutAssets } from '../support/checkoutAssets.ts';
 import { fakePad, keyEvent, padSource, setButton } from '../support/fakeInput.ts';
-import { decodePng } from '../support/png.ts';
-import { readBitmapFont, readFontJson } from '../support/textRaster.ts';
-
-const readBitmapFontForTest = () => readBitmapFont('kerbside5x7');
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const read = (rel: string): string => readFileSync(`${REPO_ROOT}${rel}`, 'utf8');
 
-const atlasFiles = new Map<AtlasName, { json: unknown; image: RgbaImage }>();
-beforeAll(() => {
-  for (const name of ['world', 'actors', 'items', 'ui'] as const) {
-    atlasFiles.set(name, {
-      json: JSON.parse(read(`public/assets/atlas/${name}.json`)),
-      image: decodePng(readFileSync(`${REPO_ROOT}public/assets/atlas/${name}.png`)),
-    });
-  }
+/** The asset registry BootScene would have loaded (SSP-284): every scene of the flow takes its atlases here. */
+let assets: Assets;
+beforeAll(async () => {
+  assets = await checkoutAssets();
 });
 
 /** The browser wiring of main.ts without WebGL, ticked by hand. */
@@ -69,11 +62,7 @@ function harness(levelGate: Promise<void> = Promise.resolve()) {
     root: new Group(),
     ui: new Group(),
     events: bus,
-    loadAtlas: async (name) => {
-      const files = atlasFiles.get(name);
-      if (files === undefined) throw new Error(`test serves no '${name}' atlas`);
-      return loadAtlas(name, { fetchJson: async () => files.json, fetchImage: async () => files.image });
-    },
+    assets,
     pinCamera: () => {},
     followCamera: () => {},
     releaseCamera: () => {},
@@ -85,15 +74,14 @@ function harness(levelGate: Promise<void> = Promise.resolve()) {
     await levelGate;
     return read(`public/${url.replace(/^\//, '')}`);
   };
-  const fontSource = async (): Promise<unknown> => readFontJson('kerbside5x7');
   const errors: unknown[] = [];
   const flow = new ShiftFlow({
     scenes,
     events: bus,
     factory: {
-      intro: (options) => new ShiftIntroScene(ctx, { ...options, levelSource, fontSource }),
-      shift: (options) => new ShiftScene(ctx, { ...options, levelSource, fontSource }),
-      tally: (options) => new TallyScene(ctx, { ...options, fontSource }),
+      intro: (options) => new ShiftIntroScene(ctx, { ...options, levelSource }),
+      shift: (options) => new ShiftScene(ctx, { ...options, levelSource }),
+      tally: (options) => new TallyScene(ctx, options),
     },
     menu: actions,
     district: DEFAULT_DISTRICT,
@@ -320,7 +308,7 @@ describe('ShiftFlow', () => {
     expect(intro.hasStarted).toBe(true);
     await h.topIs('shift');
     const { tally } = await h.finishShift();
-    const rects = tallyButtonRects(readBitmapFontForTest(), 480, INTERNAL_HEIGHT_PX);
+    const rects = tallyButtonRects(assets.font('kerbside5x7'), 480, INTERNAL_HEIGHT_PX);
     const back = rects[TallyButton.BackToBriefing];
     if (back === undefined) throw new Error('no rect');
     h.click(back.x + 10, back.y + 8); // during the 0.5 s lock: ignored

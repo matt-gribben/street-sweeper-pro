@@ -1,51 +1,36 @@
 // Entry point (SSP-043): parse the URL, build the Game (renderer, scene stack, event bus, fixed 60 Hz loop in
 // src/app/loop.ts), start the first scene, install the `?test=1` hooks and start the loop. Since SSP-071 every
 // build boots the shift flow (src/app/shiftFlow.ts) at the intro card for Puddle Lane: intro → shift → tally →
-// Try Again, so `npm run dev` always runs a complete 240 s shift (ROADMAP §1 principle 5). BootScene (SSP-284)
-// goes in front of it.
+// Try Again, so `npm run dev` always runs a complete 240 s shift (ROADMAP §1 principle 5). Since SSP-284 the root
+// scene is BootScene (src/scenes/BootScene.ts): it loads the shared asset registry once, then hands off.
 
+import { loadAssets } from './app/assetRegistry.ts';
 import { Game } from './app/Game.ts';
-import type { Scene, SceneParams } from './app/SceneManager.ts';
+import type { Scene } from './app/SceneManager.ts';
 import { ShiftFlow } from './app/shiftFlow.ts';
 import { installTestHooks, readTestParams } from './debug/testHooks.ts';
 import { NO_MENU_INPUT } from './input/actions.ts';
+import { lutBuildCount } from './render/palettePass.ts';
+import { BootScene, bootRoute, type TestSceneId } from './scenes/BootScene.ts';
 import { HudSampleScene } from './scenes/HudSampleScene.ts';
 import { LevelPreviewScene } from './scenes/LevelPreviewScene.ts';
 import { PanelSampleScene } from './scenes/PanelSampleScene.ts';
 import { ShiftIntroScene } from './scenes/ShiftIntroScene.ts';
-import { DEFAULT_DISTRICT, ShiftScene } from './scenes/ShiftScene.ts';
+import { ShiftScene } from './scenes/ShiftScene.ts';
 import {
   createDevWorldScene,
   createSpikeCityScene,
   createSpikeTestScene,
-  isSpikeTestScene,
-  SPIKE_TEST_SCENES,
   SpikeScene,
+  type SpikeTestSceneId,
 } from './scenes/SpikeScene.ts';
 import { TallyScene } from './scenes/TallyScene.ts';
 import { TextSampleScene } from './scenes/TextSampleScene.ts';
-import { DISTRICT_ID_PATTERN } from './sim/replay.ts';
 
-/** `?test=1&scene=` IDs besides districts and the spike test scenes: the SSP-045 compiled-level preview. */
-const LEVEL_PREVIEW_SCENE = 'level_preview';
-
-/** `?test=1&scene=text_sample`: the SSP-069 bitmap-text and UI-pass test scene. */
-const TEXT_SAMPLE_SCENE = 'text_sample';
-
-/** `?test=1&scene=panel_sample`: the SSP-285 9-slice panel and button-state test scene. */
-const PANEL_SAMPLE_SCENE = 'panel_sample';
-
-/** `?test=1&scene=hud_sample`: the SSP-070 HUD layout test scene. */
-const HUD_SAMPLE_SCENE = 'hud_sample';
-
-/** `?test=1&scene=spike_city`: the M0 spike city with its actors (the default world before SSP-046). */
-const SPIKE_CITY_SCENE = 'spike_city';
-
-/** `?test=1&scene=shift_intro`: the shift flow from its intro card (also the default without `scene`, SSP-071). */
-const SHIFT_INTRO_SCENE = 'shift_intro';
-
-/** `?test=1&scene=shift`: the shift flow straight into a Puddle Lane shift, the intro card skipped. */
-const SHIFT_SCENE = 'shift';
+/** An error's message, for the console and `__ssp.boot()`. */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game');
 if (canvas === null) {
@@ -82,22 +67,32 @@ const game = new Game(canvas, {
     : null,
 });
 
-// Scene choice. Without `scene`, every build boots the shift flow at the intro card for Puddle Lane (SSP-071),
-// seeded with `seed` (0 when absent). `?test=1&scene=<id>` boots `shift_intro` (the same); `shift` or
-// `district.<name>` (the flow straight into that district's shift, the intro card skipped; it still ends on the
-// tally); `level_preview` (compiled Puddle Lane from a pinned camera, SSP-045), `text_sample` (bitmap text over a
-// shadowed street, SSP-069), `panel_sample` (9-slice panels and button states, SSP-285), `hud_sample` (the HUD at
-// its widest, SSP-070), `spike_city` or a spike test scene. An unknown ID throws; so does `tally`, which needs a
-// finished shift (boot the flow and step to the end). Dev builds keep the M0 spike city for the spike scripts:
-// `?world=spike_city`, `?world=palette_test` (the SSP-016 palette test world for
+// Scene choice (src/scenes/BootScene.ts bootRoute, SSP-284). BootScene always runs first: it loads every atlas, the
+// font metrics and the palette LUT once (src/app/assetRegistry.ts), then hands off to the routed scene. Without
+// `scene`, every build hands off to the shift flow at the intro card for Puddle Lane (SSP-071), seeded with `seed`
+// (0 when absent). `?test=1&scene=<id>` hands off to `shift_intro` (the same); `shift` or `district.<name>` (the
+// flow straight into that district's shift, the intro card skipped; it still ends on the tally); `level_preview`
+// (compiled Puddle Lane from a pinned camera, SSP-045), `text_sample` (bitmap text over a shadowed street,
+// SSP-069), `panel_sample` (9-slice panels and button states, SSP-285), `hud_sample` (the HUD at its widest,
+// SSP-070), `spike_city` or a spike test scene. An unknown ID throws at once, before the boot; so does `tally`,
+// which needs a finished shift (boot the flow and step to the end). Dev builds keep the M0 spike city for the spike
+// scripts: `?world=spike_city`, `?world=palette_test` (the SSP-016 palette test world for
 // tools/spikes/swiftShaderPalettePass.ts), `?world=empty` (the draw-call baseline for tools/spikes/spikeCityFrame.ts),
 // `?actors=0` (the city without its actors, tools/spikes/spriteBatchFrame.ts) and, outside test mode,
 // `?actorFrame=N` (pin the drawn actor frame); release builds tree-shake those away.
 const seed = testParams?.seed ?? 0;
 
-/** What boots: one scene pushed on its own, or the shift flow from its intro card or straight into a shift. */
+const route = bootRoute(
+  testParams?.scene ?? null,
+  import.meta.env.DEV
+    ? { world: params.get('world'), actors: params.get('actors'), actorFrame: params.get('actorFrame') }
+    : null,
+  testMode,
+);
+
+/** What boot hands off to: one scene on its own, or the shift flow from its intro card or straight into a shift. */
 type FirstScene =
-  | { readonly kind: 'scene'; readonly scene: Scene; readonly params: SceneParams }
+  | { readonly kind: 'scene'; readonly scene: Scene }
   | { readonly kind: 'flow'; readonly flow: ShiftFlow; readonly atIntro: boolean };
 
 function shiftFlow(district: string, atIntro: boolean): FirstScene {
@@ -121,58 +116,59 @@ function shiftFlow(district: string, atIntro: boolean): FirstScene {
 }
 
 function single(scene: Scene): FirstScene {
-  return { kind: 'scene', scene, params: { seed } };
+  return { kind: 'scene', scene };
+}
+
+/** The test scene `?test=1&scene=<id>` names (scenes read the registry only in enter(), after the boot). */
+function testScene(id: TestSceneId | SpikeTestSceneId): Scene {
+  const context = game.sceneContext;
+  switch (id) {
+    case 'level_preview':
+      return new LevelPreviewScene(context);
+    case 'text_sample':
+      return new TextSampleScene(context);
+    case 'panel_sample':
+      return new PanelSampleScene(context);
+    case 'hud_sample':
+      return new HudSampleScene(context);
+    case 'spike_city':
+      return createSpikeCityScene(context, true, null);
+    case 'lean_quadrants':
+    case 'scale_1440':
+    case 'scale_sheet':
+      return createSpikeTestScene(id, context);
+  }
 }
 
 function createFirstScene(): FirstScene {
-  const sceneId = testParams?.scene ?? null;
-  if (sceneId !== null) {
-    if (DISTRICT_ID_PATTERN.test(sceneId)) return shiftFlow(sceneId, false);
-    if (sceneId === SHIFT_SCENE) return shiftFlow(DEFAULT_DISTRICT, false);
-    if (sceneId === SHIFT_INTRO_SCENE) return shiftFlow(DEFAULT_DISTRICT, true);
-    if (sceneId === LEVEL_PREVIEW_SCENE) return single(new LevelPreviewScene(game.sceneContext));
-    if (sceneId === TEXT_SAMPLE_SCENE) return single(new TextSampleScene(game.sceneContext));
-    if (sceneId === PANEL_SAMPLE_SCENE) return single(new PanelSampleScene(game.sceneContext));
-    if (sceneId === HUD_SAMPLE_SCENE) return single(new HudSampleScene(game.sceneContext));
-    if (sceneId === SPIKE_CITY_SCENE) return single(createSpikeCityScene(game.sceneContext, true, null));
-    if (!isSpikeTestScene(sceneId)) {
-      const known = [
-        SHIFT_INTRO_SCENE,
-        SHIFT_SCENE,
-        'district.<name>',
-        SPIKE_CITY_SCENE,
-        ...SPIKE_TEST_SCENES,
-        LEVEL_PREVIEW_SCENE,
-        TEXT_SAMPLE_SCENE,
-        PANEL_SAMPLE_SCENE,
-        HUD_SAMPLE_SCENE,
-      ].join(', ');
-      throw new Error(`?test=1: unknown scene '${sceneId}' (known: ${known})`);
-    }
-    return single(createSpikeTestScene(sceneId, game.sceneContext));
+  switch (route.kind) {
+    case 'flow':
+      return shiftFlow(route.district, route.atIntro);
+    case 'scene':
+      return single(testScene(route.scene));
+    case 'dev_world':
+      // Behind import.meta.env.DEV so release builds drop the dev worlds (bootRoute never returns this there).
+      if (!import.meta.env.DEV) throw new Error('?world= is a dev-build parameter');
+      return single(createDevWorldScene(game.sceneContext, route.world));
+    case 'dev_spike_city':
+      return single(createSpikeCityScene(game.sceneContext, route.actors, route.actorFrame));
   }
-  if (import.meta.env.DEV) {
-    const choice = params.get('world');
-    if (choice === 'palette_test' || choice === 'empty') {
-      return single(createDevWorldScene(game.sceneContext, choice));
-    }
-    if (choice === SPIKE_CITY_SCENE || params.has('actors') || params.has('actorFrame')) {
-      // Test mode never pins the actor frame: test frames follow the tick count.
-      const pinned = testMode ? Number.NaN : Number.parseInt(params.get('actorFrame') ?? '', 10);
-      return single(
-        createSpikeCityScene(
-          game.sceneContext,
-          params.get('actors') !== '0',
-          Number.isNaN(pinned) ? null : pinned,
-        ),
-      );
-    }
-  }
-  return shiftFlow(DEFAULT_DISTRICT, true);
 }
 
 const first = createFirstScene();
 const flow = first.kind === 'flow' ? first.flow : null;
+
+/** BootScene's hand-off: replace it with the routed scene (the flow's first transition replaces it too). */
+function handOff(): Promise<void> {
+  if (first.kind === 'scene') return game.scenes.replace(first.scene, { seed });
+  return first.atIntro ? first.flow.startAtIntro() : first.flow.startAtShift();
+}
+
+const boot = new BootScene({
+  load: () => loadAssets(),
+  install: (assets) => game.installAssets(assets),
+  handOff,
+});
 
 /** IDs of the scenes that joined the stack, oldest first (test mode only, for `__ssp.sceneHistory()`). */
 const sceneHistory: string[] = [];
@@ -204,19 +200,19 @@ const testHooks = installTestHooks(window, search, {
   renders: () => game.renderer.renderCount,
   sceneId: () => game.scenes.top?.id ?? null,
   sceneHistory: () => sceneHistory,
+  boot: () => ({
+    status: boot.status,
+    error: boot.error === null ? null : errorMessage(boot.error),
+    lutBuilds: lutBuildCount(),
+  }),
 });
 
-// The loop renders from the first frame; the scene's world draws alone while its atlases load. A bad atlas
-// rejects here and is reported loudly rather than drawn (and test mode never reports ready). In test mode, once
-// the scene is in: advance `tick=<n>` ticks, render, report ready, then apply `freeze`.
+// The loop renders from the first frame (palette index 00 until BootScene has installed the registry). A missing
+// or off-palette atlas, bad font metrics or a routed scene that fails to enter rejects here and is reported loudly,
+// naming the asset (`__ssp.boot()` reports it too); test mode then never reports ready. In test mode, once the
+// routed scene is in: advance `tick=<n>` ticks, render, report ready, then apply `freeze`.
 game.start();
-const started =
-  first.kind === 'scene'
-    ? game.scenes.push(first.scene, first.params)
-    : first.atIntro
-      ? first.flow.startAtIntro()
-      : first.flow.startAtShift();
-started.then(
+boot.run(game.scenes, { seed }).then(
   () => {
     if (testHooks === null) return;
     testHooks.api.step(testHooks.params.tick);
@@ -224,7 +220,7 @@ started.then(
     game.loop.setFrozen(testHooks.params.freeze);
   },
   (error: unknown) => {
-    console.error('Street Sweeper Pro: a sprite atlas or level failed to load', error);
+    console.error(`Street Sweeper Pro: boot failed: ${errorMessage(error)}`, error);
   },
 );
 

@@ -2,10 +2,10 @@
 // The shift flow (src/app/shiftFlow.ts) enters it on EV.ShiftEnd, after the knock-off coast or on TOWED, with the
 // SimSnapshot the shift ended in; src/ui/tallyPage.ts lays the figures out.
 //
-//   enter()        loads the `ui` atlas and the font (uiScreen.ts) and resets its menu input (menuController.ts):
-//                  menu edges and clicks latched during the shift are dropped (Space is the brush too, so a press
-//                  made while driving must never pick a button), and a direction still held is ignored until
-//                  released.
+//   enter()        takes the `ui` atlas and the font from the asset registry (uiScreen.ts, SSP-284) and resets
+//                  its menu input (menuController.ts): menu edges and clicks latched during the shift are dropped
+//                  (Space is the brush too, so a press made while driving must never pick a button), and a
+//                  direction still held is ignored until released.
 //   fixedUpdate()  ignores menu input for TALLY_INPUT_LOCK_TICKS (0.5 s, so a brush or horn press made as the
 //                  shift ended cannot pick a button either), then feeds the tick's input to the buttons' Menu
 //                  (src/ui/menus.ts, SSP-286): W/↑, S/↓, the D-pad and the left stick move the focus (wrapping, with
@@ -24,7 +24,6 @@ import type { MenuInputSource } from '../input/actions.ts';
 import { INTERNAL_HEIGHT_PX } from '../render/upscale.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
-import type { FontJsonSource } from '../ui/bitmapText.ts';
 import { districtDisplayName } from '../ui/introCard.ts';
 import { Menu } from '../ui/menus.ts';
 import type { ButtonState } from '../ui/panels.ts';
@@ -61,8 +60,6 @@ export type TallySceneOptions = {
   readonly onRetry: () => void;
   /** Back to Briefing: called once. */
   readonly onBack: () => void;
-  /** Fetches the font metrics (default: the browser's fetch). Tests inject a file reader. */
-  readonly fontSource?: FontJsonSource;
 };
 
 /** The numbers-only tally page. */
@@ -76,7 +73,6 @@ export class TallyScene implements Scene {
   readonly menu: Menu;
   private readonly context: SceneContext;
   private readonly input: MenuController;
-  private readonly fontSource: FontJsonSource | undefined;
   private screen: UiScreen | null = null;
   private lockTicks = TALLY_INPUT_LOCK_TICKS;
   private items: readonly UiItem[] = [];
@@ -101,7 +97,6 @@ export class TallyScene implements Scene {
       backItem: TallyButton.BackToBriefing,
       once: true,
     });
-    this.fontSource = options.fontSource;
   }
 
   /** The focused button. */
@@ -128,7 +123,7 @@ export class TallyScene implements Scene {
   }
 
   async enter(_params: SceneParams): Promise<void> {
-    this.screen = await UiScreen.load(this.context, 'tally', this.fontSource);
+    this.screen = UiScreen.open(this.context, 'tally');
     this.input.reset();
   }
 

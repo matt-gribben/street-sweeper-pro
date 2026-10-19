@@ -42,6 +42,7 @@ function fakeHost(
     renders: () => calls.filter((c) => c === 'render').length,
     sceneId: () => history[history.length - 1] ?? null,
     sceneHistory: () => history,
+    boot: () => ({ status: 'failed', error: "asset registry: atlas 'ui' failed to load", lutBuilds: 1 }),
   };
 }
 
@@ -142,6 +143,7 @@ describe('installTestHooks with test=1', () => {
     expect(typeof api?.readFrame).toBe('function');
     expect(typeof api?.setCamera).toBe('function');
     expect(Object.keys(api ?? {}).sort()).toEqual([
+      'boot',
       'perf',
       'perfReset',
       'readFrame',
@@ -168,6 +170,18 @@ describe('installTestHooks with test=1', () => {
     history?.push('mutated');
     expect(host.history).toHaveLength(4);
     expect(JSON.parse(JSON.stringify(history?.slice(0, 4)))).toEqual(host.history);
+  });
+
+  it("boot() is BootScene's state as JSON-safe plain data (SSP-284)", () => {
+    const target: TestHookTarget = {};
+    installTestHooks(target, '?test=1', fakeHost());
+    const boot = target.__ssp?.boot();
+    expect(boot).toEqual({
+      status: 'failed',
+      error: "asset registry: atlas 'ui' failed to load",
+      lutBuilds: 1,
+    });
+    expect(JSON.parse(JSON.stringify(boot))).toEqual(boot);
   });
 
   it('reports ready only after markReady()', () => {

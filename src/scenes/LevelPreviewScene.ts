@@ -17,7 +17,6 @@ import { type LevelSource, loadLevel } from '../app/levelLoader.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
 import { SWEEP_HEIGHT_M } from '../render/camera.ts';
 import { createLevelCity, type LevelCity } from '../render/levelCity.ts';
-import type { SpriteAtlas } from '../render/spriteAtlas.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
 
 /** The district the preview draws (`district.puddle_lane`). */
@@ -26,7 +25,10 @@ export const LEVEL_PREVIEW_DISTRICT = 'puddle_lane';
 /** The pinned camera focus in sim metres (x east, y south), at SWEEP_HEIGHT_M (1 texel = 1 px). */
 export const LEVEL_PREVIEW_CAMERA_M: readonly [x: number, y: number] = [47, 44];
 
-/** The level_preview scene: loads the level and the `world` atlas, builds the city once, pins the camera. */
+/**
+ * The level_preview scene: loads the level, takes the `world` atlas from the asset registry (SSP-284), builds the
+ * city once, pins the camera.
+ */
 export class LevelPreviewScene implements Scene {
   readonly id = 'level_preview';
   readonly blocksUpdateBelow = false;
@@ -34,7 +36,6 @@ export class LevelPreviewScene implements Scene {
   private readonly context: SceneContext;
   private readonly levelSource: LevelSource | undefined;
   private city: LevelCity | null = null;
-  private atlas: SpriteAtlas | null = null;
 
   constructor(context: SceneContext, levelSource?: LevelSource) {
     this.context = context;
@@ -47,18 +48,9 @@ export class LevelPreviewScene implements Scene {
   }
 
   async enter(_params: SceneParams): Promise<void> {
-    const [level, atlas] = await Promise.all([
-      loadLevel(LEVEL_PREVIEW_DISTRICT, this.levelSource),
-      this.context.loadAtlas('world'),
-    ]);
-    try {
-      this.city = createLevelCity(level, atlas);
-    } catch (error: unknown) {
-      atlas.texture.dispose();
-      atlas.swapTexture.dispose();
-      throw error;
-    }
-    this.atlas = atlas;
+    const atlas = this.context.assets.atlas('world');
+    const level = await loadLevel(LEVEL_PREVIEW_DISTRICT, this.levelSource);
+    this.city = createLevelCity(level, atlas);
     this.context.root.add(this.city.group);
     this.context.pinCamera(LEVEL_PREVIEW_CAMERA_M[0], LEVEL_PREVIEW_CAMERA_M[1], SWEEP_HEIGHT_M);
   }
@@ -68,11 +60,6 @@ export class LevelPreviewScene implements Scene {
       this.context.root.remove(this.city.group);
       this.city.dispose();
       this.city = null;
-    }
-    if (this.atlas !== null) {
-      this.atlas.texture.dispose();
-      this.atlas.swapTexture.dispose();
-      this.atlas = null;
     }
   }
 

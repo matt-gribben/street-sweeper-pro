@@ -2,7 +2,7 @@
 id: SSP-284
 title: "Add BootScene: load atlases, fonts and the palette LUT once, then hand off to the shift flow"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:platform, area:render, area:ui, area:test, size:M, vertical-slice]

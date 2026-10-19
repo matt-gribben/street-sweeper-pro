@@ -1,23 +1,23 @@
 // SSP-045: the browser level loader and the test-only level_preview scene, driven without WebGL: the scene loads
-// compiled Puddle Lane and the world atlas, adds the level city (city + building shadows) to the world pass, pins
+// compiled Puddle Lane, takes the world atlas from the asset registry (SSP-284), adds the level city (city + building shadows) to the world pass, pins
 // the camera at the sweep height, and releases everything on exit. The scene never renders anything per frame.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Group } from 'three';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import type { Assets } from '../../src/app/assetRegistry.ts';
 import { EventBus } from '../../src/app/events.ts';
 import type { SceneContext } from '../../src/app/Game.ts';
 import { levelUrl, loadLevel } from '../../src/app/levelLoader.ts';
 import { SCENE_IDS } from '../../src/app/SceneManager.ts';
 import { SWEEP_HEIGHT_M } from '../../src/render/camera.ts';
 import type { Renderer } from '../../src/render/Renderer.ts';
-import { type AtlasName, loadAtlas } from '../../src/render/spriteAtlas.ts';
 import {
   LEVEL_PREVIEW_CAMERA_M,
   LEVEL_PREVIEW_DISTRICT,
   LevelPreviewScene,
 } from '../../src/scenes/LevelPreviewScene.ts';
-import { decodePng } from '../support/png.ts';
+import { checkoutAssets, recordingAssets } from '../support/checkoutAssets.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const read = (rel: string): string => readFileSync(`${REPO_ROOT}${rel}`, 'utf8');
@@ -51,21 +51,20 @@ describe('levelLoader', () => {
 });
 
 describe('LevelPreviewScene', () => {
+  let assets: Assets;
+  beforeAll(async () => {
+    assets = await checkoutAssets();
+  });
+
   function context() {
     const pins: [number, number, number][] = [];
-    const loaded: AtlasName[] = [];
+    const loaded: string[] = [];
     const ctx: SceneContext = {
       renderer: {} as Renderer,
       root: new Group(),
       ui: new Group(),
       events: new EventBus(),
-      loadAtlas: async (name) => {
-        loaded.push(name);
-        return loadAtlas(name, {
-          fetchJson: async () => JSON.parse(read(`public/assets/atlas/${name}.json`)),
-          fetchImage: async () => decodePng(readFileSync(`${REPO_ROOT}public/assets/atlas/${name}.png`)),
-        });
-      },
+      assets: recordingAssets(assets, loaded),
       pinCamera: (x, y, h) => {
         pins.push([x, y, h]);
       },
@@ -87,7 +86,7 @@ describe('LevelPreviewScene', () => {
     const scene = new LevelPreviewScene(ctx, checkoutLevels);
     expect(scene.levelCity).toBeNull();
     await scene.enter({ seed: 1 });
-    expect(loaded).toEqual(['world']);
+    expect(loaded).toEqual(['atlas:world']); // from the registry: the scene loads no atlas itself
     const city = scene.levelCity;
     expect(city).not.toBeNull();
     expect(ctx.root.children).toEqual([city?.group]);
@@ -97,7 +96,18 @@ describe('LevelPreviewScene', () => {
     scene.fixedUpdate({} as never);
     scene.render(0.5);
     expect(ctx.root.children).toHaveLength(1);
+    // The atlas is the registry's: exit() must leave its textures to the page (the next scene draws with them).
+    let disposed = 0;
+    const onDispose = (): void => {
+      disposed += 1;
+    };
+    const world = assets.atlas('world');
+    world.texture.addEventListener('dispose', onDispose);
+    world.swapTexture.addEventListener('dispose', onDispose);
     scene.exit();
+    world.texture.removeEventListener('dispose', onDispose);
+    world.swapTexture.removeEventListener('dispose', onDispose);
+    expect(disposed).toBe(0);
     expect(ctx.root.children).toEqual([]);
     expect(scene.levelCity).toBeNull();
   });

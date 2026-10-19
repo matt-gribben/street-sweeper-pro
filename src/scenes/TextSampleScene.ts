@@ -17,6 +17,7 @@
 // Static: nothing depends on the tick, so every frame is the same. Draw calls: city mesh, building shadows, the UI
 // batch (3), plus the palette pass and the blit: 5 of the 10 allowed (TECHNICAL_DESIGN §12.7).
 import { Group } from 'three';
+import type { FontName } from '../app/assetRegistry.ts';
 import type { SceneContext } from '../app/Game.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
 import { SWEEP_HEIGHT_M } from '../render/camera.ts';
@@ -24,10 +25,9 @@ import { mergeBoxes } from '../render/cityMesh.ts';
 import { paletteIndex } from '../render/palettePass.ts';
 import { createPlaceholderCityMesh, parseCityGrid } from '../render/placeholderCity.ts';
 import { createBuildingShadows } from '../render/shadows.ts';
-import type { SpriteAtlas } from '../render/spriteAtlas.ts';
 import { UiSpriteBatch } from '../render/spriteBatch.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
-import { type BitmapFont, LineSpacing, loadBitmapFont, TextAlign, TextVariant } from '../ui/bitmapText.ts';
+import { type BitmapFont, LineSpacing, TextAlign, TextVariant } from '../ui/bitmapText.ts';
 
 /** One character per 2 m cell (`.` asphalt, `:` slab, `3` a 3-storey building); row 0 is north. 17 × 9 cells. */
 export const TEXT_SAMPLE_ROWS: readonly string[] = [
@@ -46,7 +46,7 @@ export const TEXT_SAMPLE_ROWS: readonly string[] = [
 export const TEXT_SAMPLE_ORIGIN_M: readonly [x: number, y: number] = [-17, -9];
 
 /** The font the scene draws (`public/assets/fonts/kerbside5x7.json`). */
-export const TEXT_SAMPLE_FONT = 'kerbside5x7';
+export const TEXT_SAMPLE_FONT: FontName = 'kerbside5x7';
 
 /** x of the column inside the building shadow, and of the sunlit column, at every width. */
 export const TEXT_SAMPLE_SHADOW_X_PX = 56;
@@ -168,7 +168,6 @@ export class TextSampleScene implements Scene {
   readonly simEvents = null;
   private readonly context: SceneContext;
   private readonly world: Group;
-  private atlas: SpriteAtlas | null = null;
   private batch: UiSpriteBatch | null = null;
   private font: BitmapFont | null = null;
   private lines: readonly TextSampleLine[] = [];
@@ -192,13 +191,12 @@ export class TextSampleScene implements Scene {
   }
 
   async enter(_params: SceneParams): Promise<void> {
-    const [atlas, font] = await Promise.all([this.context.loadAtlas('ui'), loadBitmapFont(TEXT_SAMPLE_FONT)]);
+    // The atlas and the font are the asset registry's (BootScene, SSP-284): never loaded or released here.
+    const atlas = this.context.assets.atlas('ui');
+    const font = this.context.assets.font(TEXT_SAMPLE_FONT);
     if (font.metrics.atlas !== atlas.name) {
-      atlas.texture.dispose();
-      atlas.swapTexture.dispose();
       throw new Error(`text_sample: ${font.metrics.id} draws from atlas '${font.metrics.atlas}', not 'ui'`);
     }
-    this.atlas = atlas;
     this.font = font;
     this.batch = new UiSpriteBatch(atlas, TEXT_SAMPLE_CAPACITY);
     this.context.root.add(this.world);
@@ -212,11 +210,6 @@ export class TextSampleScene implements Scene {
       this.context.ui.remove(this.batch.mesh);
       this.batch.dispose();
       this.batch = null;
-    }
-    if (this.atlas !== null) {
-      this.atlas.texture.dispose();
-      this.atlas.swapTexture.dispose();
-      this.atlas = null;
     }
   }
 

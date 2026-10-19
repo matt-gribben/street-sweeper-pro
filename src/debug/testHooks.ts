@@ -21,7 +21,8 @@
 // Malformed values throw at boot: a test must never run against a silently defaulted parameter.
 //
 // `window.__ssp`:
-//   ready         true once assets are loaded and the first complete frame is rendered; specs wait for it;
+//   ready         true once BootScene has loaded the asset registry, the routed scene has joined the stack and
+//                 the first complete frame is rendered (SSP-284); specs wait for it;
 //   step(n)       advance n ticks synchronously (also while frozen), then render exactly once;
 //   state()       a JSON-safe snapshot: in a shift, the World's SimSnapshot (src/sim/snapshot.ts: tick,
 //                 bessie { x, y, heading, speed }, hp; since SSP-065 score, tidy, stars, hopper, water, combo,
@@ -38,7 +39,10 @@
 //   scene()       the active (top) scene's ID (`shift_intro`, `shift`, `tally`, `lean_quadrants`, …), or null while
 //                 the stack is empty (SSP-071): SimSnapshot has no field for it;
 //   sceneHistory() the IDs of every scene that joined the stack since boot, oldest first (SSP-071), so a spec can
-//                 check a transition skipped a scene (Try Again never shows the intro card).
+//                 check a transition skipped a scene (Try Again never shows the intro card);
+//   boot()        BootScene's state (SSP-284): 'loading', 'loaded' or 'failed', the error that failed the boot (its
+//                 message, naming the asset, e.g. a 404 atlas) and how many times the palette LUT was built on this
+//                 page (palettePass.ts lutBuildCount: exactly 1 after boot).
 //
 // step(n) runs n fixed 60 Hz loop ticks synchronously (loop.runTicks: input → scenes.fixedUpdate → event drain)
 // and renders once (loop.renderNow). In a shift each loop tick is one World tick (ShiftScene.fixedUpdate calls
@@ -119,6 +123,15 @@ export type TestPerf = PerfSamples & {
   readonly renders: number;
 };
 
+/** Where BootScene is (`__ssp.boot()`, SSP-284). JSON-safe. */
+export type TestBoot = {
+  readonly status: 'idle' | 'loading' | 'loaded' | 'failed';
+  /** The message of the error that failed the boot (or its hand-off), or null. */
+  readonly error: string | null;
+  /** buildLut calls on this page (palettePass.ts lutBuildCount). */
+  readonly lutBuilds: number;
+};
+
 /** The `window.__ssp` object. */
 export type SspTestApi = {
   readonly ready: boolean;
@@ -132,6 +145,8 @@ export type SspTestApi = {
   scene(): string | null;
   /** IDs of the scenes that joined the stack since boot, oldest first. */
   sceneHistory(): string[];
+  /** BootScene's state, error and the page's LUT build count (SSP-284). */
+  boot(): TestBoot;
 };
 
 /** What the hooks drive: implemented by main.ts over the Game's loop and renderer. */
@@ -157,6 +172,8 @@ export type TestHookHost = {
   sceneId(): string | null;
   /** IDs of the scenes that joined the stack since boot, oldest first. */
   sceneHistory(): readonly string[];
+  /** BootScene's state (BootScene.status / error) and the LUT build count. */
+  boot(): TestBoot;
 };
 
 /** An object that can carry `__ssp`: the browser's `window`, or a plain object in unit tests. */
@@ -280,6 +297,10 @@ export function installTestHooks(
     },
     sceneHistory(): string[] {
       return [...host.sceneHistory()];
+    },
+    boot(): TestBoot {
+      const b = host.boot();
+      return { status: b.status, error: b.error, lutBuilds: b.lutBuilds };
     },
   };
   target.__ssp = api;

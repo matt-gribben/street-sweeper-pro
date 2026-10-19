@@ -2,7 +2,7 @@
 id: SSP-068
 title: "Draft Kerbside 5\u00d77 glyphs and add the forge font builder and ui atlas"
 milestone: M2
-status: todo
+status: done
 type: asset
 estimate: M
 labels: [type:asset, area:assets, area:tooling, area:ui, size:M, vertical-slice]
@@ -41,12 +41,12 @@ Manifest: class `font` exists in the ID convention (CLAUDE.md §5.4); propose `f
 
 ## Acceptance criteria
 
-- [ ] The glyph file parses and contains exactly 101 glyphs (ASCII 32–126 plus £ ★ → ← ↑ ↓) and every starter kerning pair
-- [ ] `public/assets/fonts/kerbside5x7.json` lists advance, kerning and frame references for every glyph, including the outlined variant (advance +1)
-- [ ] pytest verifies the outline is 8-connected and grows each glyph by exactly 1 px per side
-- [ ] Forge pytest passes; two builds produce byte-identical outputs; `npm run assets:verify` passes
-- [ ] `npm run assets:lint` passes (palette-only pixels)
-- [ ] `build/sheets/ui.png` was Read and every glyph is legible at 1×
+- [x] The glyph file parses and contains exactly 101 glyphs (ASCII 32–126 plus £ ★ → ← ↑ ↓) and every starter kerning pair
+- [x] `public/assets/fonts/kerbside5x7.json` lists advance, kerning and frame references for every glyph, including the outlined variant (advance +1)
+- [x] pytest verifies the outline is 8-connected and grows each glyph by exactly 1 px per side
+- [x] Forge pytest passes; two builds produce byte-identical outputs; `npm run assets:verify` passes
+- [x] `npm run assets:lint` passes (palette-only pixels)
+- [x] `build/sheets/ui.png` was Read and every glyph is legible at 1×
 
 ## Verification
 

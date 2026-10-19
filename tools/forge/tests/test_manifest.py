@@ -46,6 +46,7 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "facade.parade_brick",
         "facade.terrace_brick",
         "facade.terrace_brick_bay",
+        "font.kerbside5x7",
         "haz.speed_bump",
         "litter.banana_skin",
         "npc.old_woman",
@@ -121,7 +122,7 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "outline": True,
         "swaps": [],
     }
-    assert sum(len(e.frame_ids()) for e in entries) == 317  # 205 M0 frames + 27 SSP-041 facade and roof frames + 85 SSP-040 ground tiles
+    assert sum(len(e.frame_ids()) for e in entries) == 517  # 205 M0 frames + 27 SSP-041 facade and roof frames + 85 SSP-040 ground tiles + 200 SSP-068 font frames
     for e in raw["assets"]:
         assert list(e) == list(FIELDS), "fields in the documented order"
         assert not e["id"].startswith(("concept.", "_probe")), "_probe and concept.* are never in the manifest"

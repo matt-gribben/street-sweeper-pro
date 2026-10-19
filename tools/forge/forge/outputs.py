@@ -6,6 +6,8 @@ Paths are relative to the output root: the repo root for a normal build, or ``--
 - ``public/assets/atlas/<name>.png`` and ``<name>.json`` for every atlas with frames
   (:mod:`forge.pack`); ``public/assets/atlas/`` is owned by the forge, so anything else in it
   is removed;
+- ``public/assets/fonts/<name>.json``: the metrics of every font (:mod:`forge.glyphs`, SSP-068);
+  ``public/assets/fonts/`` is owned by the forge too;
 - ``src/gen/assets.ts``: the typed ``FRAME`` table, ``FrameId`` and ``AssetId``;
 - ``public/assets/asset-hashes.json``: every file above mapped to its SHA-256, sorted by key.
 
@@ -20,6 +22,7 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from forge.glyphs import FONTS_DIR
 from forge.pack import Atlas, atlas_json, atlas_png
 from forge.palette import Palette
 from forge.pngio import write_bytes_if_changed
@@ -28,7 +31,9 @@ __all__ = [
     "ASSETS_TS",
     "ASSETS_TS_HEADER",
     "ATLAS_DIR",
+    "FONTS_DIR",
     "HASHES_JSON",
+    "OWNED_DIRS",
     "asset_hashes_json",
     "assets_ts",
     "generated_files",
@@ -37,6 +42,8 @@ __all__ = [
 ]
 
 ATLAS_DIR = "public/assets/atlas"
+OWNED_DIRS = (ATLAS_DIR, FONTS_DIR)
+"""Directories that hold only forge outputs: anything else in them is removed on write."""
 ASSETS_TS = "src/gen/assets.ts"
 HASHES_JSON = "public/assets/asset-hashes.json"
 
@@ -87,29 +94,43 @@ def asset_hashes_json(files: Mapping[str, bytes]) -> bytes:
     return (json.dumps(doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
 
-def generated_files(atlases: Sequence[Atlas], asset_ids: Sequence[str], palette: Palette) -> dict[str, bytes]:
-    """Every generated output, keyed by its path relative to the output root, sorted by path."""
+def generated_files(
+    atlases: Sequence[Atlas],
+    asset_ids: Sequence[str],
+    palette: Palette,
+    extra: Mapping[str, bytes] | None = None,
+) -> dict[str, bytes]:
+    """Every generated output, keyed by its path relative to the output root, sorted by path.
+
+    ``extra`` holds further outputs (the font metrics JSON) that join the hash listing; each
+    must be a new path inside :data:`OWNED_DIRS`.
+    """
     files: dict[str, bytes] = {}
     for a in atlases:
         files[f"{ATLAS_DIR}/{a.name}.png"] = atlas_png(a, palette)
         files[f"{ATLAS_DIR}/{a.name}.json"] = atlas_json(a)
+    for rel, data in (extra or {}).items():
+        if not any(rel.startswith(f"{d}/") for d in OWNED_DIRS) or rel in files:
+            raise ValueError(f"extra output {rel!r} must be a new file in {' or '.join(OWNED_DIRS)}")
+        files[rel] = data
     files[ASSETS_TS] = assets_ts(atlases, asset_ids)
     files[HASHES_JSON] = asset_hashes_json(files)
     return dict(sorted(files.items()))
 
 
 def write_outputs(root: Path, files: Mapping[str, bytes]) -> list[str]:
-    """Write ``files`` under ``root`` and remove stale files from ``root/public/assets/atlas/``.
+    """Write ``files`` under ``root`` and remove stale files from the :data:`OWNED_DIRS`.
 
     Returns the paths (relative to ``root``) whose bytes changed. Unchanged files are not
     rewritten, so their mtimes stay put.
     """
-    atlas_dir = root / ATLAS_DIR
-    if atlas_dir.is_dir():
-        keep = {Path(p).name for p in files if p.startswith(f"{ATLAS_DIR}/")}
-        for stale in sorted(atlas_dir.iterdir()):
-            if stale.name not in keep and stale.is_file():
-                stale.unlink()
+    for owned in OWNED_DIRS:
+        owned_dir = root / owned
+        if owned_dir.is_dir():
+            keep = {Path(p).name for p in files if p.startswith(f"{owned}/")}
+            for stale in sorted(owned_dir.iterdir()):
+                if stale.name not in keep and stale.is_file():
+                    stale.unlink()
     changed: list[str] = []
     for rel, data in files.items():
         if write_bytes_if_changed(root / rel, data):

@@ -1,15 +1,16 @@
 """Determinism and acceptance checks over a real build of the committed M0 assets (SSP-009, SSP-010, SSP-014,
-SSP-020, SSP-024, SSP-040, SSP-041).
+SSP-020, SSP-024, SSP-040, SSP-041, SSP-068).
 
 Builds ``assets-src/manifest.json`` twice with the cache off, into two temp dirs, and checks
 that every output file has the same SHA-256 (frames, atlas PNG/JSON, ``src/gen/assets.ts``,
-``asset-hashes.json``); then inspects the built frames: 317 of them, 64x64 Bessie / 96x96
+``asset-hashes.json``, the font metrics); then inspects the built frames: 517 of them, 64x64 Bessie / 96x96
 brush / 24x24 npc.old_woman (8 idle directions, 3 of them mirrored) / 32x32 prop.lamp_post
 (4 sprite-stack slices) / 16x16 litter.banana_skin (the D-07 scale sample, h00 only) / the
 SSP-041 Puddle Lane facade sets (64x80 lit/base/dark bays) and roof surfaces (32x32 variants) /
-the SSP-040 ground tiles (32x32 variants, the 47 kerb blob tiles and the road-marking overlays),
-Kerbside-32 colours only with binary alpha, the outline rule, no metadata chunks, and a palette
-snap that changed 0 pixels; and the packed ``world``, ``actors`` and ``items`` atlases.
+the SSP-040 ground tiles (32x32 variants, the 47 kerb blob tiles and the road-marking overlays) /
+the SSP-068 Kerbside 5x7 font (100 glyph + 100 outline frames, 7x9), Kerbside-32 colours only
+with binary alpha, the outline rule, no metadata chunks, and a palette snap that changed 0
+pixels; and the packed ``world``, ``actors``, ``items`` and ``ui`` atlases.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ import pytest
 from PIL import Image
 
 from forge.build import BuildResult, build
-from forge.outputs import ASSETS_TS, ATLAS_DIR, HASHES_JSON
+from forge.outputs import ASSETS_TS, ATLAS_DIR, FONTS_DIR, HASHES_JSON
 from forge.palette import REPO_ROOT, load_palette
 from forge.pngio import FORBIDDEN_METADATA_CHUNKS, decode_indexed_png, png_chunk_types
 
@@ -56,15 +57,17 @@ CELLS = {
     **{f: (64, 80) for f in FACADES},
     **{r: (32, 32) for r in ROOF_VARIANTS},
     **{t: (32, 32) for t in TILE_FRAMES},
+    "font.kerbside5x7": (7, 9),
     "litter.banana_skin": (16, 16),
     "npc.old_woman": (24, 24),
     "prop.lamp_post": (32, 32),
     "veh.sweeper": (64, 64),
     "veh.sweeper_brush": (96, 96),
 }
-FRAME_COUNT = 317
+FRAME_COUNT = 517
 ATLAS_OF = {
     **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES)},
+    "font.kerbside5x7": "ui",
     "litter.banana_skin": "items",
     "npc.old_woman": "actors",
     "prop.lamp_post": "items",
@@ -105,6 +108,7 @@ def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
         **{f: 3 for f in FACADES},
         **ROOF_VARIANTS,
         **TILE_FRAMES,
+        "font.kerbside5x7": 200,
         "litter.banana_skin": 1,
         "npc.old_woman": 8,
         "prop.lamp_post": 4,
@@ -118,6 +122,7 @@ def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
     assert "veh.sweeper_brush:brush:h07:2" in {f.frame_id for f in result.frames}
     assert "npc.old_woman:idle:s:0" in {f.frame_id for f in result.frames}
     assert "prop.lamp_post:slice:-:3" in {f.frame_id for f in result.frames}
+    assert "font.kerbside5x7:outline:-:99" in {f.frame_id for f in result.frames}
 
 
 def test_frames_are_cell_sized_kerbside32_with_binary_alpha(builds: tuple[BuildResult, Path, Path]) -> None:
@@ -139,11 +144,12 @@ def test_no_opaque_non_ink_pixel_touches_transparency(builds: tuple[BuildResult,
 
     Tiling surfaces (facades, roofs, ground tiles) are not outlined (ART_BIBLE §6.3) and fill
     their cell, so they are checked for having no transparent pixel at all instead. The road
-    markings are ground overlays (painted lines, never outlined) and are transparent elsewhere."""
+    markings are ground overlays (painted lines, never outlined) and are transparent elsewhere.
+    Font glyphs are UI text with their own 8-connected outline state (test_glyphs.py)."""
     _, a, _ = builds
     ink = tuple(int(v) for v in PALETTE.rgb[0])
     for png in sorted((a / "frames").rglob("*.png")):
-        if png.parent.name in OVERLAYS:
+        if png.parent.name in OVERLAYS or ATLAS_OF[png.parent.name] == "ui":
             continue
         if ATLAS_OF[png.parent.name] == "world":
             with Image.open(png) as im:
@@ -180,11 +186,12 @@ def test_pngs_have_no_metadata_chunks(builds: tuple[BuildResult, Path, Path]) ->
 def test_pivots_body_centre_for_vehicles_and_feet_for_people(builds: tuple[BuildResult, Path, Path]) -> None:
     """Vehicles and the lamp post's slices take the cell centre from render.json (slices through the
     h00 fallback, SSP-020); the pedestrian grid pivots on its feet, row 22 of the 24x24 cell
-    (ART_BIBLE §4.4, §7.2; SSP-018)."""
+    (ART_BIBLE §4.4, §7.2; SSP-018). Font frames pivot on the glyph's top-left, (1, 1) (SSP-068)."""
     result, _, _ = builds
+    special = {"npc.old_woman": (12, 22), "font.kerbside5x7": (1, 1)}
     for f in result.frames:
         w, h = CELLS[f.asset_id]
-        expected = (12, 22) if f.asset_id == "npc.old_woman" else (w // 2, h // 2)
+        expected = special.get(f.asset_id, (w // 2, h // 2))
         assert f.pivot == expected, f.frame_id
         assert f.atlas == ATLAS_OF[f.asset_id]
 
@@ -211,24 +218,36 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
         f"{ATLAS_DIR}/actors.json",
         f"{ATLAS_DIR}/items.png",
         f"{ATLAS_DIR}/items.json",
+        f"{ATLAS_DIR}/ui.png",
+        f"{ATLAS_DIR}/ui.json",
+        f"{FONTS_DIR}/kerbside5x7.json",
         ASSETS_TS,
         HASHES_JSON,
     ]
     for rel in outputs:
         assert (a / rel).is_file(), rel
         assert (a / rel).read_bytes() == (b / rel).read_bytes(), rel
-    # The world (SSP-041 facades and roofs), actors and items atlases have frames; an atlas with no
-    # frames (ui, fx) is not emitted.
+    # The world (SSP-041 facades and roofs), actors, items and ui (SSP-068 font) atlases have frames;
+    # an atlas with no frames (fx) is not emitted.
     names = sorted(p.name for p in (a / ATLAS_DIR).iterdir())
-    assert names == ["actors.json", "actors.png", "items.json", "items.png", "world.json", "world.png"]
+    assert names == [
+        "actors.json",
+        "actors.png",
+        "items.json",
+        "items.png",
+        "ui.json",
+        "ui.png",
+        "world.json",
+        "world.png",
+    ]
 
 
-@pytest.mark.parametrize(("name", "count"), [("world", 112), ("actors", 200), ("items", 5)])
+@pytest.mark.parametrize(("name", "count"), [("world", 112), ("actors", 200), ("items", 5), ("ui", 200)])
 def test_atlas_holds_every_frame_at_its_rect(
     builds: tuple[BuildResult, Path, Path], name: str, count: int
 ) -> None:
     result, a, _ = builds
-    assert [x.name for x in result.atlases] == ["world", "actors", "items"]
+    assert [x.name for x in result.atlases] == ["world", "actors", "items", "ui"]
     atlas = next(x for x in result.atlases if x.name == name)
     frames = [f for f in result.frames if f.atlas == name]
     assert len(atlas.frames) == len(frames) == count

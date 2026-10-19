@@ -831,14 +831,16 @@ Specimen glyphs (illustrative; the exact file grammar is in [ASSET_PIPELINE](ASS
 
 ```text
 A (5x7)   g (5x7)   £ (5x7)   ★ (5x7)
-.###.     .....     ..##.     ..#..
-#...#     .####     .#..#     .###.
+..#..     .....     ..##.     ..#..
+.#.#.     .####     .#..#     .###.
 #...#     #...#     .#...     #####
-#####     #...#     ####.     .###.
-#...#     .####     .#...     .###.
+#...#     #...#     ####.     .###.
+#####     .####     .#...     .###.
 #...#     ....#     .#...     .#.#.
 #...#     .###.     #####     #...#
 ```
+
+The draft glyph file (SSP-068, M2) gives A a pointed top instead of the earlier flat-topped specimen, so that AV, AY, VA and YA can kern by −1 without the letters touching. Its kerning rule is −1 only where the pair keeps a gap; with the draft shapes AW, WA, PA and ££ would touch at −1 and stay at 0 until SSP-142 (M4). The outlined variant is the `outline` state of the same frames ([ASSET_PIPELINE §6.3](ASSET_PIPELINE.md#63-glyph-files-glyphstxt)).
 
 The `hud_specimen` visual-test scene renders every glyph of every font and variant, on 02, 05, 07 and 26 backgrounds; it is a committed visual golden.
 
@@ -1037,6 +1039,7 @@ mirror ne from nw
 | `prop.*` | `flat`, or `slice` with `n` = slice index from the ground up | `-` |
 | `facade.*` | `lit`, `base`, `dark` | `-` |
 | `fx.*` | `play` | `-` |
+| `font.*` | `glyph` (plain), `outline` (outlined variant), `n` = glyph index (ASSET_PIPELINE §6.3) | `-` |
 | `tile.*`, `roof.*`, `stain.*`, `haz.*` | `v` (variant `n`), or `blob` (autotile index `n`, 0–46) for kerbs (`tile.kerb`, SSP-040) | `-` |
 
 ### 14.5 AI generation from the art side

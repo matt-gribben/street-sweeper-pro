@@ -79,6 +79,19 @@
       "swaps": []
     },
     {
+      "id": "font.kerbside5x7",
+      "class": "font",
+      "technique": "grid",
+      "source": "assets-src/fonts/kerbside5x7.glyphs.txt",
+      "cell": [7, 9],
+      "states": ["glyph", "outline"],
+      "dirs": "-",
+      "frames": { "glyph": 100, "outline": 100 },
+      "atlas": "ui",
+      "outline": false,
+      "swaps": []
+    },
+    {
       "id": "haz.speed_bump",
       "class": "haz",
       "technique": "procedural",

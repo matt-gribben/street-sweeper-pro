@@ -100,6 +100,7 @@ describe('tuning.json mirrors GDD §7 exactly', () => {
     ['brush.collectMinRpm', 0.8, '§7.1 collects only at RPM ≥ 80%'],
     ['brush.cleanPickupMaxMps', 4.0, '§7.1 clean-pickup speed ≤ 4.0 m/s'],
     ['brush.flingCertainMps', 6.0, '§7.1 fling probability reaches 1 at 6.0 m/s'],
+    ['brush.spinDownS', 0, '§7.1 and §8.2 RPM drops to 0 when Raising starts (SSP-059)'],
   ])('vehicle.sweeper.%s = %d (GDD %s)', (path, expected) => {
     const [group = '', key = ''] = path.split('.');
     const groupValue: unknown = (raw as Json)[group];
@@ -492,6 +493,8 @@ describe('M2 sweeping-core sections (SSP-053) mirror GDD §8–§12 and TECHNICA
     ['sweeping.gutterBrush.radiusM', 0.45, 'GDD §8.1 two circles, r = 0.45 m'],
     ['sweeping.gutterBrush.centreXM', 0.85, 'GDD §8.1 at (±0.85, +1.75)'],
     ['sweeping.gutterBrush.centreYM', 1.75, 'GDD §8.1 at (±0.85, +1.75)'],
+    ['sweeping.gutterBrush.sweepInMps', 3.0, 'GDD §8.2 sweep-in 3.0 m/s toward the centre (SSP-059)'],
+    ['sweeping.gutterBrush.sweepBackMps', 0.5, 'GDD §8.2 and 0.5 m/s backward (SSP-059)'],
     ['sweeping.suction.minXM', -1.3, 'TD §10.1 x ∈ [−1.3, 1.3]'],
     ['sweeping.suction.maxXM', 1.3, 'TD §10.1 x ∈ [−1.3, 1.3]'],
     ['sweeping.suction.minYM', 1.6, 'TD §10.1 y ∈ [+1.6, +2.8]'],
@@ -509,6 +512,7 @@ describe('M2 sweeping-core sections (SSP-053) mirror GDD §8–§12 and TECHNICA
     ['sweeping.fling.minDistanceM', 1.5, 'GDD §8.1 knocked sideways 1.5 to 3 m'],
     ['sweeping.fling.maxDistanceM', 3.0, 'GDD §8.1 knocked sideways 1.5 to 3 m'],
     ['sweeping.fling.arcDurationS', 0.5, 'GDD §8.1 the arc lasts 0.5 s'],
+    ['sweeping.bulldozer.pinAheadM', 0.1, 'GDD §8.2 pinned 0.1 m ahead of the front bumper (SSP-059)'],
     ['hopper.capacityLu', 100, 'GDD §8.4 base capacity 100 LU'],
     ['hopper.warnFraction', 0.8, 'GDD §8.4 HUD warns at 80%'],
     ['water.tankUnits', 100, 'GDD §8.5 tank 100 units'],
@@ -562,7 +566,14 @@ describe('M2 sweeping-core sections (SSP-053) mirror GDD §8–§12 and TECHNICA
 
   it('does not repeat the values M1 put under vehicle.sweeper', () => {
     const sections = JSON.stringify({ ...tuningJson, vehicle: undefined, propFootprints: undefined });
-    for (const key of ['raiseLowerS', 'spinUpS', 'collectMinRpm', 'cleanPickupMaxMps', 'flingCertainMps']) {
+    for (const key of [
+      'raiseLowerS',
+      'spinUpS',
+      'collectMinRpm',
+      'cleanPickupMaxMps',
+      'flingCertainMps',
+      'spinDownS',
+    ]) {
       expect(sections).not.toContain(key);
     }
     for (const key of ['fullHopperExtraKg', 'accelMul', 'topSpeedMul', 'steerRateMul']) {

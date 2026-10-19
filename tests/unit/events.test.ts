@@ -3,6 +3,7 @@
 // dispatch, and the errors for an unsealed queue or an event the bus cannot decode.
 import { describe, expect, it } from 'vitest';
 import { EventBus, type SimEvent } from '../../src/app/events.ts';
+import { LITTER_IDS } from '../../src/sim/entities.ts';
 import {
   createEventQueue,
   EV,
@@ -44,14 +45,18 @@ describe('EventBus', () => {
       [EV.ReverseBeeper, -1, 7, 8, 0],
       [EV.ShiftEnd, -1, ShiftEndReason.Towed, 0, 0],
       [EV.HopperFull, -1, 12.5, 30.25, 100],
+      [EV.LitterCollected, 17, 40.5, 12.25, LITTER_IDS.indexOf('litter.bin_bag')],
+      [EV.Fling, 3, 41, 13, LITTER_IDS.indexOf('litter.drink_can')],
     ]);
-    expect(bus.drain(queue)).toBe(5);
+    expect(bus.drain(queue)).toBe(7);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
       { type: EV.ReverseBeeper, tick: 42, entity: -1, x: 7, y: 8 },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.Towed },
       { type: EV.HopperFull, tick: 42, entity: -1, x: 12.5, y: 30.25, capacityLU: 100 },
+      { type: EV.LitterCollected, tick: 42, entity: 17, x: 40.5, y: 12.25, kind: 'litter.bin_bag' },
+      { type: EV.Fling, tick: 42, entity: 3, x: 41, y: 13, kind: 'litter.drink_can' },
     ]);
   });
 
@@ -146,7 +151,7 @@ describe('EventBus', () => {
     expect(() => bus.drain(queue)).toThrow(/not sealed/);
   });
 
-  it('throws on an event type it cannot decode and on an unknown ShiftEnd reason', () => {
+  it('throws on an event type it cannot decode, an unknown ShiftEnd reason and an unknown litter kind', () => {
     const bus = new EventBus();
     const unknown: ReadonlyEventQueue = {
       count: 1,
@@ -160,6 +165,8 @@ describe('EventBus', () => {
     };
     expect(() => bus.drain(unknown)).toThrow(/type 99/);
     expect(() => bus.drain(sealedQueue(10, [[EV.ShiftEnd, -1, 77, 0, 0]]))).toThrow(/unknown reason 77/);
+    expect(() => bus.drain(sealedQueue(11, [[EV.LitterCollected, 0, 0, 0, 200]]))).toThrow(/litter kind 200/);
+    expect(() => bus.drain(sealedQueue(12, [[EV.Fling, 0, 0, 0, 1.5]]))).toThrow(/litter kind 1.5/);
   });
 
   it('decodes every EV id the sim defines (a new EV type must be wired into the bus)', () => {

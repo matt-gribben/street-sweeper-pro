@@ -88,14 +88,13 @@ describe('createVehicleState', () => {
 });
 
 describe('brush toggle and prev copies', () => {
-  it('toggles brushDown on each BRUSH pressed edge only', () => {
+  it('leaves brushDown to brush.ts: a BRUSH pressed edge alone changes nothing here (SSP-059)', () => {
     const { state, params } = newBessie();
     stepVehicle(state, frame(0, 0, 0, PRESSED.BRUSH), ASPHALT, params);
-    expect(state.brushDown).toBe(true);
-    stepVehicle(state, NEUTRAL, ASPHALT, params);
-    expect(state.brushDown).toBe(true);
-    stepVehicle(state, frame(0, 0, 0, PRESSED.BRUSH), ASPHALT, params);
     expect(state.brushDown).toBe(false);
+    state.brushDown = true;
+    stepVehicle(state, frame(0, 0, 0, PRESSED.BRUSH), ASPHALT, params);
+    expect(state.brushDown).toBe(true);
   });
 
   it('copies x, y and heading into prev* at the start of each tick', () => {
@@ -168,8 +167,8 @@ describe('top speeds (TECHNICAL_DESIGN §18.1, GDD §7.1)', () => {
     const { state, params } = newBessie();
     for (let tick = 0; tick < 20 * SIM_HZ; tick++) stepVehicle(state, FULL_THROTTLE, ASPHALT, params);
     const before = state.vLongMps;
-    stepVehicle(state, frame(THROTTLE_MAX, 0, 0, PRESSED.BRUSH), ASPHALT, params);
-    expect(state.brushDown).toBe(true);
+    state.brushDown = true; // brush.ts sets it on the Space tick, before stepVehicle (phase 2)
+    stepVehicle(state, FULL_THROTTLE, ASPHALT, params);
     expect(state.vLongMps).toBeCloseTo(before - dragMps2(sweeper, before) * DT_S, 12);
     for (let tick = 0; tick < 10 * SIM_HZ; tick++) stepVehicle(state, FULL_THROTTLE, ASPHALT, params);
     expect(state.vLongMps).toBeLessThanOrEqual(6.0);
@@ -536,6 +535,8 @@ describe('determinism and allocation', () => {
     ];
     frames.forEach((input, i) => {
       state.hopperLU = (i / frames.length) * BASE_HOPPER_LU;
+      // Stand-in for brush.ts, which owns the edge in the World: toggle the top-speed flag.
+      if ((input.pressed & PRESSED.BRUSH) !== 0) state.brushDown = !state.brushDown;
       stepVehicle(state, input, surfaces[Math.floor(i / 300) % 3] ?? ASPHALT, params);
     });
     return state;

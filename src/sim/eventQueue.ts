@@ -19,8 +19,8 @@ export const EVENTS_PER_TICK = 512;
 
 /**
  * Event type ids (`type`, Uint16). 0 is never a valid type. The values are hashed into replays: append new
- * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull; later issues append the rest of
- * the §7.2 list (LitterCollected, Fling, NpcHit, Complaint, ComboTier, DumpStart, Horn, ...).
+ * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
+ * Fling; later issues append the rest of the §7.2 list (NpcHit, Complaint, ComboTier, DumpStart, Horn, ...).
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036).
@@ -30,6 +30,10 @@ export const EVENTS_PER_TICK = 512;
  * - ShiftEnd: a = reason (ShiftEndReason), b = 0, c = 0. In M1 only the TOWED stub (SSP-036) emits it.
  * - HopperFull: a = x, b = y (Bessie's body centre, m), c = capacity (LU). Once per fill, on the add that
  *   reaches capacity (hopper.ts, SSP-058); again only after LU has dropped below capacity.
+ * - LitterCollected: entity = the item's LitterField index at collection (it is swap-removed straight after),
+ *   a = x, b = y (the item's position, m), c = kind (LITTER_IDS index). Phase 5, the brush inlet (SSP-059).
+ * - Fling: entity = the item's LitterField index, a = x, b = y (where the arc starts, m), c = kind (LITTER_IDS
+ *   index). Phase 5, when the brush's fling roll flings an item (SSP-059).
  */
 export const EV = {
   Impact: 1,
@@ -37,6 +41,8 @@ export const EV = {
   ReverseBeeper: 3,
   ShiftEnd: 4,
   HopperFull: 5,
+  LitterCollected: 6,
+  Fling: 7,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

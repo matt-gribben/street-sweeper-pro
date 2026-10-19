@@ -62,6 +62,11 @@ export const LitterFlag = {
   InSuction: 2,
   /** Bulldozed: held ahead of the bumper by the brush at a full hopper; stepLitter leaves it alone. */
   Pinned: 4,
+  /**
+   * In a brush contact episode that has already had its fling roll (SSP-059): set on the item's first touch of
+   * the brush zone, cleared when it leaves the zone (or the brush stops), and by a fling.
+   */
+  BrushContact: 8,
 } as const;
 export type LitterFlag = (typeof LitterFlag)[keyof typeof LitterFlag];
 
@@ -81,6 +86,8 @@ export type LitterKinds = {
   readonly driftTicks: Int32Array;
   /** The hazard a flung item of this kind becomes where it lands, or null. */
   readonly flungHazard: readonly (HazardId | null)[];
+  /** Litter units the item fills the hopper by when collected (entities.json `lu`; the brush reads it). */
+  readonly lu: Float64Array;
 };
 
 /** A pose that flings litter: Bessie's VehicleState satisfies it (body centre in metres, heading in radians). */
@@ -184,8 +191,10 @@ export function createLitterKinds(entities: Entities): LitterKinds {
   const driftSpeedMps = new Float64Array(n);
   const driftTicks = new Int32Array(n);
   const flungHazard: (HazardId | null)[] = [];
+  const lu = new Float64Array(n);
   for (let k = 0; k < n; k += 1) {
     const id = LITTER_IDS[k] as LitterId;
+    lu[k] = entities.litter[id].lu;
     const rules = entities.litter[id].rules;
     if (rules.drift !== undefined) {
       driftSpeedMps[k] = rules.drift.speedMps;
@@ -193,7 +202,7 @@ export function createLitterKinds(entities: Entities): LitterKinds {
     }
     flungHazard.push(rules.flung === undefined ? null : rules.flung.hazard);
   }
-  return { driftSpeedMps, driftTicks, flungHazard };
+  return { driftSpeedMps, driftTicks, flungHazard, lu };
 }
 
 /**
@@ -494,8 +503,9 @@ export function collectLitter(field: LitterField, i: number): boolean {
  * Fling item `i` away from the sweeper at `source` (TECHNICAL_DESIGN §10.2): a kinematic arc sideways, to the
  * sweeper's right when the item's vehicle-local x is >= 0 and to its left when it is negative, over a distance
  * drawn from `rng` (the brush stream, one draw) in [minDistanceM, maxDistanceM), lasting arcDurationS rounded to
- * whole ticks. The item is FLUNG (uncollectable) until stepLitter lands it; IN_SUCTION, PINNED and any drift
- * are cleared. An item already in the air is left alone and false is returned (no draw is made).
+ * whole ticks. The item is FLUNG (uncollectable) until stepLitter lands it; IN_SUCTION, PINNED, BRUSH_CONTACT
+ * (the fling ends the brush contact episode) and any drift are cleared. An item already in the air is left
+ * alone and false is returned (no draw is made).
  */
 export function flingLitter(field: LitterField, i: number, source: FlingSource, rng: Sfc32): boolean {
   const flags = field.flags[i] as number;

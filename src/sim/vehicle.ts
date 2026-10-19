@@ -19,7 +19,7 @@
 import { DT_S } from './constants.ts';
 import { cos, exp, sin, tan } from './fmath.ts';
 import { hopperFillFraction } from './hopper.ts';
-import { BRAKE_MAX, type InputFrame, PRESSED, STEER_MAX, THROTTLE_MAX } from './inputFrame.ts';
+import { BRAKE_MAX, type InputFrame, STEER_MAX, THROTTLE_MAX } from './inputFrame.ts';
 import type { SweeperTuning } from './tuning.ts';
 
 /** Gear (TECHNICAL_DESIGN §8.1). */
@@ -48,11 +48,15 @@ export type VehicleState = {
   /** Yaw rate from the last tick, rad/s; positive is clockwise. */
   yawRateRadPerS: number;
   gear: Gear;
-  /** Brush mode flag, toggled by the BRUSH pressed edge. The brushPos/rpm animation is M2 (brush.ts). */
+  /**
+   * The brush-down top-speed flag (§8.2 step 2): true in every brush state but Raised, i.e. from the tick
+   * lowering starts until the brush is fully raised. Written only by brush.ts (stepBrushState, SSP-059), which
+   * owns the BRUSH pressed edge.
+   */
   brushDown: boolean;
-  /** Brush lowered fraction 0..1. Stays 0 in M1; animated by M2's brush.ts. */
+  /** Brush lowered fraction 0..1, animated by brush.ts over raiseLowerS. */
   brushPos: number;
-  /** Brush spin 0..1. Stays 0 in M1; animated by M2's brush.ts. */
+  /** Brush spin 0..1, animated by brush.ts over spinUpS. */
   rpm: number;
   /** Bessie's Dignity, 0..health.maxHp. Damage arrives with SSP-036. */
   hp: number;
@@ -190,6 +194,9 @@ const handling = createVehicleHandling();
 /**
  * Advance `state` by one tick (DT_S) under `input` on `surface` (TECHNICAL_DESIGN §8.2 steps 1–8).
  *
+ * Top speed follows `state.brushDown`, which brush.ts's stepBrushState writes before this runs (phase 2): this
+ * function no longer reads the BRUSH edge itself (SSP-059).
+ *
  * Controls: throttle/brake 0..255 → 0..1, steer −127..127 → −1..1 (out-of-range values are clamped). In FWD,
  * throttle accelerates and brake slows toward 0; brake held for reverse.engageHoldS with |vLong| below
  * reverse.engageBelowMps at the end of each tick engages REV (reverseEngaged is set on that tick). In REV,
@@ -208,8 +215,6 @@ export function stepVehicle(
   state.prevYM = state.yM;
   state.prevHeadingRad = state.headingRad;
   state.reverseEngaged = false;
-
-  if ((input.pressed & PRESSED.BRUSH) !== 0) state.brushDown = !state.brushDown;
 
   const throttle = clamp(input.throttle, 0, THROTTLE_MAX) / THROTTLE_MAX;
   const brake = clamp(input.brake, 0, BRAKE_MAX) / BRAKE_MAX;

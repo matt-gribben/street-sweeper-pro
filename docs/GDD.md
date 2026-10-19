@@ -282,7 +282,7 @@ Bessie is the game. Handling values live in `src/data/tuning.json` → `vehicle.
 | Kerb crossing | 30% speed loss + jolt. Pavements are drivable. |
 | Collision | restitution 0.2. Damage = 4 HP per m/s of normal impact speed above 2 m/s. |
 | Health ("Bessie's Dignity") | 100 HP. At 0 the shift ends ("TOWED!"). |
-| Brush | raise/lower 0.5 s. RPM spin-up 0.6 s. Collects only at RPM ≥ 80% while lowered. |
+| Brush | raise/lower 0.5 s. RPM spin-up 0.6 s. Collects only at RPM ≥ 80% while lowered. RPM drops to 0 when raising starts (spin-down 0 s, SSP-059). |
 
 ### 7.2 What those numbers feel like
 
@@ -344,7 +344,7 @@ Vehicle-local coordinates: origin at body centre, +y forward, metres.
 
 | Part | Shape and position | Behaviour |
 |---|---|---|
-| **Gutter brushes** | Two circles, r = 0.45 m, at (±0.85, +1.75). Reach ±1.30 m, so the **total swept width is 2.6 m (≈ 42 px)**. | Sweep items inward toward the centre |
+| **Gutter brushes** | Two circles, r = 0.45 m, at (±0.85, +1.75). Reach ±1.30 m, so the **total swept width is 2.6 m (≈ 42 px)**. | Sweep items inward toward the centre at 3.0 m/s and backward at 0.5 m/s (§8.2) |
 | **Suction zone** | Rect 2.6 m wide, from y +1.6 to +2.8 | Items inside are pulled toward the inlet at 3.0 m/s × RPM × suction multiplier |
 | **Inlet** | Rect 1.0 × 0.4 m at y +1.2 | An item whose centre enters it is collected |
 | **Grime footprint** | The 2.6 m swept band | Erases grime cells while the brush is down and RPM ≥ 80% |
@@ -378,18 +378,29 @@ stateDiagram-v2
   Collecting --> Raising: Space
   Bulldozing --> Raising: Space
   SpinningUp --> Raising: Space
+  Lowering --> Raising: Space (reverses mid-travel)
+  Raising --> Lowering: Space (reverses mid-travel)
   Raising --> Raised: after 0.5 s
 ```
 
 | State | Grime | Litter | Top speed | Audio |
 |---|---|---|---|---|
 | Raised (transit) | No | Driven over. Banana skins spin Bessie 180°; dog mess splats into `stain.splat` (−20); leaf piles leave `haz.wet_leaves`. | 11.0 m/s | Engine only |
-| Lowering / Raising (0.5 s) | No | No | 6.0 m/s cap applies once lowering starts (proposed) | `sfx.brush_lower` / `sfx.brush_raise` |
+| Lowering / Raising (0.5 s) | No | No | 6.0 m/s: the cap applies from the tick lowering starts until the brush is fully raised (SSP-059) | `sfx.brush_lower` / `sfx.brush_raise` |
 | Spinning up (0.6 s) | No | No | 6.0 m/s | Brush whirr pitch rising |
 | Collecting | Yes | Yes, subject to the fling check | 6.0 m/s | Brush whirr, pickup SFX |
-| Bulldozing (hopper full) | Yes (proposed: grime is not stored in the hopper) | Pushed ahead, not collected | 6.0 m/s | Clunk, `sfx.hopper_full` |
+| Bulldozing (hopper full) | Yes (proposed: grime is not stored in the hopper) | Pushed ahead, not collected: an item reaching the inlet is pinned 0.1 m ahead of the front bumper | 6.0 m/s | Clunk, `sfx.hopper_full` |
 
-The 1.1 s from pressing Space to collecting (0.5 s lower + 0.6 s spin-up) is deliberate: it makes raising the brush for a short transit hop a real decision, not a free action.
+The 1.1 s from pressing Space to full RPM (0.5 s lower + 0.6 s spin-up) is deliberate: it makes raising the brush for a short transit hop a real decision, not a free action. Collecting starts as soon as RPM reaches 80%, 29 of the 36 spin-up ticks, so the first pickup can come 59 ticks (≈ 0.98 s) after the press.
+
+**Decided in SSP-059** (values in `tuning.json`; all tunable):
+
+- **Gutter sweep-in:** an item inside a gutter circle is pushed toward the centre line at **3.0 m/s** (`sweeping.gutterBrush.sweepInMps`) and backward at **0.5 m/s** (`sweepBackMps`). 3.0 is the smallest round value that collects every item across the full 2.6 m width at the 4.0 m/s clean-pickup speed (2.5 m/s missed items starting beyond ±1.28 m and 2.0 m/s beyond ±1.22 m; measured on a 4 mm grid of start offsets, one item at a time).
+- **RPM on raise:** RPM drops to **0** the moment Raising starts (`vehicle.sweeper.brush.spinDownS = 0`; a positive value spins it down linearly from full over that time). RPM only rises while the brush is fully lowered.
+- **Reversal:** Space during Lowering raises again, and Space during Raising lowers again, from where the brush is, so a reversal takes as long as the travel already made.
+- **Contact episode:** an item rolls the fling check the first time it is in the brush zone (the gutter circles, the suction rect, the inlet and the 0.2 m throat between the suction rect and the inlet). The episode ends when the item is outside all of them, when the brush stops collecting, or when it is flung (a flung item that lands back in the zone rolls again).
+- **Throat:** items between the suction rect's back edge (y +1.6) and the inlet's front edge (y +1.4) are pulled like suction items, so with Bessie stopped the suction still delivers them to the inlet.
+- **Bulldozer:** at a full hopper an item in the inlet mouth (inlet width, from the inlet's back edge to the pin line) is pinned on the pin line **0.1 m** ahead of the front bumper (`sweeping.bulldozer.pinAheadM`) and pushed along. Pinned items are released into the suction (and collected) once a dump takes the hopper below capacity, and left where they are when the brush is raised.
 
 ### 8.3 The fling curve (Pillar 3 in one formula)
 

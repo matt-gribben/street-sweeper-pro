@@ -499,9 +499,9 @@ Each milestone has the same shape:
 
 | Criterion | Proof |
 |---|---|
-| Behaviours | One unit test file per behaviour, covering each rule in [ENTITY_CATALOG.md](ENTITY_CATALOG.md): e.g. Doris never yields; horn makes her slower; spray makes her chase at 1.2 m/s with 2 HP per handbag hit. The cat darts at 6–10 m with 40% probability; a hit makes it ride the roof for 3 s. |
-| Penalties | A table-driven test asserts every hit penalty and complaint count against `entities.json`. The police "+1 extra complaint within 15 m" rule is tested when `veh.police` arrives in M6. |
-| Complaints | Horn spam (> 3 honks in 5 s) = 1 complaint. Blocking traffic over 10 s = 1 complaint. Running an occupied zebra = −200 + 1 complaint. 5 complaints = SACKED. *(SSP-085: the occupied zebra, once per entry onto it, `src/sim/npc/zebraOffence.ts`.)* |
+| Behaviours | One unit test file per behaviour, covering each rule in [ENTITY_CATALOG.md](ENTITY_CATALOG.md): e.g. Doris never yields; horn makes her slower; spray makes her chase at 1.2 m/s with 2 HP per handbag hit. The cat darts at 6–10 m with 40% probability; a hit makes it ride the roof for 3 s. *(SSP-108: all 11 files are in `tests/unit/behaviours/`, checked by `tests/unit/behaviourTests.test.ts`.)* |
+| Penalties | A table-driven test asserts every hit penalty and complaint count against `entities.json`. The police "+1 extra complaint within 15 m" rule is tested when `veh.police` arrives in M6. *(SSP-108: `tests/unit/penalties.test.ts`, every row on the committed data and on an altered copy.)* |
+| Complaints | Horn spam (> 3 honks in 5 s) = 1 complaint. Blocking traffic over 10 s = 1 complaint. Running an occupied zebra = −200 + 1 complaint. 5 complaints = SACKED. *(SSP-085: the occupied zebra, once per entry onto it, `src/sim/npc/zebraOffence.ts`. SSP-108: the four rules in `tests/unit/complaints.rules.test.ts`.)* |
 | End states | Replays `m3_sacked.json` and `m3_towed.json` reach SACKED and TOWED deterministically. TOWED keeps 50% of the score and awards no stars. *(SSP-079: the SACKED and TOWED transitions, their precedence, the frozen sim, the tally's figures and Try Again; the replays are SSP-107.)* |
 | NPC budget | Stress scene with 80 NPCs + 30 vehicles + 2,000 litter: sim tick stays allocation-free, and its time fits the budget derived from D-08. |
 | Determinism | fast-check property: for any seed and random input log, replaying the same log yields the same state hash. |

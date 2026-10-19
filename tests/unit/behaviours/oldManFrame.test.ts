@@ -6,18 +6,18 @@
 // the map, rows 2–4, with a 1-tile zebra at column 10 and a dropped-kerb crossing at column 22); the hit on the
 // open district of tests/support/npcTown.ts, as in npcReactions.test.ts.
 import { describe, expect, it } from 'vitest';
-import { TILE_M } from '../../src/sim/constants.ts';
-import { NPC_IDS } from '../../src/sim/entities.ts';
-import { createInputFrame } from '../../src/sim/inputFrame.ts';
-import { NAV_FLAG, NAV_FLAG_CROSSING } from '../../src/sim/map.ts';
-import { OLD_MAN_NAV_AVOID, oldManFrameBehaviour } from '../../src/sim/npc/behaviours/oldManFrame.ts';
-import { PED } from '../../src/sim/npc/behaviours/pedestrian.ts';
-import { findNavPath, NavState, navEdgeBetween, requestNavPath } from '../../src/sim/npc/steering.ts';
-import { addNpcAt, NPC_PATH_NODES, NpcOrigin, setNpcState } from '../../src/sim/npc/store.ts';
-import { DEFAULT_ENTITIES, DEFAULT_TUNING } from '../../src/sim/tuning.ts';
-import { createWorld, type World } from '../../src/sim/world.ts';
-import { npcTown } from '../support/npcTown.ts';
-import { compileTown } from '../support/steeringTown.ts';
+import { TILE_M } from '../../../src/sim/constants.ts';
+import { NPC_IDS } from '../../../src/sim/entities.ts';
+import { createInputFrame } from '../../../src/sim/inputFrame.ts';
+import { NAV_FLAG, NAV_FLAG_CROSSING } from '../../../src/sim/map.ts';
+import { OLD_MAN_NAV_AVOID, oldManFrameBehaviour } from '../../../src/sim/npc/behaviours/oldManFrame.ts';
+import { PED } from '../../../src/sim/npc/behaviours/pedestrian.ts';
+import { findNavPath, NavState, navEdgeBetween, requestNavPath } from '../../../src/sim/npc/steering.ts';
+import { addNpcAt, NPC_PATH_NODES, NpcOrigin, setNpcState } from '../../../src/sim/npc/store.ts';
+import { DEFAULT_ENTITIES, DEFAULT_TUNING } from '../../../src/sim/tuning.ts';
+import { createWorld, type World } from '../../../src/sim/world.ts';
+import { npcTown } from '../../support/npcTown.ts';
+import { compileTown } from '../../support/steeringTown.ts';
 
 const TOWN = compileTown();
 const OLD_MAN = NPC_IDS.indexOf('npc.old_man_frame');

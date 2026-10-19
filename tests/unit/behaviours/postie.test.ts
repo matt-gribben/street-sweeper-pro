@@ -7,23 +7,23 @@
 // road with a zebra and a dropped-kerb crossing), on an endless shift whose awareness radius is shrunk to 1 cm so
 // Bessie (parked at the east end) never makes him yield; the hit on the open district of npcTown.ts.
 import { describe, expect, it } from 'vitest';
-import { TILE_M } from '../../src/sim/constants.ts';
-import { NPC_IDS } from '../../src/sim/entities.ts';
-import { createInputFrame } from '../../src/sim/inputFrame.ts';
-import { PED } from '../../src/sim/npc/behaviours/pedestrian.ts';
+import { TILE_M } from '../../../src/sim/constants.ts';
+import { NPC_IDS } from '../../../src/sim/entities.ts';
+import { createInputFrame } from '../../../src/sim/inputFrame.ts';
+import { PED } from '../../../src/sim/npc/behaviours/pedestrian.ts';
 import {
   DOOR_CROWD_M,
   doorStopTicks,
   nextRoundStop,
   postieBehaviour,
-} from '../../src/sim/npc/behaviours/postie.ts';
-import { NavState } from '../../src/sim/npc/steering.ts';
-import { addNpcAt, NpcOrigin, setNpcState } from '../../src/sim/npc/store.ts';
-import { DEFAULT_ENTITIES, DEFAULT_TUNING } from '../../src/sim/tuning.ts';
-import { createWorld, type World } from '../../src/sim/world.ts';
-import { endlessShiftTuning } from '../support/endlessShift.ts';
-import { npcTown } from '../support/npcTown.ts';
-import { compileTown } from '../support/steeringTown.ts';
+} from '../../../src/sim/npc/behaviours/postie.ts';
+import { NavState } from '../../../src/sim/npc/steering.ts';
+import { addNpcAt, NpcOrigin, setNpcState } from '../../../src/sim/npc/store.ts';
+import { DEFAULT_ENTITIES, DEFAULT_TUNING } from '../../../src/sim/tuning.ts';
+import { createWorld, type World } from '../../../src/sim/world.ts';
+import { endlessShiftTuning } from '../../support/endlessShift.ts';
+import { npcTown } from '../../support/npcTown.ts';
+import { compileTown } from '../../support/steeringTown.ts';
 
 const TOWN = compileTown();
 const POSTIE = NPC_IDS.indexOf('npc.postie');

@@ -6,8 +6,9 @@
 //      asking for puddles, potholes and oil on all three random rules.
 //   2. Driving, over seeds, start states and input scripts across a street of potholes, speed bumps, open
 //      manholes and grip hazards: after every tick hopper LU stays in [0, capacity], HP in [0, maxHp], and LU
-//      is conserved (hopper LU + the LU of the spilled litter = the starting LU: nothing collects in phase 5
-//      until SSP-065).
+//      is conserved (hopper LU + the LU of the spilled litter on the street = the starting LU). Since SSP-065
+//      a lowered brush can collect a spilled item back: its LU returns to the hopper, less any excess lost when
+//      that fills it (GDD §8.4), so with collections the sum may only fall short of the start.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -168,6 +169,7 @@ describe('HP and hopper LU stay in range while driving over hazards', () => {
           world.hopper.full = startLu >= capacity;
           world.vehicle.hp = startHp;
           const input = createInputFrame();
+          let collected = 0;
           for (const seg of segments) {
             input.throttle = seg.throttle;
             input.brake = seg.brake;
@@ -177,6 +179,7 @@ describe('HP and hopper LU stay in range while driving over hazards', () => {
               stepWorld(world, input);
               jolts += countEvents(world.events, EV.HazardJolt);
               stops += countEvents(world.events, EV.HazardStop);
+              collected += countEvents(world.events, EV.LitterCollected);
               const lu = world.vehicle.hopperLU;
               expect(lu).toBeGreaterThanOrEqual(0);
               expect(lu).toBeLessThanOrEqual(capacity);
@@ -188,9 +191,11 @@ describe('HP and hopper LU stay in range while driving over hazards', () => {
           for (let i = 0; i < world.litter.count; i++) {
             spilled += DEFAULT_ENTITIES.litter[LITTER_IDS[world.litter.kind[i] as number] as LitterId].lu;
           }
-          expect(world.vehicle.hopperLU + spilled).toBe(startLu);
+          if (collected === 0) expect(world.vehicle.hopperLU + spilled).toBe(startLu);
+          else expect(world.vehicle.hopperLU + spilled).toBeLessThanOrEqual(startLu);
           if (spilled > 0) spills++;
-          expect(world.litter.litterSpawned).toBe(world.litter.count);
+          expect(world.litter.litterCollected).toBe(collected);
+          expect(world.litter.litterSpawned).toBe(world.litter.count + collected);
         },
       ),
       { seed: 0x093093, numRuns: 150 },

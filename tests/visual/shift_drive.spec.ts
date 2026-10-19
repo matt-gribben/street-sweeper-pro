@@ -7,7 +7,8 @@
 //   palette pass, blit: 6 of 10, §12.7);
 // - `__ssp.step(n)` advances exactly n World ticks and renders exactly once (Renderer.renderCount via
 //   `perf().renders`, read inside one evaluate so no animation frame can interleave), also with freeze=1;
-// - `__ssp.state()` is the JSON-safe SimSnapshot (tick, bessie x/y/heading/speed, hp) plus the camera;
+// - `__ssp.state()` is the JSON-safe SimSnapshot (tick, bessie x/y/heading/speed, hp; since SSP-065 the sweeping
+//   state: score, tidy, stars, hopper, water, combo, litter and grime counts, frontages) plus the camera;
 // - `tick=600` in the URL gives `state().tick === 600` at ready;
 // - the keyboard drives Bessie (W/↑ throttle, D steer right, Space brush) and the camera follows her.
 import { writeFileSync } from 'node:fs';
@@ -68,10 +69,20 @@ test('the frozen shift frame is deterministic, within the draw-call budget, with
   expect(first.height).toBe(INTERNAL_HEIGHT_PX);
   expect(drawCalls).toBeLessThanOrEqual(DRAW_CALL_BUDGET);
   expect(drawCalls).toBe(EXPECTED_DRAW_CALLS);
-  expect(state).toEqual({
+  expect(state).toMatchObject({
     tick: 0,
     bessie: { x: DEPOT_START.x, y: DEPOT_START.y, heading: DEPOT_START.heading, speed: 0 },
     hp: 100,
+    // Shift setup (SSP-065): Puddle Lane's litter and grime laid, nothing collected or cleaned yet, an empty
+    // hopper, a full tank, no chain.
+    score: 0,
+    tidy: 0,
+    stars: 0,
+    hopper: { lu: 0, capacityLu: 100, full: false },
+    water: { units: 100, capacity: 100 },
+    combo: { chain: 0, multiplier: 1, timerTicks: 0, bestChain: 0 },
+    litter: { spawned: 130, collected: 0 },
+    grime: { initial: 9000, cleaned: 0 },
     // The follow camera stands over Bessie at the sweep height: test mode turns the look-ahead and zoom springs
     // off (no `springs=1`), and she is parked anyway.
     camera: { x: DEPOT_START.x, y: DEPOT_START.y, h: 31.5, leadX: 0, leadY: 0, pinned: false },
@@ -111,7 +122,21 @@ test('step(n) advances exactly n ticks and renders exactly once, with freeze=1; 
   ]);
   expect(result.state.tick).toBe(660);
   expect(result.roundTrip).toEqual(result.state);
-  expect(Object.keys(result.state).sort()).toEqual(['bessie', 'camera', 'hp', 'tick']);
+  expect(Object.keys(result.state).sort()).toEqual([
+    'bessie',
+    'camera',
+    'combo',
+    'frontages',
+    'grime',
+    'hopper',
+    'hp',
+    'litter',
+    'score',
+    'stars',
+    'tick',
+    'tidy',
+    'water',
+  ]);
 
   // Frozen: animation frames keep rendering, but the World never steps by itself.
   await page.waitForTimeout(250);

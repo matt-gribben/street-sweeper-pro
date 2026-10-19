@@ -205,6 +205,11 @@ export type HazardStore = {
   readonly bodyBox: { minX: number; minY: number; maxX: number; maxY: number };
   readonly worldBox: { minX: number; minY: number; maxX: number; maxY: number };
   readonly hits: Int32Array;
+  /** The sweeper tuning `bodyBox` was built from (null before the first brush-up step). */
+  bodyBoxFor: SweeperTuning | null;
+  /** cos and sin of Bessie's heading at the last brush-up step (writeBodyAxes). */
+  axisC: number;
+  axisS: number;
 };
 
 /** What render, audio and UI may see: the same object, typed read-only. */
@@ -365,6 +370,9 @@ export function createHazardStore(
     bodyBox: { minX: 0.5, minY: 0.5, maxX: 0.5, maxY: 0.5 },
     worldBox: { minX: 0.5, minY: 0.5, maxX: 0.5, maxY: 0.5 },
     hits: new Int32Array(litterCapacity),
+    bodyBoxFor: null,
+    axisC: 0.5,
+    axisS: 0.5,
   };
 }
 
@@ -802,6 +810,13 @@ export function spillHopperLitter(
 // Phase 5: leaf piles driven through brush-up leave wet leaves (ENTITY_CATALOG §4.2)
 // ---------------------------------------------------------------------------------------------------------
 
+/** store.axisC / axisS = cos / sin of Bessie's heading. Objects in, nothing out: no double crosses the call. */
+function writeBodyAxes(store: HazardStore, vehicle: Readonly<VehicleState>): void {
+  const h = vehicle.headingRad;
+  store.axisC = cos(h);
+  store.axisS = sin(h);
+}
+
 /**
  * Phase 5, after beginLitterTick and before stepLitter. Does nothing unless `brush` is Raised. Then every
  * litter item of a kind with a brush-up hazard rule whose centre is inside Bessie's body OBB (edges inclusive)
@@ -816,21 +831,30 @@ export function stepBrushUpLeaves(
   sweeper: SweeperTuning,
 ): number {
   if (brush.state !== BrushState.Raised || field.count === 0) return 0;
-  const hw = sweeper.body.widthM / 2;
-  const hl = sweeper.body.lengthM / 2;
   const box = store.bodyBox;
-  box.minX = -hw;
-  box.maxX = hw;
-  box.minY = -hl;
-  box.maxY = hl;
+  // As stains.ts's stepBrushUpSplats: the body box is rebuilt only when the tuning changes and the axes come
+  // through scratch fields, because per-tick stores from tuning loads and non-inlined cos/sin calls boxed
+  // doubles (SSP-065 World heap check).
+  if (store.bodyBoxFor !== sweeper) {
+    const hw = sweeper.body.widthM / 2;
+    const hl = sweeper.body.lengthM / 2;
+    box.minX = -hw;
+    box.maxX = hw;
+    box.minY = -hl;
+    box.maxY = hl;
+    store.bodyBoxFor = sweeper;
+  }
+  const hw = box.maxX;
+  const hl = box.maxY;
+  writeBodyAxes(store, vehicle);
   localRectToWorldAabb(vehicle, box, store.worldBox);
   const hits = store.hits;
   const n = queryLitter(field, store.worldBox, hits);
   if (n === 0) return 0;
 
   const kinds = store.kinds;
-  const c = cos(vehicle.headingRad);
-  const s = sin(vehicle.headingRad);
+  const c = store.axisC;
+  const s = store.axisS;
   const px = vehicle.xM;
   const py = vehicle.yM;
   let created = 0;

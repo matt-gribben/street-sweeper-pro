@@ -1,13 +1,16 @@
 // SimSnapshot (TECHNICAL_DESIGN §18.5, SSP-046): the JSON-safe summary of a World that `window.__ssp.state()`
 // returns in a shift scene, so Playwright specs and scripted checks can read the sim across `page.evaluate`.
 //
-// JSON-safe means `JSON.parse(JSON.stringify(s))` deep-equals `s`: plain objects of finite numbers only (no
-// typed arrays, no undefined, no NaN or ±Infinity, and no −0, which JSON writes as 0). snapshotWorld folds −0
+// JSON-safe means `JSON.parse(JSON.stringify(s))` deep-equals `s`: plain objects and arrays of finite numbers,
+// booleans and strings only (no typed arrays, no undefined, no NaN or ±Infinity, and no −0, which JSON writes
+// as 0). snapshotWorld folds −0
 // into 0 and throws on a non-finite value, which would be a sim bug rather than something to paper over.
 //
 // Fields by milestone (each issue extends this type and §18.5 together):
 //   M1 (SSP-046)  tick, bessie { x, y, heading, speed }, hp;
-//   M2 (SSP-065)  score, tidy, hopper;
+//   M2 (SSP-065)  score, tidy, stars, hopper { lu, capacityLu, full }, water { units, capacity },
+//                 combo { chain, multiplier, timerTicks, bestChain }, litter { spawned, collected },
+//                 grime { initial, cleaned }, frontages [{ id, clean, cleanSwept }];
 //   M3 (SSP-078)  complaints.
 //
 // Load-time / test-time code: it allocates a fresh object per call and is never called per tick.
@@ -25,13 +28,59 @@ export type SimBessieSnapshot = {
   readonly speed: number;
 };
 
-/** What `__ssp.state()` reports about the sim from M1. */
+/** Bessie's hopper (hopper.ts): litter units in it, its capacity, and the bulldozer state. */
+export type SimHopperSnapshot = {
+  readonly lu: number;
+  readonly capacityLu: number;
+  /** lu has reached capacityLu: the brush bulldozes instead of collecting. */
+  readonly full: boolean;
+};
+
+/** Bessie's water tank (water.ts): units in it and its capacity. */
+export type SimWaterSnapshot = { readonly units: number; readonly capacity: number };
+
+/** The combo chain (combo.ts). */
+export type SimComboSnapshot = {
+  /** Pickups in the current chain (0 when there is none). */
+  readonly chain: number;
+  /** The multiplier the next pickup scores at, 1..5. */
+  readonly multiplier: number;
+  /** Ticks before the chain expires (0 without a chain); the HUD bar is timerTicks / 120. */
+  readonly timerTicks: number;
+  /** The shift's longest chain. */
+  readonly bestChain: number;
+};
+
+/** One frontage's clean % (tidy.ts), in compiled `frontages` order. */
+export type SimFrontageSnapshot = {
+  readonly id: string;
+  /** 0..1. */
+  readonly clean: number;
+  /** The frontage has awarded its Clean Sweep this shift. */
+  readonly cleanSwept: boolean;
+};
+
+/** What `__ssp.state()` reports about the sim: M1 fields, then the M2 sweeping state (SSP-065). */
 export type SimSnapshot = {
   /** Ticks completed since shift start (World.tick). */
   readonly tick: number;
   readonly bessie: SimBessieSnapshot;
   /** Bessie's Dignity, 0..health.maxHp. */
   readonly hp: number;
+  /** The shift's score (scoring.ts): items, stains and grime with the combo, bonuses and penalties. */
+  readonly score: number;
+  /** Tidy %, 0..1 (tidy.ts). */
+  readonly tidy: number;
+  /** Would-be stars for the current Tidy %, 0..3. */
+  readonly stars: number;
+  readonly hopper: SimHopperSnapshot;
+  readonly water: SimWaterSnapshot;
+  readonly combo: SimComboSnapshot;
+  /** Litter added this shift (shift-start spawn plus dynamic litter) and collected by the brush. */
+  readonly litter: { readonly spawned: number; readonly collected: number };
+  /** Grime cells laid at shift start and cleaned since. */
+  readonly grime: { readonly initial: number; readonly cleaned: number };
+  readonly frontages: readonly SimFrontageSnapshot[];
 };
 
 /** `value` as a JSON-safe number: −0 becomes 0; NaN and ±Infinity throw, naming `field`. */
@@ -43,6 +92,16 @@ function jsonNumber(value: number, field: string): number {
 /** A JSON-safe snapshot of `world` as it stands after its last tick. */
 export function snapshotWorld(world: WorldView): SimSnapshot {
   const v = world.vehicle;
+  const combo = world.scoring.combo;
+  const tidy = world.tidy;
+  const frontages: SimFrontageSnapshot[] = [];
+  for (let z = 0; z < tidy.frontageCount; z += 1) {
+    frontages.push({
+      id: tidy.frontageIds[z] as string,
+      clean: jsonNumber(tidy.frontageClean[z] as number, `frontages[${z}].clean`),
+      cleanSwept: tidy.cleanSwept[z] === 1,
+    });
+  }
   return {
     tick: jsonNumber(world.tick, 'tick'),
     bessie: {
@@ -52,5 +111,32 @@ export function snapshotWorld(world: WorldView): SimSnapshot {
       speed: jsonNumber(v.vLongMps, 'bessie.speed'),
     },
     hp: jsonNumber(v.hp, 'hp'),
+    score: jsonNumber(world.scoring.score, 'score'),
+    tidy: jsonNumber(tidy.tidy, 'tidy'),
+    stars: jsonNumber(tidy.stars, 'stars'),
+    hopper: {
+      lu: jsonNumber(v.hopperLU, 'hopper.lu'),
+      capacityLu: jsonNumber(world.hopper.params.hopperCapacityLU, 'hopper.capacityLu'),
+      full: world.hopper.full,
+    },
+    water: {
+      units: jsonNumber(v.water, 'water.units'),
+      capacity: jsonNumber(world.water.tuning.tankUnits, 'water.capacity'),
+    },
+    combo: {
+      chain: jsonNumber(combo.chain, 'combo.chain'),
+      multiplier: jsonNumber(combo.multiplier, 'combo.multiplier'),
+      timerTicks: jsonNumber(combo.timerTicks, 'combo.timerTicks'),
+      bestChain: jsonNumber(combo.bestChain, 'combo.bestChain'),
+    },
+    litter: {
+      spawned: jsonNumber(world.litter.litterSpawned, 'litter.spawned'),
+      collected: jsonNumber(world.litter.litterCollected, 'litter.collected'),
+    },
+    grime: {
+      initial: jsonNumber(world.dirt.initialCells, 'grime.initial'),
+      cleaned: jsonNumber(world.dirt.cleanedCells, 'grime.cleaned'),
+    },
+    frontages,
   };
 }

@@ -268,6 +268,25 @@ const RULE_MIRRORS: readonly (readonly [string, string, string, string | null, R
     /reduced speed is (\d+\.\d+) m\/s/,
     1,
   ],
+  ['npc.old_woman', 'glareM', '### 6.3 Doris (`npc.old_woman`)', null, /within (\d+) m ahead on her path/, 1],
+  ['npc.old_woman', 'glareClearS', '### 6.3 Doris (`npc.old_woman`)', null, /clear for (\d+\.\d+) s/, 1],
+  [
+    'npc.old_woman',
+    'fistShakeS',
+    '### 6.3 Doris (`npc.old_woman`)',
+    null,
+    /shakes her fist for (\d+\.\d+) s/,
+    1,
+  ],
+  ['npc.old_woman', 'hornSlowS', '### 6.3 Doris (`npc.old_woman`)', null, /stays slowed for (\d+) s/, 1],
+  [
+    'npc.old_woman',
+    'handbagReachM',
+    '### 6.3 Doris (`npc.old_woman`)',
+    null,
+    /within (\d+\.\d+) m of her centre/,
+    1,
+  ],
   ['npc.dog_walker', 'leadMaxM', '### 6.2 Behaviours', 'npc.dog_walker', /up to (\d+) m ahead/, 1],
   [
     'npc.dog_walker',
@@ -938,10 +957,14 @@ describe('the frozen Mon–Tue (M3) entity set (SSP-075)', () => {
     for (const id of chosen) expect(DEFAULT_ENTITIES.knockables[id].massKg).toBeGreaterThan(0);
     const doris = section(CATALOG, '### 6.3 Doris (`npc.old_woman`)');
     expect(doris.match(/chosen in M3 tuning, SSP-075/g)).toHaveLength(2);
+    // SSP-083 chose the slowed duration and the handbag reach.
+    expect(doris.match(/chosen in M3 tuning by SSP-083/g)).toHaveLength(2);
     expect(DEFAULT_ENTITIES.npcs['npc.old_woman'].rules).toMatchObject({
       hornSlowSpeedMps: 0.4,
       whackEveryS: 1.0,
       chaseGiveUpM: 8,
+      hornSlowS: 10,
+      handbagReachM: 0.6,
     });
   });
 

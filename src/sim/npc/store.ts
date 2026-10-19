@@ -130,6 +130,13 @@ export type NpcStore = {
   readonly contactIgnore: Uint8Array;
   /** The planned length of its current state in ticks, set by its behaviour (0 = none; an idle, a startle). */
   readonly stateLimit: Uint16Array;
+  /**
+   * Two tick counters a kind's behaviour module owns (SSP-083), 0 at spawn; each module documents its use. Doris
+   * (behaviours/oldWoman.ts): timerA = slowed-walk ticks left after a fist shake; timerB = the Glare's
+   * clear-path ticks, or the Chase's ticks until her handbag can whack again.
+   */
+  readonly timerA: Int32Array;
+  readonly timerB: Int32Array;
   /** Handle slot of each live index. */
   readonly handleSlot: Int32Array;
   /** Live index of each handle slot, −1 while the slot is free. */
@@ -182,6 +189,8 @@ export type NpcStoreView = {
   readonly navState: Uint8Array;
   readonly contactIgnore: Uint8Array;
   readonly stateLimit: Uint16Array;
+  readonly timerA: Int32Array;
+  readonly timerB: Int32Array;
   readonly handleSlot: Int32Array;
   readonly slotGen: Uint32Array;
 };
@@ -234,6 +243,8 @@ export function createNpcStore(level: Level, capacity: number = NPC_CAPACITY): N
     navTicks: new Uint32Array(capacity),
     contactIgnore: new Uint8Array(capacity),
     stateLimit: new Uint16Array(capacity),
+    timerA: new Int32Array(capacity),
+    timerB: new Int32Array(capacity),
     handleSlot: new Int32Array(capacity).fill(-1),
     slotIndex: new Int32Array(capacity).fill(-1),
     slotGen: new Uint32Array(capacity),
@@ -421,6 +432,8 @@ export function addNpc(
   store.navTicks[i] = 0;
   store.contactIgnore[i] = 0;
   store.stateLimit[i] = 0;
+  store.timerA[i] = 0;
+  store.timerB[i] = 0;
   linkCell(store, i, npcCellIndex(store, i));
   return i;
 }
@@ -480,6 +493,8 @@ export function removeNpc(store: NpcStore, i: number): void {
     store.navTicks[i] = store.navTicks[last] as number;
     store.contactIgnore[i] = store.contactIgnore[last] as number;
     store.stateLimit[i] = store.stateLimit[last] as number;
+    store.timerA[i] = store.timerA[last] as number;
+    store.timerB[i] = store.timerB[last] as number;
     const movedSlot = store.handleSlot[last] as number;
     store.handleSlot[i] = movedSlot;
     store.slotIndex[movedSlot] = i;

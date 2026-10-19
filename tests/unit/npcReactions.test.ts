@@ -372,9 +372,8 @@ describe('horn stimulus (ENTITY_CATALOG §3.4)', () => {
   });
 
   it('a horn moves an Aware pedestrian to Startle, a yielding one included', () => {
-    // Doris within the awareness radius: Aware (the AWARE mark) but walking, since she never yields.
-    expect(honkAt('npc.old_woman', 5, 3)).toEqual({ state: PED.Startle, aware: true });
-    // The businessman is told only by the horn.
+    // The businessman, inside the awareness radius: Aware (the AWARE mark) but walking, since he never yields;
+    // he is told only by the horn. (Doris has her own horn rule since SSP-083: behaviours/oldWoman.test.ts.)
     expect(honkAt('npc.businessman', 5, 3)).toEqual({ state: PED.Startle, aware: true });
     // A shopper in the radius has already started yielding; the horn startles him out of it.
     const world = townWorld();

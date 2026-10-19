@@ -268,9 +268,13 @@ const NPC_RULES = {
   /** Sidesteps Bessie at sidestepM (inside the 6 m awareness radius). */
   'npc.shopper': { sidestepM: 'positive' },
   /**
-   * Doris (§6.3): chases at chaseSpeedMps when sprayed, whacking handbagHitHp every whackEveryS, and gives up
-   * when Bessie is chaseGiveUpM away; after a horn she walks at hornSlowSpeedMps. The last three were chosen in
-   * M3 tuning (SSP-075, the §17 Q10 proposed defaults).
+   * Doris (§6.3): chases at chaseSpeedMps when sprayed, whacking handbagHitHp every whackEveryS while Bessie's
+   * body is within handbagReachM of her centre, and gives up when Bessie is chaseGiveUpM away; she glares when
+   * Bessie's body is within glareM ahead on her path, walks on once it has been clear for glareClearS, and a horn
+   * during the glare makes her shake her fist for fistShakeS, then walk at hornSlowSpeedMps for hornSlowS.
+   * whackEveryS, chaseGiveUpM and hornSlowSpeedMps were chosen in M3 tuning (SSP-075, the §17 Q10 proposed
+   * defaults); glareM, glareClearS and fistShakeS are TECHNICAL_DESIGN §11.2's; hornSlowS and handbagReachM were
+   * chosen in M3 tuning by SSP-083 (owner to review).
    */
   'npc.old_woman': {
     chaseSpeedMps: 'positive',
@@ -278,6 +282,11 @@ const NPC_RULES = {
     whackEveryS: 'positive',
     chaseGiveUpM: 'positive',
     hornSlowSpeedMps: 'positive',
+    glareM: 'positive',
+    glareClearS: 'positive',
+    fistShakeS: 'positive',
+    hornSlowS: 'positive',
+    handbagReachM: 'positive',
   },
   'npc.old_man_frame': {},
   /** The lead reaches leadMaxM; the dog drops litter.dog_mess every messEveryMinS–MaxS; Lead Tangle penalty. */

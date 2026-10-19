@@ -3,7 +3,8 @@
 // businessman and litterbug, SSP-085 old man, mum and postie, SSP-086 dog walker, SSP-088 market trader) extend
 // it: they keep the shared states and timings below, override transitions in their own tick and onStimulus,
 // and call the exported pieces (tickPedestrian, pedestrianStimulus, enterPedestrianState, wantsToYield) for the
-// rest. Until a kind's module lands, the registry gives it one of the three behaviours at the bottom.
+// rest (and the small steps stand, enterIdle, yieldStep and faceBessie). Until a kind's module lands, the registry
+// gives it one of the three behaviours at the bottom.
 //
 // States (PED, the TECHNICAL_DESIGN §11.1 shared set; `state` in the store). They map 1:1 to the animation
 // states (walk 4, idle 2, startle 2, fall 3, angry 2 frames; Walk and Cross both play walk, Yield plays idle,
@@ -125,7 +126,7 @@ export function wantsToYield(w: World, i: number): boolean {
 }
 
 /** Stand: no desire but separation, so it slows to a stop and keeps out of the others' way. */
-function stand(w: World, i: number): void {
+export function stand(w: World, i: number): void {
   beginSteer(w);
   steerSeparate(w, i);
   moveNpc(w, i);
@@ -136,7 +137,8 @@ function hold(w: World, i: number): void {
   w.npc.speed[i] = 0;
 }
 
-function enterIdle(w: World, i: number): void {
+/** Idle at a goal for IDLE_MIN_TICKS..IDLE_MAX_TICKS (one `npc` stream draw). */
+export function enterIdle(w: World, i: number): void {
   const limit = IDLE_MIN_TICKS + nextInt(w.npcAi.rng, IDLE_MAX_TICKS - IDLE_MIN_TICKS + 1);
   enterPedestrianState(w, i, PED.Idle, limit);
 }
@@ -212,7 +214,7 @@ function startleStep(w: World, i: number): void {
 }
 
 /** Yield: part (sidestep her predicted path) or stand. */
-function yieldStep(w: World, i: number): void {
+export function yieldStep(w: World, i: number): void {
   beginSteer(w);
   steerSidestep(w, i);
   steerSeparate(w, i);
@@ -220,7 +222,7 @@ function yieldStep(w: World, i: number): void {
 }
 
 /** Face Bessie (entering Angry). */
-function faceBessie(w: World, i: number): void {
+export function faceBessie(w: World, i: number): void {
   const npc = w.npc;
   const dx = w.vehicle.xM - (npc.x[i] as number);
   const dy = w.vehicle.yM - (npc.y[i] as number);

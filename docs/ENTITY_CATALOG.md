@@ -294,11 +294,12 @@ Doris is the game's mascot antagonist. She is never knocked aside, never yields,
 ```mermaid
 stateDiagram-v2
     [*] --> Shuffle
-    Shuffle --> Glare: sweeper in her path<br/>within awareness radius
-    Glare --> Shuffle: sweeper drives round
+    Shuffle --> Glare: sweeper in her path<br/>within 4 m
+    Glare --> Shuffle: path clear for 1 s
     Glare --> FistShake: horn
-    FistShake --> SlowShuffle: walks SLOWER<br/>(sfx granny_harrumph)
-    SlowShuffle --> Glare
+    FistShake --> SlowShuffle: after 1.5 s, walks SLOWER<br/>(sfx granny_harrumph)
+    SlowShuffle --> Glare: sweeper in her path
+    SlowShuffle --> Shuffle: after 10 s
     Shuffle --> Chase: sprayed with water
     Glare --> Chase: sprayed with water
     Chase --> Whack: within reach of Bessie
@@ -310,9 +311,9 @@ stateDiagram-v2
 ```
 
 - **Shuffle:** 0.6 m/s with her trolley.
-- **Glare:** she **stops in your path and glares** (idle frames, facing Bessie). She ignores the awareness radius and `upg.led_beacon`. Only `pwr.hi_vis` makes her part.
-- **Horn → she shakes her fist and walks slower.** The reduced speed is 0.4 m/s (chosen in M3 tuning, SSP-075). The lesson: the horn makes things worse with Doris.
-- **Spray her → she chases you at 1.2 m/s, whacking with her handbag (2 HP per hit).** At 1.2 m/s she can only catch a stationary or reversing Bessie, which is the joke: she catches you while you are dumping or refilling. She whacks every 1.0 s and gives up at 8 m (both chosen in M3 tuning, SSP-075).
+- **Glare:** she **stops in your path and glares** (idle frames, facing Bessie) when Bessie's body is within 4 m ahead on her path (her own trigger, from TECHNICAL_DESIGN §11.2: she ignores the awareness radius and `upg.led_beacon`), and walks on once her path has been clear for 1.0 s. Only `pwr.hi_vis` makes her part.
+- **Horn while she glares → she shakes her fist for 1.5 s and walks slower.** The reduced speed is 0.4 m/s (chosen in M3 tuning, SSP-075), and she stays slowed for 10 s (chosen in M3 tuning by SSP-083, owner to review). The lesson: the horn makes things worse with Doris.
+- **Spray her → she chases you at 1.2 m/s, whacking with her handbag (2 HP per hit).** At 1.2 m/s she can only catch a stationary or reversing Bessie, which is the joke: she catches you while you are dumping or refilling. She whacks every 1.0 s and gives up at 8 m (both chosen in M3 tuning, SSP-075). Her handbag reaches Bessie's body when it is within 0.6 m of her centre (her 0.3 m radius plus a 0.3 m swing; chosen in M3 tuning by SSP-083, owner to review). Each whack can help get Bessie TOWED.
 - **Hit:** −500, 2 complaints, 6 `litter.spilled_shopping` scattered around her. Collecting them earns 0 pts.
 
 ---
@@ -618,7 +619,7 @@ SSP-053 (M2) seeded the 15 `litter.*` and 5 `stain.*` entries plus the three pic
 | `pwr` | `effect` (`kind` plus that kind's numbers: `chainTimerMul` `mul` `durationS`; `topSpeedMul` `mul` `durationS`; `pedestriansYield` `durationS`; `superSuction` `suctionMul` `flingThresholdMps` `durationS`; `repairHp` `hp`; `addWater` `units`), `sfx.pickup` |
 | `collect` | `kind` (`lostProperty` or `goldenCrisp`), `pts`, `sfx.pickup` |
 
-`rules` on `npc`, `veh` and `haz` entries holds the behaviour numbers of [§6](#6-pedestrians-npc-people)–[§10](#10-hazards-haz), with a fixed, required key set per ID (the loader's rule specs in `src/sim/entities.ts`): for example Doris has `chaseSpeedMps`, `handbagHitHp`, `whackEveryS`, `chaseGiveUpM` and `hornSlowSpeedMps`; the dog walker `leadMaxM`, `messEveryMinS`/`MaxS`, `tanglePts` and `tangleComplaints`; the bus `stopDwellS`; a parked car `dentPts` and `dentHp`; the pothole `hpLoss` and `spillLu`. Key names carry their unit. Shared street-life rules (awareness, horn, near miss, dust, splash, actor hits, complaints) are not per entity: they live in `tuning.json` → `streetLife`, `complaints` and `endStates`.
+`rules` on `npc`, `veh` and `haz` entries holds the behaviour numbers of [§6](#6-pedestrians-npc-people)–[§10](#10-hazards-haz), with a fixed, required key set per ID (the loader's rule specs in `src/sim/entities.ts`): for example Doris has `chaseSpeedMps`, `handbagHitHp`, `whackEveryS`, `chaseGiveUpM`, `hornSlowSpeedMps`, `glareM`, `glareClearS`, `fistShakeS`, `hornSlowS` and `handbagReachM`; the dog walker `leadMaxM`, `messEveryMinS`/`MaxS`, `tanglePts` and `tangleComplaints`; the bus `stopDwellS`; a parked car `dentPts` and `dentHp`; the pothole `hpLoss` and `spillLu`. Key names carry their unit. Shared street-life rules (awareness, horn, near miss, dust, splash, actor hits, complaints) are not per entity: they live in `tuning.json` → `streetLife`, `complaints` and `endStates`.
 
 Angles in `rules` are stored in degrees and converted to radians at load, like `tuning.json`. "Any" and "All" in a Districts column mean all eight districts; "All except Yard" means the seven shift districts.
 
@@ -660,7 +661,12 @@ Angles in `rules` are stored in degrees and converted to radians at load, like `
       "handbagHitHp": 2,
       "whackEveryS": 1.0,
       "chaseGiveUpM": 8,
-      "hornSlowSpeedMps": 0.4
+      "hornSlowSpeedMps": 0.4,
+      "glareM": 4,
+      "glareClearS": 1.0,
+      "fistShakeS": 1.5,
+      "hornSlowS": 10,
+      "handbagReachM": 0.6
     },
     "milestone": "M3"
   },

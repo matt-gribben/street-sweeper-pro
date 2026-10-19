@@ -11,8 +11,10 @@
 // forks pool has --expose-gc; without it the check throws, it never skips.
 import { describe, expect, it } from 'vitest';
 import { DT_S } from '../../src/sim/constants.ts';
+import { NPC_IDS } from '../../src/sim/entities.ts';
+import { countEvents, EV } from '../../src/sim/eventQueue.ts';
 import { cos, sin } from '../../src/sim/fmath.ts';
-import { createInputFrame, THROTTLE_MAX } from '../../src/sim/inputFrame.ts';
+import { BUTTON, createInputFrame, THROTTLE_MAX } from '../../src/sim/inputFrame.ts';
 import { type Behaviour, Stimulus } from '../../src/sim/npc/behaviour.ts';
 import { pushStimulus } from '../../src/sim/npc/stimuli.ts';
 import {
@@ -74,16 +76,22 @@ const walker: Behaviour = {
 };
 
 const HOPS = new Float64Array([48, 48, 144, 48, 144, 144, 48, 144]);
+const DORIS_KIND = NPC_IDS.indexOf('npc.old_woman');
+/** Where the Doris rig puts her: 2 m ahead of Bessie's front bumper, from her body centre, metres. */
+const AHEAD_M = 1.625 + 2;
 
 /**
  * The rig: `generic` keeps the registry's behaviours (the SSP-082 generic pedestrian for the people, the no-op
- * for the animals) instead of the test walker, so the reaction model's states run in the window.
+ * for the animals) instead of the test walker, so the reaction model's states run in the window. `doris` adds
+ * Doris (SSP-083) to the mix and sprays for 2 s of every 4 (the tank topped up), so her glare, fist shake,
+ * chase and handbag whacks run too; Bessie's HP is restored every tick so the whacks never get her TOWED.
  */
-function npcRig(generic = false): { world: World; step: (t: number) => void } {
+function npcRig(generic = false, doris = false): { world: World; step: (t: number) => void } {
   const { level } = npcTown(TILES, {
     population: [{ fromS: 0, toS: 100_000, target: 80 }],
     mix: [
       { id: 'npc.dog_walker', weight: 20 },
+      ...(doris ? [{ id: 'npc.old_woman' as const, weight: 40 }] : []),
       { id: 'npc.postie', weight: 20 },
       { id: 'npc.shopper', weight: 60 },
     ],
@@ -120,6 +128,28 @@ function npcRig(generic = false): { world: World; step: (t: number) => void } {
       v.yM = HOPS[k + 1] as number;
     }
     input.throttle = v.vLongMps < 5 ? THROTTLE_MAX : 0;
+    if (doris) {
+      // Stop and spray for 2 s of every 4, with a Doris put 2 m ahead of the bumper as it starts, so she is
+      // sprayed, catches Bessie and whacks.
+      const spraying = t % 240 < 120;
+      input.buttons = spraying ? BUTTON.SPRAY : 0;
+      if (spraying) input.throttle = 0;
+      if (t % 240 === 0) {
+        v.vLongMps = 0;
+        v.vLatMps = 0;
+        v.yawRateRadPerS = 0;
+        const npc = world.npc;
+        for (let i = 0; i < npc.count; i++) {
+          if (npc.kind[i] !== DORIS_KIND) continue;
+          npc.x[i] = v.xM + sin(v.headingRad) * AHEAD_M;
+          npc.y[i] = v.yM - cos(v.headingRad) * AHEAD_M;
+          updateNpcCell(npc, i);
+          break;
+        }
+      }
+      v.water = 100;
+      v.hp = 100;
+    }
     if (t % 30 === 0) {
       const s = pushStimulus(q, Stimulus.Horn, NO_NPC_HANDLE);
       q.x[s] = v.xM;
@@ -134,9 +164,9 @@ function npcRig(generic = false): { world: World; step: (t: number) => void } {
 }
 
 /** The §17 heap check over the rig; logs the window's work and asserts that it ran. */
-function checkPhase7Heap(label: string, generic: boolean): void {
+function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
   requireGc();
-  const { world, step } = npcRig(generic);
+  const { world, step } = npcRig(generic, doris);
   const sp = world.npcAi.spawner;
   const reactions = world.npcAi.reactions;
   for (let t = 0; t < PREWARM_TICKS; t++) step(t);
@@ -150,9 +180,11 @@ function checkPhase7Heap(label: string, generic: boolean): void {
   let minCount = NPC_CAPACITY;
   let fullTicks = 0;
   const counts = new Int32Array(HEAP_WARMUP_TICKS + HEAP_MEASURED_TICKS);
+  let whacks = 0;
   const delta = measureHeapDelta((t) => {
     step(PREWARM_TICKS + t);
     counts[t] = world.npc.count;
+    if (t >= HEAP_WARMUP_TICKS) whacks += countEvents(world.events, EV.HandbagWhack);
   });
   for (let t = HEAP_WARMUP_TICKS; t < counts.length; t++) {
     const n = counts[t] as number;
@@ -165,7 +197,7 @@ function checkPhase7Heap(label: string, generic: boolean): void {
       `(≤ ${HEAP_PRE_GC_THRESHOLD_BYTES}); NPCs min ${minCount}, full on ${fullTicks} ticks; spawned ` +
       `+${sp.ambientSpawned - before.spawned}, retired +${sp.ambientRetired - before.retired}, stimuli ` +
       `delivered +${world.npcAi.stimuli.delivered - before.delivered}, actor hits ` +
-      `+${reactions.hits - before.hits}, bumps +${reactions.bumps - before.bumps}`,
+      `+${reactions.hits - before.hits}, bumps +${reactions.bumps - before.bumps}, handbag whacks ${whacks}`,
   );
   // The window ran the work under test: a full store, spawns and retirements, stimuli delivered.
   expect(fullTicks).toBeGreaterThan(HEAP_MEASURED_TICKS / 2);
@@ -175,6 +207,7 @@ function checkPhase7Heap(label: string, generic: boolean): void {
   expect(world.npcAi.stimuli.delivered - before.delivered).toBeGreaterThan(100);
   // The generic pedestrians walk into her path; the test walkers seldom meet her inside one window.
   if (generic) expect(reactions.hits - before.hits).toBeGreaterThan(0);
+  if (doris) expect(whacks).toBeGreaterThan(0);
   assertHeapDeltaWithinThresholds(delta);
 }
 
@@ -189,5 +222,11 @@ describe('phase 7 heap-delta check with 80 NPCs (TECHNICAL_DESIGN §17, SSP-080)
     timeout: 120_000,
   }, () => {
     checkPhase7Heap('npcAlloc (generic pedestrian)', true);
+  });
+
+  it('allocates nothing with Doris glaring, shaking her fist, chasing and whacking among them (SSP-083)', {
+    timeout: 120_000,
+  }, () => {
+    checkPhase7Heap('npcAlloc (with Doris)', true, true);
   });
 });

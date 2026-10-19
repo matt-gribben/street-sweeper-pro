@@ -22,6 +22,7 @@ import { createStream, type Sfc32 } from '../rng.ts';
 import type { Tuning } from '../tuning.ts';
 import type { World } from '../world.ts';
 import type { Behaviour } from './behaviour.ts';
+import { createOldWomanParams, type OldWomanParams } from './behaviours/oldWoman.ts';
 import { createReactions, type Reactions } from './reactions.ts';
 import { behavioursByKind } from './registry.ts';
 import { createNpcSpawner, type NpcSpawner } from './spawner.ts';
@@ -45,6 +46,8 @@ export type NpcAi = {
   readonly entities: Entities;
   /** The shared reaction rules' state: awareness radius, hi-vis, the per-kind hit tables (reactions.ts). */
   readonly reactions: Reactions;
+  /** Doris's numbers in ticks and metres (behaviours/oldWoman.ts, SSP-083), from entities.json. */
+  readonly oldWoman: OldWomanParams;
 };
 
 /**
@@ -68,6 +71,7 @@ export function createNpcAi(
     steering: createSteering(level, grid, zebras, tuning, capacity),
     entities,
     reactions: createReactions(tuning, entities, capacity),
+    oldWoman: createOldWomanParams(entities),
   };
 }
 

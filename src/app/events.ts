@@ -244,6 +244,19 @@ export type NpcHitEvent = SimEventBase & {
   readonly kind: NpcId;
 };
 
+/**
+ * Doris whacked Bessie with her handbag while chasing her (phase 7, npc/behaviours/oldWoman.ts, SSP-083): once per
+ * whack. `entity` is Doris's NPC store index. The HP flash and granny_harrumph's `whack` variant (M5) read it.
+ */
+export type HandbagWhackEvent = SimEventBase & {
+  readonly type: typeof EV.HandbagWhack;
+  /** Doris's centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The HP Bessie lost (2, or what she had left). */
+  readonly hp: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -263,6 +276,7 @@ export type SimEventByType = {
   [EV.Horn]: HornEvent;
   [EV.Knock]: KnockEvent;
   [EV.NpcHit]: NpcHitEvent;
+  [EV.HandbagWhack]: HandbagWhackEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -341,6 +355,7 @@ function createPayloads(): Payloads {
     [EV.Horn]: { type: EV.Horn, tick: 0, entity: -1, x: 0, y: 0, radiusM: 0 },
     [EV.Knock]: { type: EV.Knock, tick: 0, entity: -1, x: 0, y: 0, kind: 'prop.wheelie_bin' },
     [EV.NpcHit]: { type: EV.NpcHit, tick: 0, entity: -1, x: 0, y: 0, kind: 'npc.shopper' },
+    [EV.HandbagWhack]: { type: EV.HandbagWhack, tick: 0, entity: -1, x: 0, y: 0, hp: 0 },
   };
 }
 
@@ -402,7 +417,8 @@ function isEventType(type: number): type is EventType {
     type === EV.Complaint ||
     type === EV.Horn ||
     type === EV.Knock ||
-    type === EV.NpcHit
+    type === EV.NpcHit ||
+    type === EV.HandbagWhack
   );
 }
 
@@ -521,6 +537,7 @@ export class EventBus implements UiEventSink, PauseEventSink {
     [EV.Horn]: [],
     [EV.Knock]: [],
     [EV.NpcHit]: [],
+    [EV.HandbagWhack]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -804,6 +821,16 @@ export class EventBus implements UiEventSink, PauseEventSink {
         e.y = b;
         e.kind = npcKindOf(c, tick);
         this.emit(EV.NpcHit, e);
+        return;
+      }
+      case EV.HandbagWhack: {
+        const e = this.payloads[EV.HandbagWhack];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.hp = c;
+        this.emit(EV.HandbagWhack, e);
         return;
       }
     }

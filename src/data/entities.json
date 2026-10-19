@@ -340,7 +340,12 @@
       "handbagHitHp": 2,
       "whackEveryS": 1.0,
       "chaseGiveUpM": 8,
-      "hornSlowSpeedMps": 0.4
+      "hornSlowSpeedMps": 0.4,
+      "glareM": 4,
+      "glareClearS": 1.0,
+      "fistShakeS": 1.5,
+      "hornSlowS": 10,
+      "handbagReachM": 0.6
     },
     "milestone": "M3"
   },

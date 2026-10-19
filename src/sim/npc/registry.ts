@@ -1,8 +1,9 @@
 // The behaviour registry (TECHNICAL_DESIGN §11.1, SSP-080): every entities.json `behaviour` key (NPC_BEHAVIOURS)
 // mapped to its module in src/sim/npc/behaviours/. The World resolves the table once at shift start into
 // `npcAi.behaviours`, indexed by NPC_IDS index, so phase 7 looks behaviours up by array index.
-// Until a kind's own module lands (SSP-083 Doris, SSP-084 shopper, businessman and litterbug, SSP-085 old man,
-// mum and postie, SSP-086 dog walker, SSP-087 cat, SSP-088 market trader and pigeon):
+// Doris has hers (behaviours/oldWoman.ts, SSP-083). Until a kind's own module lands (SSP-084 shopper,
+// businessman and litterbug, SSP-085 old man, mum and postie, SSP-086 dog walker, SSP-087 cat, SSP-088 market
+// trader and pigeon):
 // - since SSP-082 every person kind maps to the generic pedestrian (behaviours/pedestrian.ts), the shared
 //   reaction model: the businessman, an M3 jaywalker (TECHNICAL_DESIGN §11.1), to its jaywalking twin, and the
 //   market trader to the stationary one;
@@ -11,6 +12,7 @@
 import { type Entities, NPC_IDS, type NpcBehaviour } from '../entities.ts';
 import type { Behaviour } from './behaviour.ts';
 import { noopBehaviour, noopJaywalkBehaviour } from './behaviours/noop.ts';
+import { oldWomanBehaviour } from './behaviours/oldWoman.ts';
 import {
   pedestrianBehaviour,
   pedestrianJaywalkBehaviour,
@@ -20,7 +22,7 @@ import {
 /** Behaviour modules by entities.json `behaviour` key. */
 export const BEHAVIOUR_REGISTRY: { readonly [K in NpcBehaviour]: Behaviour } = {
   shopper: pedestrianBehaviour,
-  old_woman: pedestrianBehaviour,
+  old_woman: oldWomanBehaviour,
   old_man_frame: pedestrianBehaviour,
   dog_walker: pedestrianBehaviour,
   litterbug: pedestrianBehaviour,

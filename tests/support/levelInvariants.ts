@@ -1,7 +1,17 @@
 // Structural invariants of a compiled level's derived tile layers (SSP-034): collide SOLID / KERB_EDGE bits,
 // the kerb blob autotile, the markings and the merged solids. Shared by the unit and property tests; each
 // returns human-readable violations (empty = all hold).
-import { AUTOTILE_NONE, COLLIDE, type Level, MARKING, type TileRect } from '../../src/sim/map.ts';
+import {
+  AUTOTILE_NONE,
+  COLLIDE,
+  GRIME_CELL,
+  GUTTER_CELLS_PER_TILE,
+  type Level,
+  LITTER_CELLS_PER_TILE,
+  LITTER_PLACE,
+  MARKING,
+  type TileRect,
+} from '../../src/sim/map.ts';
 import type { ResolvedMap } from '../../tools/levels/compile-level.ts';
 import type { KerbBlob } from '../../tools/levels/kerbBlob.ts';
 import { isRaisedKerbCell, isRoadCell } from '../../tools/levels/tileLayers.ts';
@@ -98,6 +108,55 @@ export function tileLayerViolations(level: Level, map: ResolvedMap, blob: KerbBl
       if (((m & MARKING.PARKING_BAY) !== 0) !== (map.defs[i]?.mark === 'parking_bay'))
         out.push(`${at}: PARKING_BAY ${m & MARKING.PARKING_BAY} disagrees with the map`);
     }
+  }
+  return out;
+}
+
+/**
+ * Every violation of the SSP-054 spawn-layer invariants: GUTTER implies OPEN, OPEN lies on route tiles only,
+ * GUTTER lies on road cells in the 2-cell band of one of the cell's KERB_EDGE sides, zone density and litter
+ * weight are 0 off route, and the litter GUTTER place is only on road ground.
+ */
+export function spawnLayerViolations(level: Level, map: ResolvedMap): string[] {
+  const [w, h] = level.size;
+  const { gutter, route, grimeDensity, collide } = level.layers;
+  const out: string[] = [];
+  const n = GUTTER_CELLS_PER_TILE;
+  const gw = w * n;
+  for (let k = 0; k < gutter.length; k += 1) {
+    const v = gutter[k] ?? 0;
+    if (v === 0) continue;
+    const gx = k % gw;
+    const gy = Math.floor(k / gw);
+    const t = Math.floor(gy / n) * w + Math.floor(gx / n);
+    const at = `grime cell (${gx}, ${gy})`;
+    if ((v & GRIME_CELL.OPEN) === 0) out.push(`${at}: ${v} without OPEN`);
+    if (route[t] !== 1) out.push(`${at}: OPEN off the route`);
+    if ((v & GRIME_CELL.GUTTER) !== 0) {
+      const c = collide[t] ?? 0;
+      const lx = gx % n;
+      const ly = gy % n;
+      const band =
+        ((c & COLLIDE.KERB_EDGE_N) !== 0 && ly < 2) ||
+        ((c & COLLIDE.KERB_EDGE_S) !== 0 && ly >= n - 2) ||
+        ((c & COLLIDE.KERB_EDGE_W) !== 0 && lx < 2) ||
+        ((c & COLLIDE.KERB_EDGE_E) !== 0 && lx >= n - 2);
+      if (!isRoadCell(map, t) || !band) out.push(`${at}: GUTTER outside the band of a road kerb edge`);
+    }
+  }
+  for (let t = 0; t < w * h; t += 1) {
+    if ((grimeDensity[t] ?? 0) !== 0 && route[t] !== 1) out.push(`tile ${t}: grimeDensity off the route`);
+  }
+  const litter = level.litter;
+  if (litter !== null) {
+    const sn = LITTER_CELLS_PER_TILE;
+    const sw = w * sn;
+    litter.weights.forEach((v, k) => {
+      const t = Math.floor(Math.floor(k / sw) / sn) * w + Math.floor((k % sw) / sn);
+      if (v !== 0 && route[t] !== 1) out.push(`litter sub-cell ${k}: weight ${v} off the route`);
+      if (((litter.places[k] ?? 0) & LITTER_PLACE.GUTTER) !== 0 && !isRoadCell(map, t))
+        out.push(`litter sub-cell ${k}: GUTTER place off the road`);
+    });
   }
   return out;
 }

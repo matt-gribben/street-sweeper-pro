@@ -3,7 +3,8 @@
 // bytes. Maps are legal by construction (below), so every run exercises the compiler rather than being
 // filtered out. Fixed seed so a failure always reproduces. SSP-034: the derived tile layers (collide, kerb
 // blob autotile, markings, merged solids) hold their invariants on every map; the layout checks
-// (L014–L022), which random rows of props cannot satisfy, are skipped here and covered by fixtures.
+// (L014–L022), which random rows of props cannot satisfy, are skipped here and covered by fixtures. SSP-054:
+// half the maps carry litter and grime specs, and the spawn layers hold their invariants on every map.
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fc from 'fast-check';
@@ -11,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeLevel, encodeLevel } from '../../src/sim/map.ts';
 import { compileLevel, DEFAULT_LEGEND, formatDiagnostic } from '../../tools/levels/compile-level.ts';
 import { KERB_BLOB_PATH, readKerbBlob } from '../../tools/levels/kerbBlob.ts';
-import { tileLayerViolations } from '../support/levelInvariants.ts';
+import { spawnLayerViolations, tileLayerViolations } from '../support/levelInvariants.ts';
 
 const KERB_BLOB = readKerbBlob(join(fileURLToPath(new URL('../../', import.meta.url)), KERB_BLOB_PATH));
 
@@ -55,6 +56,9 @@ type Spec = {
   storeys: number[];
   landmark: boolean[];
   audio: boolean;
+  spawns: boolean;
+  /** 0..100: scales the grime cell count, the gutter share, the litter bias and the hotspot radius. */
+  dial: number;
 };
 
 const specArb: fc.Arbitrary<Spec> = fc
@@ -72,26 +76,45 @@ const specArb: fc.Arbitrary<Spec> = fc
         storeys: fc.array(fc.integer({ min: 1, max: 8 }), { minLength: 5, maxLength: 5 }),
         landmark: fc.array(fc.boolean(), { minLength: 5, maxLength: 5 }),
         audio: fc.boolean(),
+        spawns: fc.boolean(),
+        dial: fc.integer({ min: 0, max: 100 }),
       })
-      .map(({ picks, sx, sy, pad, waterEdge, heading, skipRun, storeys, landmark, audio }): Spec => {
-        const x0 = Math.max(0, sx - pad[0]);
-        const y0 = Math.max(0, sy - pad[1]);
-        const x1 = Math.min(w, sx + 1 + pad[2]);
-        const y1 = Math.min(h, sy + 1 + pad[3]);
-        return {
-          w,
-          h,
+      .map(
+        ({
           picks,
-          start: [sx, sy],
-          depot: [x0, y0, x1 - x0, y1 - y0],
+          sx,
+          sy,
+          pad,
           waterEdge,
           heading,
           skipRun,
           storeys,
           landmark,
           audio,
-        };
-      }),
+          spawns,
+          dial,
+        }): Spec => {
+          const x0 = Math.max(0, sx - pad[0]);
+          const y0 = Math.max(0, sy - pad[1]);
+          const x1 = Math.min(w, sx + 1 + pad[2]);
+          const y1 = Math.min(h, sy + 1 + pad[3]);
+          return {
+            w,
+            h,
+            picks,
+            start: [sx, sy],
+            depot: [x0, y0, x1 - x0, y1 - y0],
+            waterEdge,
+            heading,
+            skipRun,
+            storeys,
+            landmark,
+            audio,
+            spawns,
+            dial,
+          };
+        },
+      ),
   );
 
 function pick(set: readonly string[], n: number): string {
@@ -154,8 +177,37 @@ function build(spec: Spec): { rows: string[]; levelText: string } {
     legend: { '*': { ground: 'cobbles' } },
     buildings,
     anchors,
+    ...(spec.spawns ? spawnSpecs(spec) : {}),
   };
   return { rows, levelText: `${JSON.stringify(level, null, 2)}\n` };
+}
+
+/**
+ * Litter and grime specs that every legal map can satisfy: row 1 always holds at least 3 pavement tiles of
+ * OPEN grime cells, so up to 64 cells with no gutter quota never trips L051.
+ */
+function spawnSpecs(spec: Spec): Record<string, unknown> {
+  const d = spec.dial / 100;
+  return {
+    litter: {
+      initial: Math.round(d * 50),
+      table: { 'litter.crisp_packet': 3, 'litter.dog_mess': 1, 'litter.leaf_pile': 1 },
+      gutterBias: d,
+      hotspots: [
+        { near: 'prop.litter_bin', radius: 0.5 + 3 * d, mult: 2 },
+        { near: 'site.skip', radius: 1, mult: 1.5 },
+      ],
+    },
+    grime: {
+      cells: Math.round(d * 64),
+      gutterShare: 0,
+      zones: [
+        { rect: [0, 0, spec.w, 2], density: d },
+        { near: 'prop.lamp_post', radius: 2, density: 1 - d },
+      ],
+      speckle: d / 10,
+    },
+  };
 }
 
 describe('level compiler round trip (TECHNICAL_DESIGN §18.2)', () => {
@@ -191,6 +243,9 @@ describe('level compiler round trip (TECHNICAL_DESIGN §18.2)', () => {
         }
         expect(decoded.props).toHaveLength(props);
         expect(tileLayerViolations(decoded, output.map, KERB_BLOB)).toEqual([]);
+        expect(spawnLayerViolations(decoded, output.map)).toEqual([]);
+        expect(decoded.litter === null).toBe(!spec.spawns);
+        expect(decoded.grime === null).toBe(!spec.spawns);
         expect(decoded.music === undefined).toBe(!spec.audio);
       }),
       { seed: SEED, numRuns: RUNS },

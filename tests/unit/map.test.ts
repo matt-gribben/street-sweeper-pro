@@ -1,9 +1,10 @@
-// Compiled-level codec, id tables and solid merge (TECHNICAL_DESIGN §9.1, §15.2; SSP-032; audio header SSP-033).
+// Compiled-level codec, id tables and solid merge (TECHNICAL_DESIGN §9.1, §15.2; SSP-032; audio header SSP-033;
+// grime cell bits, `spawns.grime` and `spawns.litter` SSP-054).
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { decodeBase64, encodeBase64 } from '../../src/sim/base64.ts';
+import { decodeBase64, decodeBase64Uint16, encodeBase64, encodeBase64Uint16 } from '../../src/sim/base64.ts';
 import {
   AMBIENCE_ID_PATTERN,
   AUTOTILE_NONE,
@@ -12,6 +13,8 @@ import {
   createBlankLevel,
   decodeLevel,
   encodeLevel,
+  GRIME_CELL,
+  GRIME_CELL_ALL_BITS,
   GROUND_COUNT,
   GROUND_SURFACE,
   Ground,
@@ -20,7 +23,12 @@ import {
   LEVEL_FORMAT,
   LEVEL_VERSION,
   type Level,
+  LITTER_CELLS_PER_TILE,
+  LITTER_PLACE,
+  LITTER_PLACE_ALL_BITS,
+  LITTER_WEIGHT_MAX,
   layerLength,
+  litterFieldLength,
   MARKING,
   MARKING_ALL_BITS,
   MAX_STYLES,
@@ -100,7 +108,9 @@ function handBuiltLevel(): Level {
   }
   level.layers.collide[3 * w] = COLLIDE.SOLID;
   level.layers.collide[3 * w + 1] = COLLIDE.SOLID;
-  for (let i = 0; i < level.layers.gutter.length; i += 7) level.layers.gutter[i] = (i * 13) & 255;
+  const cellValues = [0, GRIME_CELL.OPEN, GRIME_CELL.OPEN | GRIME_CELL.GUTTER];
+  for (let i = 0; i < level.layers.gutter.length; i += 7)
+    level.layers.gutter[i] = cellValues[(i * 13) % 3] ?? 0;
   level.solids = mergeSolids(level.layers.collide, w, h);
   level.props = [
     { id: 'prop.hydrant', x: 9, y: 3, rot: 0 },
@@ -127,8 +137,26 @@ function handBuiltLevel(): Level {
   };
   level.spawns = {
     npc: [{ id: 'npc.old_woman', anchor: 'doris_home' }],
-    litter: [{ table: { 'litter.crisp_packet': 3 } }],
+    traffic: [{ id: 'veh.hatchback' }],
   };
+  const n = litterFieldLength(w, h);
+  const places = new Uint8Array(n);
+  const weights = new Uint16Array(n);
+  for (let i = 0; i < n; i += 1) {
+    places[i] = (i * 5) & LITTER_PLACE_ALL_BITS;
+    weights[i] = (i * 977) % (LITTER_WEIGHT_MAX + 1);
+  }
+  level.litter = {
+    initial: 12,
+    minSpacingM: 0.5,
+    table: [
+      { id: 'litter.crisp_packet', weight: 3, requires: 0 },
+      { id: 'litter.dog_mess', weight: 0.5, requires: LITTER_PLACE.PAVEMENT },
+    ],
+    places,
+    weights,
+  };
+  level.grime = { cells: 40, gutterCells: 6, speckle: 0.03 };
   level.schedules = [{ npc: 'npc.old_woman', at: 12, route: ['doris_home', 'shop'] }];
   level.weather = 'rain';
   level.timerS = 240;
@@ -302,7 +330,7 @@ describe('encodeLevel / decodeLevel', () => {
     const a = handBuiltLevel();
     const b = handBuiltLevel();
     b.spawns = {
-      litter: [{ table: { 'litter.crisp_packet': 3 } }],
+      traffic: [{ id: 'veh.hatchback' }],
       npc: [{ anchor: 'doris_home', id: 'npc.old_woman' }],
     };
     b.schedules = [{ route: ['doris_home', 'shop'], at: 12, npc: 'npc.old_woman' }];
@@ -450,6 +478,107 @@ describe('encodeLevel / decodeLevel', () => {
     ).toThrow(/frontages\[0\]\.face must be one of n, e, s, w/);
     expect(() => decodeLevel(edit((r) => (r.weather = 'fog')))).toThrow(/weather must be one of/);
     expect(() => decodeLevel(edit((r) => delete r.player))).toThrow(/player must be an object/);
+  });
+});
+
+describe('grime cells and the typed spawns (SSP-054)', () => {
+  it('writes spawns.grime, spawns.litter and the list kinds in sorted key order, and round-trips them', () => {
+    const level = handBuiltLevel();
+    const text = encodeLevel(level);
+    const root = JSON.parse(text) as { spawns: Record<string, unknown> };
+    expect(Object.keys(root.spawns)).toEqual(['grime', 'litter', 'npc', 'traffic']);
+    expect(root.spawns.grime).toEqual({ cells: 40, gutterCells: 6, speckle: 0.03 });
+    const litter = root.spawns.litter as Record<string, unknown>;
+    expect(Object.keys(litter)).toEqual(['initial', 'minSpacingM', 'table', 'places', 'weights']);
+    expect(litter.weights).toBe(encodeBase64Uint16(level.litter?.weights ?? new Uint16Array(0)));
+    const decoded = decodeLevel(text);
+    expect(decoded.litter?.weights).toBeInstanceOf(Uint16Array);
+    expect(decoded.litter?.places).toBeInstanceOf(Uint8Array);
+    expect(decoded.litter).toEqual(level.litter);
+    expect(decoded.grime).toEqual(level.grime);
+    expect(decoded.spawns).toEqual(level.spawns);
+  });
+
+  it('omits spawns.litter and spawns.grime when the level has none', () => {
+    const level = handBuiltLevel();
+    level.litter = null;
+    level.grime = null;
+    const text = encodeLevel(level);
+    const root = JSON.parse(text) as { spawns: Record<string, unknown> };
+    expect(Object.keys(root.spawns)).toEqual(['npc', 'traffic']);
+    const decoded = decodeLevel(text);
+    expect(decoded.litter).toBeNull();
+    expect(decoded.grime).toBeNull();
+  });
+
+  it('sizes the litter field at 4×4 sub-cells per tile', () => {
+    expect(LITTER_CELLS_PER_TILE).toBe(4);
+    expect(litterFieldLength(64, 48)).toBe(256 * 192);
+  });
+
+  it('refuses litter or grime in the untyped spawn lists, and malformed fields', () => {
+    const listed = handBuiltLevel();
+    listed.spawns = { litter: [] };
+    expect(() => encodeLevel(listed)).toThrow(/spawns\.litter must be set through level\.litter/);
+    const shortField = handBuiltLevel();
+    if (shortField.litter !== null) shortField.litter.weights = new Uint16Array(3);
+    expect(() => encodeLevel(shortField)).toThrow(/litter\.weights has 3 entries, expected 384/);
+    const unsorted = handBuiltLevel();
+    unsorted.litter?.table.reverse();
+    expect(() => encodeLevel(unsorted)).toThrow(/litter\.table\[1\] is not sorted/);
+    const badRequires = handBuiltLevel();
+    if (badRequires.litter !== null)
+      badRequires.litter.table[0] = { id: 'litter.a', weight: 1, requires: 64 };
+    expect(() => encodeLevel(badRequires)).toThrow(/requires has unknown place bits/);
+    const tooMuchGutter = handBuiltLevel();
+    tooMuchGutter.grime = { cells: 4, gutterCells: 5, speckle: 0 };
+    expect(() => encodeLevel(tooMuchGutter)).toThrow(/gutterCells must be an integer 0\.\.cells/);
+    const badBits = handBuiltLevel();
+    badBits.layers.gutter[9] = GRIME_CELL.GUTTER;
+    expect(() => encodeLevel(badBits)).toThrow(
+      /gutter has 2 at tile \(9, 0\); unknown grime cell bits or GUTTER/,
+    );
+    const unknownBit = handBuiltLevel();
+    unknownBit.layers.gutter[0] = 1 << 2;
+    expect(() => encodeLevel(unknownBit)).toThrow(/gutter has 4/);
+    expect(GRIME_CELL_ALL_BITS).toBe(3);
+  });
+
+  it('rejects malformed compiled spawns.litter and spawns.grime with the field named', () => {
+    const text = encodeLevel(handBuiltLevel());
+    const edit = (change: (spawns: Record<string, Record<string, unknown>>) => void): unknown => {
+      const root = JSON.parse(text) as { spawns: Record<string, Record<string, unknown>> };
+      change(root.spawns);
+      return root;
+    };
+    expect(() => decodeLevel(edit((s) => (s.grime = { cells: 1, gutterCells: 2, speckle: 0 })))).toThrow(
+      /spawns\.grime\.gutterCells must be 0\.\.cells/,
+    );
+    expect(() => decodeLevel(edit((s) => delete s.grime?.speckle))).toThrow(
+      /spawns\.grime\.speckle must be a finite number/,
+    );
+    expect(() => decodeLevel(edit((s) => ((s.litter ?? {}).weights = 'AAAA')))).toThrow(
+      /spawns\.litter: base64: 3 bytes is not a whole number of Uint16s/,
+    );
+    expect(() => decodeLevel(edit((s) => ((s.litter ?? {}).places = 'AAAA')))).toThrow(
+      /spawns\.litter\.places has 3 entries, expected 384/,
+    );
+    expect(() =>
+      decodeLevel(edit((s) => ((s.litter ?? {}).table = [{ id: 'litter.a', weight: 0, requires: 0 }]))),
+    ).toThrow(/table\[0\]\.weight must be positive/);
+    expect(() =>
+      decodeLevel(edit((s) => ((s.litter ?? {}).places = encodeBase64(new Uint8Array(384).fill(1 << 4))))),
+    ).toThrow(/unknown place bits at sub-cell 0/);
+  });
+});
+
+describe('Uint16 base64 (SSP-054)', () => {
+  it('writes little-endian bytes and round-trips every value', () => {
+    expect(encodeBase64Uint16(Uint16Array.of(0x0102))).toBe(encodeBase64(Uint8Array.of(0x02, 0x01)));
+    const all = new Uint16Array(65536);
+    for (let i = 0; i < all.length; i += 1) all[i] = i;
+    expect(decodeBase64Uint16(encodeBase64Uint16(all))).toEqual(all);
+    expect(decodeBase64Uint16('')).toEqual(new Uint16Array(0));
   });
 });
 

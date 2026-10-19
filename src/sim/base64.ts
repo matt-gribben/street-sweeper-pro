@@ -87,3 +87,27 @@ export function decodeBase64(text: string): Uint8Array {
   }
   return out;
 }
+
+/**
+ * Encode 16-bit values as base64 of their little-endian bytes (low byte first), whatever the platform's byte
+ * order, for the compiled litter weight field (TECHNICAL_DESIGN §15.2, SSP-054).
+ */
+export function encodeBase64Uint16(values: Uint16Array): string {
+  const bytes = new Uint8Array(values.length * 2);
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i] ?? 0;
+    bytes[2 * i] = v & 255;
+    bytes[2 * i + 1] = v >>> 8;
+  }
+  return encodeBase64(bytes);
+}
+
+/** Decode base64 of little-endian 16-bit values (encodeBase64Uint16). Throws on an odd byte count. */
+export function decodeBase64Uint16(text: string): Uint16Array {
+  const bytes = decodeBase64(text);
+  if (bytes.length % 2 !== 0)
+    throw new Error(`base64: ${bytes.length} bytes is not a whole number of Uint16s`);
+  const out = new Uint16Array(bytes.length / 2);
+  for (let i = 0; i < out.length; i += 1) out[i] = (bytes[2 * i] ?? 0) | ((bytes[2 * i + 1] ?? 0) << 8);
+  return out;
+}

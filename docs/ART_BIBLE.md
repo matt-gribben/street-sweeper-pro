@@ -606,7 +606,7 @@ Pillar 1 lives here. Each 32 px tile has an 8×8 grid of 4 px grime cells (see [
 
 - Grime is drawn by the ground shader as a **tileable overlay pattern per surface** (asphalt, slab, gutter), masked per 4 px cell. Patterns are procedural, mostly 08 soot_brown and 13 umber blotches with 01 flecks, covering about 60–80% of a dirty cell's pixels.
 - **Contrast target:** at least 60% of the pixels in a fully dirty cell must differ from the clean tile by one or more ramp steps, and the dirty-versus-clean boundary must be visible at 1× from a full screen away.
-- **Gutter grime** (the dense strip along kerbs, worth 2× points) is darker and denser: 08 and 01, about 90% coverage, in a 4–8 px band against the kerb.
+- **Gutter grime** (the dense strip along kerbs, worth 2× points) is darker and denser: 08 and 01, about 90% coverage, in a 4–8 px band against the kerb. *As built (SSP-054):* the band is 8 px, 2 grime cells on the road side of every raised kerb edge ([LEVEL_DESIGN §9.2](LEVEL_DESIGN.md#92-grime)).
 - **The clean side is the reward:** clean tiles are authored slightly crisper than "average street" (fresh 07 markings, tidy speckle). A street fully cleaned should look newly resurfaced.
 - Because grime cells are 4×4 px, the clean edge behind the brush is stepped in 4 px blocks. That chunkiness is intended; do not smooth it.
 

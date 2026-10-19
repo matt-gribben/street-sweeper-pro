@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "id": "district.fixture_spawns",
+  "name": "Fixture spawns",
+  "day": "mon",
+  "mode": "shift",
+  "map": "spawns.map.txt",
+  "size": [20, 12],
+  "timer": 240,
+  "seed": 1,
+  "timeOfDay": "morning",
+  "weather": "clear",
+  "start": {
+    "heading": 8
+  },
+  "depot": {
+    "rect": [8, 6, 12, 5]
+  },
+  "buildings": {
+    "A": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "roofkit": ["chimney"]
+    },
+    "B": {
+      "storeys": 3,
+      "roof": "roof.felt",
+      "wall": "facade.corner_shop",
+      "use": "shop",
+      "frontageWidth": 5
+    },
+    "C": {
+      "storeys": 8,
+      "roof": "roof.depot",
+      "wall": "facade.terrace_brick_bay",
+      "use": "civic",
+      "landmark": true
+    }
+  },
+  "anchors": {
+    "1": "doris_home",
+    "2": "zebra_s"
+  },
+  "litter": {
+    "initial": 40,
+    "table": {
+      "litter.crisp_packet": 3,
+      "litter.drink_can": 2,
+      "litter.dog_mess": 1,
+      "litter.leaf_pile": 1
+    },
+    "gutterBias": 0.5,
+    "minSpacingM": 0.5,
+    "hotspots": [
+      {
+        "near": "prop.litter_bin",
+        "radius": 2,
+        "mult": 2
+      },
+      {
+        "near": "use:shop",
+        "radius": 2,
+        "mult": 2.5
+      },
+      {
+        "near": "doris_home",
+        "radius": 1,
+        "mult": 1.5
+      }
+    ]
+  },
+  "grime": {
+    "cells": 2000,
+    "gutterShare": 0.15,
+    "zones": [
+      {
+        "rect": [0, 3, 9, 2],
+        "density": 0.8
+      },
+      {
+        "near": "prop.litter_bin",
+        "radius": 2,
+        "density": 0.6
+      }
+    ],
+    "speckle": 0.05
+  }
+}

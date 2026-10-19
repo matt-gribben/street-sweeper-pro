@@ -2,7 +2,7 @@
 id: SSP-054
 title: "Extend compile-level.ts with route, grime density, gutter and litter weight layers"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:tooling, area:sim, size:M, vertical-slice]
@@ -44,12 +44,12 @@ Validation (LEVEL_DESIGN §10.3): L050 error when `litter.initial` + expected dy
 
 ## Acceptance criteria
 
-- [ ] A fixture map compiles to a `route` layer that is 1 exactly on route-area characters and 0 on grass, aprons, water and void
-- [ ] The gutter mask marks only cells in the agreed band on the road side of kerb edges (fixture test)
-- [ ] Litter weights follow the base weights and a hotspot multiplier (unit test on a fixture with one `prop.litter_bin` hotspot)
-- [ ] L050 and L051 fire with the documented code and file:row:col format on crafted bad fixtures
-- [ ] `npm run levels` run twice produces byte-identical output; the compiler round-trip property test still passes
-- [ ] TECHNICAL_DESIGN §15.2/§10.3 and LEVEL_DESIGN §9.2 describe the chosen shapes, band width and grime-score split
+- [x] A fixture map compiles to a `route` layer that is 1 exactly on route-area characters and 0 on grass, aprons, water and void
+- [x] The gutter mask marks only cells in the agreed band on the road side of kerb edges (fixture test)
+- [x] Litter weights follow the base weights and a hotspot multiplier (unit test on a fixture with one `prop.litter_bin` hotspot)
+- [x] L050 and L051 fire with the documented code and file:row:col format on crafted bad fixtures
+- [x] `npm run levels` run twice produces byte-identical output; the compiler round-trip property test still passes
+- [x] TECHNICAL_DESIGN §15.2/§10.3 and LEVEL_DESIGN §9.2 describe the chosen shapes, band width and grime-score split
 
 ## Verification
 

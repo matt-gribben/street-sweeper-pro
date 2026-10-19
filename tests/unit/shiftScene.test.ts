@@ -27,11 +27,11 @@ import {
   ShiftScene,
   type ShiftSceneOptions,
 } from '../../src/scenes/ShiftScene.ts';
-import { DT_S, SHIFT_TICKS } from '../../src/sim/constants.ts';
+import { DEG_TO_RAD, DT_S, SHIFT_TICKS } from '../../src/sim/constants.ts';
 import { createInputFrame, PRESSED } from '../../src/sim/inputFrame.ts';
 import { decodeLevel, type Level } from '../../src/sim/map.ts';
 import { readInput } from '../../src/sim/replay.ts';
-import { DEFAULT_TUNING, type Tuning } from '../../src/sim/tuning.ts';
+import { DEFAULT_TUNING, loadTuning, type Tuning, tuningSourceCopy } from '../../src/sim/tuning.ts';
 import { fakePad, keyEvent, padSource, setTrigger } from '../support/fakeInput.ts';
 import { decodePng } from '../support/png.ts';
 
@@ -311,6 +311,124 @@ describe('ShiftScene', () => {
     );
     expect(b.ctx.root.children).toEqual([]);
     expect(b.follows).toEqual([]);
+  });
+});
+
+/** tuning.json with vehicle.sweeper.<group>.<key> set to `value`, validated (as the dev panel builds it). */
+function tuned(group: 'drive' | 'steering', key: string, value: number): Tuning {
+  const raw = tuningSourceCopy() as { vehicle: { sweeper: Record<string, Record<string, number>> } };
+  const values = raw.vehicle.sweeper[group];
+  if (values === undefined || !(key in values)) throw new Error(`no ${group}.${key}`);
+  values[key] = value;
+  return loadTuning(raw);
+}
+
+describe('ShiftScene live tuning (SSP-048 dev panel)', () => {
+  it('changes top speed and max steer between ticks, without re-entering', async () => {
+    const { scene: shift } = scene();
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    const v = shift.worldView?.vehicle;
+    if (v === undefined) throw new Error('no world');
+    const input = createInputFrame();
+    // Brush down (6.0 m/s cap by default), lowered to 4.0 m/s before the drive north up Mangle Street.
+    input.pressed = PRESSED.BRUSH;
+    shift.fixedUpdate(input);
+    input.pressed = 0;
+    shift.setTuning(tuned('drive', 'topSpeedBrushDownMps', 4));
+    input.throttle = 255;
+    let top = 0;
+    for (let i = 0; i < 150; i++) {
+      shift.fixedUpdate(input);
+      top = Math.max(top, v.vLongMps);
+    }
+    expect(top).toBeGreaterThan(3.9);
+    expect(top).toBeLessThanOrEqual(4);
+    // Raised to 5.5 mid-drive: the next ticks accelerate past the old cap up to the new one.
+    shift.setTuning(tuned('drive', 'topSpeedBrushDownMps', 5.5));
+    for (let i = 0; i < 60; i++) {
+      shift.fixedUpdate(input);
+      top = Math.max(top, v.vLongMps);
+    }
+    expect(top).toBeGreaterThan(5.4);
+    expect(top).toBeLessThanOrEqual(5.5);
+    expect(shift.snapshot()?.hp).toBe(100); // a clear road: nothing hit
+    // Stop, then full right lock at standstill settles at maxSteer: 34° by default, 20° once edited.
+    input.throttle = 0;
+    input.brake = 255;
+    for (let i = 0; i < 90 && v.vLongMps > 0; i++) shift.fixedUpdate(input);
+    input.brake = 0;
+    input.steer = 127;
+    for (let i = 0; i < 30; i++) shift.fixedUpdate(input);
+    expect(v.vLongMps).toBe(0);
+    expect(v.steerRad).toBeCloseTo(34 * DEG_TO_RAD, 12);
+    shift.setTuning(tuned('steering', 'maxSteerDeg', 20));
+    for (let i = 0; i < 30; i++) shift.fixedUpdate(input);
+    expect(v.steerRad).toBeCloseTo(20 * DEG_TO_RAD, 12);
+    expect(shift.tuning.vehicle.sweeper.steering.maxSteerRad).toBeCloseTo(20 * DEG_TO_RAD, 15);
+  });
+
+  it('tracks whether every recorded tick ran on the committed tuning.json', async () => {
+    const { scene: shift } = scene({ recordInputs: true });
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    const input = createInputFrame();
+    for (let i = 0; i < 30; i++) shift.fixedUpdate(input);
+    expect(shift.tuningIsCommitted).toBe(true);
+    expect(shift.logMatchesCommittedTuning).toBe(true);
+    // Edited and reverted before any tick ran on it: the log is still faithful.
+    shift.setTuning(tuned('drive', 'accelMps2', 3));
+    expect(shift.tuningIsCommitted).toBe(false);
+    expect(shift.logMatchesCommittedTuning).toBe(true);
+    shift.setTuning(loadTuning(tuningSourceCopy()));
+    expect(shift.tuningIsCommitted).toBe(true);
+    expect(shift.logMatchesCommittedTuning).toBe(true);
+    // One recorded tick on edited tuning taints the log for good, even after reverting.
+    shift.setTuning(tuned('drive', 'accelMps2', 3));
+    shift.fixedUpdate(input);
+    expect(shift.logMatchesCommittedTuning).toBe(false);
+    shift.setTuning(tuned('drive', 'accelMps2', 3.5));
+    shift.setTuning(loadTuning(tuningSourceCopy()));
+    expect(shift.tuningIsCommitted).toBe(true);
+    expect(shift.logMatchesCommittedTuning).toBe(false);
+  });
+
+  it('does not count ticks run after the log is full', async () => {
+    const { scene: shift } = scene({ recordInputs: true });
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    const input = createInputFrame();
+    for (let i = 0; i < SHIFT_TICKS; i++) shift.fixedUpdate(input);
+    shift.setTuning(tuned('drive', 'accelMps2', 3));
+    for (let i = 0; i < 10; i++) shift.fixedUpdate(input);
+    expect(shift.inputLog?.length).toBe(SHIFT_TICKS);
+    expect(shift.tuningIsCommitted).toBe(false);
+    expect(shift.logMatchesCommittedTuning).toBe(true);
+  });
+
+  it('starts diverged when constructed with an edited copy, and takes setTuning before enter', async () => {
+    const edited = scene({ recordInputs: true, tuning: tuned('drive', 'accelMps2', 3) });
+    expect(edited.scene.tuningIsCommitted).toBe(false);
+    await edited.scene.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    expect(edited.scene.logMatchesCommittedTuning).toBe(true);
+    edited.scene.fixedUpdate(createInputFrame());
+    expect(edited.scene.logMatchesCommittedTuning).toBe(false);
+
+    const early = scene({ recordInputs: true });
+    const maxSteer = tuned('steering', 'maxSteerDeg', 25);
+    early.scene.setTuning(maxSteer);
+    await early.scene.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    expect(early.scene.tuning).toBe(maxSteer);
+    expect(early.scene.tuningIsCommitted).toBe(false);
+  });
+
+  it('refuses a tuning whose prop footprints differ (the static grid needs a new World), changing nothing', async () => {
+    const { scene: shift } = scene({ recordInputs: true });
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    const raw = tuningSourceCopy() as { propFootprints: { shapes: Record<string, { radiusM?: number }> } };
+    const bollard = raw.propFootprints.shapes['prop.bollard'];
+    if (bollard === undefined) throw new Error('no bollard');
+    bollard.radiusM = 0.5;
+    expect(() => shift.setTuning(loadTuning(raw))).toThrow(/propFootprints differ/);
+    expect(shift.tuning).toBe(DEFAULT_TUNING);
+    expect(shift.tuningIsCommitted).toBe(true);
   });
 });
 

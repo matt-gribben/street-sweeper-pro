@@ -222,9 +222,9 @@ try {
 
   // Night on through the dev panel (F1), then hide it again so it does not cover the frame.
   await page.keyboard.press('F1');
-  await page.locator('#ssp-devPanel input[type=checkbox]').nth(1).check();
+  await page.locator('#ssp-dev-panel input[type=checkbox]').nth(1).check();
   await page.waitForTimeout(400);
-  const readout = (await page.locator('#ssp-devPanel pre').textContent()) ?? '';
+  const readout = (await page.locator('#ssp-dev-panel pre').textContent()) ?? '';
   await page.keyboard.press('F1');
   await page.waitForTimeout(200);
   report.night = await checkFrame(true);

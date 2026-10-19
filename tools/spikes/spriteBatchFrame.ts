@@ -138,7 +138,7 @@ async function load(page: Page, query: string): Promise<void> {
 async function drawCalls(page: Page): Promise<number> {
   await page.keyboard.press('F1');
   await page.waitForTimeout(500);
-  const readout = (await page.locator('#ssp-devPanel pre').textContent()) ?? '';
+  const readout = (await page.locator('#ssp-dev-panel pre').textContent()) ?? '';
   await page.keyboard.press('F1');
   await page.waitForTimeout(200);
   return Number(/draw calls (\d+)/.exec(readout)?.[1] ?? Number.NaN);

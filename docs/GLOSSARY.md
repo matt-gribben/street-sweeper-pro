@@ -174,7 +174,7 @@ Ingest step 8. A 3×3 majority filter removes orphan pixels (isolated single pix
 The rule that a run is a pure function of **f(seed, district, input log)**. The sim uses a hand-written `sfc32` PRNG (`src/sim/rng.ts`), a fixed 60 Hz [tick](#tick) and no wall-clock time. On the asset side, every step after a [golden](#golden) is byte-identical on rebuild. See [Replay hash](#replay--replay-hash) and [Sim purity](#sim--sim-purity).
 
 ### Dev panel
-A roughly 50-line in-game tuning panel (`src/debug/devPanel.ts`), opened with **F1** in dev builds only. It replaces tweakpane.
+A plain-DOM in-game tuning panel (`src/debug/devPanel.ts`), opened with **F1** in dev builds only. It replaces tweakpane. It live-edits every `vehicle.sweeper` value of `tuning.json`, shows speed, steer angle and the surface under Bessie, saves the shift's input log as a [replay](#replay--replay-hash) and copies the edited tuning as JSON (SSP-048, [TECHNICAL_DESIGN §18.3](TECHNICAL_DESIGN.md#183-deterministic-replay-tests)).
 
 ### Dignity
 Short for **Bessie's Dignity**, her health: **100 HP**. Collisions cost 4 HP per m/s of normal impact speed above 2 m/s. Potholes, broken glass, open manholes and Doris's handbag also cost HP. At 0 HP the shift ends as [TOWED!](#towed). `pwr.wrench` restores +25 HP, and `upg.bumper` cuts impact damage by 40%.

@@ -7,7 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import tuningJson from '../../src/data/tuning.json' with { type: 'json' };
 import { DEG_TO_RAD } from '../../src/sim/constants.ts';
-import { DEFAULT_TUNING, loadTuning, STATIC_PROP_IDS } from '../../src/sim/tuning.ts';
+import {
+  DEFAULT_TUNING,
+  loadTuning,
+  STATIC_PROP_IDS,
+  tuningSourceCopy,
+  tuningsEqual,
+} from '../../src/sim/tuning.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const sweeper = DEFAULT_TUNING.vehicle.sweeper;
@@ -444,6 +450,39 @@ describe('propFootprints (SSP-036, provisional until M4)', () => {
       DEFAULT_TUNING.propFootprints.shapes['prop.bench'],
     );
     expect(a.propFootprints).toEqual(DEFAULT_TUNING.propFootprints);
+  });
+});
+
+describe('tuningSourceCopy and tuningsEqual (SSP-048 dev panel)', () => {
+  it('copies the committed JSON deeply: equal values, no shared objects', () => {
+    const a = tuningSourceCopy();
+    expect(a).toEqual(tuningJson);
+    expect(a).not.toBe(tuningJson);
+    const b = tuningSourceCopy() as typeof tuningJson;
+    b.vehicle.sweeper.drive.topSpeedTransitMps = 99;
+    expect(tuningJson.vehicle.sweeper.drive.topSpeedTransitMps).toBe(11);
+    expect(tuningSourceCopy()).toEqual(tuningJson);
+  });
+
+  it('a copy loads to a Tuning equal to DEFAULT_TUNING; one edited value makes it differ', () => {
+    expect(tuningsEqual(loadTuning(tuningSourceCopy()), DEFAULT_TUNING)).toBe(true);
+    const raw = tuningSourceCopy() as typeof tuningJson;
+    raw.vehicle.sweeper.steering.maxSteerDeg = 35;
+    expect(tuningsEqual(loadTuning(raw), DEFAULT_TUNING)).toBe(false);
+    raw.vehicle.sweeper.steering.maxSteerDeg = 34;
+    expect(tuningsEqual(loadTuning(raw), DEFAULT_TUNING)).toBe(true);
+  });
+
+  it('compares plain data structurally', () => {
+    expect(tuningsEqual({ a: [1, 2, { b: 'x' }] }, { a: [1, 2, { b: 'x' }] })).toBe(true);
+    expect(tuningsEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false);
+    expect(tuningsEqual({ a: 1, b: undefined }, { a: 1, c: undefined })).toBe(false);
+    expect(tuningsEqual([1, 2], { 0: 1, 1: 2 })).toBe(false);
+    expect(tuningsEqual([1, 2], [1, 2, 3])).toBe(false);
+    expect(tuningsEqual(0, -0)).toBe(false);
+    expect(tuningsEqual(null, {})).toBe(false);
+    expect(tuningsEqual('1', 1)).toBe(false);
+    expect(tuningsEqual(true, true)).toBe(true);
   });
 });
 

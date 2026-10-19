@@ -146,7 +146,7 @@ async function pixelsOf(page: Page, png: Buffer): Promise<{ width: number; keys:
 async function drawCalls(page: Page): Promise<{ calls: number; readout: string }> {
   await page.keyboard.press('F1');
   await page.waitForTimeout(500);
-  const readout = (await page.locator('#ssp-devPanel pre').textContent()) ?? '';
+  const readout = (await page.locator('#ssp-dev-panel pre').textContent()) ?? '';
   await page.keyboard.press('F1');
   await page.waitForTimeout(200);
   return { calls: Number(/draw calls (\d+)/.exec(readout)?.[1] ?? Number.NaN), readout };

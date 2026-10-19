@@ -17,21 +17,48 @@
 // one-on, one-off dash: a 32 px dash, a 32 px gap), DOUBLE_YELLOW and PARKING_BAY once per KERB_EDGE side of the
 // cell's `collide` value.
 //
+// Grime (SSP-066, TECHNICAL_DESIGN §10.3, §12.4, ART_BIBLE §9.2). Every ground and marking quad of a cell carries
+// the cell's grime code (cityMesh.ts grimeCode): which pattern its dirty grime cells draw. Roads (one-way roads,
+// speed bumps and zebras over them included) draw `tile.grime_asphalt`; pavements, kerb blobs (their interior is
+// pavement), cobbles and alleys (both setts) draw `tile.grime_slab`; a cell with the gutter bit draws
+// `tile.grime_gutter` whatever its surface. Grass, yards, aprons and anything off route draw none (code 0), so
+// they never show grime even if a mask had some. The pattern variant is the stateless cell hash
+// (`VariantSalt.Grime`) modulo the family's frame count.
+//
+// GroundGrime owns the grime mask texture: an R8 DataTexture of (tilesW·8)×(tilesH·8) texels whose data IS the
+// sim's mask array (read, never written), NearestFilter, no mipmaps. The first render uploads it whole
+// (needsUpdate once, at creation). After that, accumulate() merges each tick's dirty rectangle (dirt.ts) into a
+// pending union, and upload(), once per rendered frame, sends exactly that union with one texSubImage2D through
+// WebGLRenderer.copyTextureToTexture: its CPU path reads from a DataTexture that has never been bound (the
+// `source` wrapper of the same array), sets UNPACK_ROW_LENGTH / SKIP_PIXELS / SKIP_ROWS and uploads the
+// sub-rectangle. (Texture.addUpdateRange cannot express it: three 0.186.1 uploads ranges as one-row strips,
+// assumes 4 bytes per texel and allocates a range object per call.) Nothing per frame sets needsUpdate or
+// creates a three.js object.
+//
 // Beyond the map the ground continues as an asphalt skirt (`tile.asphalt:v:-:0` repeated) so a camera at the map
 // edge never shows the clear colour. The camera is not clamped to the map (SSP-047): its focus stays within the
 // 3.0 m look-ahead of Bessie, who stays in the map, and the skirt reaches far past the widest view.
 //
-// Render-only: reads the decoded Level and never writes it.
+// Render-only: reads the decoded Level and the sim's grime mask and never writes either.
+import { Box2, DataTexture, RedFormat, type Texture, UnsignedByteType, Vector2 } from 'three';
 import type { FrameId } from '../gen/assets.ts';
+import type { DirtView } from '../sim/dirt.ts';
 import { AUTOTILE_NONE, COLLIDE, GROUND_COUNT, Ground, type Level, MARKING } from '../sim/map.ts';
 import {
   CELL_M,
   type CityGeometryWriter,
+  type CityGrime,
   cellVariant,
+  GRIME_FAMILY_SLOTS,
+  GRIME_NONE,
+  GRIME_SLOT_COUNT,
   GROUND_SKIRT_M,
+  GrimeFamily,
+  grimeCode,
   SurfaceKind,
   VariantSalt,
 } from './cityMesh.ts';
+import { nearestDataTexture } from './palettePass.ts';
 import { frameRect, worldFrame, worldFrameVariants } from './worldFrames.ts';
 
 /** Edge of a ground chunk in tiles (TECHNICAL_DESIGN §12.4). */
@@ -55,6 +82,34 @@ export const GROUND_TILE_ASSET: readonly (string | null)[] = [
   'tile.grass', // Grass
   'tile.apron', // Yard (fallback until SSP-121)
   'tile.apron', // Apron
+  null, // Water
+  null, // Sand
+];
+
+/** The grime overlay pattern assets by family (ART_BIBLE §9.2, SSP-052). */
+export const GRIME_ASSET: Readonly<Record<GrimeFamily, string>> = {
+  [GrimeFamily.Asphalt]: 'tile.grime_asphalt',
+  [GrimeFamily.Slab]: 'tile.grime_slab',
+  [GrimeFamily.Gutter]: 'tile.grime_gutter',
+};
+
+/**
+ * Ground id → the grime pattern family its non-gutter cells draw (SSP-066), or null for no grime. Kerb blob
+ * cells are pavement, so they draw slab.
+ */
+export const GROUND_GRIME_FAMILY: readonly (GrimeFamily | null)[] = [
+  null, // Void
+  GrimeFamily.Asphalt, // Road
+  GrimeFamily.Asphalt, // RoadOneWayE
+  GrimeFamily.Asphalt, // RoadOneWayW
+  GrimeFamily.Asphalt, // RoadOneWayN
+  GrimeFamily.Asphalt, // RoadOneWayS
+  GrimeFamily.Slab, // Pavement
+  GrimeFamily.Slab, // Cobbles (setts)
+  GrimeFamily.Slab, // Alley (setts)
+  null, // Grass
+  null, // Yard
+  null, // Apron
   null, // Water
   null, // Sand
 ];
@@ -110,13 +165,62 @@ export type GroundChunk = {
   readonly quadCount: number;
 };
 
+/** The grime pattern frames: per family its variants (at most GRIME_FAMILY_SLOTS), and the shader's rect table. */
+export type GrimePatterns = {
+  /** Variant frames per GrimeFamily. */
+  readonly frames: readonly (readonly FrameId[])[];
+  /** GRIME_SLOT_COUNT × (x, y, w, h): slot f × 4 + v is family f's variant v (unused slots repeat variant 0). */
+  readonly rects: Int32Array;
+};
+
 /** Per-level frame tables, resolved once before the chunks are written. */
 export type GroundFrameTables = {
   /** Variant frames per ground id (empty when the ground has no tile). */
   readonly ground: readonly (readonly FrameId[])[];
   /** Per cell: the site frame drawn there, or null. */
   readonly sites: readonly (FrameId | null)[];
+  /** The grime pattern frames and rect table (SSP-066). */
+  readonly grime: GrimePatterns;
 };
+
+/** Resolves the grime pattern frames of the `world` atlas; throws on a missing frame or too many variants. */
+export function grimePatterns(): GrimePatterns {
+  const frames: FrameId[][] = [];
+  const rects = new Int32Array(GRIME_SLOT_COUNT * 4);
+  for (const family of [GrimeFamily.Asphalt, GrimeFamily.Slab, GrimeFamily.Gutter]) {
+    const variants = worldFrameVariants(GRIME_ASSET[family], 'v');
+    if (variants.length > GRIME_FAMILY_SLOTS) {
+      throw new Error(
+        `${GRIME_ASSET[family]} has ${variants.length} variants; the shader takes ${GRIME_FAMILY_SLOTS}`,
+      );
+    }
+    frames.push(variants);
+    for (let v = 0; v < GRIME_FAMILY_SLOTS; v++) {
+      const frame = variants[v] ?? variants[0];
+      if (frame === undefined) throw new Error(`${GRIME_ASSET[family]} has no variants`);
+      const r = frameRect(frame);
+      rects.set([r.x, r.y, r.w, r.h], (family * GRIME_FAMILY_SLOTS + v) * 4);
+    }
+  }
+  return { frames, rects };
+}
+
+/** The pattern slot of family `family`'s variant for cell (x, y): the cell hash modulo the variant count. */
+export function grimeSlot(patterns: GrimePatterns, family: GrimeFamily, x: number, y: number): number {
+  const count = patterns.frames[family]?.length ?? 0;
+  return family * GRIME_FAMILY_SLOTS + cellVariant(x, y, count, VariantSalt.Grime);
+}
+
+/** The grime code of cell (x, y)'s ground and marking quads (GRIME_NONE where grime never shows). */
+export function cellGrimeCode(level: Level, tables: GroundFrameTables, x: number, y: number): number {
+  const [w, h] = level.size;
+  if (x < 0 || y < 0 || x >= w || y >= h) return GRIME_NONE;
+  const i = y * w + x;
+  if ((level.layers.storeys[i] ?? 0) > 0) return GRIME_NONE;
+  const family = GROUND_GRIME_FAMILY[level.layers.ground[i] ?? Ground.Void] ?? null;
+  if (family === null) return GRIME_NONE;
+  return grimeCode(grimeSlot(tables.grime, family, x, y), grimeSlot(tables.grime, GrimeFamily.Gutter, x, y));
+}
 
 /** Variant of a speed bump or zebra drawn over `rect`: 0 when at least as wide as deep (a north–south road). */
 export function siteVariant(rect: readonly [number, number, number, number]): 0 | 1 {
@@ -142,7 +246,7 @@ export function groundFrameTables(level: Level): GroundFrameTables {
       for (let x = Math.max(0, x0); x < Math.min(w, x1); x++) sites[y * w + x] = frame;
     }
   }
-  return { ground, sites };
+  return { ground, sites, grime: grimePatterns() };
 }
 
 /** The frames cell (x, y) draws: its ground (or site or kerb) tile and its marking overlays. */
@@ -207,11 +311,12 @@ export function writeGroundChunk(
     for (let x = tx0; x < tx1; x++) {
       const { base, overlays } = cellGroundFrames(level, tables, x, y);
       if (base === null) continue;
+      const grime = cellGrimeCode(level, tables, x, y);
       const x0 = x * CELL_M;
       const y0 = y * CELL_M;
-      writer.groundQuad(x0, y0, x0 + CELL_M, y0 + CELL_M, SurfaceKind.Ground, frameRect(base));
+      writer.groundQuad(x0, y0, x0 + CELL_M, y0 + CELL_M, SurfaceKind.Ground, frameRect(base), grime);
       for (const overlay of overlays) {
-        writer.groundQuad(x0, y0, x0 + CELL_M, y0 + CELL_M, SurfaceKind.Overlay, frameRect(overlay));
+        writer.groundQuad(x0, y0, x0 + CELL_M, y0 + CELL_M, SurfaceKind.Overlay, frameRect(overlay), grime);
       }
     }
   }
@@ -247,4 +352,137 @@ export function writeGroundLayer(
   if (skirt === undefined) throw new Error('no road tile for the ground skirt');
   writer.skirt(0, 0, w * CELL_M, h * CELL_M, skirtM, frameRect(skirt));
   return chunks;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// The grime mask texture and its incremental upload (SSP-066).
+
+/** A rectangle of grime cells, inclusive; empty when maxX < minX. Mutated in place, never reallocated. */
+export type DirtyRect = { minX: number; minY: number; maxX: number; maxY: number };
+
+/** An empty dirty rectangle. */
+export function createDirtyRect(): DirtyRect {
+  return { minX: 0, minY: 0, maxX: -1, maxY: -1 };
+}
+
+/** True when `rect` covers no cell. */
+export function isDirtyRectEmpty(rect: Readonly<DirtyRect>): boolean {
+  return rect.maxX < rect.minX || rect.maxY < rect.minY;
+}
+
+/** Empties `rect`. */
+export function clearDirtyRect(rect: DirtyRect): void {
+  rect.minX = 0;
+  rect.minY = 0;
+  rect.maxX = -1;
+  rect.maxY = -1;
+}
+
+/**
+ * Grows `rect` to the union (bounding box) of itself and the inclusive cell rectangle minX..maxX × minY..maxY.
+ * An empty input (max < min, as dirt.ts reports a tick that changed nothing) leaves `rect` unchanged.
+ */
+export function mergeDirtyRect(
+  rect: DirtyRect,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+): void {
+  if (maxX < minX || maxY < minY) return;
+  if (isDirtyRectEmpty(rect)) {
+    rect.minX = minX;
+    rect.minY = minY;
+    rect.maxX = maxX;
+    rect.maxY = maxY;
+    return;
+  }
+  if (minX < rect.minX) rect.minX = minX;
+  if (minY < rect.minY) rect.minY = minY;
+  if (maxX > rect.maxX) rect.maxX = maxX;
+  if (maxY > rect.maxY) rect.maxY = maxY;
+}
+
+/**
+ * The part of WebGLRenderer that GroundGrime.upload uses (structural, so unit tests can record the calls):
+ * `copyTextureToTexture(src, dst, srcRegion, dstPosition)` with a never-bound DataTexture as `src` uploads
+ * srcRegion of its data (min inclusive, max exclusive) into `dst` at dstPosition with one texSubImage2D.
+ */
+export type TextureRegionUploader = {
+  copyTextureToTexture(src: Texture, dst: Texture, srcRegion: Box2 | null, dstPosition: Vector2 | null): void;
+};
+
+/** The grime mask on the GPU: the texture the city material samples, kept in step with the sim's mask. */
+export class GroundGrime {
+  /** The R8 mask texture bound to the city material (uGrime). Its data is the sim's mask array. */
+  readonly texture: DataTexture;
+  /** A wrapper of the same array that is never bound: copyTextureToTexture's CPU source for sub-rect uploads. */
+  readonly source: DataTexture;
+  readonly widthCells: number;
+  readonly heightCells: number;
+  /** The union of the dirty rectangles of the ticks since the last upload. */
+  readonly pending: DirtyRect = createDirtyRect();
+  /** Sub-rectangle uploads so far, and the bytes (grime cells) the last upload() sent. */
+  uploads = 0;
+  lastUploadBytes = 0;
+  private readonly region = new Box2();
+  private readonly origin = new Vector2();
+
+  constructor(dirt: DirtView) {
+    const { maskW, maskH } = dirt;
+    const mask = dirt.mask;
+    if (!(mask instanceof Uint8Array) || mask.length !== maskW * maskH) {
+      throw new Error(`GroundGrime: the mask must be a ${maskW}×${maskH} Uint8Array`);
+    }
+    this.widthCells = maskW;
+    this.heightCells = maskH;
+    // The whole mask goes up on the first render (needsUpdate, set once here by nearestDataTexture).
+    this.texture = nearestDataTexture(new DataTexture(mask, maskW, maskH, RedFormat, UnsignedByteType));
+    this.texture.name = 'grimeMask';
+    this.source = new DataTexture(mask, maskW, maskH, RedFormat, UnsignedByteType);
+    this.source.name = 'grimeMaskSource';
+  }
+
+  /** The city material's grime binding: this texture, its size and the pattern rects. */
+  binding(patterns: GrimePatterns): CityGrime {
+    return {
+      texture: this.texture,
+      widthCells: this.widthCells,
+      heightCells: this.heightCells,
+      rects: patterns.rects,
+    };
+  }
+
+  /** After every tick: merge that tick's dirty rectangle (dirt.ts) into the pending union. */
+  accumulate(dirt: DirtView): void {
+    mergeDirtyRect(this.pending, dirt.dirtyMinX, dirt.dirtyMinY, dirt.dirtyMaxX, dirt.dirtyMaxY);
+  }
+
+  /**
+   * Once per rendered frame, before the frame draws: upload the pending union (one texSubImage2D) and empty it.
+   * Returns the bytes uploaded (0 when no tick changed the mask).
+   */
+  upload(renderer: TextureRegionUploader): number {
+    const p = this.pending;
+    const minX = Math.max(0, p.minX);
+    const minY = Math.max(0, p.minY);
+    const maxX = Math.min(this.widthCells - 1, p.maxX);
+    const maxY = Math.min(this.heightCells - 1, p.maxY);
+    clearDirtyRect(p);
+    this.lastUploadBytes = 0;
+    if (maxX < minX || maxY < minY) return 0;
+    this.region.min.set(minX, minY);
+    this.region.max.set(maxX + 1, maxY + 1);
+    this.origin.set(minX, minY);
+    renderer.copyTextureToTexture(this.source, this.texture, this.region, this.origin);
+    this.uploads += 1;
+    this.lastUploadBytes = (maxX - minX + 1) * (maxY - minY + 1);
+    return this.lastUploadBytes;
+  }
+
+  /** Releases the GPU texture (the mask array belongs to the sim). */
+  dispose(): void {
+    this.texture.dispose();
+    this.source.dispose();
+  }
 }

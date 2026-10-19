@@ -12,23 +12,23 @@
 // - Transit: brush up, 5 s of throttle then the brake: the look-ahead offset never exceeds 3.0 m, H rises
 //   without overshoot (never above 37.8 m), and once Bessie has stopped H settles back to exactly 31.5 m and the
 //   offset returns to her.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { expect, type Page, type TestInfo, test } from '@playwright/test';
 import type { ShiftTestState, TestState } from '../../src/debug/testHooks.ts';
-import { FRAME, type FrameId } from '../../src/gen/assets.ts';
 import {
   LOOK_AHEAD_MAX_M,
   SWEEP_HEIGHT_M,
   snapToTexelM,
   ZOOM_OUT_HEIGHT_M,
 } from '../../src/render/camera.ts';
-import { CELL_M, type CityBox, type CityGrid, mergeBoxes } from '../../src/render/cityMesh.ts';
-import { cellGroundFrames, groundFrameTables } from '../../src/render/groundLayer.ts';
-import { buildShadowPolygons } from '../../src/render/shadows.ts';
 import { INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
-import { PX_PER_M } from '../../src/sim/constants.ts';
-import { decodeLevel, type Level } from '../../src/sim/map.ts';
-import { decodePng } from '../support/png.ts';
+import {
+  cityCover,
+  compareGroundTiles,
+  initialGrimeMask,
+  loadPuddleLane,
+  type Rect,
+} from '../support/groundReference.ts';
 import {
   collectPageErrors,
   encodeFramePng,
@@ -39,12 +39,10 @@ import {
 
 const LIVE_CAMERA_URL = '/?test=1&seed=1&scene=district.puddle_lane&freeze=1&springs=1';
 
-const level: Level = decodeLevel(
-  JSON.parse(readFileSync(new URL('../../public/assets/levels/puddle_lane.json', import.meta.url), 'utf8')),
-);
-const worldAtlas: ReturnType<typeof decodePng> = decodePng(
-  readFileSync(new URL('../../public/assets/atlas/world.png', import.meta.url)),
-);
+const { level, atlas: worldAtlas } = loadPuddleLane();
+
+/** The grime the World lays for seed=1 (SSP-066): ground cells show it or, once swept, the clean ground. */
+const INITIAL_GRIME = initialGrimeMask(level, 1);
 
 /** Brush-down top speed (tuning.json vehicle.sweeper, GDD §7.1): at or below it H is 31.5 m. */
 const BRUSH_DOWN_TOP_MPS = 6.0;
@@ -54,8 +52,6 @@ const BESSIE_CLEAR_M = 4.5;
 
 /** Tiles that must take part, so the check cannot pass by excluding everything. */
 const MIN_CHECKED_TILES = 8;
-
-const TILE_PX = CELL_M * PX_PER_M;
 
 async function shiftState(page: Page): Promise<ShiftTestState> {
   const state = await page.evaluate((): TestState => {
@@ -77,58 +73,6 @@ async function saveCapture(testInfo: TestInfo, name: string, frame: RgbaFrame): 
   writeFileSync(path, encodeFramePng(frame));
   await testInfo.attach(name, { path, contentType: 'image/png' });
   console.log(`[camera] ${name} ${frame.width}x${frame.height} -> ${path}`);
-}
-
-type Rect = { x0: number; y0: number; x1: number; y1: number };
-
-const overlaps = (a: Rect, b: Rect): boolean => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
-
-/**
- * What a box can cover on screen, in sim metres: its footprint plus its roof projected through the camera at
- * (camX, camY, H) (a point at height h and offset d from the axis lands at d·H/(H − h)), widened by a texel.
- */
-function buildingCover(box: CityBox, camX: number, camY: number, heightM: number): Rect {
-  const k = heightM / (heightM - box.heightM);
-  const xs = [box.x0M, box.x1M, camX + (box.x0M - camX) * k, camX + (box.x1M - camX) * k];
-  const ys = [box.y0M, box.y1M, camY + (box.y0M - camY) * k, camY + (box.y1M - camY) * k];
-  const m = 1 / PX_PER_M;
-  return {
-    x0: Math.min(...xs) - m,
-    y0: Math.min(...ys) - m,
-    x1: Math.max(...xs) + m,
-    y1: Math.max(...ys) + m,
-  };
-}
-
-/** Axis-aligned bounds of a shadow outline [x0, y0, x1, y1, ...], widened by a texel. */
-function outlineBounds(outline: readonly number[]): Rect {
-  const xs = outline.filter((_, i) => i % 2 === 0);
-  const ys = outline.filter((_, i) => i % 2 === 1);
-  const m = 1 / PX_PER_M;
-  return {
-    x0: Math.min(...xs) - m,
-    y0: Math.min(...ys) - m,
-    x1: Math.max(...xs) + m,
-    y1: Math.max(...ys) + m,
-  };
-}
-
-/** The 32×32 tile a cell should show: its base frame with each overlay's opaque pixels on top (RGBA). */
-function expectedTile(base: FrameId, overlays: readonly FrameId[]): Uint8Array {
-  const out = new Uint8Array(TILE_PX * TILE_PX * 4);
-  for (const id of [base, ...overlays]) {
-    const f = FRAME[id];
-    expect(f.w, `${id} is a full tile`).toBe(TILE_PX);
-    expect(f.h, `${id} is a full tile`).toBe(TILE_PX);
-    for (let y = 0; y < TILE_PX; y++) {
-      for (let x = 0; x < TILE_PX; x++) {
-        const src = ((f.y + y) * worldAtlas.width + f.x + x) * 4;
-        if ((worldAtlas.data[src + 3] ?? 0) === 0) continue;
-        out.set(worldAtlas.data.subarray(src, src + 4), (y * TILE_PX + x) * 4);
-      }
-    }
-  }
-  return out;
 }
 
 test('at <= 6.0 m/s the live camera leads Bessie and the ground is exactly 1 texel = 1 px', async ({
@@ -167,20 +111,8 @@ test('at <= 6.0 m/s the live camera leads Bessie and the ground is exactly 1 tex
   // The camera sits on the 1/16 m grid, so every tile edge lands on a whole pixel of the W×270 frame.
   const camX = snapToTexelM(camera.x);
   const camY = snapToTexelM(camera.y);
-  const [cols, rows] = level.size;
-  const grid: CityGrid = {
-    cols,
-    rows,
-    originXM: 0,
-    originYM: 0,
-    storeys: level.layers.storeys,
-    wall: level.layers.wall,
-    roof: level.layers.roof,
-  };
-  const boxes = mergeBoxes(grid);
   const blocked: Rect[] = [
-    ...boxes.map((box) => buildingCover(box, camX, camY, camera.h)),
-    ...buildShadowPolygons(boxes).map((p) => outlineBounds(p.outline)),
+    ...cityCover(level, camX, camY, camera.h),
     {
       x0: bessie.x - BESSIE_CLEAR_M,
       y0: bessie.y - BESSIE_CLEAR_M,
@@ -188,34 +120,13 @@ test('at <= 6.0 m/s the live camera leads Bessie and the ground is exactly 1 tex
       y1: bessie.y + BESSIE_CLEAR_M,
     },
   ];
-  const tables = groundFrameTables(level);
-  let checked = 0;
-  const mismatches: string[] = [];
-  for (let cy = 0; cy < rows; cy++) {
-    for (let cx = 0; cx < cols; cx++) {
-      const left = frame.width / 2 + (cx * CELL_M - camX) * PX_PER_M;
-      const top = INTERNAL_HEIGHT_PX / 2 + (cy * CELL_M - camY) * PX_PER_M;
-      if (left < 0 || top < 0 || left + TILE_PX > frame.width || top + TILE_PX > frame.height) continue;
-      expect(Number.isInteger(left) && Number.isInteger(top), 'tile edges on whole pixels').toBe(true);
-      const cell: Rect = { x0: cx * CELL_M, y0: cy * CELL_M, x1: (cx + 1) * CELL_M, y1: (cy + 1) * CELL_M };
-      if (blocked.some((r) => overlaps(cell, r))) continue;
-      const { base, overlays } = cellGroundFrames(level, tables, cx, cy);
-      if (base === null) continue;
-      const want = expectedTile(base, overlays);
-      let wrong = 0;
-      for (let y = 0; y < TILE_PX; y++) {
-        for (let x = 0; x < TILE_PX; x++) {
-          const got = ((top + y) * frame.width + left + x) * 4;
-          const exp = (y * TILE_PX + x) * 4;
-          for (let c = 0; c < 4; c++) if (frame.data[got + c] !== want[exp + c]) wrong++;
-        }
-      }
-      checked++;
-      if (wrong > 0)
-        mismatches.push(`tile (${cx}, ${cy}) ${base} at px (${left}, ${top}): ${wrong} bytes differ`);
-    }
-  }
-  console.log(`[camera] 1:1 ground check: ${checked} tiles compared, ${mismatches.length} mismatched`);
+  // Each 4 px grime cell must be its tile's texels 1:1, with the cell's initial grime or swept clean (SSP-066).
+  const ground = compareGroundTiles(frame, level, worldAtlas, camX, camY, blocked, INITIAL_GRIME, false);
+  const checked = ground.checkedTiles;
+  const mismatches = ground.mismatches;
+  console.log(
+    `[camera] 1:1 ground check: ${checked} tiles (${ground.grimyCells} grimy cells, ${ground.cleanCells.length} swept) compared, ${mismatches.length} mismatched`,
+  );
   expect(checked).toBeGreaterThanOrEqual(MIN_CHECKED_TILES);
   expect(mismatches).toEqual([]);
   expect(errors).toEqual([]);

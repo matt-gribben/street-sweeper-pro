@@ -7,9 +7,11 @@
 //                       ShiftIntroScene preloads it in the full flow, §6.3), decodes it with map.ts, loads the
 //                       `world` and `actors` atlases, calls createWorld(level, seed, tuning), builds the level city
 //                       and Bessie's sprites and places the follow camera over her start pose;
-//   fixedUpdate(input)  world.step(input): one tick of the canonical tick order (§5.2);
+//   fixedUpdate(input)  world.step(input): one tick of the canonical tick order (§5.2), then merges the tick's
+//                       grime dirty rectangle into the city's GroundGrime (SSP-066);
 //   render(alpha)       lerps Bessie's pose between the last two ticks (shortest arc for the heading), points the
-//                       follow camera at it with her velocity and speed and poses her sprites. It reads the World,
+//                       follow camera at it with her velocity and speed, poses her sprites and uploads the frame's
+//                       union of grime dirty rectangles (one sub-rectangle, groundLayer.ts). It reads the World,
 //                       never writes it.
 //
 // Draw calls: city (1) + building shadows (1) + Bessie's drop shadow (1) + actors batch (1), then the palette
@@ -38,6 +40,7 @@ import { type BessieSprite, createBessieSprite } from '../render/bessieSprite.ts
 import { bodyVelocity, createPose, createVelocity, interpolatePose } from '../render/interpolate.ts';
 import { createLevelCity, type LevelCity } from '../render/levelCity.ts';
 import type { SpriteAtlas } from '../render/spriteAtlas.ts';
+import { viewDirt } from '../sim/dirt.ts';
 import type { ReadonlyEventQueue } from '../sim/eventQueue.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
 import type { Level } from '../sim/map.ts';
@@ -224,7 +227,7 @@ export class ShiftScene implements Scene {
   /** The World, the level city and Bessie's sprites; releases whatever it built if a later step throws. */
   private build(level: Level, seed: number, world: SpriteAtlas, actors: SpriteAtlas): Built {
     const sim = createWorld(level, seed, this.currentTuning);
-    const city = createLevelCity(level, world);
+    const city = createLevelCity(level, world, undefined, viewDirt(sim.dirt));
     try {
       const bessie = createBessieSprite(actors, this.currentTuning.vehicle.sweeper.health.dentedBelowHp);
       return { sim, city, bessie };
@@ -255,7 +258,10 @@ export class ShiftScene implements Scene {
   }
 
   fixedUpdate(input: Readonly<InputFrame>): void {
-    this.world?.step(input);
+    const world = this.world;
+    if (world === null) return;
+    world.step(input);
+    this.city?.grime?.accumulate(world.dirt);
   }
 
   render(alpha: number): void {
@@ -269,6 +275,7 @@ export class ShiftScene implements Scene {
     bodyVelocity(pose.headingRad, v.vLongMps, v.vLatMps, velocity);
     this.context.followCamera(pose.xM, pose.yM, velocity.xMps, velocity.yMps, v.vLongMps);
     bessie.update(pose, v.hp, v.brushDown, this.context.renderer.rig.snappedZ);
+    this.city?.grime?.upload(this.context.renderer.webgl);
     this.frames += 1;
   }
 }

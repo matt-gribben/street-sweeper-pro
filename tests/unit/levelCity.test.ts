@@ -2,14 +2,29 @@
 // marking, roof and facade id the committed level uses resolves to a `world` frame of the generated FRAME table
 // (and a missing one fails the build), the whole city (ground + markings + walls + roofs) is one geometry well
 // under the 250k-vertex single-draw limit (TECHNICAL_DESIGN §12.4), and walls and roofs sample the frames of
-// their own cell's styles.
+// their own cell's styles. SSP-066: every cell the grime mask can lay grime on draws grime (its quads carry a
+// grime code), no grass, apron or building cell does, and createLevelCity binds a GroundGrime only in a shift.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Group, Mesh } from 'three';
 import { describe, expect, it } from 'vitest';
 import { FRAME, type FrameId } from '../../src/gen/assets.ts';
-import { CELL_M, emitWalls, Face, mergeBoxes, STOREY_M, SurfaceKind } from '../../src/render/cityMesh.ts';
-import { GROUND_CHUNK_TILES, GROUND_TILE_ASSET } from '../../src/render/groundLayer.ts';
+import {
+  CELL_M,
+  emitWalls,
+  Face,
+  GRIME_NONE,
+  GRIME_SLOT_COUNT,
+  mergeBoxes,
+  STOREY_M,
+  SurfaceKind,
+} from '../../src/render/cityMesh.ts';
+import {
+  cellGrimeCode,
+  GROUND_CHUNK_TILES,
+  GROUND_TILE_ASSET,
+  groundFrameTables,
+} from '../../src/render/groundLayer.ts';
 import {
   buildLevelCityData,
   createLevelCity,
@@ -21,7 +36,9 @@ import {
 import { paletteIndex } from '../../src/render/palettePass.ts';
 import { type AtlasSource, loadAtlas, type RgbaImage } from '../../src/render/spriteAtlas.ts';
 import { frameRect, isFrameId } from '../../src/render/worldFrames.ts';
+import { createDirt, initGrime, viewDirt } from '../../src/sim/dirt.ts';
 import { AUTOTILE_NONE, decodeLevel, Ground, type Level } from '../../src/sim/map.ts';
+import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import { decodePng } from '../support/png.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -202,11 +219,82 @@ describe('createLevelCity', () => {
     expect(city.group.children).toEqual([]);
   });
 
+  it('binds the sim grime mask to the city material in a shift, and none without one (SSP-066)', () => {
+    const dirt = createDirt(PUDDLE_LANE, DEFAULT_TUNING);
+    initGrime(dirt, PUDDLE_LANE, 1);
+    const city = createLevelCity(PUDDLE_LANE, WORLD, undefined, viewDirt(dirt));
+    const grime = city.grime;
+    if (grime === null) throw new Error('no GroundGrime');
+    expect([grime.widthCells, grime.heightCells]).toEqual([W * 8, H * 8]);
+    // The texture reads the sim's own array: no copy, so it can never drift from the mask.
+    expect(grime.texture.image.data).toBe(dirt.mask);
+    expect(grime.source.image.data).toBe(dirt.mask);
+    const material = city.city.material;
+    if (Array.isArray(material) || !('uniforms' in material)) throw new Error('no ShaderMaterial');
+    const uniforms = material.uniforms as Record<string, { value: unknown }>;
+    expect(uniforms.uGrime?.value).toBe(grime.texture);
+    expect(uniforms.uGrimeSize?.value).toMatchObject({ x: W * 8, y: H * 8 });
+    expect(uniforms.uGrimeRects?.value).toBeInstanceOf(Int32Array);
+    expect(uniforms.uGrimeRects?.value).toHaveLength(GRIME_SLOT_COUNT * 4);
+    city.dispose();
+
+    const plain = createLevelCity(PUDDLE_LANE, WORLD);
+    expect(plain.grime).toBeNull();
+    const plainMaterial = plain.city.material;
+    if (Array.isArray(plainMaterial) || !('uniforms' in plainMaterial)) throw new Error('no ShaderMaterial');
+    const plainUniforms = plainMaterial.uniforms as Record<string, { value: unknown }>;
+    expect(plainUniforms.uGrime?.value).toBeNull();
+    expect(plainUniforms.uGrimeSize?.value).toMatchObject({ x: 0, y: 0 });
+    plain.dispose();
+
+    const small = createDirt(decodeLevel(LEVEL_TEXT), DEFAULT_TUNING);
+    const wrong = { ...viewDirt(small), maskW: 8 };
+    expect(() => createLevelCity(PUDDLE_LANE, WORLD, undefined, wrong)).toThrow(/does not fit/);
+  });
+
   it('rejects any atlas but world', async () => {
     const items = await loadAtlas('items', {
       fetchJson: async () => JSON.parse(readFileSync(`${REPO_ROOT}public/assets/atlas/items.json`, 'utf8')),
       fetchImage: async () => decodePng(readFileSync(`${REPO_ROOT}public/assets/atlas/items.png`)),
     });
     expect(() => createLevelCity(PUDDLE_LANE, items)).toThrow(/world atlas/);
+  });
+});
+
+describe('grime on compiled Puddle Lane (SSP-066)', () => {
+  const tables = groundFrameTables(PUDDLE_LANE);
+
+  it('draws grime on every tile the mask can be grimy on, for five seeds', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const dirt = createDirt(PUDDLE_LANE, DEFAULT_TUNING);
+      initGrime(dirt, PUDDLE_LANE, seed);
+      let laid = 0;
+      for (let i = 0; i < dirt.mask.length; i++) {
+        if ((dirt.mask[i] ?? 0) === 0) continue;
+        laid++;
+        const tx = Math.floor((i % dirt.maskW) / 8);
+        const ty = Math.floor(Math.floor(i / dirt.maskW) / 8);
+        expect(cellGrimeCode(PUDDLE_LANE, tables, tx, ty), `tile (${tx}, ${ty})`).not.toBe(GRIME_NONE);
+      }
+      expect(laid).toBe(9000);
+    }
+  });
+
+  it('never draws grime on grass, yards, aprons, buildings, walls, roofs or the skirt', () => {
+    const data = buildLevelCityData(PUDDLE_LANE, WORLD).geometry;
+    for (let q = 0; q < data.quadCount; q++) {
+      const code = data.info[q * 16 + 3];
+      const kind = data.kinds[q];
+      if (kind !== SurfaceKind.Ground && kind !== SurfaceKind.Overlay) {
+        expect(code).toBe(GRIME_NONE);
+        continue;
+      }
+      const tx = Math.round((data.cells[q * 8] ?? 0) / CELL_M);
+      const ty = Math.round((data.cells[q * 8 + 1] ?? 0) / CELL_M);
+      const ground = PUDDLE_LANE.layers.ground[ty * W + tx];
+      if (ground === Ground.Grass || ground === Ground.Yard || ground === Ground.Apron)
+        expect(code).toBe(GRIME_NONE);
+      else expect(code).toBe(cellGrimeCode(PUDDLE_LANE, tables, tx, ty));
+    }
   });
 });

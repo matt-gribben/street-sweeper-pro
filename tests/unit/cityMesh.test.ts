@@ -23,6 +23,13 @@ import {
   Face,
   facadeVariant,
   faceNormal,
+  GRIME_NONE,
+  GRIME_SLOT_COUNT,
+  grimeCode,
+  grimePatternSlot,
+  grimeRank,
+  grimeTexelIndex,
+  grimeTexelShows,
   mergeBoxes,
   ROOF_PARAPET_NW,
   RoofEdge,
@@ -30,6 +37,7 @@ import {
   roofParapetSe,
   STOREY_M,
   SurfaceKind,
+  TRANSPARENT_TEXEL,
   VariantSalt,
   validateCityGrid,
   writeBuildings,
@@ -363,11 +371,15 @@ describe('cell variant hash', () => {
 });
 
 describe('vertex format and mesh', () => {
-  it('flags grime on ground and markings only', () => {
+  it('carries a grime code on ground and markings only (SSP-066)', () => {
     const writer = new CityGeometryWriter();
-    writer.groundQuad(0, 0, 2, 2, SurfaceKind.Ground, rect(0, 0, 32, 32));
-    writer.groundQuad(0, 0, 2, 2, SurfaceKind.Overlay, rect(32, 0, 32, 32));
+    const code = grimeCode(5, 9);
+    writer.groundQuad(0, 0, 2, 2, SurfaceKind.Ground, rect(0, 0, 32, 32), code);
+    writer.groundQuad(0, 0, 2, 2, SurfaceKind.Overlay, rect(32, 0, 32, 32), code);
     writer.skirt(0, 0, 2, 2, 10, rect(0, 0, 32, 32));
+    expect(() => writer.groundQuad(0, 0, 2, 2, SurfaceKind.Skirt, rect(0, 0, 32, 32), code)).toThrow(
+      /only ground and marking quads/,
+    );
     const data = writer.build();
     expect([...data.kinds]).toEqual([
       SurfaceKind.Ground,
@@ -378,7 +390,11 @@ describe('vertex format and mesh', () => {
       SurfaceKind.Skirt,
     ]);
     const grime = [0, 1, 2, 3, 4, 5].map((q) => attr(data.info, 4, q * 4, 3));
-    expect(grime).toEqual([1, 1, 0, 0, 0, 0]);
+    expect(grime).toEqual([code, code, GRIME_NONE, GRIME_NONE, GRIME_NONE, GRIME_NONE]);
+    // The default is no grime (the M0 placeholder city).
+    const plain = new CityGeometryWriter();
+    plain.groundQuad(0, 0, 2, 2, SurfaceKind.Ground, rect(0, 0, 32, 32));
+    expect(attr(plain.build().info, 4, 0, 3)).toBe(GRIME_NONE);
     // Ground quads face up and clamp to their own cell.
     expect([attr(data.cells, 2, 0, 0), attr(data.cells, 2, 0, 1)]).toEqual([0, 0]);
     for (let t = 0; t < data.indices.length / 3; t++) {
@@ -402,6 +418,64 @@ describe('vertex format and mesh', () => {
       'aUvM',
       'position',
     ]);
+  });
+});
+
+describe('grime encoding and the CPU mirror of the shader step (SSP-066)', () => {
+  it('packs a surface slot and a gutter slot, and picks the gutter slot by mask bit 7', () => {
+    for (let surface = 0; surface < GRIME_SLOT_COUNT; surface++) {
+      for (let gutter = 0; gutter < GRIME_SLOT_COUNT; gutter++) {
+        const code = grimeCode(surface, gutter);
+        expect(code).toBeGreaterThan(GRIME_NONE);
+        expect(grimePatternSlot(code, 100)).toBe(surface);
+        expect(grimePatternSlot(code, 128 | 100)).toBe(gutter);
+      }
+    }
+    expect(() => grimeCode(GRIME_SLOT_COUNT, 0)).toThrow();
+    expect(() => grimeCode(0, -1)).toThrow();
+    expect(() => grimeCode(0.5, 0)).toThrow();
+  });
+
+  it('ranks texels 0..127 roughly evenly and statelessly', () => {
+    const counts = new Array<number>(8).fill(0);
+    for (let y = 0; y < 128; y++) {
+      for (let x = 0; x < 128; x++) {
+        const r = grimeRank(x, y);
+        expect(r).toBeGreaterThanOrEqual(0);
+        expect(r).toBeLessThan(128);
+        expect(grimeRank(x, y)).toBe(r);
+        counts[r >> 4] = (counts[r >> 4] ?? 0) + 1;
+      }
+    }
+    for (const c of counts) expect(Math.abs(c - 2048)).toBeLessThan(2048 * 0.1);
+  });
+
+  it('shows every pattern texel at full intensity, about 3/4 at the laid minimum and none when clean', () => {
+    let full = 0;
+    let min = 0;
+    let gutterMin = 0;
+    let clean = 0;
+    const n = 64 * 64;
+    for (let y = 0; y < 64; y++) {
+      for (let x = 0; x < 64; x++) {
+        const r = grimeRank(x, y);
+        if (grimeTexelShows(127, r)) full++;
+        if (grimeTexelShows(64, r)) min++;
+        if (grimeTexelShows(128 | 64, r)) gutterMin++;
+        if (grimeTexelShows(0, r) || grimeTexelShows(128, r)) clean++;
+      }
+    }
+    expect(full).toBe(n);
+    expect(min / n).toBeGreaterThan(0.7);
+    expect(min / n).toBeLessThan(0.82);
+    expect(gutterMin).toBe(min); // bit 7 picks the pattern, not the strength
+    expect(clean).toBe(0);
+  });
+
+  it('draws the pattern index where it shows and the clean index elsewhere or where it is transparent', () => {
+    expect(grimeTexelIndex(2, 127, 3, 4, 8)).toBe(8);
+    expect(grimeTexelIndex(2, 127, 3, 4, TRANSPARENT_TEXEL)).toBe(2);
+    expect(grimeTexelIndex(2, 0, 3, 4, 8)).toBe(2);
   });
 });
 

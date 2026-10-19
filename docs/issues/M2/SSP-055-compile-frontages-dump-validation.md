@@ -2,7 +2,7 @@
 id: SSP-055
 title: "Generate frontages and pledges in the compiler and validate dump sites"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:tooling, size:M, vertical-slice]
@@ -42,11 +42,11 @@ Depot (LEVEL_DESIGN §7.7): `depot.rect` at the map edge contains `@` and at lea
 
 ## Acceptance criteria
 
-- [ ] A fixture terrace of 10 house tiles facing pavement yields frontages of width 3, 3 and 4 (the 1-tile leftover merges) with IDs from the NW-most zone tile
-- [ ] Pledge IDs not matching a generated frontage fail with L030; 7 or 21 pledges fail with L030
-- [ ] Each of L020, L021, L022, L040, L041 fires on a crafted bad fixture with code and file:row:col; L031 prints a warning without failing
-- [ ] Compiled output lists `sites` for every `$` and `s` and stays byte-deterministic across two runs
-- [ ] LEVEL_DESIGN §13 Q4 is marked resolved with the chosen values
+- [x] A fixture terrace of 10 house tiles facing pavement yields frontages of width 3, 3 and 4 (the 1-tile leftover merges) with IDs from the NW-most zone tile
+- [x] Pledge IDs not matching a generated frontage fail with L030; 7 or 21 pledges fail with L030
+- [x] Each of L020, L021, L022, L040, L041 fires on a crafted bad fixture with code and file:row:col; L031 prints a warning without failing
+- [x] Compiled output lists `sites` for every `$` and `s` and stays byte-deterministic across two runs
+- [x] LEVEL_DESIGN §13 Q4 is marked resolved with the chosen values
 
 ## Verification
 

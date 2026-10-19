@@ -8,15 +8,17 @@
 //   question 2). SSP-054 validates `litter` and `grime` fully when present (L000, L005 litter ids, L050,
 //   L051) and bakes them, but still leaves them optional: Puddle Lane gets its values in SSP-056, which is
 //   the first point at which a shift level could be required to carry them. A level without them compiles
-//   with no `spawns.litter`/`spawns.grime` (its grime cells are still baked).
+//   with no `spawns.litter`/`spawns.grime` (its grime cells are still baked). SSP-055 does the same for
+//   `pledges`, `powerups` and `collectibles`: checked when present (L000, L005, L030, L031, L040, L041) and
+//   left optional until SSP-056 authors them for Puddle Lane. Frontages are generated on every level.
 // - The map size is checked against `size` here, not against src/data/districts.json (TECHNICAL_DESIGN
 //   §15.1), because no M1 task creates districts.json. (SSP-033 open question 1.)
 // - The compiler validates only the fields M1 consumes (identity, mode, map, size, timer, seed, timeOfDay,
 //   weather, music, ambience, start, depot, legend, buildings, anchors), plus `litter` and `grime` since
-//   SSP-054. The other spawn-side fields (`junctions`, `frontageWidth`, `stains`, `hazards`, `knockables`,
-//   `powerups`, `collectibles`, `npcs`, `traffic`, `events`, `skipRun`, `par`) are typed for authors but
-//   passed over unchecked until the tasks that consume them (M2 SSP-055, M3 SSP-076/077, M6 SSP-190) add
-//   their guards.
+//   SSP-054 and `frontageWidth`, `pledges`, `powerups` and `collectibles` since SSP-055. The other
+//   spawn-side fields (`junctions`, `stains`, `hazards`, `knockables`, `npcs`, `traffic`, `events`,
+//   `skipRun`, `par`) are typed for authors but passed over unchecked until the tasks that consume them
+//   (M3 SSP-076/077, M6 SSP-190) add their guards.
 // - `legend` keys are single printable ASCII characters. A level may add or override entries but never
 //   redefine `A`–`Z`, `0`–`9` or `@` (§8.3). A legend entry without `ground` inherits its ground (§8.3).
 // - `start.heading` is an integer heading index 0..31 (h00 = north, clockwise); the compiler converts it to
@@ -192,8 +194,9 @@ export interface LevelFile {
   /** Digit → anchor name, e.g. "1" → "doris_home". */
   anchors?: Record<string, string>;
   junctions?: { at: XY; major: ('n' | 'e' | 's' | 'w')[] }[];
+  /** Per-use frontage widths in tiles; only the uses that get frontages (house … unit), positive integers. */
   frontageWidth?: Partial<Record<BuildingUse, number>>;
-  /** Optional until M2 (see the decisions above). */
+  /** Frontage ids `fr_<x>_<y>`: 8..20 on a shift level, each a generated frontage (L030). Optional (above). */
   pledges?: string[];
   /** Optional (see the decisions above). */
   litter?: LitterSpec;
@@ -205,7 +208,9 @@ export interface LevelFile {
     random?: { id: `haz.${string}`; count: number; rule: string }[];
   };
   knockables?: { id: `prop.${string}`; at: XY }[];
+  /** 1..3 on a shift level (L040); `pwr.*` ids allowed in the district (L005); `at` inside the map. */
   powerups?: { count: 1 | 2 | 3; table: Weights; at?: XY[] };
+  /** Shift levels place both, on tiles Bessie's body can reach and not in a footway (L041). */
   collectibles?: { lostProperty: { id: `collect.${string}`; at: XY }; goldenCrisp: { at: XY } };
   npcs?: NpcSpec;
   traffic?: TrafficSpec | { none: true };

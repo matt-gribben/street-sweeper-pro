@@ -287,8 +287,20 @@ export type LevelSite = { id: string; rect: TileRect };
 /** Compass face of a frontage. */
 export type Face = 'n' | 'e' | 's' | 'w';
 
-/** A frontage (LEVEL_DESIGN §7.10): `fr_<x>_<y>`, whether it is pledged, its tiles and its facing. */
-export type Frontage = { id: string; pledge: boolean; rect: TileRect; face: Face };
+/**
+ * A frontage (LEVEL_DESIGN §7.10; compiled by SSP-055): `fr_<x>_<y>`, whether it is pledged, its zone and the
+ * way its facade faces. `cells` are the zone's tiles (pavement up to 3 deep plus the gutter road tile), sorted
+ * row-major and unique; `rect` is their bounding box. A zone is not always a rectangle (pavement depth varies
+ * at corners and junction mouths), so the cells are the zone and the rect only bounds it (TECHNICAL_DESIGN
+ * §15.2).
+ */
+export type Frontage = {
+  id: string;
+  pledge: boolean;
+  rect: TileRect;
+  face: Face;
+  cells: [x: number, y: number][];
+};
 
 /** A JSON value, for the lists whose entry shape a later milestone defines (spawns, schedules). */
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -595,6 +607,31 @@ function rectOut(rect: TileRect, path: string): TileRect {
   return [rect[0], rect[1], rect[2], rect[3]];
 }
 
+/**
+ * A frontage zone's cells, checked: integer tiles inside the frontage rect, strictly row-major (so unique), and
+ * at least one. Returns a copy.
+ */
+function zoneCells(
+  where: string,
+  cells: readonly (readonly [number, number])[],
+  rect: TileRect,
+  path: string,
+): [number, number][] {
+  if (cells.length === 0) throw new Error(`${where}: ${path} must list at least one tile`);
+  const [x0, y0, x1, y1] = rect;
+  let last = -1;
+  return cells.map(([x, y], j) => {
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < x0 || y < y0 || x >= x1 || y >= y1)
+      throw new Error(
+        `${where}: ${path}[${j}] (${x}, ${y}) must be an integer tile inside the frontage rect`,
+      );
+    const order = (y - y0) * (x1 - x0) + (x - x0);
+    if (order <= last) throw new Error(`${where}: ${path} must be sorted row-major with no repeats`);
+    last = order;
+    return [x, y];
+  });
+}
+
 /** Whether a formatted value would contain nested containers (arrays/objects) at its top level. */
 function hasContainers(value: JsonValue[] | { [key: string]: JsonValue }): boolean {
   const items = Array.isArray(value) ? value : Object.values(value);
@@ -731,12 +768,16 @@ export function encodeLevel(level: Level): string {
       rot: finite(p.rot, `props[${i}].rot`),
     })),
     sites: level.sites.map((s, i) => ({ id: s.id, rect: rectOut(s.rect, `sites[${i}].rect`) })),
-    frontages: level.frontages.map((f, i) => ({
-      id: f.id,
-      pledge: f.pledge,
-      rect: rectOut(f.rect, `frontages[${i}].rect`),
-      face: f.face,
-    })),
+    frontages: level.frontages.map((f, i) => {
+      const rect = rectOut(f.rect, `frontages[${i}].rect`);
+      return {
+        id: f.id,
+        pledge: f.pledge,
+        rect,
+        face: f.face,
+        cells: zoneCells('encodeLevel', f.cells, rect, `frontages[${i}].cells`),
+      };
+    }),
     lanes: {
       nodes: level.lanes.nodes.map((n, i) => [
         finite(n[0], `lanes.nodes[${i}]`),
@@ -1002,11 +1043,17 @@ export function decodeLevel(input: unknown): Level {
     }),
     frontages: arr(root.frontages, 'frontages').map((v, i) => {
       const f = obj(v, `frontages[${i}]`);
+      const rect = rectIn(f.rect, `frontages[${i}].rect`);
+      const cells = arr(f.cells, `frontages[${i}].cells`).map((c, j): [number, number] => {
+        const [x = 0, y = 0] = tuple(c, 2, `frontages[${i}].cells[${j}]`, int);
+        return [x, y];
+      });
       return {
         id: str(f.id, `frontages[${i}].id`),
         pledge: bool(f.pledge, `frontages[${i}].pledge`),
-        rect: rectIn(f.rect, `frontages[${i}].rect`),
+        rect,
         face: oneOf(f.face, FACES, `frontages[${i}].face`),
+        cells: zoneCells('decodeLevel', cells, rect, `frontages[${i}].cells`),
       };
     }),
     lanes: {

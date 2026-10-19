@@ -2,7 +2,7 @@
 id: SSP-082
 title: "Build the shared pedestrian reaction model, actor hits, horn stimulus and spilled shopping"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:ai-npc, area:gameplay, area:test, size:M, vertical-slice]

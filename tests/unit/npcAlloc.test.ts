@@ -75,7 +75,11 @@ const walker: Behaviour = {
 
 const HOPS = new Float64Array([48, 48, 144, 48, 144, 144, 48, 144]);
 
-function npcRig(): { world: World; step: (t: number) => void } {
+/**
+ * The rig: `generic` keeps the registry's behaviours (the SSP-082 generic pedestrian for the people, the no-op
+ * for the animals) instead of the test walker, so the reaction model's states run in the window.
+ */
+function npcRig(generic = false): { world: World; step: (t: number) => void } {
   const { level } = npcTown(TILES, {
     population: [{ fromS: 0, toS: 100_000, target: 80 }],
     mix: [
@@ -95,8 +99,16 @@ function npcRig(): { world: World; step: (t: number) => void } {
     },
     flocks: [{ id: 'npc.pigeon', count: 1, size: [6, 10], points: [[96, 180]] }],
   });
-  const world = createWorld(level, 0x80, endlessShiftTuning());
-  world.npcAi.behaviours.fill(walker);
+  // Bessie knocks people over as she circles (SSP-082's actor hits run inside the window too), so the meter
+  // must never reach SACKED, which would freeze the World.
+  const world = createWorld(
+    level,
+    0x80,
+    endlessShiftTuning((raw) => {
+      raw.complaints.meter.sackedAt = 1_000_000_000;
+    }),
+  );
+  if (!generic) world.npcAi.behaviours.fill(walker);
   const v = world.vehicle;
   const input = createInputFrame();
   input.steer = 50;
@@ -121,44 +133,61 @@ function npcRig(): { world: World; step: (t: number) => void } {
   return { world, step };
 }
 
+/** The §17 heap check over the rig; logs the window's work and asserts that it ran. */
+function checkPhase7Heap(label: string, generic: boolean): void {
+  requireGc();
+  const { world, step } = npcRig(generic);
+  const sp = world.npcAi.spawner;
+  const reactions = world.npcAi.reactions;
+  for (let t = 0; t < PREWARM_TICKS; t++) step(t);
+  const before = {
+    spawned: sp.ambientSpawned,
+    retired: sp.ambientRetired,
+    delivered: world.npcAi.stimuli.delivered,
+    hits: reactions.hits,
+    bumps: reactions.bumps,
+  };
+  let minCount = NPC_CAPACITY;
+  let fullTicks = 0;
+  const counts = new Int32Array(HEAP_WARMUP_TICKS + HEAP_MEASURED_TICKS);
+  const delta = measureHeapDelta((t) => {
+    step(PREWARM_TICKS + t);
+    counts[t] = world.npc.count;
+  });
+  for (let t = HEAP_WARMUP_TICKS; t < counts.length; t++) {
+    const n = counts[t] as number;
+    if (n < minCount) minCount = n;
+    if (n === NPC_CAPACITY) fullTicks++;
+  }
+  console.log(
+    `${label}: ${HEAP_MEASURED_TICKS} ticks after ${PREWARM_TICKS} + ${HEAP_WARMUP_TICKS} warm-up: retained ` +
+      `${delta.retainedBytes} B (≤ ${HEAP_RETAINED_THRESHOLD_BYTES}), pre-final-GC ${delta.preGcBytes} B ` +
+      `(≤ ${HEAP_PRE_GC_THRESHOLD_BYTES}); NPCs min ${minCount}, full on ${fullTicks} ticks; spawned ` +
+      `+${sp.ambientSpawned - before.spawned}, retired +${sp.ambientRetired - before.retired}, stimuli ` +
+      `delivered +${world.npcAi.stimuli.delivered - before.delivered}, actor hits ` +
+      `+${reactions.hits - before.hits}, bumps +${reactions.bumps - before.bumps}`,
+  );
+  // The window ran the work under test: a full store, spawns and retirements, stimuli delivered.
+  expect(fullTicks).toBeGreaterThan(HEAP_MEASURED_TICKS / 2);
+  expect(minCount).toBeGreaterThanOrEqual(NPC_CAPACITY - 8);
+  expect(sp.ambientSpawned - before.spawned).toBeGreaterThan(10);
+  expect(sp.ambientRetired - before.retired).toBeGreaterThan(10);
+  expect(world.npcAi.stimuli.delivered - before.delivered).toBeGreaterThan(100);
+  // The generic pedestrians walk into her path; the test walkers seldom meet her inside one window.
+  if (generic) expect(reactions.hits - before.hits).toBeGreaterThan(0);
+  assertHeapDeltaWithinThresholds(delta);
+}
+
 describe('phase 7 heap-delta check with 80 NPCs (TECHNICAL_DESIGN §17, SSP-080)', () => {
   it('World.step allocates nothing per tick with the NPC store full and churning', {
     timeout: 120_000,
   }, () => {
-    requireGc();
-    const { world, step } = npcRig();
-    const sp = world.npcAi.spawner;
-    for (let t = 0; t < PREWARM_TICKS; t++) step(t);
-    const before = {
-      spawned: sp.ambientSpawned,
-      retired: sp.ambientRetired,
-      delivered: world.npcAi.stimuli.delivered,
-    };
-    let minCount = NPC_CAPACITY;
-    let fullTicks = 0;
-    const counts = new Int32Array(HEAP_WARMUP_TICKS + HEAP_MEASURED_TICKS);
-    const delta = measureHeapDelta((t) => {
-      step(PREWARM_TICKS + t);
-      counts[t] = world.npc.count;
-    });
-    for (let t = HEAP_WARMUP_TICKS; t < counts.length; t++) {
-      const n = counts[t] as number;
-      if (n < minCount) minCount = n;
-      if (n === NPC_CAPACITY) fullTicks++;
-    }
-    console.log(
-      `npcAlloc: ${HEAP_MEASURED_TICKS} ticks after ${PREWARM_TICKS} + ${HEAP_WARMUP_TICKS} warm-up: retained ` +
-        `${delta.retainedBytes} B (≤ ${HEAP_RETAINED_THRESHOLD_BYTES}), pre-final-GC ${delta.preGcBytes} B ` +
-        `(≤ ${HEAP_PRE_GC_THRESHOLD_BYTES}); NPCs min ${minCount}, full on ${fullTicks} ticks; spawned ` +
-        `+${sp.ambientSpawned - before.spawned}, retired +${sp.ambientRetired - before.retired}, stimuli ` +
-        `delivered +${world.npcAi.stimuli.delivered - before.delivered}`,
-    );
-    // The window ran the work under test: a full store, spawns and retirements, stimuli delivered.
-    expect(fullTicks).toBeGreaterThan(HEAP_MEASURED_TICKS / 2);
-    expect(minCount).toBeGreaterThanOrEqual(NPC_CAPACITY - 8);
-    expect(sp.ambientSpawned - before.spawned).toBeGreaterThan(10);
-    expect(sp.ambientRetired - before.retired).toBeGreaterThan(10);
-    expect(world.npcAi.stimuli.delivered - before.delivered).toBeGreaterThan(100);
-    assertHeapDeltaWithinThresholds(delta);
+    checkPhase7Heap('npcAlloc', false);
+  });
+
+  it('allocates nothing with the generic pedestrians walking, yielding, startling and falling (SSP-082)', {
+    timeout: 120_000,
+  }, () => {
+    checkPhase7Heap('npcAlloc (generic pedestrian)', true);
   });
 });

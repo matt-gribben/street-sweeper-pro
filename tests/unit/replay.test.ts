@@ -268,6 +268,12 @@ describe('state hash', () => {
     world.npc.crossEdge[n] = 7;
     world.npc.navState[n] = 3;
     world.npc.navTicks[n] = 9;
+    // Its reaction columns and a running hi-vis with one hit and two bumps (SSP-082).
+    world.npc.contactIgnore[n] = 42;
+    world.npc.stateLimit[n] = 30;
+    world.npcAi.reactions.hiVisUntilTick = 700;
+    world.npcAi.reactions.hits = 1;
+    world.npcAi.reactions.bumps = 2;
     world.zebras.occupancy[0] = 1;
     const k = pushStimulus(world.npcAi.stimuli, Stimulus.Horn, NO_NPC_HANDLE);
     world.npcAi.stimuli.x[k] = 3.25;
@@ -319,6 +325,26 @@ describe('state hash', () => {
     const w = handSetWorld();
     w.npc.path[2] = 9;
     expect(hashOf(w)).toBe(base);
+  });
+
+  it('absorbs the reaction state (SSP-082): the per-NPC contact window and state limit, and the shared rules', () => {
+    const base = hashOf(handSetWorld());
+    const edits: [string, (w: World) => void][] = [
+      ['contactIgnore', (w) => (w.npc.contactIgnore[0] = 41)],
+      ['stateLimit', (w) => (w.npc.stateLimit[0] = 54)],
+      ['awarenessRadiusM', (w) => (w.npcAi.reactions.awarenessRadiusM = 10)],
+      ['ledBeacon', (w) => (w.npcAi.reactions.ledBeacon = true)],
+      ['minClosingSpeedMps', (w) => (w.npcAi.reactions.minClosingSpeedMps = 1.5)],
+      ['ignoreTicks', (w) => (w.npcAi.reactions.ignoreTicks = 91)],
+      ['hiVisUntilTick', (w) => (w.npcAi.reactions.hiVisUntilTick = 701)],
+      ['hits', (w) => (w.npcAi.reactions.hits = 2)],
+      ['bumps', (w) => (w.npcAi.reactions.bumps = 3)],
+    ];
+    for (const [name, edit] of edits) {
+      const w = handSetWorld();
+      edit(w);
+      expect(hashOf(w), name).not.toBe(base);
+    }
   });
 
   it('keeps its canonical byte layout (golden value for a hand-set World)', () => {
@@ -1361,8 +1387,11 @@ describe('state hash', () => {
  * the level a zebra: b25f1a0a → 196fee33 (b52f12bf on its branch, before SSP-078 merged).
  * SSP-092 appended the knockable bodies and gave the hand-set World a knocked, sliding, spinning cone:
  * 196fee33 → bd46e7bd (e1d53cac on its branch, before SSP-081 merged).
+ * SSP-082 appended the reaction model (the shared rules' state, then each NPC's contact window and state limit)
+ * and gave the NPC a contact window and a state limit, and the World a hi-vis, a hit and two bumps: bd46e7bd →
+ * b31a23d9 (f20bff33 on its branch, before SSP-092 merged).
  */
-const GOLDEN_HAND_SET_HASH = 'bd46e7bd';
+const GOLDEN_HAND_SET_HASH = 'b31a23d9';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

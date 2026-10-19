@@ -39,12 +39,18 @@ export const NPC_PATH_NODES = 32;
 
 /**
  * Per-NPC flag bits (`flags`, Uint16). Hashed into replays: append, never renumber. Behaviours set them
- * (Fallen, the cat's RideRoof, yielding to Bessie); the renderer and the shared rules read them.
+ * (Fallen, the cat's RideRoof, yielding to Bessie); the renderer and the shared rules read them. SSP-082 appends
+ * AWARE and HI_VIS, the two per-tick stimulus marks of the reaction model (npc/reactions.ts): phase 7 clears both
+ * on every NPC before it delivers the tick's stimuli, and a behaviour that takes BeaconYield (Bessie within the
+ * awareness radius) sets AWARE, one that takes HiVis (pwr.hi_vis running) sets HI_VIS. A FALLEN or ON_ROOF NPC
+ * cannot be hit (actor contact skips it).
  */
 export const NPC_FLAG = {
   FALLEN: 1,
   ON_ROOF: 2,
   YIELDING: 4,
+  AWARE: 8,
+  HI_VIS: 16,
 } as const;
 export type NpcFlagBit = (typeof NPC_FLAG)[keyof typeof NPC_FLAG];
 
@@ -117,6 +123,13 @@ export type NpcStore = {
   /** Steering: its NavState (steering.ts) and the ticks spent in it. */
   readonly navState: Uint8Array;
   readonly navTicks: Uint32Array;
+  /**
+   * Reactions (npc/reactions.ts, SSP-082): ticks left in its actor-contact ignore window (0 = a touch starts a
+   * new contact episode). Refilled to 90 (1.5 s) on every tick Bessie overlaps it during an episode.
+   */
+  readonly contactIgnore: Uint8Array;
+  /** The planned length of its current state in ticks, set by its behaviour (0 = none; an idle, a startle). */
+  readonly stateLimit: Uint16Array;
   /** Handle slot of each live index. */
   readonly handleSlot: Int32Array;
   /** Live index of each handle slot, −1 while the slot is free. */
@@ -167,6 +180,8 @@ export type NpcStoreView = {
   readonly goalNode: Int32Array;
   readonly crossEdge: Int32Array;
   readonly navState: Uint8Array;
+  readonly contactIgnore: Uint8Array;
+  readonly stateLimit: Uint16Array;
   readonly handleSlot: Int32Array;
   readonly slotGen: Uint32Array;
 };
@@ -217,6 +232,8 @@ export function createNpcStore(level: Level, capacity: number = NPC_CAPACITY): N
     crossEdge: new Int32Array(capacity).fill(-1),
     navState: new Uint8Array(capacity),
     navTicks: new Uint32Array(capacity),
+    contactIgnore: new Uint8Array(capacity),
+    stateLimit: new Uint16Array(capacity),
     handleSlot: new Int32Array(capacity).fill(-1),
     slotIndex: new Int32Array(capacity).fill(-1),
     slotGen: new Uint32Array(capacity),
@@ -352,8 +369,8 @@ export function queryNpcs(store: NpcStore, box: Readonly<Aabb>, out: Int32Array)
 
 /**
  * Add an NPC of `kind` (NPC_IDS index) and `origin`, spawned from spec entry `group` (−1 for none), at
- * (xs[j], ys[j]), at rest, facing north, in state 0 with no target node, flags, link, perception or path, and
- * radius and walking speed 0 (the spawner sets the state, radius and speed). Returns its index, or −1 (changing nothing) when the store
+ * (xs[j], ys[j]), at rest, facing north, in state 0 with no target node, flags, link, perception, path, contact
+ * window or state limit, and radius and walking speed 0 (the spawner sets the state, radius and speed). Returns its index, or −1 (changing nothing) when the store
  * is full. Takes the position through arrays so no double crosses the call.
  */
 export function addNpc(
@@ -402,6 +419,8 @@ export function addNpc(
   store.crossEdge[i] = -1;
   store.navState[i] = 0;
   store.navTicks[i] = 0;
+  store.contactIgnore[i] = 0;
+  store.stateLimit[i] = 0;
   linkCell(store, i, npcCellIndex(store, i));
   return i;
 }
@@ -459,6 +478,8 @@ export function removeNpc(store: NpcStore, i: number): void {
     store.crossEdge[i] = store.crossEdge[last] as number;
     store.navState[i] = store.navState[last] as number;
     store.navTicks[i] = store.navTicks[last] as number;
+    store.contactIgnore[i] = store.contactIgnore[last] as number;
+    store.stateLimit[i] = store.stateLimit[last] as number;
     const movedSlot = store.handleSlot[last] as number;
     store.handleSlot[i] = movedSlot;
     store.slotIndex[movedSlot] = i;

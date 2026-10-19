@@ -22,6 +22,8 @@
 //                       dust is M3 (SSP-065)
 //   7 NPC               beginNpcTick (prev positions) → updateViewRect (world.viewRect from Bessie's pose) →
 //                       stepNpcSpawner (named arrivals; once a second cats, flocks and the ambient population)
+//                       → stepReactions (Horn from EV.Horn, HiVis, BeaconYield; then actor hits: penalty,
+//                       EV.NpcHit, drops; bumps; npc/reactions.ts, SSP-082)
 //                       → deliverStimuli → perceiveNpcs (index mod 4 == tick mod 4) → tickNpcBehaviours
 //                       (npc/, SSP-080; the behaviours steer with npc/steering.ts, SSP-081); the litterbug's
 //                       Caught! flags the tick's honk here (markHornCaught, complaints.ts, SSP-078) →
@@ -112,6 +114,7 @@ import {
 import type { Level } from './map.ts';
 import { createNpcAi, type NpcAi, tickNpcBehaviours } from './npc/npcAi.ts';
 import { perceiveNpcs } from './npc/perception.ts';
+import { setReactionTuning, stepReactions } from './npc/reactions.ts';
 import { setNpcSpawnerTuning, stepNpcSpawner } from './npc/spawner.ts';
 import {
   createZebras,
@@ -460,6 +463,7 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   setComplaintsTuning(world.complaints, tuning);
   setSteeringTuning(world.npcAi.steering, world.level, world.staticGrid, tuning);
   setBodiesTuning(world.bodies, tuning, world.npcAi.entities);
+  setReactionTuning(world.npcAi.reactions, tuning);
 }
 
 /**
@@ -683,17 +687,22 @@ function phaseDirt(world: World): void {
  *   2. updateViewRect: world.viewRect from Bessie's pose and velocity.
  *   3. stepNpcSpawner: named NPCs due; on every 60th tick the cats and flocks still to place and the ambient
  *      population (at most 2 spawns or retirements), all off the view rect except named arrivals.
- *   4. deliverStimuli: the queued Horn, Spray, Hit, NearMiss, HiVis and BeaconYield stimuli, in push order.
- *   5. perceiveNpcs: the perception query of every NPC with index mod 4 == tick mod 4.
- *   6. tickNpcBehaviours: each NPC's behaviour tick, in index order (behaviours steer with npc/steering.ts).
- *   7. updateZebraOccupancy: how many NPCs stand on each zebra (world.zebras), for phases 8 and 9.
+ *   4. stepReactions (npc/reactions.ts, SSP-082): clear the AWARE and HI_VIS marks, queue a Horn per EV.Horn of
+ *      phase 1, HiVis to everyone while pwr.hi_vis runs and BeaconYield in the awareness radius; then Bessie's
+ *      OBB against the actors' circles: a hit records the penalty fact (phase 9 applies it), emits EV.NpcHit,
+ *      drops the kind's litter and queues Hit; a bump queues Bump.
+ *   5. deliverStimuli: the queued stimuli, in push order.
+ *   6. perceiveNpcs: the perception query of every NPC with index mod 4 == tick mod 4.
+ *   7. tickNpcBehaviours: each NPC's behaviour tick, in index order (behaviours steer with npc/steering.ts).
+ *   8. updateZebraOccupancy: how many NPCs stand on each zebra (world.zebras), for phases 8 and 9.
  * The litterbug behaviour flags a honk that lands its Caught! with markHornCaught (complaints.ts, SSP-078), so
- * phase 9 does not count it toward horn spam; SSP-082 delivers EV.Horn to the NPCs.
+ * phase 9 does not count it toward horn spam.
  */
 function phaseNpc(world: World): void {
   beginNpcTick(world.npc);
   updateViewRect(world.viewRect, world.vehicle);
   stepNpcSpawner(world);
+  stepReactions(world);
   deliverStimuli(world);
   perceiveNpcs(world);
   tickNpcBehaviours(world);

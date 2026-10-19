@@ -128,13 +128,14 @@ assets-src/
 │  ├─ litter/   crisp_packet.sprite.txt, cigarette_butts.sprite.txt, …
 │  ├─ prop/     bollard.sprite.txt, traffic_cone.sprite.txt, …
 │  ├─ pickup/   flask_of_tea.sprite.txt, golden_crisp.sprite.txt, …
+│  ├─ site/     depot_bay.sprite.txt, skip.sprite.txt (M2 placeholders, SSP-052)
 │  ├─ ui/       icon_hopper.sprite.txt, panel_default.sprite.txt, …
 │  └─ facade/   window_sash.sprite.txt, door_terrace.sprite.txt, …
 ├─ fonts/
 │  ├─ kerbside5x7.glyphs.txt
 │  └─ kerbsidebold8x8.glyphs.txt
 ├─ procedural/
-│  ├─ tiles/    asphalt.json, kerb_blob.json, zebra.json, …
+│  ├─ tiles/    asphalt.json, kerb_blob.json, zebra.json, grime_asphalt.json, …
 │  ├─ roofs/    felt.json, gravel.json, slate.json, corrugated.json, depot.json (landmark placeholder)
 │  ├─ facades/  terrace_brick.json, parade_brick.json, corner_shop.json, …   # facade sets (§10.9)
 │  ├─ stains/   gum.json, oil.json, …
@@ -527,6 +528,7 @@ Generator kinds (SSP-041; `tools/forge/forge/procedural/__init__.py` holds the r
 - **`variant` generators** (tiles, roofs, stains) have the shape above. The params file needs an integer `seed` and `variants`, and the manifest entry has the single state `v` with `frames.v == variants`, so the frames are `<id>:v:-:0 … v:-:<variants − 1>`. One `Generator(PCG64(seed))` is shared by all variants in order. Overlay tiles (the road markings, SSP-040) return `int16` with −1 for transparent pixels instead of `uint8`. Where a variant index means an orientation rather than a random draw (markings, zebra, speed bump), the params list one `layouts` entry per variant and `variants` must equal its length.
 - **`frames` generators** assemble frames instead of drawing them at random, and return every frame of the entry: `facades.set` (§10.9) and `tiles.kerb_blob` (the 47 `blob` frames, §10.8), with no `seed` or `variants`. Every extra file such a generator reads (the module grids; the kerb's interior tile params) is hashed into the asset's build-cache key, so editing a module rebuilds every set that uses it.
 - **Tile generators (SSP-040, `tiles.py`):** `tiles.asphalt`, `tiles.pavement`, `tiles.grass`, `tiles.setts`, `tiles.apron`, `tiles.zebra`, `tiles.speed_bump`, `tiles.markings` (overlay lines, shared by `tile.lane_marking`, `tile.double_yellow` and `tile.parking_bay`) and `tiles.kerb_blob`. The tile IDs, frame meanings and looks are in [ART_BIBLE §9.1](ART_BIBLE.md#91-ground-tiles). A `wrap: true` tile is redrawn from the same seeded stream until it passes the seam rule, so the result stays a pure function of the seed; 64 failed draws is a build error.
+- **Stain and grime generators (SSP-052, `stains.py`):** `stains.gum`, `stains.milkshake`, `stains.oil`, `stains.chalk_art` (one stroke list per variant in `layouts`: `line`, `rect`, `fill`, `circle`, `disc`, `points`) and `stains.splat` for the five `stain.*` IDs, and `stains.grime` for the `tile.grime_asphalt` / `tile.grime_slab` / `tile.grime_gutter` overlays. All return `int16` with −1 for transparent pixels and use integer-only geometry and noise. Looks and the grime IDs are in [ART_BIBLE §8.7 and §9.2](ART_BIBLE.md#92-grime-and-the-clean-reveal); pytest `tools/forge/tests/test_stains.py` covers determinism (two builds, same SHA-256), palette-only output, append stability and the grime contrast target.
 
 `id` and `cell` in the params file must equal the manifest entry's.
 
@@ -1188,9 +1190,9 @@ Portraits use the same pixelize path: `crop` selects each expression from the 1:
 
 | Atlas | Contents |
 |---|---|
-| `world` | Tiles, roofs, facades, stains |
+| `world` | Tiles (including the `tile.grime_*` overlays), roofs, facades, stains |
 | `actors` | Vehicles, people, animals |
-| `items` | Litter, props, pickups |
+| `items` | Litter, props, pickups, the `site.depot_bay` / `site.skip` placeholders (SSP-052) |
 | `ui` | HUD, icons, panels, fonts |
 | `fx` | VFX frames |
 

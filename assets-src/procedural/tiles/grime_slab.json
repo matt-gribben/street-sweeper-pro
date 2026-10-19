@@ -1,0 +1,16 @@
+{
+  "id": "tile.grime_slab",
+  "generator": "stains.grime",
+  "seed": 5602,
+  "cell": [32, 32],
+  "variants": 4,
+  "params": {
+    "grime_cell_px": 4,
+    "coverage_px": [10, 12],
+    "smoothing_passes": 2,
+    "base_index": 8,
+    "blotches": { "index": 13, "fraction": 0.3, "smoothing_passes": 4 },
+    "flecks": { "index": 1, "fraction": 0.1 },
+    "wrap": true
+  }
+}

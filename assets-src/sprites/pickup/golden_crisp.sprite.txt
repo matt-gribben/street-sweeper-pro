@@ -1,0 +1,42 @@
+id: collect.golden_crisp
+cell: 16x16
+palette: kerbside32
+# SSP-052 placeholder (ART_BIBLE §8.5): a crisp packet in 15 with a 16 glint and 14 shade, 14 crimped ends (the fx.sparkle is M3+).
+# bob 0: icon down, halo ring 16; bob 1: icon 1 px up, halo ring 07. The ring is a ground
+# marking and has no ink outline; the icon draws its own (manifest outline: false).
+
+frame bob:-:0
+.....gggggg.....
+...gg......gg...
+..g.0.0.0.0..g..
+.g.0e0e0e0e0..g.
+.g.0fggffffe0.g.
+g..0fggffffe0..g
+g..0ffgffffe0..g
+g..0fffffffe0..g
+g..0fffffffe0..g
+g..0fffffffe0..g
+g..0fffffffe0..g
+.g.0ffffffee0.g.
+.g.0e0e0e0e0..g.
+..g.0.0.0.0..g..
+...gg......gg...
+.....gggggg.....
+
+frame bob:-:1
+.....777777.....
+...70.0.0.077...
+..70e0e0e0e0.7..
+.7.0fggffffe0.7.
+.7.0fggffffe0.7.
+7..0ffgffffe0..7
+7..0fffffffe0..7
+7..0fffffffe0..7
+7..0fffffffe0..7
+7..0fffffffe0..7
+7..0ffffffee0..7
+.7.0e0e0e0e0..7.
+.7..0.0.0.0...7.
+..7..........7..
+...77......77...
+.....777777.....

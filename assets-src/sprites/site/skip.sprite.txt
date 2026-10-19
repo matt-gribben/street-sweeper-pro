@@ -1,0 +1,40 @@
+id: site.skip
+cell: 64x32
+palette: kerbside32
+# SSP-052 placeholder of the M4 Blender skip (SSP-130), 2x1 tiles at 16 px/m (64x32 cell).
+# 22 grass-green steel with a 23 NW lip and 21 SE edge, sloped ends (west 21, east 22), 01 interior
+# with a little rubbish (13, 05, 03, 26), 03/05 lifting lugs. The build adds the ink outline (manifest outline: true).
+
+frame flat:-:0
+................................................................
+..............5555...........................5555...............
+..............3333...........................3333...............
+..nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnl..
+..nmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmml..
+..nmllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmml..
+..nmllllll11111111111111111111111111111111111111111111mmmmmmml..
+..nmllllll11111111111111111111111111111111111111111111mmmmmmml..
+..nmllllll1111dd11111111111111111111111111111111111111mmmmmmml..
+..nmllllll1111ddd1111111111111111111111111111111111111mmmmmmml..
+..nmllllll11111d11111111111111111111111111111111111111mmmmmmml..
+..nmllllll11111111111111111111111111111111111131111111mmmmmmml..
+..nmllllll11111111111111111111551111111111111111111111mmmmmmml..
+..nmllllll11111111111111111111131111111111111111111111mmmmmmml..
+..nmllllll11111111131111111111111111111111111111111111mmmmmmml..
+..nmllllll11111111111111111111111111111111111111111111mmmmmmml..
+..nmllllll11111111111111111111111111111111111111111111mmmmmmml..
+..nmllllll111111111111111111111111111111d1111111111111mmmmmmml..
+..nmllllll111111111111111111111111111111ddd11111111111mmmmmmml..
+..nmllllll1111111111111111111111111111111d111111111111mmmmmmml..
+..nmllllll111111111111qq111111111111111111111111111111mmmmmmml..
+..nmllllll1111111111111q111111111111111111111111111111mmmmmmml..
+..nmllllll11111111111111111111111111111111111113511111mmmmmmml..
+..nmllllll11153111111111111111111111111111111111111111mmmmmmml..
+..nmllllll11111111111111111111111111111111111111111111mmmmmmml..
+..nmllllll11111111111111111111111111111111111111111111mmmmmmml..
+..nmllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmml..
+..nmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmml..
+..llllllllllllllllllllllllllllllllllllllllllllllllllllllllllll..
+..............5555...........................5555...............
+..............3333...........................3333...............
+................................................................

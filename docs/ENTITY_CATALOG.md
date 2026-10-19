@@ -225,7 +225,7 @@ stateDiagram-v2
 
 ## 5. Stains (`stain.*`)
 
-**Common spec:** cell **32×32**, 1–3 variants, technique `procedural` (`assets-src/procedural/stains/*.json`), atlas `world`. Stains are ground decals, so they have no collision. They are **cleaned only by water spray** (6 water units/s, 2.6 m cone ahead) and scored once per stain. The spray time needed per stain is TBD (M2 tuning), with proposed defaults 1.0 s (gum), 1.5 s (milkshake) and 2.0 s (oil and chalk); `stain.splat` uses the gum value until tuned. The loop sound is the live spray synth (see [AUDIO_DESIGN](AUDIO_DESIGN.md)); there is no one-shot `sfx.*` on completion other than the score popup.
+**Common spec:** cell **32×32**, 1–3 variants, technique `procedural` (`assets-src/procedural/stains/*.json`), atlas `world`. Stains are ground decals, so they have no collision. They are **cleaned only by water spray** (6 water units/s, 2.6 m cone ahead) and scored once per stain. The spray time needed per stain is TBD (M2 tuning), with proposed defaults 1.0 s (gum), 1.5 s (milkshake) and 2.0 s (oil and chalk); `stain.splat` uses the gum value until tuned. The loop sound is the live spray synth (see [AUDIO_DESIGN](AUDIO_DESIGN.md)); there is no one-shot `sfx.*` on completion other than the score popup. **Until M4:** placeholder generators under the final frame IDs `stain.<name>:v:-:n` (SSP-052; variants gum 3, milkshake 2, oil 2, chalk_art 3, splat 2; looks in [ART_BIBLE §8.7](ART_BIBLE.md#87-stains-and-hazards-ground-decals)).
 
 | ID | Name | Pts | Districts | Notes |
 |---|---|---|---|---|
@@ -468,7 +468,7 @@ Solid. Hitting them uses the standard impact-damage rule ([§3.2](#32-collision-
 | `prop.bus_shelter` | Bus shelter | blender | stack (8) | Paired with `site.bus_stop`. | Tue, Fri, Sun |
 | `prop.phone_box` | Phone box | blender | stack (4) | | Mon, Tue, Sun |
 | `prop.post_box` | Post box | grid *(proposed)* | stack (4) | `postbox_red` (18). | Mon, Tue, Thu, Sun |
-| `prop.hydrant` | Hydrant | grid | flat | **Water refill: stop adjacent, 25 units/s.** | All |
+| `prop.hydrant` | Hydrant | grid | flat | **Water refill: stop adjacent, 25 units/s.** Placeholder grid `prop.hydrant:flat:-:0` since SSP-052. | All |
 | `prop.tree` | Tree | blender (canopy) | stack (8) | Canopy overhangs pavements. | Mon, **Thu**, Sun |
 | `prop.planter` | Planter | blender *(proposed)* | flat | | Tue, Sun |
 | `prop.market_stall` | Market stall | blender | stack (8) | Manned by `npc.market_trader`. | **Tue**, Sun |
@@ -511,11 +511,13 @@ Sites are level-authored regions and markers from `<district>.level.json`. Most 
 | `site.frontage` | Scoring segment, one per house or shop | Clean Sweep: **+100** at 100%. The inspector deducts **−100** for each one below 90% that he passes. Shown green or red on the Mercury map. | Facade | All except Yard |
 | `site.pledge_frontage` | Tidy Pledge resident | **Green rosette on the door.** **£10 tip at ≥ 90%** (8–20 pledges per district). | Facade + rosette module | All except Yard |
 
+**Until M4:** `site.depot_bay` and `site.skip` have placeholder grids under their final IDs (SSP-052): `site.depot_bay:flat:-:0` (64×96, its 2×3-tile footprint at 16 px/m) and `site.skip:flat:-:0` (64×32, 2×1 tiles), atlas `items` ([ART_BIBLE §8.7](ART_BIBLE.md#87-stains-and-hazards-ground-decals) has the looks).
+
 ---
 
 ## 12. Power-ups (`pwr.*`)
 
-**Common spec:** cell **16×16**, visible 12×12, `bob ×2`, technique `grid` (`assets-src/sprites/pickup/<name>.sprite.txt`), atlas `items`. **1–3 per shift, spawn on pavements.** Collected by body overlap with any brush state; SFX `powerup`. A timed power-up picked up while the same one is active restarts its timer (it does not stack). All districts except Yard.
+**Common spec:** cell **16×16**, visible 12×12, `bob ×2`, technique `grid` (`assets-src/sprites/pickup/<name>.sprite.txt`), atlas `items`. **1–3 per shift, spawn on pavements.** Collected by body overlap with any brush state; SFX `powerup`. A timed power-up picked up while the same one is active restarts its timer (it does not stack). All districts except Yard. **Placeholders (SSP-052):** `pwr.flask_of_tea` has a placeholder grid with frames `bob:-:0`/`bob:-:1` (Puddle Lane's power-up); the other five arrive with SSP-149 (M4).
 
 | ID | Name | Effect | Duration | Numbers in practice |
 |---|---|---|---|---|
@@ -530,7 +532,7 @@ Sites are level-authored regions and markers from `<district>.level.json`. Most 
 
 ## 13. Collectibles (`collect.*`)
 
-**Common spec:** as power-ups (16×16 cell, 12×12 body, `bob ×2`, `grid`, atlas `items`). SFX `powerup` (named variant `collect` for Lost Property, `golden` for `collect.golden_crisp`); the £25 Lost Property payout also plays `coin`.
+**Common spec:** as power-ups (16×16 cell, 12×12 body, `bob ×2`, `grid`, atlas `items`). SFX `powerup` (named variant `collect` for Lost Property, `golden` for `collect.golden_crisp`); the £25 Lost Property payout also plays `coin`. **Placeholders (SSP-052):** `collect.false_teeth` and `collect.golden_crisp` (the ones Puddle Lane uses) have placeholder grids with frames `bob:-:0`/`bob:-:1`; the rest arrive in M4/M6.
 
 ### 13.1 Lost Property (one per district)
 

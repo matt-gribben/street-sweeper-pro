@@ -1,0 +1,42 @@
+id: collect.false_teeth
+cell: 16x16
+palette: kerbside32
+# SSP-052 placeholder (ART_BIBLE §8.5): 07 teeth with 06 gaps on 20 bubblegum gums, open (a 00 gap between the plates).
+# bob 0: icon down, halo ring 16; bob 1: icon 1 px up, halo ring 07. The ring is a ground
+# marking and has no ink outline; the icon draws its own (manifest outline: false).
+
+frame bob:-:0
+.....gggggg.....
+...gg......gg...
+..g..........g..
+.g..00000000..g.
+.g.0kkkkkkkk0.g.
+g.0kkkkkkkkkk0.g
+g.077677677670.g
+g.077677677670.g
+g.000000000000.g
+g.077677677670.g
+g.077777777770.g
+.g0kkkkkkkkkk0g.
+.g.0kkkkkkkk0.g.
+..g.00000000.g..
+...gg......gg...
+.....gggggg.....
+
+frame bob:-:1
+.....777777.....
+...77......77...
+..7.00000000.7..
+.7.0kkkkkkkk0.7.
+.70kkkkkkkkkk07.
+7.077677677670.7
+7.077677677670.7
+7.000000000000.7
+7.077677677670.7
+7.077777777770.7
+7.0kkkkkkkkkk0.7
+.7.0kkkkkkkk0.7.
+.7..00000000..7.
+..7..........7..
+...77......77...
+.....777777.....

@@ -1,0 +1,16 @@
+{
+  "id": "stain.gum",
+  "generator": "stains.gum",
+  "seed": 5101,
+  "cell": [32, 32],
+  "variants": 3,
+  "params": {
+    "count": [6, 9],
+    "sizes_px": [2, 3, 3],
+    "top_index": 6,
+    "shade_index": 5,
+    "old_fraction": 0.25,
+    "margin_px": 3,
+    "gap_px": 2
+  }
+}

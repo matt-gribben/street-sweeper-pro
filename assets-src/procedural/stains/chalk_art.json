@@ -1,0 +1,154 @@
+{
+  "id": "stain.chalk_art",
+  "generator": "stains.chalk_art",
+  "seed": 5401,
+  "cell": [32, 32],
+  "variants": 3,
+  "params": {
+    "palette": [7, 16, 20, 27, 31],
+    "wear": { "density": 0.05 },
+    "layouts": [
+      [
+        { "shape": "rect", "index": 7, "rect": [12, 25, 7, 7] },
+        { "shape": "rect", "index": 7, "rect": [12, 19, 7, 7] },
+        { "shape": "rect", "index": 7, "rect": [9, 13, 7, 7] },
+        { "shape": "rect", "index": 7, "rect": [15, 13, 7, 7] },
+        { "shape": "rect", "index": 7, "rect": [12, 7, 7, 7] },
+        { "shape": "rect", "index": 7, "rect": [9, 1, 7, 7] },
+        { "shape": "rect", "index": 7, "rect": [15, 1, 7, 7] },
+        {
+          "shape": "points",
+          "index": 20,
+          "points": [[15, 26], [14, 27], [15, 27], [15, 28], [15, 29], [14, 30], [15, 30], [16, 30]]
+        },
+        {
+          "shape": "points",
+          "index": 31,
+          "points": [
+            [14, 20],
+            [15, 20],
+            [16, 20],
+            [16, 21],
+            [14, 22],
+            [15, 22],
+            [16, 22],
+            [14, 23],
+            [14, 24],
+            [15, 24],
+            [16, 24]
+          ]
+        },
+        {
+          "shape": "points",
+          "index": 20,
+          "points": [
+            [11, 14],
+            [12, 14],
+            [13, 14],
+            [13, 15],
+            [11, 16],
+            [12, 16],
+            [13, 16],
+            [13, 17],
+            [11, 18],
+            [12, 18],
+            [13, 18]
+          ]
+        },
+        {
+          "shape": "points",
+          "index": 31,
+          "points": [[17, 14], [19, 14], [17, 15], [19, 15], [17, 16], [18, 16], [19, 16], [19, 17], [19, 18]]
+        },
+        {
+          "shape": "points",
+          "index": 20,
+          "points": [
+            [14, 8],
+            [15, 8],
+            [16, 8],
+            [14, 9],
+            [14, 10],
+            [15, 10],
+            [16, 10],
+            [16, 11],
+            [14, 12],
+            [15, 12],
+            [16, 12]
+          ]
+        },
+        {
+          "shape": "points",
+          "index": 31,
+          "points": [
+            [17, 2],
+            [18, 2],
+            [19, 2],
+            [17, 3],
+            [17, 4],
+            [18, 4],
+            [19, 4],
+            [17, 5],
+            [19, 5],
+            [17, 6],
+            [18, 6],
+            [19, 6]
+          ]
+        },
+        { "shape": "fill", "index": 16, "rect": [11, 3, 3, 3] }
+      ],
+      [
+        { "shape": "circle", "index": 16, "centre": [16, 14], "radius_px": 5 },
+        { "shape": "line", "index": 16, "from": [23, 14], "to": [25, 14] },
+        { "shape": "line", "index": 16, "from": [7, 14], "to": [9, 14] },
+        { "shape": "line", "index": 16, "from": [16, 5], "to": [16, 7] },
+        { "shape": "line", "index": 16, "from": [16, 21], "to": [16, 23] },
+        { "shape": "line", "index": 16, "from": [20, 10], "to": [22, 8] },
+        { "shape": "line", "index": 16, "from": [12, 10], "to": [10, 8] },
+        { "shape": "line", "index": 16, "from": [20, 18], "to": [22, 20] },
+        { "shape": "line", "index": 16, "from": [12, 18], "to": [10, 20] },
+        { "shape": "points", "index": 31, "points": [[14, 12], [18, 12]] },
+        {
+          "shape": "points",
+          "index": 20,
+          "points": [[13, 15], [14, 16], [15, 17], [16, 17], [17, 17], [18, 16], [19, 15]]
+        },
+        { "shape": "line", "index": 27, "from": [3, 28], "to": [5, 26] },
+        { "shape": "line", "index": 27, "from": [5, 26], "to": [7, 28] },
+        { "shape": "line", "index": 27, "from": [7, 28], "to": [9, 26] },
+        { "shape": "line", "index": 27, "from": [9, 26], "to": [11, 28] },
+        { "shape": "line", "index": 27, "from": [11, 28], "to": [13, 26] },
+        { "shape": "line", "index": 27, "from": [13, 26], "to": [15, 28] },
+        { "shape": "line", "index": 27, "from": [15, 28], "to": [17, 26] },
+        { "shape": "line", "index": 27, "from": [17, 26], "to": [19, 28] },
+        { "shape": "line", "index": 27, "from": [19, 28], "to": [21, 26] },
+        { "shape": "line", "index": 27, "from": [21, 26], "to": [23, 28] },
+        { "shape": "line", "index": 27, "from": [23, 28], "to": [25, 26] },
+        { "shape": "line", "index": 27, "from": [25, 26], "to": [27, 28] }
+      ],
+      [
+        { "shape": "circle", "index": 7, "centre": [10, 11], "radius_px": 4 },
+        { "shape": "line", "index": 7, "from": [7, 8], "to": [8, 4] },
+        { "shape": "line", "index": 7, "from": [8, 4], "to": [10, 7] },
+        { "shape": "line", "index": 7, "from": [10, 7], "to": [12, 4] },
+        { "shape": "line", "index": 7, "from": [12, 4], "to": [13, 8] },
+        { "shape": "rect", "index": 7, "rect": [13, 15, 12, 6] },
+        { "shape": "line", "index": 7, "from": [15, 21], "to": [15, 25] },
+        { "shape": "line", "index": 7, "from": [18, 21], "to": [18, 25] },
+        { "shape": "line", "index": 7, "from": [21, 21], "to": [21, 25] },
+        { "shape": "line", "index": 7, "from": [24, 21], "to": [24, 25] },
+        { "shape": "line", "index": 7, "from": [25, 16], "to": [28, 12] },
+        { "shape": "line", "index": 7, "from": [28, 12], "to": [28, 8] },
+        { "shape": "line", "index": 7, "from": [28, 8], "to": [26, 7] },
+        { "shape": "points", "index": 27, "points": [[8, 10], [12, 10]] },
+        { "shape": "points", "index": 20, "points": [[10, 12]] },
+        { "shape": "line", "index": 31, "from": [5, 11], "to": [2, 10] },
+        { "shape": "line", "index": 31, "from": [5, 13], "to": [2, 14] },
+        { "shape": "line", "index": 31, "from": [15, 11], "to": [18, 10] },
+        { "shape": "line", "index": 31, "from": [15, 13], "to": [18, 14] },
+        { "shape": "disc", "index": 16, "centre": [5, 26], "radius_px": 2 },
+        { "shape": "line", "index": 16, "from": [7, 26], "to": [14, 25] }
+      ]
+    ]
+  }
+}

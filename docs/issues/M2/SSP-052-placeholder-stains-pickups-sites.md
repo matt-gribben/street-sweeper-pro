@@ -2,7 +2,7 @@
 id: SSP-052
 title: "Add stain generator, grime overlays and pickup/collectible/site/hydrant grids"
 milestone: M2
-status: todo
+status: done
 type: asset
 estimate: L
 labels: [type:asset, area:assets, area:tooling, size:L, vertical-slice]

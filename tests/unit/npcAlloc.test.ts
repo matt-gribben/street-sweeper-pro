@@ -4,7 +4,8 @@
 // dogs, a pigeon flock and two perched cats) on the open district of tests/support/npcTown.ts, 192 m square.
 //
 // Everything phase 7 does runs inside the window: the spawner spawns and retires people every second as
-// Bessie circles and is moved round four spots of the map every 20 s, the behaviours walk them (a test
+// Bessie circles and is moved round four spots of the map every 20 s (and, between those, driven at an NPC
+// every 10 s, so actor hits run in the window), the behaviours walk them (a test
 // behaviour, below: walk straight, turn back at the map edge, hurry for a second when honked at, moving them
 // through the spatial hash), the harness pushes a Horn stimulus every 0.5 s and a Hit at one NPC every 1.5 s,
 // and a quarter of the store runs its perception query every tick. Runs in the Vitest unit project, whose
@@ -74,6 +75,8 @@ const walker: Behaviour = {
 };
 
 const HOPS = new Float64Array([48, 48, 144, 48, 144, 144, 48, 144]);
+/** Bessie is only aimed at NPCs at least this far inside the map, metres. */
+const AIM_MARGIN_M = 24;
 
 /**
  * The rig: `generic` keeps the registry's behaviours (the SSP-082 generic pedestrian for the people, the no-op
@@ -84,8 +87,10 @@ function npcRig(generic = false): { world: World; step: (t: number) => void } {
     population: [{ fromS: 0, toS: 100_000, target: 80 }],
     mix: [
       { id: 'npc.dog_walker', weight: 20 },
+      { id: 'npc.mum_pushchair', weight: 10 },
+      { id: 'npc.old_man_frame', weight: 10 },
       { id: 'npc.postie', weight: 20 },
-      { id: 'npc.shopper', weight: 60 },
+      { id: 'npc.shopper', weight: 40 },
     ],
     caps: [{ id: 'npc.dog_walker', cap: 8 }],
     perches: {
@@ -118,6 +123,25 @@ function npcRig(generic = false): { world: World; step: (t: number) => void } {
       const k = ((t / 1200) & 3) * 2;
       v.xM = HOPS[k] as number;
       v.yM = HOPS[k + 1] as number;
+    } else if (t % 600 === 0 && world.npc.count > 0) {
+      // Every 10 s (between the hops), aim her at an NPC from 3 m south of it, heading north at 5 m/s, so the
+      // window always holds actor hits (SSP-085: before, they depended on where the crowd happened to stand).
+      // Only at one well inside the map, so she never runs into its edge (the crash damage would tow her).
+      const npc = world.npc;
+      for (let k = 0; k < npc.count; k++) {
+        const j = (t / 600 + k) % npc.count;
+        const x = npc.x[j] as number;
+        const y = npc.y[j] as number;
+        if (x < AIM_MARGIN_M || y < AIM_MARGIN_M || x > SIZE_M - AIM_MARGIN_M || y > SIZE_M - AIM_MARGIN_M)
+          continue;
+        v.xM = x;
+        v.yM = y + 3;
+        v.headingRad = 0;
+        v.vLongMps = 5;
+        v.vLatMps = 0;
+        v.yawRateRadPerS = 0;
+        break;
+      }
     }
     input.throttle = v.vLongMps < 5 ? THROTTLE_MAX : 0;
     if (t % 30 === 0) {

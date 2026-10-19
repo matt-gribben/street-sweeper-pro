@@ -10,7 +10,8 @@
 //   5. deliverStimuli (stimuli.ts): every queued stimulus, to the behaviours' onStimulus;
 //   6. perceiveNpcs (perception.ts): the perception query of the quarter of the store on this tick's phase;
 //   7. tickNpcBehaviours (here): each live NPC's behaviour tick, in index order, then its state clock;
-//   8. updateZebraOccupancy (steering.ts, SSP-081): world.zebras from where the NPCs ended up.
+//   8. stepZebras (zebraOffence.ts): updateZebraOccupancy (steering.ts, SSP-081), world.zebras from where the
+//      NPCs ended up; then the occupied-zebra offence (SSP-085), Bessie entering an occupied zebra.
 // Steering (steering.ts, SSP-081) and the generic pedestrian (behaviours/pedestrian.ts, SSP-082) plug into the
 // behaviours' ticks.
 //
@@ -22,6 +23,7 @@ import { createStream, type Sfc32 } from '../rng.ts';
 import type { Tuning } from '../tuning.ts';
 import type { World } from '../world.ts';
 import type { Behaviour } from './behaviour.ts';
+import { createDoorRound, type DoorRound } from './doorRound.ts';
 import { createReactions, type Reactions } from './reactions.ts';
 import { behavioursByKind } from './registry.ts';
 import { createNpcSpawner, type NpcSpawner } from './spawner.ts';
@@ -45,6 +47,8 @@ export type NpcAi = {
   readonly entities: Entities;
   /** The shared reaction rules' state: awareness radius, hi-vis, the per-kind hit tables (reactions.ts). */
   readonly reactions: Reactions;
+  /** The level's frontage doors in the postie's walking order (doorRound.ts, SSP-085). */
+  readonly doorRound: DoorRound;
 };
 
 /**
@@ -60,14 +64,16 @@ export function createNpcAi(
   zebras: Zebras,
   capacity: number,
 ): NpcAi {
+  const steering = createSteering(level, grid, zebras, tuning, capacity, entities);
   return {
     rng: createStream(seed >>> 0, 'npc'),
     stimuli: createStimulusQueue(),
     behaviours: behavioursByKind(entities),
     spawner: createNpcSpawner(level, tuning, entities),
-    steering: createSteering(level, grid, zebras, tuning, capacity),
+    steering,
     entities,
     reactions: createReactions(tuning, entities, capacity),
+    doorRound: createDoorRound(level, steering),
   };
 }
 

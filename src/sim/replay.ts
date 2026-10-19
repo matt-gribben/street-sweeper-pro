@@ -438,6 +438,7 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     F x, y, heading, prevX, prevY, prevHeading, vx, vy, omega
  *   SSP-082 appends the reaction model (npc/reactions.ts): F reactions.awarenessRadiusM; B ledBeacon;
  *     F minClosingSpeedMps; I ignoreTicks, hiVisUntilTick, hits, bumps; then per NPC: I contactIgnore, stateLimit
+ *   SSP-085 appends the occupied-zebra offence (npc/zebraOffence.ts): I zebras.offences, then per zebra B bessieOn
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -1007,6 +1008,22 @@ function absorbReactions(hasher: StateHasher, world: World): void {
     w[k] = (npc.contactIgnore[i] as number) | 0;
     w[k + 1] = (npc.stateLimit[i] as number) | 0;
     k += 2;
+  }
+  // SSP-085: the occupied-zebra offence.
+  const z = world.zebras;
+  if (k > FLUSH_AT) {
+    mixWords(hasher, k);
+    k = 0;
+  }
+  w[k] = z.offences | 0;
+  k += 1;
+  for (let s = 0; s < z.count; s += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (z.bessieOn[s] as number) | 0;
+    k += 1;
   }
   mixWords(hasher, k);
 }

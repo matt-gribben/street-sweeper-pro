@@ -275,6 +275,9 @@ describe('state hash', () => {
     world.npcAi.reactions.hits = 1;
     world.npcAi.reactions.bumps = 2;
     world.zebras.occupancy[0] = 1;
+    // Bessie on that zebra after one occupied-zebra offence (SSP-085).
+    world.zebras.bessieOn[0] = 1;
+    world.zebras.offences = 1;
     const k = pushStimulus(world.npcAi.stimuli, Stimulus.Horn, NO_NPC_HANDLE);
     world.npcAi.stimuli.x[k] = 3.25;
     world.npcAi.stimuli.y[k] = 4.5;
@@ -339,6 +342,19 @@ describe('state hash', () => {
       ['hiVisUntilTick', (w) => (w.npcAi.reactions.hiVisUntilTick = 701)],
       ['hits', (w) => (w.npcAi.reactions.hits = 2)],
       ['bumps', (w) => (w.npcAi.reactions.bumps = 3)],
+    ];
+    for (const [name, edit] of edits) {
+      const w = handSetWorld();
+      edit(w);
+      expect(hashOf(w), name).not.toBe(base);
+    }
+  });
+
+  it('absorbs the occupied-zebra offence state (SSP-085): the offence count and whether Bessie is on each zebra', () => {
+    const base = hashOf(handSetWorld());
+    const edits: [string, (w: World) => void][] = [
+      ['zebras.offences', (w) => (w.zebras.offences = 2)],
+      ['zebras.bessieOn', (w) => (w.zebras.bessieOn[0] = 0)],
     ];
     for (const [name, edit] of edits) {
       const w = handSetWorld();
@@ -1390,8 +1406,10 @@ describe('state hash', () => {
  * SSP-082 appended the reaction model (the shared rules' state, then each NPC's contact window and state limit)
  * and gave the NPC a contact window and a state limit, and the World a hi-vis, a hit and two bumps: bd46e7bd →
  * b31a23d9 (f20bff33 on its branch, before SSP-092 merged).
+ * SSP-085 appended the occupied-zebra offence (the offence count, then whether Bessie is on each zebra) and put
+ * Bessie on the hand-set zebra after one offence: b31a23d9 → 26b005e9.
  */
-const GOLDEN_HAND_SET_HASH = 'b31a23d9';
+const GOLDEN_HAND_SET_HASH = '26b005e9';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

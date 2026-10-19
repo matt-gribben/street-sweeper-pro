@@ -6,12 +6,15 @@ import { NPC_BEHAVIOURS, NPC_IDS } from '../../src/sim/entities.ts';
 import { createInputFrame } from '../../src/sim/inputFrame.ts';
 import { createBlankLevel } from '../../src/sim/map.ts';
 import { type Behaviour, Stimulus } from '../../src/sim/npc/behaviour.ts';
+import { mumPushchairBehaviour } from '../../src/sim/npc/behaviours/mumPushchair.ts';
 import { NOOP, noopBehaviour, noopJaywalkBehaviour } from '../../src/sim/npc/behaviours/noop.ts';
+import { oldManFrameBehaviour } from '../../src/sim/npc/behaviours/oldManFrame.ts';
 import {
   pedestrianBehaviour,
   pedestrianJaywalkBehaviour,
   stationaryPedestrianBehaviour,
 } from '../../src/sim/npc/behaviours/pedestrian.ts';
+import { postieBehaviour } from '../../src/sim/npc/behaviours/postie.ts';
 import { PERCEPTION_EVERY_TICKS, PERCEPTION_PATH_S } from '../../src/sim/npc/perception.ts';
 import { BEHAVIOUR_REGISTRY, behavioursByKind } from '../../src/sim/npc/registry.ts';
 import { pushStimulus, STIMULUS_CAPACITY, STIMULUS_EVERYONE } from '../../src/sim/npc/stimuli.ts';
@@ -36,19 +39,20 @@ function openWorld(): World {
 const neutral = createInputFrame();
 
 describe('behaviour registry', () => {
-  it('maps every entities.json behaviour key to a module: the generic pedestrian or the no-op until each lands', () => {
+  it('maps every entities.json behaviour key to its module, or the generic pedestrian or the no-op until it lands', () => {
     expect(Object.keys(BEHAVIOUR_REGISTRY).sort()).toEqual([...NPC_BEHAVIOURS].sort());
     // SSP-082: every person kind gets the generic pedestrian (the businessman, an M3 jaywalker, its jaywalking
     // twin; the market trader the stationary one); the animals keep the no-op (SSP-081: the cat jaywalks).
+    // SSP-085: the old man, the mum and the postie have their own modules.
     const expected: { readonly [K in (typeof NPC_BEHAVIOURS)[number]]: Behaviour } = {
       shopper: pedestrianBehaviour,
       old_woman: pedestrianBehaviour,
-      old_man_frame: pedestrianBehaviour,
+      old_man_frame: oldManFrameBehaviour,
       dog_walker: pedestrianBehaviour,
       litterbug: pedestrianBehaviour,
       businessman: pedestrianJaywalkBehaviour,
-      mum_pushchair: pedestrianBehaviour,
-      postie: pedestrianBehaviour,
+      mum_pushchair: mumPushchairBehaviour,
+      postie: postieBehaviour,
       market_trader: stationaryPedestrianBehaviour,
       cat: noopJaywalkBehaviour,
       pigeon: noopBehaviour,

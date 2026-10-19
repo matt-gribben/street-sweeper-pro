@@ -618,7 +618,7 @@ Full per-entity values are in [ENTITY_CATALOG.md](ENTITY_CATALOG.md). The tiers 
 |---|---|
 | Horn spam (> 3 honks in 5 s) | 1 complaint ("Noise"). A Noise complaint clears the count, so the next one needs another 4 honks within 5 s (proposed in SSP-078); a honk that lands the litterbug's Caught! does not count |
 | Blocking traffic over 10 s | 1 complaint ("Road Rage") |
-| Running an occupied zebra | −200 + 1 complaint |
+| Running an occupied zebra | −200 + 1 complaint, once each time Bessie drives onto a zebra with someone on it (SSP-085) |
 | Splashing or hitting the Inspector | 2 complaints |
 
 **Police witness:** a penalty committed within 15 m of a `veh.police` adds **+1 extra complaint**.

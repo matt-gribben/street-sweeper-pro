@@ -1,8 +1,9 @@
 // The behaviour registry (TECHNICAL_DESIGN §11.1, SSP-080): every entities.json `behaviour` key (NPC_BEHAVIOURS)
 // mapped to its module in src/sim/npc/behaviours/. The World resolves the table once at shift start into
 // `npcAi.behaviours`, indexed by NPC_IDS index, so phase 7 looks behaviours up by array index.
-// Until a kind's own module lands (SSP-083 Doris, SSP-084 shopper, businessman and litterbug, SSP-085 old man,
-// mum and postie, SSP-086 dog walker, SSP-087 cat, SSP-088 market trader and pigeon):
+// Landed: SSP-085 the old man (oldManFrame.ts), the mum (mumPushchair.ts) and the postie (postie.ts).
+// Until a kind's own module lands (SSP-083 Doris, SSP-084 shopper, businessman and litterbug, SSP-086 dog
+// walker, SSP-087 cat, SSP-088 market trader and pigeon):
 // - since SSP-082 every person kind maps to the generic pedestrian (behaviours/pedestrian.ts), the shared
 //   reaction model: the businessman, an M3 jaywalker (TECHNICAL_DESIGN §11.1), to its jaywalking twin, and the
 //   market trader to the stationary one;
@@ -10,23 +11,26 @@
 //   the other M3 jaywalker, has the jaywalking no-op (SSP-081).
 import { type Entities, NPC_IDS, type NpcBehaviour } from '../entities.ts';
 import type { Behaviour } from './behaviour.ts';
+import { mumPushchairBehaviour } from './behaviours/mumPushchair.ts';
 import { noopBehaviour, noopJaywalkBehaviour } from './behaviours/noop.ts';
+import { oldManFrameBehaviour } from './behaviours/oldManFrame.ts';
 import {
   pedestrianBehaviour,
   pedestrianJaywalkBehaviour,
   stationaryPedestrianBehaviour,
 } from './behaviours/pedestrian.ts';
+import { postieBehaviour } from './behaviours/postie.ts';
 
 /** Behaviour modules by entities.json `behaviour` key. */
 export const BEHAVIOUR_REGISTRY: { readonly [K in NpcBehaviour]: Behaviour } = {
   shopper: pedestrianBehaviour,
   old_woman: pedestrianBehaviour,
-  old_man_frame: pedestrianBehaviour,
+  old_man_frame: oldManFrameBehaviour,
   dog_walker: pedestrianBehaviour,
   litterbug: pedestrianBehaviour,
   businessman: pedestrianJaywalkBehaviour,
-  mum_pushchair: pedestrianBehaviour,
-  postie: pedestrianBehaviour,
+  mum_pushchair: mumPushchairBehaviour,
+  postie: postieBehaviour,
   market_trader: stationaryPedestrianBehaviour,
   cat: noopJaywalkBehaviour,
   pigeon: noopBehaviour,

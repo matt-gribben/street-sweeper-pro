@@ -60,3 +60,23 @@ export function interpolatePose(pair: PosePair, alpha: number, out: Pose): void 
   const d = pair.headingRad - from;
   out.headingRad = from + (d - TURN_RAD * Math.floor((d + Math.PI) / TURN_RAD)) * t;
 }
+
+/** A ground velocity in sim axes, m/s (+x east, +y south). */
+export type Velocity = { xMps: number; yMps: number };
+
+/** A new zero velocity. Allocate once, outside the frame loop. */
+export function createVelocity(): Velocity {
+  return { xMps: 0, yMps: 0 };
+}
+
+/**
+ * Writes into `out` the ground velocity of a body facing `headingRad` (0 = north, clockwise) that moves at
+ * `vLongMps` along its heading and `vLatMps` to its right (the vehicle model's velocity, TECHNICAL_DESIGN §8.1):
+ * forward = (sin θ, −cos θ), right = (cos θ, sin θ). The camera's look-ahead leads along it (SSP-047).
+ */
+export function bodyVelocity(headingRad: number, vLongMps: number, vLatMps: number, out: Velocity): void {
+  const s = Math.sin(headingRad);
+  const c = Math.cos(headingRad);
+  out.xMps = s * vLongMps + c * vLatMps;
+  out.yMps = -c * vLongMps + s * vLatMps;
+}

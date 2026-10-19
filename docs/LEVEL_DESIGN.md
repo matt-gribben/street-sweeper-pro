@@ -738,7 +738,7 @@ At sweeping speed the camera shows **30 m × 16.875 m** (about 15 × 8.4 tiles) 
 | Brush-down top speed, 6.0 m/s | 6.6 m | 11.4 m | Fair for anything visible |
 | Transit, 11.0 m/s | 16.7 m | 13.1 m | **Not fair.** Any hard obstacle on a transit road (open manhole, roadworks, a parked van across the lane) must be telegraphed with cones or barriers at least **20 m** before it, or placed on an east–west street. |
 
-M0 kept speed zoom **on** ([ROADMAP D-01](ROADMAP.md#8-m0-spike-decision-log), SSP-024), so the 13.1 m transit view and the 20 m telegraph above stand. M1 re-judges zoom with real driving (SSP-047). If it is turned off then, the transit view shrinks to 11.4 m and the telegraph distance rises to 24 m.
+Speed zoom is **on** ([ROADMAP D-01](ROADMAP.md#8-m0-spike-decision-log)): kept in M0 (SSP-024) and confirmed in M1 with real driving on Puddle Lane (SSP-047), so the 13.1 m transit view and the **20 m** telegraph above stand. (If it were ever turned off, the transit view would shrink to 11.4 m and the telegraph distance rise to 24 m.) As built, the look-ahead leads by velocity × 0.75 s capped at 3.0 m, so the full 3.0 m (and the 11.4 m / 13.1 m above) applies from 4.0 m/s; at a crawl the view ahead is closer to the plain half-screen.
 
 **Building lean.** A roof edge at height *h* and screen offset *d* from the camera axis projects to *d × H / (H − h)*. At H = 31.5 m a 6-storey (15 m) roof overhangs about 0.9 m of ground per metre of offset, so tall blocks near the screen edge hide the street behind them. Rules:
 
@@ -1383,7 +1383,7 @@ Run this before opening a PR that adds or changes a level. Paste the par report 
 
 | # | Question | Default until resolved | Resolve in |
 |---|---|---|---|
-| 1 | Is speed zoom kept? It changes transit sight lines and the telegraph distance (20 m vs 24 m). | **Resolved in M0: kept** ([ROADMAP D-01](ROADMAP.md#8-m0-spike-decision-log)), so 20 m; re-judged in M1 (SSP-047), 24 m if it is cut then | M0 (done) |
+| 1 | Is speed zoom kept? It changes transit sight lines and the telegraph distance (20 m vs 24 m). | **Resolved: kept** ([ROADMAP D-01](ROADMAP.md#8-m0-spike-decision-log)): M0 (SSP-024), confirmed with real driving in M1 (SSP-047), so 20 m | M0, M1 (done) |
 | 2 | Night light pool radius for lamps and headlights | **Resolved in M0: 5 m** for lamps ([ROADMAP D-05](ROADMAP.md#8-m0-spike-decision-log), `LIGHT_POOL_RADIUS_M`); headlight cones stay 8 m long ([ART_BIBLE §13](ART_BIBLE.md#13-night-weather-and-time-of-day)) | M0 (done) |
 | 3 | Does the timer start on first throttle or after a fixed 3 s rollout? | Whichever comes first; on the first play of Puddle Lane, on the first brush-lower ([GDD §16.1](GDD.md#161-principles)) | M2 |
 | 4 | Frontage widths by use (house 3, shop 4, pub/takeaway 5, unit 6, civic 8) and the zone depth (3 tiles + gutter) | As listed | M2 |

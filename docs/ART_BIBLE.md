@@ -1166,7 +1166,7 @@ An asset passes only if every applicable item passes.
 | Exact `shadow[32]` and `night[32]` tables | M0, ROADMAP D-05/D-06 (SSP-021) | **Decided**: tables in `kerbside32.json`, mirrored in §5.7 and STYLE.md v1 §3. Light-pool radius 5 m, hard edges (§13). |
 | Vehicle tilt (0° vs ≤ 8°) | M0, ROADMAP D-02 (SSP-024) | **Decided: 0°** (§4.3). |
 | Character view angle and proportions | M0, ROADMAP D-04/D-13 (SSP-014) | **Decided**: high three-quarter, locked by the `ref.people_style` golden (§4.4); proportions as §7.2; ingest accepted at a sheet factor of about ≥ 0.8× (§14.5). |
-| Speed zoom on or off | M0, ROADMAP D-01 (SSP-024) | **Decided: on**; art reviews always at 1:1 regardless. Revisited with real driving in SSP-047 (M1). |
+| Speed zoom on or off | M0, ROADMAP D-01 (SSP-024) | **Decided: on**; art reviews always at 1:1 regardless. Confirmed with real driving in SSP-047 (M1): zoomed, procedural asphalt speckle and 1 px pavement joints flicker most, so M4 tiles keep that detail low-frequency. |
 | Shadow length multiplier for overcast and golden hour | M0, ROADMAP D-06 (SSP-021); confirmed in M6 | **Decided, provisional**: ×0.5 overcast, ×1.5 dawn and golden hour, ×1.0 otherwise (§9.3). Confirmation re-deferred to M6 (SSP-202/SSP-204, SSP-209), because only real districts can show it; the per-district value is not yet owned by any issue. |
 | Sprite-stack slice counts per prop, and which slices cast shadows | M0 (SSP-020 shadows, SSP-026 counts) | **Decided**: lowest and highest slices cast (§6.4); 4 or 8 slices by the lean rule, per prop in §8.6 and STYLE.md v1 §8. Oversize prop cells: M4 (SSP-131). |
 | Swap-slot allocation and key indices | M4 | Proposed in §5.6. |

@@ -8,7 +8,14 @@ import {
   type CameraRig,
   createCameraRig,
   groundPxPerMetre,
+  HEIGHT_SETTLE_M,
+  LOOK_AHEAD_DEFAULT,
+  LOOK_AHEAD_MAX_M,
+  LOOK_AHEAD_SPRING_OMEGA_RAD_S,
+  LOOK_AHEAD_TIME_S,
+  lookAheadTargetM,
   pinCameraRig,
+  resetCameraSprings,
   roofMagnification,
   SPEED_ZOOM_DEFAULT,
   type SpringState,
@@ -16,11 +23,14 @@ import {
   setCameraFrame,
   snapToTexelM,
   stepCriticalSpring,
+  stepLookAhead,
   TEXEL_M,
   texelRemainderPx,
   updateCameraRig,
+  ZOOM_FULL_SPEED_MPS,
   ZOOM_OUT_HEIGHT_M,
   ZOOM_SPRING_OMEGA_RAD_S,
+  ZOOM_START_SPEED_MPS,
   zoomTargetHeightM,
 } from '../../src/render/camera.ts';
 import { RT_HEIGHT_PX, rtWidthPx } from '../../src/render/upscale.ts';
@@ -144,7 +154,7 @@ describe('texel snap', () => {
 
   it('places the camera at the snapped XZ and records the remainders on the rig', () => {
     const rig = createCameraRig(480);
-    updateCameraRig(rig, 10.37, -3.2, 0, 1 / 60);
+    updateCameraRig(rig, 10.37, -3.2, 0, 0, 0, 1 / 60);
     expect(rig.camera.position.x).toBe(10.3125); // 165/16
     expect(rig.camera.position.z).toBe(-3.25); // -52/16
     expect(rig.fractionX).toBeCloseTo(0.92, 9);
@@ -177,7 +187,7 @@ describe('speed zoom', () => {
     let within1PctOfTargetS = -1;
     let within1PctOfTravelS = -1;
     for (let frame = 1; frame <= 60 * 5; frame++) {
-      updateCameraRig(rig, 0, 0, 11, dt);
+      updateCameraRig(rig, 0, 0, 0, 0, 11, dt);
       const h = rig.height.value;
       expect(h).toBeGreaterThanOrEqual(previous); // monotonic: never turns back
       expect(h).toBeLessThanOrEqual(ZOOM_OUT_HEIGHT_M); // never overshoots
@@ -198,8 +208,8 @@ describe('speed zoom', () => {
 
   it('eases back down to 31.5 m when the speed drops', () => {
     const rig = createCameraRig(480);
-    for (let i = 0; i < 600; i++) updateCameraRig(rig, 0, 0, 11, 1 / 60);
-    for (let i = 0; i < 600; i++) updateCameraRig(rig, 0, 0, 3, 1 / 60);
+    for (let i = 0; i < 600; i++) updateCameraRig(rig, 0, 0, 0, 0, 11, 1 / 60);
+    for (let i = 0; i < 600; i++) updateCameraRig(rig, 0, 0, 0, 0, 3, 1 / 60);
     expect(rig.height.value).toBeCloseTo(SWEEP_HEIGHT_M, 6);
     expect(rig.height.value).toBeGreaterThanOrEqual(SWEEP_HEIGHT_M);
   });
@@ -230,7 +240,7 @@ describe('speed zoom', () => {
     expect(SPEED_ZOOM_DEFAULT).toBe(true);
     const rig = createCameraRig(480);
     expect(rig.zoomEnabled).toBe(SPEED_ZOOM_DEFAULT);
-    for (let i = 0; i < 600; i++) updateCameraRig(rig, 0, 0, 11, 1 / 60);
+    for (let i = 0; i < 600; i++) updateCameraRig(rig, 0, 0, 0, 0, 11, 1 / 60);
     expect(rig.height.value).toBeCloseTo(ZOOM_OUT_HEIGHT_M, 6);
     const doc = readFileSync(new URL('../../docs/TECHNICAL_DESIGN.md', import.meta.url), 'utf8');
     const row = doc.split('\n').find((line) => line.startsWith('| Speed zoom |'));
@@ -240,17 +250,17 @@ describe('speed zoom', () => {
   it('the flag disables it: H stays at 31.5 m at transit speed', () => {
     const rig = createCameraRig(480);
     rig.zoomEnabled = false;
-    for (let i = 0; i < 300; i++) updateCameraRig(rig, 0, 0, 11, 1 / 60);
+    for (let i = 0; i < 300; i++) updateCameraRig(rig, 0, 0, 0, 0, 11, 1 / 60);
     expect(rig.height.value).toBe(SWEEP_HEIGHT_M);
     expect(rig.camera.position.y).toBe(SWEEP_HEIGHT_M);
   });
 
   it('turning the flag off mid-zoom returns H to 31.5 m at once', () => {
     const rig = createCameraRig(480);
-    for (let i = 0; i < 60; i++) updateCameraRig(rig, 0, 0, 11, 1 / 60);
+    for (let i = 0; i < 60; i++) updateCameraRig(rig, 0, 0, 0, 0, 11, 1 / 60);
     expect(rig.height.value).toBeGreaterThan(SWEEP_HEIGHT_M);
     rig.zoomEnabled = false;
-    updateCameraRig(rig, 0, 0, 11, 1 / 60);
+    updateCameraRig(rig, 0, 0, 0, 0, 11, 1 / 60);
     expect(rig.height.value).toBe(SWEEP_HEIGHT_M);
     expect(rig.height.velocity).toBe(0);
   });
@@ -259,7 +269,7 @@ describe('speed zoom', () => {
 describe('pinCameraRig (the ?test=1 setCamera hook, SSP-019)', () => {
   it('places the camera at the pose with the spring at rest, snapped to the texel grid', () => {
     const rig = createCameraRig(480);
-    for (let i = 0; i < 30; i++) updateCameraRig(rig, 0, 0, 11, 1 / 60);
+    for (let i = 0; i < 30; i++) updateCameraRig(rig, 0, 0, 0, 0, 11, 1 / 60);
     expect(rig.height.velocity).not.toBe(0);
     pinCameraRig(rig, 5.03, -3, ZOOM_OUT_HEIGHT_M);
     expect(rig.focusX).toBe(5.03);
@@ -290,5 +300,228 @@ describe('pinCameraRig (the ?test=1 setCamera hook, SSP-019)', () => {
     const rig = createCameraRig(480);
     expect(() => pinCameraRig(rig, x, z, h)).toThrow(RangeError);
     expect(rig.camera.position.toArray()).toEqual([0, SWEEP_HEIGHT_M, 0]);
+  });
+});
+
+/** Steps the rig `frames` frames of 1/60 s with Bessie at (x, z) moving at (vx, vz) and vLong `speed`. */
+function drive(rig: CameraRig, frames: number, x: number, z: number, vx: number, vz: number, speed: number) {
+  for (let i = 0; i < frames; i++) updateCameraRig(rig, x, z, vx, vz, speed, 1 / 60);
+}
+
+const leadLength = (rig: CameraRig): number => Math.hypot(rig.leadX.value, rig.leadZ.value);
+
+describe('speed zoom target and step response (SSP-047)', () => {
+  it('target H is 31.5 m at 0 and 6.0 m/s, 34.65 m at 8.5 m/s and 37.8 m at 11.0 m/s', () => {
+    expect(ZOOM_START_SPEED_MPS).toBe(6.0);
+    expect(ZOOM_FULL_SPEED_MPS).toBe(11.0);
+    expect(zoomTargetHeightM(0)).toBe(SWEEP_HEIGHT_M);
+    expect(zoomTargetHeightM(6.0)).toBe(SWEEP_HEIGHT_M);
+    // OPEN in the issue, decided in SSP-047: linear in speed between 6 and 11 m/s.
+    expect(zoomTargetHeightM(8.5)).toBeCloseTo(34.65, 12);
+    expect(zoomTargetHeightM(11.0)).toBe(ZOOM_OUT_HEIGHT_M);
+    for (const v of [0.5, 2.5, 4, 5.99, -2.5]) expect(zoomTargetHeightM(v)).toBe(SWEEP_HEIGHT_M);
+    for (const v of [11.0001, 13.2, 17.2]) expect(zoomTargetHeightM(v)).toBe(ZOOM_OUT_HEIGHT_M);
+  });
+
+  it('a step 0 -> 11 m/s and back shows no overshoot either way (critically damped, omega = 3)', () => {
+    const rig = createCameraRig(480);
+    let previous = rig.height.value;
+    for (let frame = 0; frame < 600; frame++) {
+      updateCameraRig(rig, 0, 0, 0, -11, 11, 1 / 60);
+      expect(rig.height.value).toBeGreaterThanOrEqual(previous);
+      expect(rig.height.value).toBeLessThanOrEqual(ZOOM_OUT_HEIGHT_M);
+      previous = rig.height.value;
+    }
+    for (let frame = 0; frame < 600; frame++) {
+      updateCameraRig(rig, 0, 0, 0, -6, 6, 1 / 60);
+      expect(rig.height.value).toBeLessThanOrEqual(previous);
+      expect(rig.height.value).toBeGreaterThanOrEqual(SWEEP_HEIGHT_M);
+      previous = rig.height.value;
+    }
+  });
+
+  it('settles exactly onto 31.5 m (exact 1:1 ground) once back at or below brush-down speed', () => {
+    const rig = createCameraRig(480);
+    drive(rig, 300, 0, 0, 0, -11, 11);
+    expect(rig.height.value).toBeGreaterThan(37);
+    let settledFrame = -1;
+    for (let frame = 1; frame <= 600; frame++) {
+      updateCameraRig(rig, 0, 0, 0, -6, 6, 1 / 60);
+      if (settledFrame < 0 && rig.height.value === SWEEP_HEIGHT_M) settledFrame = frame;
+    }
+    // e(t) = 6.3·(1 + 3t)·e^(−3t) drops below 0.1 mm after about 4.6 s; the settle is exact, not approximate.
+    expect(settledFrame / 60).toBeGreaterThan(4);
+    expect(settledFrame / 60).toBeLessThan(5.5);
+    expect(rig.height.value).toBe(SWEEP_HEIGHT_M);
+    expect(rig.height.velocity).toBe(0);
+    expect(rig.camera.position.y).toBe(SWEEP_HEIGHT_M);
+    expect(HEIGHT_SETTLE_M).toBe(1e-4);
+  });
+
+  it('never settles while the target is above the sweep height', () => {
+    const rig = createCameraRig(480);
+    drive(rig, 1200, 0, 0, 0, -6.01, 6.01);
+    expect(rig.height.value).toBeGreaterThan(SWEEP_HEIGHT_M);
+  });
+});
+
+describe('look-ahead (SSP-047)', () => {
+  it('leads by |v| x 0.75 s, capped at 3.0 m: full lead from 4.0 m/s', () => {
+    expect(LOOK_AHEAD_MAX_M).toBe(3.0);
+    expect(LOOK_AHEAD_TIME_S).toBe(0.75);
+    expect(LOOK_AHEAD_SPRING_OMEGA_RAD_S).toBe(3);
+    expect(LOOK_AHEAD_DEFAULT).toBe(true);
+    expect(lookAheadTargetM(0)).toBe(0);
+    expect(lookAheadTargetM(2)).toBe(1.5);
+    expect(lookAheadTargetM(-2)).toBe(1.5);
+    expect(lookAheadTargetM(4)).toBe(3);
+    expect(lookAheadTargetM(6)).toBe(3);
+    expect(lookAheadTargetM(17.2)).toBe(3);
+  });
+
+  it('eases the focus ahead of Bessie along her velocity and settles 3.0 m ahead, without overshoot', () => {
+    const rig = createCameraRig(480);
+    expect(leadLength(rig)).toBe(0);
+    let previous = 0;
+    // Driving north (−z) at 6 m/s from a standing camera.
+    for (let frame = 0; frame < 600; frame++) {
+      updateCameraRig(rig, 10, 20, 0, -6, 6, 1 / 60);
+      const lead = -rig.leadZ.value;
+      expect(lead).toBeGreaterThanOrEqual(previous);
+      expect(lead).toBeLessThanOrEqual(LOOK_AHEAD_MAX_M);
+      expect(rig.leadX.value).toBe(0);
+      previous = lead;
+    }
+    expect(rig.leadZ.value).toBeCloseTo(-3, 6);
+    expect(rig.focusX).toBe(10);
+    expect(rig.focusZ).toBeCloseTo(17, 6);
+    // The snapped camera follows the focus, not Bessie.
+    expect(rig.camera.position.z).toBe(snapToTexelM(rig.focusZ));
+    expect(rig.camera.position.x).toBe(10);
+  });
+
+  it('matches the critically damped closed form per axis, (1 + wt)e^(-wt), for a step', () => {
+    const rig = createCameraRig(480);
+    updateCameraRig(rig, 0, 0, 8, 0, 8, 0.5);
+    const expected = 3 * (1 - (1 + 1.5) * Math.exp(-1.5));
+    expect(rig.leadX.value).toBeCloseTo(expected, 12);
+    expect(rig.leadZ.value).toBe(0);
+  });
+
+  it('leads along the velocity, not the heading: diagonal travel leads diagonally', () => {
+    const rig = createCameraRig(480);
+    drive(rig, 600, 0, 0, 3, -3, 0); // 4.24 m/s north-east
+    expect(rig.leadX.value).toBeCloseTo(3 / Math.SQRT2, 6);
+    expect(rig.leadZ.value).toBeCloseTo(-3 / Math.SQRT2, 6);
+    expect(leadLength(rig)).toBeCloseTo(3, 6);
+  });
+
+  it('shrinks in proportion at low speed and returns to the subject when she stops', () => {
+    const rig = createCameraRig(480);
+    drive(rig, 600, 0, 0, 2, 0, 2);
+    expect(rig.leadX.value).toBeCloseTo(1.5, 6);
+    drive(rig, 600, 0, 0, 0, 0, 0);
+    expect(rig.leadX.value).toBeCloseTo(0, 6);
+    expect(rig.focusX).toBeCloseTo(0, 6);
+  });
+
+  it('never exceeds 3.0 m, even when the velocity reverses or spins every frame', () => {
+    const rig = createCameraRig(480);
+    let max = 0;
+    for (let frame = 0; frame < 1200; frame++) {
+      const angle = frame * 0.9; // a velocity direction that whips round faster than the spring can follow
+      updateCameraRig(rig, 0, 0, 17.2 * Math.cos(angle), 17.2 * Math.sin(angle), 17.2, 1 / 60);
+      max = Math.max(max, leadLength(rig));
+      if (frame % 97 === 0) drive(rig, 30, 0, 0, frame % 2 === 0 ? 17.2 : -17.2, 0, 17.2);
+      max = Math.max(max, leadLength(rig));
+    }
+    expect(max).toBeLessThanOrEqual(LOOK_AHEAD_MAX_M);
+  });
+
+  it('clamps a swung-out offset onto the 3.0 m circle and drops its outward velocity', () => {
+    const rig = createCameraRig(480);
+    rig.leadX.value = 2.9;
+    rig.leadX.velocity = 40;
+    rig.leadZ.velocity = 5;
+    stepLookAhead(rig, 6, 0, 1 / 60);
+    expect(leadLength(rig)).toBeLessThanOrEqual(LOOK_AHEAD_MAX_M);
+    expect(leadLength(rig)).toBeCloseTo(LOOK_AHEAD_MAX_M, 12);
+    const radial = (rig.leadX.velocity * rig.leadX.value + rig.leadZ.velocity * rig.leadZ.value) / 3;
+    expect(radial).toBeLessThanOrEqual(1e-9);
+  });
+
+  it('is frame-rate independent: 30 fps and 144 fps reach the same offset', () => {
+    const a = createCameraRig(480);
+    const b = createCameraRig(480);
+    for (let i = 0; i < 30; i++) updateCameraRig(a, 0, 0, 1.5, -2, 2.5, 1 / 30);
+    for (let i = 0; i < 144; i++) updateCameraRig(b, 0, 0, 1.5, -2, 2.5, 1 / 144);
+    expect(a.leadX.value).toBeCloseTo(b.leadX.value, 9);
+    expect(a.leadZ.value).toBeCloseTo(b.leadZ.value, 9);
+  });
+
+  it('does not spring with dt = 0 (placement before the first frame)', () => {
+    const rig = createCameraRig(480);
+    updateCameraRig(rig, 7, 89, 0, -11, 11, 0);
+    expect(leadLength(rig)).toBe(0);
+    expect(rig.height.value).toBe(SWEEP_HEIGHT_M);
+    expect(rig.focusX).toBe(7);
+    expect(rig.focusZ).toBe(89);
+  });
+
+  it('turned off, the focus is the subject and the offset is cleared at once', () => {
+    const rig = createCameraRig(480);
+    drive(rig, 60, 0, 0, 0, -6, 6);
+    expect(leadLength(rig)).toBeGreaterThan(1);
+    rig.lookAheadEnabled = false;
+    updateCameraRig(rig, 4.03, -2, 0, -6, 6, 1 / 60);
+    expect(rig.leadX.value).toBe(0);
+    expect(rig.leadZ.value).toBe(0);
+    expect(rig.leadZ.velocity).toBe(0);
+    expect(rig.focusX).toBe(4.03);
+    expect(rig.focusZ).toBe(-2);
+    // Speed zoom is independent of it.
+    drive(rig, 600, 0, 0, 0, -11, 11);
+    expect(rig.height.value).toBeCloseTo(ZOOM_OUT_HEIGHT_M, 6);
+  });
+
+  it('with D-01 = off, H stays at 31.5 m at every speed and look-ahead still works', () => {
+    const rig = createCameraRig(480);
+    rig.zoomEnabled = false;
+    for (const speed of [0, 3, 6, 8.5, 11, 17.2]) {
+      drive(rig, 120, 0, 0, 0, -speed, speed);
+      expect(rig.height.value).toBe(SWEEP_HEIGHT_M);
+      expect(rig.camera.position.y).toBe(SWEEP_HEIGHT_M);
+    }
+    expect(rig.leadZ.value).toBeCloseTo(-3, 3);
+  });
+
+  it('pinning clears it, and resetCameraSprings puts every spring at rest', () => {
+    const rig = createCameraRig(480);
+    drive(rig, 120, 0, 0, 0, -11, 11);
+    pinCameraRig(rig, 5, -3, SWEEP_HEIGHT_M);
+    expect(leadLength(rig)).toBe(0);
+    expect(rig.focusX).toBe(5);
+    drive(rig, 120, 0, 0, 0, -11, 11);
+    expect(leadLength(rig)).toBeGreaterThan(0);
+    expect(rig.height.value).toBeGreaterThan(SWEEP_HEIGHT_M);
+    resetCameraSprings(rig);
+    expect([rig.leadX.value, rig.leadX.velocity, rig.leadZ.value, rig.leadZ.velocity]).toEqual([0, 0, 0, 0]);
+    expect(rig.height.value).toBe(SWEEP_HEIGHT_M);
+    expect(rig.height.velocity).toBe(0);
+  });
+
+  it('keeps the snap: the camera sits on the 1/16 m grid with the remainder in [0, 1) px', () => {
+    const rig = createCameraRig(480);
+    for (let frame = 0; frame < 300; frame++) {
+      updateCameraRig(rig, 7 + frame * 0.1003, 89 - frame * 0.0711, 6.018, -4.266, 6, 1 / 60);
+      expect(Number.isInteger(rig.camera.position.x * PX_PER_M)).toBe(true);
+      expect(Number.isInteger(rig.camera.position.z * PX_PER_M)).toBe(true);
+      expect(rig.fractionX).toBeGreaterThanOrEqual(0);
+      expect(rig.fractionX).toBeLessThan(1);
+      expect(rig.fractionY).toBeGreaterThanOrEqual(0);
+      expect(rig.fractionY).toBeLessThan(1);
+      // At or below brush-down speed the height never leaves 31.5 m: 1 texel = 1 px throughout.
+      expect(rig.camera.position.y).toBe(SWEEP_HEIGHT_M);
+    }
   });
 });

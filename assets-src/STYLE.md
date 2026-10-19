@@ -171,7 +171,7 @@ shadow 00 00 01 01 02 03 04 05 00 08 09 13 11 08 13 14 15 18 19 30 31 01 21 22 2
   chunky mixels; tall roofs use low-frequency detail).
 - **Speed zoom: on** (D-01). H eases 31.5 → 37.8 m at transit speed (ω = 3 rad/s, `SPEED_ZOOM_DEFAULT` in
   `src/render/camera.ts`). The shimmer this causes is accepted. At sweeping speeds the camera returns to exact 1:1,
-  and **every art review happens at 1:1**. Revisited with real driving in SSP-047 (M1).
+  and **every art review happens at 1:1**. Confirmed with real driving in SSP-047 (M1).
 - **Vehicle render tilt: 0°** (D-02). Vehicles are rendered by Blender orthographic and straight down (`--tilt 0`;
   `forge blender` refuses any other value). Actors never lean: they are flat quads, not billboards.
 - **Creatures use the high three-quarter view** (§7): seen from about 60° above the horizon, from the south, with

@@ -2,7 +2,7 @@
 id: SSP-047
 title: "Drive camera look-ahead and speed zoom from Bessie's real speed"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:render, area:test, size:M, vertical-slice]
@@ -53,12 +53,12 @@ The camera exit check (ROADMAP M1): look-ahead leads by up to 3.0 m; at or below
 
 ## Acceptance criteria
 
-- [ ] Target H is 31.5 m for any speed ≤ 6.0 m/s and 37.8 m at ≥ 11.0 m/s (only when D-01 keeps zoom)
-- [ ] The spring response to a step change shows no overshoot (critically damped, ω = 3)
-- [ ] Look-ahead offset magnitude never exceeds 3.0 m
-- [ ] At a frozen tick with Bessie at ≤ 6.0 m/s, a 32×32 ground region of readFrame() away from shadows and sprites matches the corresponding world-atlas tile frame (after palette mapping) pixel-for-pixel in a Playwright check
-- [ ] With D-01 = off, H stays at 31.5 m at all speeds and look-ahead still works
-- [ ] The sim has no import of render or camera state (purity tests pass)
+- [x] Target H is 31.5 m for any speed ≤ 6.0 m/s and 37.8 m at ≥ 11.0 m/s (only when D-01 keeps zoom)
+- [x] The spring response to a step change shows no overshoot (critically damped, ω = 3)
+- [x] Look-ahead offset magnitude never exceeds 3.0 m
+- [x] At a frozen tick with Bessie at ≤ 6.0 m/s, a 32×32 ground region of readFrame() away from shadows and sprites matches the corresponding world-atlas tile frame (after palette mapping) pixel-for-pixel in a Playwright check
+- [x] With D-01 = off, H stays at 31.5 m at all speeds and look-ahead still works
+- [x] The sim has no import of render or camera state (purity tests pass)
 
 ## Verification
 

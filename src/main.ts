@@ -46,6 +46,7 @@ let lastReadyRafMs = -1;
 // applies `freeze=1`. The frame timings are observations only: they never feed back into what is drawn.
 const game = new Game(canvas, {
   testMode,
+  testSprings: testParams?.springs ?? false,
   frozen: testMode,
   night: testParams?.night ?? false,
   onFrameTimed: testMode
@@ -120,7 +121,14 @@ const testHooks = installTestHooks(window, search, {
   pinCamera: (x, y, h) => game.pinCamera(x, y, h),
   camera: () => {
     const rig = game.renderer.rig;
-    return { x: rig.focusX, y: rig.focusZ, h: rig.height.value, pinned: game.isCameraPinned };
+    return {
+      x: rig.focusX,
+      y: rig.focusZ,
+      h: rig.height.value,
+      leadX: rig.leadX.value,
+      leadY: rig.leadZ.value,
+      pinned: game.isCameraPinned,
+    };
   },
   drawCalls: () => game.renderer.drawCalls,
   renders: () => game.renderer.renderCount,

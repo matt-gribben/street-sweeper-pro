@@ -3,7 +3,9 @@
 import { describe, expect, it } from 'vitest';
 import { headingIndex } from '../../src/render/headings.ts';
 import {
+  bodyVelocity,
   createPose,
+  createVelocity,
   interpolatePose,
   lerp,
   lerpAngleRad,
@@ -130,5 +132,31 @@ describe('interpolatePose', () => {
       { warmupTicks: 20_000 },
     );
     assertHeapDeltaWithinThresholds(delta);
+  });
+});
+
+describe('bodyVelocity (the camera look-ahead direction, SSP-047)', () => {
+  it.each([
+    ['north', 0, 0, -1],
+    ['east', PI / 2, 1, 0],
+    ['south', PI, 0, 1],
+    ['west', -PI / 2, -1, 0],
+  ])('heading %s, driving forward, moves that way in sim axes (+x east, +y south)', (_label, h, x, y) => {
+    const out = createVelocity();
+    bodyVelocity(h, 5, 0, out);
+    expect(out.xMps).toBeCloseTo(5 * x, 12);
+    expect(out.yMps).toBeCloseTo(5 * y, 12);
+  });
+
+  it('adds vLat to the right of the heading and reverses with a negative vLong', () => {
+    const out = createVelocity();
+    bodyVelocity(0, 0, 2, out); // facing north, sliding right = east
+    expect(out.xMps).toBeCloseTo(2, 12);
+    expect(out.yMps).toBeCloseTo(0, 12);
+    bodyVelocity(0, -2.5, 0, out); // reversing while facing north = moving south
+    expect(out.xMps).toBeCloseTo(0, 12);
+    expect(out.yMps).toBeCloseTo(2.5, 12);
+    bodyVelocity(PI / 4, 3, 1, out);
+    expect(Math.hypot(out.xMps, out.yMps)).toBeCloseTo(Math.hypot(3, 1), 12);
   });
 });

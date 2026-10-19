@@ -1,13 +1,14 @@
 """Determinism and acceptance checks over a real build of the committed M0 assets (SSP-009, SSP-010, SSP-014,
-SSP-020, SSP-024).
+SSP-020, SSP-024, SSP-041).
 
 Builds ``assets-src/manifest.json`` twice with the cache off, into two temp dirs, and checks
 that every output file has the same SHA-256 (frames, atlas PNG/JSON, ``src/gen/assets.ts``,
-``asset-hashes.json``); then inspects the built frames: 205 of them, 64x64 Bessie / 96x96
+``asset-hashes.json``); then inspects the built frames: 232 of them, 64x64 Bessie / 96x96
 brush / 24x24 npc.old_woman (8 idle directions, 3 of them mirrored) / 32x32 prop.lamp_post
-(4 sprite-stack slices) / 16x16 litter.banana_skin (the D-07 scale sample, h00 only), Kerbside-32 colours only with binary alpha, the outline rule, no
-metadata chunks, and a palette snap that changed 0 pixels; and the packed ``actors`` and
-``items`` atlases.
+(4 sprite-stack slices) / 16x16 litter.banana_skin (the D-07 scale sample, h00 only) / the
+SSP-041 Puddle Lane facade sets (64x80 lit/base/dark bays) and roof surfaces (32x32 variants),
+Kerbside-32 colours only with binary alpha, the outline rule, no metadata chunks, and a palette
+snap that changed 0 pixels; and the packed ``world``, ``actors`` and ``items`` atlases.
 """
 
 from __future__ import annotations
@@ -27,15 +28,27 @@ from forge.palette import REPO_ROOT, load_palette
 from forge.pngio import FORBIDDEN_METADATA_CHUNKS, decode_indexed_png, png_chunk_types
 
 PALETTE = load_palette()
+FACADES = (
+    "facade.corner_shop",
+    "facade.depot_shed",
+    "facade.flats_render",
+    "facade.parade_brick",
+    "facade.terrace_brick",
+    "facade.terrace_brick_bay",
+)
+ROOF_VARIANTS = {"roof.depot": 1, "roof.felt": 4, "roof.slate": 4}
 CELLS = {
+    **{f: (64, 80) for f in FACADES},
+    **{r: (32, 32) for r in ROOF_VARIANTS},
     "litter.banana_skin": (16, 16),
     "npc.old_woman": (24, 24),
     "prop.lamp_post": (32, 32),
     "veh.sweeper": (64, 64),
     "veh.sweeper_brush": (96, 96),
 }
-FRAME_COUNT = 205
+FRAME_COUNT = 232
 ATLAS_OF = {
+    **{a: "world" for a in (*FACADES, *ROOF_VARIANTS)},
     "litter.banana_skin": "items",
     "npc.old_woman": "actors",
     "prop.lamp_post": "items",
@@ -72,7 +85,15 @@ def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
     result, a, _ = builds
     assert len(result.frames) == FRAME_COUNT
     counts = {aid: sum(1 for f in result.frames if f.asset_id == aid) for aid in CELLS}
-    assert counts == {"litter.banana_skin": 1, "npc.old_woman": 8, "prop.lamp_post": 4, "veh.sweeper": 64, "veh.sweeper_brush": 128}
+    assert counts == {
+        **{f: 3 for f in FACADES},
+        **ROOF_VARIANTS,
+        "litter.banana_skin": 1,
+        "npc.old_woman": 8,
+        "prop.lamp_post": 4,
+        "veh.sweeper": 64,
+        "veh.sweeper_brush": 128,
+    }
     assert len(list((a / "frames").rglob("*.png"))) == FRAME_COUNT
     assert [f.frame_id for f in result.frames] == sorted(f.frame_id for f in result.frames)
     assert "veh.sweeper:body:h07:0" in {f.frame_id for f in result.frames}
@@ -97,10 +118,17 @@ def test_frames_are_cell_sized_kerbside32_with_binary_alpha(builds: tuple[BuildR
 
 
 def test_no_opaque_non_ink_pixel_touches_transparency(builds: tuple[BuildResult, Path, Path]) -> None:
-    """ART_BIBLE §6.3 over the written PNGs; out-of-frame neighbours count as transparent."""
+    """ART_BIBLE §6.3 over the written PNGs; out-of-frame neighbours count as transparent.
+
+    Tiling surfaces (facades, roofs) are not outlined (ART_BIBLE §6.3) and fill their cell, so
+    they are checked for having no transparent pixel at all instead."""
     _, a, _ = builds
     ink = tuple(int(v) for v in PALETTE.rgb[0])
     for png in sorted((a / "frames").rglob("*.png")):
+        if ATLAS_OF[png.parent.name] == "world":
+            with Image.open(png) as im:
+                assert (np.asarray(im.convert("RGBA"))[:, :, 3] == 255).all(), png.name
+            continue
         with Image.open(png) as im:
             rgba = np.asarray(im.convert("RGBA"))
         clear = np.pad(rgba[:, :, 3] == 0, 1, constant_values=True)
@@ -157,6 +185,8 @@ def test_old_woman_mirrors_and_feet_on_the_pivot_row(builds: tuple[BuildResult, 
 def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[BuildResult, Path, Path]) -> None:
     _, a, b = builds
     outputs = [
+        f"{ATLAS_DIR}/world.png",
+        f"{ATLAS_DIR}/world.json",
         f"{ATLAS_DIR}/actors.png",
         f"{ATLAS_DIR}/actors.json",
         f"{ATLAS_DIR}/items.png",
@@ -167,17 +197,18 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
     for rel in outputs:
         assert (a / rel).is_file(), rel
         assert (a / rel).read_bytes() == (b / rel).read_bytes(), rel
-    # M0: only the actors and items atlases have frames, and an atlas with no frames is not emitted.
+    # The world (SSP-041 facades and roofs), actors and items atlases have frames; an atlas with no
+    # frames (ui, fx) is not emitted.
     names = sorted(p.name for p in (a / ATLAS_DIR).iterdir())
-    assert names == ["actors.json", "actors.png", "items.json", "items.png"]
+    assert names == ["actors.json", "actors.png", "items.json", "items.png", "world.json", "world.png"]
 
 
-@pytest.mark.parametrize(("name", "count"), [("actors", 200), ("items", 5)])
+@pytest.mark.parametrize(("name", "count"), [("world", 27), ("actors", 200), ("items", 5)])
 def test_atlas_holds_every_frame_at_its_rect(
     builds: tuple[BuildResult, Path, Path], name: str, count: int
 ) -> None:
     result, a, _ = builds
-    assert [x.name for x in result.atlases] == ["actors", "items"]
+    assert [x.name for x in result.atlases] == ["world", "actors", "items"]
     atlas = next(x for x in result.atlases if x.name == name)
     frames = [f for f in result.frames if f.atlas == name]
     assert len(atlas.frames) == len(frames) == count

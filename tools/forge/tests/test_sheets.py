@@ -173,8 +173,8 @@ def test_cli_exit_codes(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_repo_actors_sheet_and_only_sweeper(tmp_path: Path) -> None:
     written = write_sheets(REPO_ROOT, out_dir=tmp_path)
-    assert [p.name for p, _ in written] == ["actors.png", "items.png"]
-    for (_, sheet), atlas in zip(written, ("actors", "items"), strict=True):
+    assert [p.name for p, _ in written] == ["world.png", "actors.png", "items.png"]
+    for (_, sheet), atlas in zip(written, ("world", "actors", "items"), strict=True):
         n = sum(len(e.frame_ids()) for e in load_manifest() if e.atlas == atlas)
         assert len([t for t in sheet.tiles if not t.scale_ref]) == n
     (path, only), = write_sheets(REPO_ROOT, only=["veh.sweeper"], out_dir=tmp_path)

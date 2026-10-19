@@ -1,0 +1,32 @@
+{
+  "frames": {
+    "facade.corner_shop:base:-:0": { "x": 1, "y": 1, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.corner_shop:dark:-:0": { "x": 1, "y": 84, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.corner_shop:lit:-:0": { "x": 1, "y": 167, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.depot_shed:base:-:0": { "x": 68, "y": 1, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.depot_shed:dark:-:0": { "x": 68, "y": 84, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.depot_shed:lit:-:0": { "x": 68, "y": 167, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.flats_render:base:-:0": { "x": 135, "y": 1, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.flats_render:dark:-:0": { "x": 135, "y": 84, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.flats_render:lit:-:0": { "x": 135, "y": 167, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.parade_brick:base:-:0": { "x": 202, "y": 1, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.parade_brick:dark:-:0": { "x": 202, "y": 84, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.parade_brick:lit:-:0": { "x": 202, "y": 167, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.terrace_brick:base:-:0": { "x": 269, "y": 1, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.terrace_brick:dark:-:0": { "x": 269, "y": 84, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.terrace_brick:lit:-:0": { "x": 269, "y": 167, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.terrace_brick_bay:base:-:0": { "x": 336, "y": 1, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.terrace_brick_bay:dark:-:0": { "x": 403, "y": 1, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "facade.terrace_brick_bay:lit:-:0": { "x": 336, "y": 84, "w": 64, "h": 80, "px": 32, "py": 40 },
+    "roof.depot:v:-:0": { "x": 470, "y": 1, "w": 32, "h": 32, "px": 16, "py": 16 },
+    "roof.felt:v:-:0": { "x": 470, "y": 36, "w": 32, "h": 32, "px": 16, "py": 16 },
+    "roof.felt:v:-:1": { "x": 470, "y": 71, "w": 32, "h": 32, "px": 16, "py": 16 },
+    "roof.felt:v:-:2": { "x": 403, "y": 84, "w": 32, "h": 32, "px": 16, "py": 16 },
+    "roof.felt:v:-:3": { "x": 438, "y": 106, "w": 32, "h": 32, "px": 16, "py": 16 },
+    "roof.slate:v:-:0": { "x": 403, "y": 119, "w": 32, "h": 32, "px": 16, "py": 16 },
+    "roof.slate:v:-:1": { "x": 473, "y": 106, "w": 32, "h": 32, "px": 16, "py": 16 },
+    "roof.slate:v:-:2": { "x": 438, "y": 141, "w": 32, "h": 32, "px": 16, "py": 16 },
+    "roof.slate:v:-:3": { "x": 403, "y": 154, "w": 32, "h": 32, "px": 16, "py": 16 }
+  },
+  "swaps": {}
+}

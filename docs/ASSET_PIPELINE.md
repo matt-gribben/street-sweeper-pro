@@ -135,8 +135,8 @@ assets-src/
 │  └─ kerbsidebold8x8.glyphs.txt
 ├─ procedural/
 │  ├─ tiles/    asphalt.json, kerb_blob.json, zebra.json, …
-│  ├─ roofs/    felt.json, gravel.json, slate.json, corrugated.json
-│  ├─ facades/  terrace_brick.json, shopfront_row.json, …
+│  ├─ roofs/    felt.json, gravel.json, slate.json, corrugated.json, depot.json (landmark placeholder)
+│  ├─ facades/  terrace_brick.json, parade_brick.json, corner_shop.json, …   # facade sets (§10.9)
 │  ├─ stains/   gum.json, oil.json, …
 │  └─ fx/       dust.json, sparkle.json, …
 ├─ blender/
@@ -161,7 +161,8 @@ tools/forge/
 ├─ pyproject.toml  uv.lock
 ├─ forge/  __main__.py build.py ingest.py pixelize.py palette.py outline.py
 │          pack.py lint.py sheets.py blender.py genai.py sprite.py manifest.py pngio.py
-│          procedural/  tiles.py roofs.py facades.py stains.py fx.py roof_layout.py
+│          procedural/  __init__.py (technique driver + registry) common.py tiles.py roofs.py facades.py
+│                       stains.py fx.py roof_layout.py
 └─ tests/  test_ingest.py test_pack.py test_determinism.py …
 
 public/assets/                      # GENERATED, committed
@@ -470,6 +471,13 @@ def asphalt(params: dict, rng: Generator, cell: tuple[int, int], variant: int) -
     # ... seeded speckle and cracks; every random draw comes from rng, in a fixed order ...
     return out
 ```
+
+Generator kinds (SSP-041; `tools/forge/forge/procedural/__init__.py` holds the registry, which SSP-111 hardens in M4):
+
+- **`variant` generators** (tiles, roofs, stains) have the shape above. The params file needs an integer `seed` and `variants`, and the manifest entry has the single state `v` with `frames.v == variants`, so the frames are `<id>:v:-:0 … v:-:<variants − 1>`. One `Generator(PCG64(seed))` is shared by all variants in order.
+- **`frames` generators** assemble frames instead of drawing them at random, and return every frame of the entry. The only one is `facades.set` (§10.9): no `seed` or `variants`. Every extra file such a generator reads (the module grids) is hashed into the asset's build-cache key, so editing a module rebuilds every set that uses it.
+
+`id` and `cell` in the params file must equal the manifest entry's.
 
 Rules:
 
@@ -1106,11 +1114,11 @@ Notes on each step:
 | Technique | Steps |
 |---|---|
 | `grid` / `ai-ingest` | Parse → validate (size, key, frame list against manifest) → render frames → apply mirrors → litter rotations → outline if `outline: true` |
-| `procedural` | Run the generator with its seed → palette indices → PNG frames. Facades: assemble modules, then derive `_lit/_base/_dark` by ramp shift. |
+| `procedural` | Run the generator named in the params file (§6.4) with its seed → palette indices → validate the frame list against the manifest → PNG frames, pivot at the cell centre. Facades: assemble modules into one bay, then derive `lit`/`base`/`dark` by ramp shift (§10.9). |
 | `blender` | Read `assets-src/rendered/<id>/` → block-mode 4×4 → 1 px → palette snap (expected no-op; the lint flags any changed pixel) → alpha 128 → **1 px ink (`#0f0e12`) outline, 4-connected, outside the silhouette** → record pivots. Block mode keys each render pixel by its exact colour (a Kerbside-32 colour by its index, any other colour after all 32), so ties go to the lower palette index and an output pixel is always one of its block's colours; the snap then changes only off-palette winners, and their count is reported per frame (`snap_changed_px`). |
 | `ai-art` | Golden → crop → pixelize (FFT period detection and block-mode at the detected period, exactly as in ingest; `period_override` in `ingest.json`, `null` = auto) → if the result exceeds `size`, centre-crop; never upscale (a result smaller than `size` fails, so regenerate or set `period_override`) → palette map (optional ordered 4×4 Bayer) → 480×270 or 64×64 (`public/assets/art/`) |
 
-**Build outputs (SSP-009).** `forge build` writes each frame as an indexed PNG to `<out>/frames/<asset-id>/<frame-id>.png` (PLTE = the 32 colours plus a 33rd entry made transparent by `tRNS`, so alpha is binary and the stored value is the palette index), plus `<out>/frames/<asset-id>/asset.json` with the frame list, pivots and snap counts. Without `--out`, `<out>` is `build/.forge-cache/`. Every PNG goes through `tools/forge/forge/pngio.py`: Pillow, `compress_level=9`, never `optimize`, and only the `IHDR`/`PLTE`/`tRNS`/`IDAT`/`IEND` chunks. Each asset is cached under `build/.forge-cache/entries/<asset-id>/<sha256>/`, keyed by the forge code, the palette file, the manifest entry and the source bytes; `--no-cache` neither reads nor writes it. Blender frames take their pivot from `render.json` `pivots_px` by direction; a slice frame (dir `-`) of a `--headings 1` prop falls back to the `h00` entry the rig writes (SSP-020). Grid frames get the cell centre as their pivot, except creatures (class `npc`), which pivot on the bottom-centre of the feet: `(w // 2, h − 2)`, i.e. `(12, 22)` in a 24×24 human cell with row 23 clear (ART_BIBLE §4.4, §7.2; SSP-018). A frame whose non-ink body touches the cell edge when `outline: true` fails the build, because its outline cannot be completed.
+**Build outputs (SSP-009).** `forge build` writes each frame as an indexed PNG to `<out>/frames/<asset-id>/<frame-id>.png` (PLTE = the 32 colours plus a 33rd entry made transparent by `tRNS`, so alpha is binary and the stored value is the palette index), plus `<out>/frames/<asset-id>/asset.json` with the frame list, pivots and snap counts. Without `--out`, `<out>` is `build/.forge-cache/`. Every PNG goes through `tools/forge/forge/pngio.py`: Pillow, `compress_level=9`, never `optimize`, and only the `IHDR`/`PLTE`/`tRNS`/`IDAT`/`IEND` chunks. Each asset is cached under `build/.forge-cache/entries/<asset-id>/<sha256>/`, keyed by the forge code, the palette file, the manifest entry and the source bytes (for a procedural entry, also every file its generator reads, such as facade module grids); `--no-cache` neither reads nor writes it. Blender frames take their pivot from `render.json` `pivots_px` by direction; a slice frame (dir `-`) of a `--headings 1` prop falls back to the `h00` entry the rig writes (SSP-020). Grid frames get the cell centre as their pivot, except creatures (class `npc`), which pivot on the bottom-centre of the feet: `(w // 2, h − 2)`, i.e. `(12, 22)` in a 24×24 human cell with row 23 clear (ART_BIBLE §4.4, §7.2; SSP-018). A frame whose non-ink body touches the cell edge when `outline: true` fails the build, because its outline cannot be completed.
 
 Portraits use the same pixelize path: `crop` selects each expression from the 1:1 golden (1254×1254, 2 expressions), and the prompt asks for about 64×64 art pixels per portrait, so block-mode at the detected period lands on 64×64. There is no BOX pre-resize: resampling before block-mode blurs the pseudo-pixel grid into mush. A fixed `block: 3` on a golden with a ~10 px pseudo-pixel period would leave each art pixel about 3 game pixels wide (mixels), which [ART_BIBLE.md](ART_BIBLE.md) forbids outside roof magnification.
 
@@ -1120,7 +1128,7 @@ Portraits use the same pixelize path: `crop` selects each expression from the 1:
   - Implementation (`tools/forge/forge/pack.py`, SSP-010): MaxRects with Best-Short-Side-Fit and integer maths only. Ties are broken by long-side leftover, then y, then x. The padding is 1 px between neighbours, so a frame may touch the atlas edge.
   - Atlas size: the first power-of-two size (sides 16–2048), ordered by area, then longest side, then height, that holds every frame of that atlas.
   - Until SSP-113 (M4), frames are packed untrimmed at their cell size, and `px`/`py` is the pivot within the cell.
-  - **Extrusion** (SSP-039, [ART_BIBLE §14.6](ART_BIBLE.md#146-atlas-packing)): every frame of a ground tile (`tile.*`), facade module (`facade.*`) or roof surface (`roof.*`) is packed with a 1 px border of duplicated edge pixels (corners repeat the corner pixel), not a transparent gutter, so tiling surfaces never show transparent seams. The 1 px padding sits outside that border. Other classes (stains, actors, items) are not extruded.
+  - **Extrusion** (SSP-039, [ART_BIBLE §14.6](ART_BIBLE.md#146-atlas-packing)): every frame of a ground tile (`tile.*`), facade set (`facade.*`, built from facade modules, §10.9) or roof surface (`roof.*`) is packed with a 1 px border of duplicated edge pixels (corners repeat the corner pixel), not a transparent gutter, so tiling surfaces never show transparent seams. The 1 px padding sits outside that border. Other classes (stains, actors, items) are not extruded.
   - **Interior-rect contract:** the atlas JSON rect `{x, y, w, h}` (and the matching `FRAME` entry) of an extruded frame covers **only the interior cell**, never the duplicated border, so `w`/`h` equal the manifest cell. `groundLayer` and `cityMesh` (SSP-045) sample inside the rect with no special case; the border only catches filtering or UV drift past the cell edge.
   - The atlas PNG is indexed, with the same PLTE/`tRNS` contract as the frame PNGs (§9.2).
   - `public/assets/atlas/` belongs to the packer: any file there that the build did not produce is removed.
@@ -1269,9 +1277,40 @@ Every recipe starts and ends the same way:
 
 ### 10.9 Facade module (grid + procedural assembly)
 
-1. Draw the 32×40 module grid in `assets-src/sprites/facade/<name>.sprite.txt` using **base** ramp values only.
-2. Reference it from a facade set in `assets-src/procedural/facades/<set>.json`. The forge derives `_lit` (N/W faces) and `_dark` (E/S faces) by ramp shift.
+1. Draw the 32×40 module grid in `assets-src/sprites/facade/<name>.sprite.txt` using **base** ramp values only. The grid's id is `facade.<name>` and it holds exactly one frame, `base:-:0`. A module may be an **overlay** (a drainpipe): its `.` pixels are transparent and let the module below show.
+2. Reference it from a facade set in `assets-src/procedural/facades/<set>.json`. The forge derives `lit` (N/W faces) and `dark` (E/S faces) by ramp shift ([ART_BIBLE §9.4](ART_BIBLE.md#94-facades)).
 3. Run the common end steps, then check `lean_quadrants`.
+
+**IDs: sets are assets, modules are sources** (SSP-041, lead decision, pending owner review). The manifest lists **facade sets**, the `facade.*` IDs that a `level.json` building names as its `wall` ([LEVEL_DESIGN §8.5](LEVEL_DESIGN.md#85-worked-example-1-a-puddle-lane-excerpt)): `technique: "procedural"`, `source: assets-src/procedural/facades/<set>.json`, generator `facades.set`, atlas `world`, `outline: false`. Modules are never manifest entries and have no frames of their own; a module name must not equal a set's name (pytest checks this, and that every module is used by some set).
+
+**Set params:**
+
+```json
+{
+  "id": "facade.terrace_brick",
+  "generator": "facades.set",
+  "cell": [64, 80],
+  "params": {
+    "upper":  [["window_sash"], ["window_sash", "drainpipe"]],
+    "ground": [["door_terrace"], ["window_sash", "drainpipe"]],
+    "recolour": { "19": 22 }
+  }
+}
+```
+
+- `upper` and `ground` each list the **slots** of one storey, left to right as seen from outside, one module (2 m) per slot. Both rows have the same number of slots `B` (1–4).
+- A slot is a module name or a list of names composited bottom first: the first must be fully opaque, later ones are overlays. The assembled bay must be fully opaque.
+- `recolour` (optional) maps palette indices before the ramp shift, so one module serves several sets (the corner shop's green fascia is the parade's maroon one). Its targets must still be base values.
+
+**Frame layout (the cityMesh contract).** Every set has exactly three frames, `<id>:lit:-:0`, `<id>:base:-:0` and `<id>:dark:-:0`, and each is one **bay**: `B` modules wide and two storeys tall, so the manifest cell is `[32 × B, 80]` (all six Puddle Lane sets are `B = 2`, `[64, 80]`). Rows 0–39 are the **upper** storey and rows 40–79 the **ground** storey. A wall samples it with world-metre UVs ([TECHNICAL_DESIGN §12.4](TECHNICAL_DESIGN.md#124-city-mesh-and-ground-citymeshts-groundlayerts)):
+
+- `u` (metres along the wall, left to right seen from outside) wraps every `2 × B` m across the frame width;
+- height 0–2.5 m (the ground storey) samples the bottom half; every storey above it samples the top half, wrapping every 2.5 m;
+- N and W walls use `lit`, E and S walls use `dark`; `base` is the authored values.
+
+So a 1-storey building shows only the ground row, and a 3-storey parade shows the shopfronts once with two rows of upper windows above. A wall whose length is not a multiple of the bay cuts the last bay short (placeholder behaviour; real facades in M4 may add bay variants as further frames `n`, chosen per frontage).
+
+**Puddle Lane placeholders (SSP-041, M1).** Modules: `brick_plain`, `window_sash`, `window_bay`, `door_terrace`, `shopfront_window` and `shopfront_door` (the two halves of a 2-module shopfront), `drainpipe` (overlay), `render_window`, `render_door`, `shed_cladding`, `shed_window`, `shed_shutter`. Sets: `facade.terrace_brick`, `facade.terrace_brick_bay`, `facade.parade_brick`, `facade.corner_shop`, `facade.flats_render` and `facade.depot_shed`. Real Old Town modules replace these behind the same set IDs in M4 (SSP-125).
 
 ### 10.10 Decal, shop sign, landmark roof (Codex → ingest)
 

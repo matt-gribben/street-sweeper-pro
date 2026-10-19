@@ -592,7 +592,13 @@ Pillar 1 lives here. Each 32 px tile has an 8×8 grid of 4 px grime cells (see [
 Procedural assembly of text-grid modules (`assets-src/sprites/facade/*.sprite.txt`), laid out by `assets-src/procedural/facades/*.json`.
 
 - **Module = 32×40 px** (2 m × 1 storey). Typical set *(proposed)*: plain brick, sash window, bay window, terrace door, shopfront (two modules wide), drainpipe overlay, ground-floor rendered band, gable end.
-- **Three ramp variants** per module as frame states: `lit` (N and W faces), `base`, `dark` (E and S faces). Modules are authored once at `base`; the forge derives `lit` and `dark` by shifting each index one step along its ramp, clamped at the ramp ends. Ink (00) and glass (25, 27) shift by special-case rules (glass gains a 28 glint on `lit` only).
+- **Three ramp variants** per module as frame states: `lit` (N and W faces), `base`, `dark` (E and S faces). Modules are authored once at `base`; the forge derives `lit` and `dark` by shifting each index one step along its ramp, clamped at the ramp ends. Ink (00) and glass (25, 27) shift by special-case rules (glass gains a 28 glint on `lit` only). The exact rules (SSP-041, `tools/forge/forge/procedural/facades.py`, checked by forge pytest):
+  - an index shifts along the **first ramp of `kerbside32.json` that lists it**, with the members ordered by OKLab L (§5.2), so 08–12 step along brick/skin and 13 umber along the skin tones (08 → 13 → 11 → 12);
+  - **ink (00) never shifts**: it is outline and crevice, never a shading step;
+  - **glass (25, 27) never shifts**; on `lit` only, each 4-connected glass pane gains one 28 glint, a 3 px diagonal streak one pixel in from its top-left corner (or the pane's first pixel when the pane is smaller than 5×5);
+  - the `accents` pair (20, 29) is not a light ramp, so accents never shift;
+  - nothing on a facade may be 14 ochre, because `lit` would turn it into the reserved 15.
+- **Modules and sets** are described in [ASSET_PIPELINE §10.9](ASSET_PIPELINE.md#109-facade-module-grid--procedural-assembly): the manifest lists facade *sets* (the `wall` IDs of `level.json`), each one bay of modules, an upper storey over a ground storey.
 - **Foreshortening rule:** facades are almost always seen squeezed horizontally (§4.2). So:
   - windows are bold 25 blocks (at least 8×12 px) with 06/07 frames and a 1 px sill;
   - every storey has a horizontal band (sill line or string course) that survives squeezing;
@@ -613,6 +619,7 @@ Procedural assembly of text-grid modules (`assets-src/sprites/facade/*.sprite.tx
 - **Low-frequency rule for tall buildings:** for buildings of 4+ storeys, roof speckle density halves and features are at least 2 px, because magnification (up to 1.91× at 6 storeys) turns single pixels into blobs.
 - **Roof furniture** (AC units, vents, skylights, water tanks, chimneys, stair housings) comes from the Blender roofkit, rendered straight down under the same sun, then placed by a seeded forge script. At least 1 piece per 3 roof cells, so roofs never read as empty slabs *(proposed)*.
 - **Landmark roofs** (Town Hall, Pier, Depot) are Codex goldens ingested at 16 px/m.
+- **M1 placeholders** (SSP-041): `roof.slate` (02 with a 03 course every 4 px and a sparse 25 tint in every variant, because M1 roofs are flat quads with no ridge to pick a lit slope from), `roof.felt` (01 mottled with 02 in 2×1 clumps, 0–2 03 repair patches) and `roof.depot` (a corrugated 05/06 placeholder with a 04 overlap line every 16 px, under the landmark's final ID until its Codex golden lands in M6). All are seamless 32×32 tiles (`v` variants); the parapet line (§9.3) is drawn by cityMesh along the roof outline, not baked into the texture. Final roofs, slope-aware slate and the 4+ storey low-frequency variants are SSP-124 (M4).
 
 ---
 

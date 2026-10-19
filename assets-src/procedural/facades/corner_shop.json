@@ -1,0 +1,10 @@
+{
+  "id": "facade.corner_shop",
+  "generator": "facades.set",
+  "cell": [64, 80],
+  "params": {
+    "upper": [["window_sash"], ["brick_plain", "drainpipe"]],
+    "ground": [["shopfront_window"], ["shopfront_door"]],
+    "recolour": { "19": 22 }
+  }
+}

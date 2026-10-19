@@ -432,7 +432,8 @@ def test_ai_ingest_is_built_exactly_like_grid(tmp_path: Path) -> None:
         ({}, GRID.replace("..fcf.", "..fxf."), "not in the key"),
         ({"source": "assets-src/sprites/npc/toy.txt"}, GRID, "must be a .sprite.txt"),
         ({"source": "assets-src/sprites/npc/nope.sprite.txt"}, GRID, "does not exist"),
-        ({"technique": "procedural"}, GRID, "not implemented yet"),
+        ({"technique": "ai-art"}, GRID, "not implemented yet"),
+        ({"technique": "procedural"}, GRID, "must be a params .json file"),
         ({}, GRID.replace("frame walk:sw:1\n......\n..ff..", "frame walk:sw:1\n..f...\n..ff.."), "touch the cell edge"),
     ],
 )

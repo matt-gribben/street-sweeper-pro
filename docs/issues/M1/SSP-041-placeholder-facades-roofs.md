@@ -2,7 +2,7 @@
 id: SSP-041
 title: "Add placeholder facade modules, facade sets and roof surfaces for Puddle Lane"
 milestone: M1
-status: todo
+status: done
 type: asset
 estimate: M
 labels: [type:asset, area:assets, area:tooling, area:test, size:M, vertical-slice]

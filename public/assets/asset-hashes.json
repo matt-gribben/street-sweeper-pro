@@ -3,5 +3,7 @@
   "public/assets/atlas/actors.png": "34f3789ea4a88c43313f262afb7442260f630aeedc3fb5ebc149c753b506d6f1",
   "public/assets/atlas/items.json": "7750c9b56f1581ba6f56aaa24cd323c596c89e11a629ddcd653387e1d5b262e2",
   "public/assets/atlas/items.png": "df3fae37642660fc77d0379d112523f2f49aafd4c94ec54f857e8bd023d5c8f3",
-  "src/gen/assets.ts": "c6c1b97bcfdea8a971b96b7b09873b5c9349018720d40ce3154ebc7411c4bdda"
+  "public/assets/atlas/world.json": "247d921c9a9a120e168085a6d042922028c221ead46e494cf5cfaa5c366459c9",
+  "public/assets/atlas/world.png": "6aba5635ae277f894a6e461c341fb22d57bed181724dd4b09a9e9086a29bb2ee",
+  "src/gen/assets.ts": "b585c4ada8c393134a13e78e6dcb5bb01d4d93f7d61d616a97c8feaba830a23d"
 }

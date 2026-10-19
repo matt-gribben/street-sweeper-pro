@@ -3,18 +3,18 @@
 // `npcAi.behaviours`, indexed by NPC_IDS index, so phase 7 looks behaviours up by array index.
 // Doris has hers (behaviours/oldWoman.ts, SSP-083); SSP-084 adds the shopper (behaviours/shopper.ts), the
 // businessman (businessman.ts, an M3 jaywalker) and the litterbug (litterbug.ts); SSP-085 the old man
-// (oldManFrame.ts), the mum (mumPushchair.ts) and the postie (postie.ts). Until a kind's own module lands
-// (SSP-086 dog walker, SSP-087 cat, SSP-088 market trader and pigeon):
+// (oldManFrame.ts), the mum (mumPushchair.ts) and the postie (postie.ts); SSP-087 the cat (cat.ts, the other M3
+// jaywalker). Until a kind's own module lands (SSP-086 dog walker, SSP-088 market trader and pigeon):
 // - since SSP-082 every other person kind maps to the generic pedestrian (behaviours/pedestrian.ts), the shared
 //   reaction model, and the market trader to its stationary twin;
-// - the animals keep the no-op behaviour (SSP-080): they have their own reactions (ENTITY_CATALOG §7); the cat,
-//   the other M3 jaywalker, has the jaywalking no-op (SSP-081).
+// - the pigeon keeps the no-op behaviour (SSP-080): the animals have their own reactions (ENTITY_CATALOG §7).
 import { type Entities, NPC_IDS, type NpcBehaviour } from '../entities.ts';
 import type { Behaviour } from './behaviour.ts';
 import { businessmanBehaviour } from './behaviours/businessman.ts';
+import { catBehaviour } from './behaviours/cat.ts';
 import { litterbugBehaviour } from './behaviours/litterbug.ts';
 import { mumPushchairBehaviour } from './behaviours/mumPushchair.ts';
-import { noopBehaviour, noopJaywalkBehaviour } from './behaviours/noop.ts';
+import { noopBehaviour } from './behaviours/noop.ts';
 import { oldManFrameBehaviour } from './behaviours/oldManFrame.ts';
 import { oldWomanBehaviour } from './behaviours/oldWoman.ts';
 import { pedestrianBehaviour, stationaryPedestrianBehaviour } from './behaviours/pedestrian.ts';
@@ -32,7 +32,7 @@ export const BEHAVIOUR_REGISTRY: { readonly [K in NpcBehaviour]: Behaviour } = {
   mum_pushchair: mumPushchairBehaviour,
   postie: postieBehaviour,
   market_trader: stationaryPedestrianBehaviour,
-  cat: noopJaywalkBehaviour,
+  cat: catBehaviour,
   pigeon: noopBehaviour,
 };
 

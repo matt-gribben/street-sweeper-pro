@@ -7,9 +7,10 @@ import { createInputFrame } from '../../src/sim/inputFrame.ts';
 import { createBlankLevel } from '../../src/sim/map.ts';
 import { type Behaviour, Stimulus } from '../../src/sim/npc/behaviour.ts';
 import { businessmanBehaviour } from '../../src/sim/npc/behaviours/businessman.ts';
+import { catBehaviour } from '../../src/sim/npc/behaviours/cat.ts';
 import { litterbugBehaviour } from '../../src/sim/npc/behaviours/litterbug.ts';
 import { mumPushchairBehaviour } from '../../src/sim/npc/behaviours/mumPushchair.ts';
-import { NOOP, noopBehaviour, noopJaywalkBehaviour } from '../../src/sim/npc/behaviours/noop.ts';
+import { NOOP, noopBehaviour } from '../../src/sim/npc/behaviours/noop.ts';
 import { oldManFrameBehaviour } from '../../src/sim/npc/behaviours/oldManFrame.ts';
 import { oldWomanBehaviour } from '../../src/sim/npc/behaviours/oldWoman.ts';
 import {
@@ -45,9 +46,9 @@ describe('behaviour registry', () => {
   it('maps every entities.json behaviour key to a module: its own, or the generic pedestrian or the no-op until it lands', () => {
     expect(Object.keys(BEHAVIOUR_REGISTRY).sort()).toEqual([...NPC_BEHAVIOURS].sort());
     // SSP-083: Doris has her own module; SSP-084: so do the shopper, the businessman (an M3 jaywalker) and the
-    // litterbug; SSP-085: so do the old man, the mum and the postie. SSP-082: every other person kind gets the
-    // generic pedestrian (the market trader the stationary one); the animals keep the no-op (SSP-081: the cat
-    // jaywalks).
+    // litterbug; SSP-085: so do the old man, the mum and the postie; SSP-087: so does the cat (the other M3
+    // jaywalker). SSP-082: every other person kind gets the generic pedestrian (the market trader the stationary
+    // one); the pigeon keeps the no-op.
     const expected: { readonly [K in (typeof NPC_BEHAVIOURS)[number]]: Behaviour } = {
       shopper: shopperBehaviour,
       old_woman: oldWomanBehaviour,
@@ -58,7 +59,7 @@ describe('behaviour registry', () => {
       mum_pushchair: mumPushchairBehaviour,
       postie: postieBehaviour,
       market_trader: stationaryPedestrianBehaviour,
-      cat: noopJaywalkBehaviour,
+      cat: catBehaviour,
       pigeon: noopBehaviour,
     };
     const jaywalkers: readonly string[] = ['cat', 'businessman'];

@@ -314,12 +314,28 @@ const NPC_RULES = {
   /** Stops at doors for doorStopS. */
   'npc.postie': { doorStopS: 'positive' },
   'npc.market_trader': {},
-  /** Darts when Bessie is dartMinM–MaxM away with dartChance per approach; a hit rides the roof for rideS. */
+  /**
+   * The cat (§7.2, SSP-087): darts when Bessie is dartMinM–MaxM away with dartChance per approach; a hit rides
+   * the roof for rideS, seatForwardM ahead of her body centre. Every run (dart, bolt, the way back to a perch)
+   * reaches at most runReachM. Perched, it strolls out at walkSpeedMps to groom mid-road (a spot within
+   * groomReachM) every groomIdleMinS–MaxS, grooms for groomS, and bolts at boltSpeedMps on a horn or with Bessie
+   * within boltNearM. boltNearM is TECHNICAL_DESIGN §11.3's; the rest past rideS were chosen in M3 tuning by
+   * SSP-087 (owner to review).
+   */
   'npc.cat': {
     dartMinM: 'positive',
     dartMaxM: 'positive',
     dartChance: 'fraction',
     rideS: 'positive',
+    runReachM: 'positive',
+    walkSpeedMps: 'positive',
+    groomIdleMinS: 'positive',
+    groomIdleMaxS: 'positive',
+    groomS: 'positive',
+    groomReachM: 'positive',
+    boltNearM: 'positive',
+    boltSpeedMps: 'positive',
+    seatForwardM: 'nonNegative',
   },
   /** Flocks of flockMin–Max; scatters at scatterM and lands landM away; driving through scores scatterPts. */
   'npc.pigeon': {
@@ -368,6 +384,7 @@ const RULE_RANGES: readonly (readonly [string, string, string])[] = [
   ['npc.dog_walker', 'messEveryMinS', 'messEveryMaxS'],
   ['npc.litterbug', 'dropEveryMinS', 'dropEveryMaxS'],
   ['npc.cat', 'dartMinM', 'dartMaxM'],
+  ['npc.cat', 'groomIdleMinS', 'groomIdleMaxS'],
   ['npc.pigeon', 'flockMin', 'flockMax'],
 ];
 

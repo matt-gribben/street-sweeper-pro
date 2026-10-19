@@ -2,7 +2,7 @@
 id: SSP-087
 title: "Implement the cat: perch, dart on approach, groom, bolt, and ride Bessie's roof"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:ai-npc, area:gameplay, area:test, size:M, vertical-slice]

@@ -365,9 +365,10 @@ stateDiagram-v2
 ```
 
 - **Idles on walls and car roofs** (including parked `veh.*_parked`), playing `sit`.
-- **Darts across the road when you're 6–10 m away (40% chance per approach)**, using the `dart` frames. The roll happens once per approach so the player cannot farm it.
-- **Sometimes sits grooming mid-road.** **Horn → bolts** (dart frames, away from Bessie).
-- **Hit → leaps onto your roof (squash and stretch), rides 3 s, hops off.** −300, 1 complaint ("Not the cat!"). The cat is never hurt. While riding it is drawn at Bessie's roof height using `sit` frames, offset to her local frame.
+- **Darts across the road when you're 6–10 m away (40% chance per approach)**, using the `dart` frames. The roll happens once per approach so the player cannot farm it: an approach is Bessie coming within 10 m, and only going back beyond 10 m starts a new one. The dart runs straight across at 6.0 m/s to the far side (a free parked car roof or garden wall there, else the far pavement) and covers at most 16 m.
+- **Sometimes sits grooming mid-road.** Every 20–40 s a perched cat strolls out at 1.0 m/s to a mid-road spot within 8 m (one more than 10 m from Bessie that no other cat has), grooms there for 10 s, then strolls back to the nearest free perch. **Horn → bolts** (dart frames, away from Bessie) at 7.0 m/s to cover, perched or grooming, and a grooming cat also bolts when Bessie comes within 4 m.
+- **Hit → leaps onto your roof (squash and stretch), rides 3 s, hops off.** −300, 1 complaint ("Not the cat!"). The cat is never hurt. While riding it is drawn at Bessie's roof height using `sit` frames, offset to her local frame: it sits 0.5 m ahead of her body centre. It hops off beside her and runs back to cover.
+- *Chosen in M3 tuning by SSP-087 (owner to review):* the 20–40 s groom idle, the 1.0 m/s stroll, the 8 m reach, the 10 s groom, the 7.0 m/s bolt, the 16 m run reach and the 0.5 m seat (`entities.json` `npc.cat.rules`; the catalog gave none of them). The 4 m bolt distance is [TECHNICAL_DESIGN §11.3](TECHNICAL_DESIGN.md#113-example-cat-npccat)'s.
 
 ### 7.3 Loose dog (`npc.dog_loose`)
 

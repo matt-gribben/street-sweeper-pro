@@ -411,7 +411,7 @@ export function createWorld(
   stains.onPenalty = createPenaltyHook(penalties, Offence.Splat);
   // NPCs spawn from the first tick's phase 7 on (the spawner never places one at shift setup).
   const npc = createNpcStore(level);
-  const npcAi = createNpcAi(level, seed >>> 0, tuning, entities, staticGrid, zebras, npc.capacity);
+  const npcAi = createNpcAi(level, seed >>> 0, tuning, entities, staticGrid, zebras, npc.capacity, vehicles);
   npcAi.steering.crossingClear = trafficCrossingClear;
   const world: World = {
     level,

@@ -459,6 +459,8 @@ Custom impulse bodies (`src/sim/bodies.ts`). They do not slow Bessie meaningfull
 
 The three masses marked *chosen in M3 tuning* were picked in SSP-075 (no source gave them): an A-board is a light folding sign (8 kg), a shopping trolley a steel basket on castors (15 kg), a recycling box a part-filled kerbside crate (5 kg), all between the cone (2 kg) and the bin (30 kg). They are tunable when `bodies.ts` is playtested. Spilled items are drawn from the district's small-litter table and are worth their normal points (unlike `litter.spilled_shopping`). Knocking a prop is a penalty, so it **resets the combo chain** even when the spilled items let you rebuild it.
 
+**First hit only (decided in SSP-092, owner to review).** No source said what a second hit does. A prop's penalty, like its spill, applies only on its **first** hit of the shift: Bessie knocking an already-knocked bin again costs nothing, spills nothing and leaves the chain alone, so a bin she bulldozes along the kerb costs −50 once rather than every tick it touches her. Every contact still plays its knock sound (`EV.Knock`, once per contact episode: a new episode starts after the prop has been clear of her for 0.5 s). Only Bessie knocks a prop: one shoved into another by a sliding bin moves but is not "knocked" (no penalty, no spill). Free props (cone, trolley) never record a penalty, so they never reset the chain. The physics (provisional OBB sizes, friction, restitution, where spills land) is in `tuning.json` → `knockables` ([TECHNICAL_DESIGN §9.3](TECHNICAL_DESIGN.md#93-knockables-phase-4)).
+
 ### 9.2 Static props
 
 Solid. Hitting them uses the standard impact-damage rule ([§3.2](#32-collision-responses)) and `bump_wall` / `crash`.

@@ -429,6 +429,9 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *   I complaints.count, max; B complaints.twoToneHorn; F complaints.hornRadiusM; I complaints.maxHonks,
  *     windowTicks, noiseComplaints; B complaints.hornThisTick, hornCaught; I complaints.honks, honksCaught,
  *     noiseOffences, honkCount, then the window's honk ticks oldest first; I penalties.count, penalties.applied
+ *   SSP-092 appends the knockable bodies:
+ *   I bodies.count, knocks, bodiesKnocked, itemsSpilled, penaltyPts, then per body: I kind, flags, rearmTicks;
+ *     F x, y, heading, prevX, prevY, prevHeading, vx, vy, omega
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -484,6 +487,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbShift(hasher, world);
   absorbNpcs(hasher, world);
   absorbComplaints(hasher, world);
+  absorbBodies(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -910,6 +914,39 @@ function absorbComplaints(hasher: StateHasher, world: World): void {
   w[k] = p.count | 0;
   w[k + 1] = p.applied | 0;
   mixWords(hasher, k + 2);
+}
+
+function absorbBodies(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const q = HASH_QUANTUM;
+  const b = world.bodies;
+  const n = b.count;
+  w[0] = n | 0;
+  w[1] = b.knocks | 0;
+  w[2] = b.bodiesKnocked | 0;
+  w[3] = b.itemsSpilled | 0;
+  w[4] = b.penaltyPts | 0;
+  let k = 5;
+  for (let i = 0; i < n; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (b.kind[i] as number) | 0;
+    w[k + 1] = (b.flags[i] as number) | 0;
+    w[k + 2] = (b.rearmTicks[i] as number) | 0;
+    w[k + 3] = Math.round((b.x[i] as number) * q) | 0;
+    w[k + 4] = Math.round((b.y[i] as number) * q) | 0;
+    w[k + 5] = Math.round((b.heading[i] as number) * q) | 0;
+    w[k + 6] = Math.round((b.prevX[i] as number) * q) | 0;
+    w[k + 7] = Math.round((b.prevY[i] as number) * q) | 0;
+    w[k + 8] = Math.round((b.prevHeading[i] as number) * q) | 0;
+    w[k + 9] = Math.round((b.vx[i] as number) * q) | 0;
+    w[k + 10] = Math.round((b.vy[i] as number) * q) | 0;
+    w[k + 11] = Math.round((b.omega[i] as number) * q) | 0;
+    k += 12;
+  }
+  mixWords(hasher, k);
 }
 
 /** The hasher's current value as a uint32. */

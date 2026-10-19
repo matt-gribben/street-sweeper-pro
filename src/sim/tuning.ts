@@ -2,6 +2,7 @@
 // only src/sim file allowed to import src/data/*.json (tests/unit/simPurity.test.ts enforces it). The JSON is
 // the source of truth for every handling number; GDD §7 mirrors it (CLAUDE.md §2). It also holds the
 // provisional static-prop collision footprints (`propFootprints`, SSP-036) until M4 measures the real slices,
+// the knockable bodies' physics and provisional OBBs (`knockables`, SSP-092; mirrored by TECHNICAL_DESIGN §9.3),
 // and since SSP-053 the M2 sweeping, hopper, water, dumping, combo, scoring, shift, star and Tidy % values
 // (mirrored by GDD §8, §9, §10 and §12.1). Since SSP-075 it also holds the M3 street-life rules every
 // pedestrian, animal and traffic issue shares (`streetLife`, `complaints`, `endStates`; mirrored by
@@ -21,7 +22,14 @@ import entitiesJson from '../data/entities.json' with { type: 'json' };
 import tuningJson from '../data/tuning.json' with { type: 'json' };
 import { DEG_TO_RAD, SIM_HZ } from './constants.ts';
 import { describeValue, isRecord } from './dataGuards.ts';
-import { type Entities, loadEntities, STATIC_PROP_IDS, type StaticPropId } from './entities.ts';
+import {
+  type Entities,
+  KNOCKABLE_IDS,
+  type KnockableId,
+  loadEntities,
+  STATIC_PROP_IDS,
+  type StaticPropId,
+} from './entities.ts';
 
 export * from './entities.ts';
 
@@ -480,6 +488,45 @@ const COMPLAINT_GROUPS = {
   policeWitness: POLICE_WITNESS_SPEC,
 } as const;
 
+/**
+ * TECHNICAL_DESIGN §9.3 (SSP-092): how knockable bodies meet Bessie, the static world and each other. A body's
+ * outgoing normal speed off Bessie is (1 + bessieRestitution) × hers (she is the infinite-mass mover), off a
+ * wall or a static prop staticRestitution × its own, and bodyRestitution between two bodies. A body that has
+ * left Bessie for rearmS starts a new contact episode (a new EV.Knock) when she touches it again.
+ */
+const KNOCKABLE_CONTACT_SPEC = {
+  bessieRestitution: 'unit',
+  staticRestitution: 'unit',
+  bodyRestitution: 'unit',
+  rearmS: 'positive',
+} as const satisfies GroupSpec;
+
+/** TECHNICAL_DESIGN §9.3: a spinning body's angular speed falls by frictionRadPerS2 every second. */
+const KNOCKABLE_SPIN_SPEC = {
+  frictionRadPerS2: 'positive',
+} as const satisfies GroupSpec;
+
+/**
+ * ENTITY_CATALOG §9.1 (SSP-092): where a first hit's spilled items land, in the frame of the hit (+n pointing
+ * away from Bessie): nearM + [0, depthM) along n from the body centre, ±halfWidthM across.
+ */
+const KNOCKABLE_SPILL_SPEC = {
+  nearM: 'nonNegative',
+  depthM: 'positive',
+  halfWidthM: 'nonNegative',
+} as const satisfies GroupSpec;
+
+/**
+ * One knockable body (SSP-092, PROVISIONAL until M4 measures the lowest slice): its OBB, widthM along the
+ * body's local +x and lengthM along its local +y (north at heading 0), and the ground friction that slows its
+ * slide, m/s² (a trolley on castors rolls on; a bin scrapes to a stop).
+ */
+const KNOCKABLE_BODY_SPEC = {
+  widthM: 'positive',
+  lengthM: 'positive',
+  frictionMps2: 'positive',
+} as const satisfies GroupSpec;
+
 /** GDD §11.3: TOWED! keeps towedScoreKeep of the score (and awards no stars). */
 const END_STATES_SPEC = {
   towedScoreKeep: 'fraction',
@@ -546,6 +593,23 @@ export type PropFootprints = {
   readonly shapes: { readonly [K in StaticPropId]: PropFootprint };
 };
 
+/** One knockable's provisional OBB and ground friction (tuning.json → knockables.bodies). */
+export type KnockableBodyTuning = Group<typeof KNOCKABLE_BODY_SPEC>;
+
+/**
+ * The knockable bodies (TECHNICAL_DESIGN §9.3, SSP-092). Masses, penalties and spill counts are entities.json;
+ * this is the physics: contact restitutions and the re-arm time, spin friction, where spills land, and one
+ * provisional OBB and friction per KNOCKABLE_IDS entry. `provisional` stays true until the M4 art pass measures
+ * the lowest slices (ENTITY_CATALOG §9: "the opaque bounding box of the lowest slice, as an OBB").
+ */
+export type KnockablesTuning = {
+  readonly provisional: boolean;
+  readonly contact: Group<typeof KNOCKABLE_CONTACT_SPEC>;
+  readonly spin: Group<typeof KNOCKABLE_SPIN_SPEC>;
+  readonly spill: Group<typeof KNOCKABLE_SPILL_SPEC>;
+  readonly bodies: { readonly [K in KnockableId]: KnockableBodyTuning };
+};
+
 /** Brush, suction, inlet, grime and fling geometry (GDD §8.1, TECHNICAL_DESIGN §10.1). */
 export type SweepingTuning = {
   readonly gutterBrush: Group<typeof GUTTER_BRUSH_SPEC>;
@@ -595,6 +659,7 @@ export type Tuning = {
     readonly sweeper: SweeperTuning;
   };
   readonly propFootprints: PropFootprints;
+  readonly knockables: KnockablesTuning;
   readonly sweeping: SweepingTuning;
   readonly hopper: HopperTuning;
   readonly water: WaterTuning;
@@ -613,6 +678,7 @@ export type Tuning = {
 const ROOT_KEYS = [
   'vehicle',
   'propFootprints',
+  'knockables',
   'sweeping',
   'hopper',
   'water',
@@ -803,6 +869,28 @@ function readPropFootprints(raw: unknown, path: string): PropFootprints {
   return { provisional, shapes: shapes as PropFootprints['shapes'] };
 }
 
+/** `knockables`: a provisional flag, the contact, spin and spill groups and one body per KNOCKABLE_IDS entry. */
+function readKnockables(raw: unknown, path: string): KnockablesTuning {
+  const obj = readObject(raw, path, ['provisional', 'contact', 'spin', 'spill', 'bodies']);
+  const provisional = obj.provisional;
+  if (typeof provisional !== 'boolean') {
+    fail(`${path}.provisional`, `must be a boolean, got ${describeValue(provisional)}`);
+  }
+  const bodiesRaw = readObject(obj.bodies, `${path}.bodies`, KNOCKABLE_IDS);
+  const bodies: Partial<Record<KnockableId, KnockableBodyTuning>> = {};
+  for (const id of KNOCKABLE_IDS) {
+    bodies[id] = readGroup(bodiesRaw[id], `${path}.bodies.${id}`, KNOCKABLE_BODY_SPEC);
+  }
+  return {
+    provisional,
+    contact: readGroup(obj.contact, `${path}.contact`, KNOCKABLE_CONTACT_SPEC),
+    spin: readGroup(obj.spin, `${path}.spin`, KNOCKABLE_SPIN_SPEC),
+    spill: readGroup(obj.spill, `${path}.spill`, KNOCKABLE_SPILL_SPEC),
+    // Every KNOCKABLE_IDS key was written just above (readObject proved none is missing or unknown).
+    bodies: bodies as KnockablesTuning['bodies'],
+  };
+}
+
 /** Tolerance for sums of short JSON decimals (0.6 + 0.4). */
 const SUM_EPS = 1e-9;
 
@@ -955,6 +1043,7 @@ export function loadTuning(raw: unknown): Tuning {
   return {
     vehicle: { sweeper: readSweeper(vehicle.sweeper, 'vehicle.sweeper') },
     propFootprints: readPropFootprints(root.propFootprints, 'propFootprints'),
+    knockables: readKnockables(root.knockables, 'knockables'),
     sweeping: readSweeping(root.sweeping, 'sweeping'),
     hopper: readGroup(root.hopper, 'hopper', HOPPER_SPEC),
     water: readGroup(root.water, 'water', WATER_SPEC),

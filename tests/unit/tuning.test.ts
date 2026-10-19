@@ -9,6 +9,7 @@ import tuningJson from '../../src/data/tuning.json' with { type: 'json' };
 import { DEG_TO_RAD, SHIFT_S } from '../../src/sim/constants.ts';
 import {
   DEFAULT_TUNING,
+  KNOCKABLE_IDS,
   loadTuning,
   STATIC_PROP_IDS,
   tuningSourceCopy,
@@ -451,6 +452,93 @@ describe('propFootprints (SSP-036, provisional until M4)', () => {
       DEFAULT_TUNING.propFootprints.shapes['prop.bench'],
     );
     expect(a.propFootprints).toEqual(DEFAULT_TUNING.propFootprints);
+  });
+});
+
+describe('knockables (SSP-092, provisional until M4)', () => {
+  const kn = DEFAULT_TUNING.knockables;
+
+  /** A copy of the committed JSON with the knockables block edited by `edit`. */
+  function withKnockables(edit: (k: Json) => void): unknown {
+    const copy = structuredClone(tuningJson) as Json;
+    const k = copy.knockables;
+    if (!isJson(k)) throw new Error('knockables missing from the fixture');
+    edit(k);
+    return copy;
+  }
+
+  it('is flagged provisional and holds one body per knockable prop, each small enough for one tile', () => {
+    expect(kn.provisional).toBe(true);
+    expect(Object.keys(kn.bodies)).toEqual([...KNOCKABLE_IDS]);
+    for (const id of KNOCKABLE_IDS) {
+      expect(kn.bodies[id].widthM, id).toBeLessThanOrEqual(2);
+      expect(kn.bodies[id].lengthM, id).toBeLessThanOrEqual(2);
+    }
+    // TECHNICAL_DESIGN §9.3: "a flung cone (about 0.4 m)".
+    expect(kn.bodies['prop.traffic_cone']).toMatchObject({ widthM: 0.4, lengthM: 0.4 });
+  });
+
+  it('mirrors the TECHNICAL_DESIGN §9.3 tuning table', () => {
+    const td = readFileSync(`${REPO_ROOT}docs/TECHNICAL_DESIGN.md`, 'utf8');
+    const row = (key: string): string => {
+      const m = td.match(new RegExp(`^\\| \`${key.replace(/[.]/g, '\\.')}\` \\| ([^|]+) \\|`, 'm'));
+      if (m === null) throw new Error(`TECHNICAL_DESIGN §9.3 has no row for ${key}`);
+      return (m[1] as string).trim();
+    };
+    expect(row('contact.bessieRestitution')).toBe(String(kn.contact.bessieRestitution));
+    expect(row('contact.staticRestitution')).toBe(String(kn.contact.staticRestitution));
+    expect(row('contact.bodyRestitution')).toBe(String(kn.contact.bodyRestitution));
+    expect(row('contact.rearmS')).toBe(`${kn.contact.rearmS} s`);
+    expect(row('spin.frictionRadPerS2')).toBe(String(kn.spin.frictionRadPerS2));
+  });
+
+  it.each([
+    [
+      'a missing body',
+      (k: Json) => {
+        const b = k.bodies;
+        if (isJson(b)) delete b['prop.a_board'];
+      },
+      'tuning: knockables.bodies.prop.a_board is missing',
+    ],
+    [
+      'a static prop among the bodies',
+      (k: Json) => {
+        const b = k.bodies;
+        if (isJson(b)) b['prop.bollard'] = { widthM: 0.3, lengthM: 0.3, frictionMps2: 5 };
+      },
+      'tuning: knockables.bodies has unknown key "prop.bollard"',
+    ],
+    [
+      'a restitution above 1',
+      (k: Json) => {
+        const c = k.contact;
+        if (isJson(c)) c.bessieRestitution = 1.5;
+      },
+      'tuning: knockables.contact.bessieRestitution must be in [0, 1], got 1.5',
+    ],
+    [
+      'a zero friction',
+      (k: Json) => {
+        const b = k.bodies;
+        const cone = isJson(b) ? b['prop.traffic_cone'] : undefined;
+        if (isJson(cone)) cone.frictionMps2 = 0;
+      },
+      'tuning: knockables.bodies.prop.traffic_cone.frictionMps2 must be > 0, got 0',
+    ],
+    [
+      'a non-boolean provisional flag',
+      (k: Json) => {
+        k.provisional = 1;
+      },
+      'tuning: knockables.provisional must be a boolean, got number 1',
+    ],
+  ])('rejects %s, naming the JSON path', (_name, edit, message) => {
+    expect(() => loadTuning(withKnockables(edit))).toThrow(message);
+  });
+
+  it('is required', () => {
+    expect(() => loadTuning(without('knockables'))).toThrow('tuning: root.knockables is missing');
   });
 });
 

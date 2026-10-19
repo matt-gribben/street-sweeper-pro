@@ -2,8 +2,8 @@
 // trace in tests/unit/world.test.ts proves the eleven phase slots run in order; this file wraps every system
 // function World.step calls, records each call, and checks the full per-tick sequence, so a system that moved
 // to another phase (or swapped places inside one) fails here. SSP-078 adds the horn (phase 1) and the honk window
-// and penalty facts (phase 9, before scoring). Changing this order changes replay hashes and
-// must be called out in the commit (§5.2).
+// and penalty facts (phase 9, before scoring); SSP-092 the knockable bodies (phase 4, between static collision
+// and brush/litter). Changing this order changes replay hashes and must be called out in the commit (§5.2).
 //
 // vi.mock replaces each module for everything that imports it in this test file's module graph (world.ts
 // included); every wrapper forwards to the real function, so the World runs exactly as in the game.
@@ -54,6 +54,7 @@ vi.mock('../../src/sim/hazards.ts', async (importOriginal) =>
 vi.mock('../../src/sim/collision/resolveStatic.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['resolveStatic']),
 );
+vi.mock('../../src/sim/bodies.ts', async (importOriginal) => wrap(await importOriginal(), ['stepBodies']));
 vi.mock('../../src/sim/litter.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['beginLitterTick', 'stepLitter']),
 );
@@ -104,6 +105,7 @@ const ONE_TICK = [
   'phase 3',
   'resolveStatic',
   'phase 4',
+  'stepBodies',
   'phase 5',
   'beginLitterTick',
   'stepBrushLitter',
@@ -133,7 +135,16 @@ const ONE_TICK = [
   'sealEvents',
 ];
 
-describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078)', () => {
+describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078, SSP-092)', () => {
+  it('runs phase 4 (knockable bodies, SSP-092) after phase 3 (static collision) and before phase 5 (brush/litter)', () => {
+    const at = (name: string): number => ONE_TICK.indexOf(name);
+    expect(at('phase 3')).toBeLessThan(at('resolveStatic'));
+    expect(at('resolveStatic')).toBeLessThan(at('phase 4'));
+    expect(at('phase 4')).toBeLessThan(at('stepBodies'));
+    expect(at('stepBodies')).toBeLessThan(at('phase 5'));
+    expect(at('phase 5')).toBeLessThan(at('beginLitterTick'));
+  });
+
   it('runs phase 7 (NPC AI, SSP-080) after phase 6 (dirt) and before phase 8 (traffic)', () => {
     const at = (name: string): number => ONE_TICK.indexOf(name);
     const npcSystems = [
@@ -159,6 +170,11 @@ describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078
         'utf8',
       ),
     );
+    // A wheelie bin 6 m up Bessie's heading from the depot, so phase 4 knocks something during the run.
+    const { x, y, heading } = level.player;
+    level.knockables = [
+      { id: 'prop.wheelie_bin', x: x + Math.sin(heading) * 6, y: y - Math.cos(heading) * 6 },
+    ];
     const world = createWorld(level, 1001, DEFAULT_TUNING);
     world.phaseTrace = (phase) => {
       if (calls.on) calls.log.push(`phase ${phase}`);
@@ -184,5 +200,6 @@ describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078
     expect(world.brush.state).not.toBe(BrushState.Collecting); // raised again at tick 200
     expect(world.vehicle.water).toBeLessThan(DEFAULT_TUNING.water.tankUnits);
     expect(world.complaints.honks).toBe(5);
+    expect(world.bodies.bodiesKnocked).toBe(1);
   });
 });

@@ -90,6 +90,19 @@
       "prop.roadworks_barrier": { "shape": "box", "widthM": 1.6, "lengthM": 0.3 }
     }
   },
+  "knockables": {
+    "provisional": true,
+    "contact": { "bessieRestitution": 0.2, "staticRestitution": 0.3, "bodyRestitution": 0.3, "rearmS": 0.5 },
+    "spin": { "frictionRadPerS2": 12 },
+    "spill": { "nearM": 0.3, "depthM": 0.9, "halfWidthM": 0.6 },
+    "bodies": {
+      "prop.wheelie_bin": { "widthM": 0.6, "lengthM": 0.75, "frictionMps2": 9 },
+      "prop.traffic_cone": { "widthM": 0.4, "lengthM": 0.4, "frictionMps2": 5 },
+      "prop.a_board": { "widthM": 0.6, "lengthM": 0.45, "frictionMps2": 7 },
+      "prop.shopping_trolley": { "widthM": 0.55, "lengthM": 0.95, "frictionMps2": 2.5 },
+      "prop.recycling_box": { "widthM": 0.55, "lengthM": 0.4, "frictionMps2": 8 }
+    }
+  },
   "sweeping": {
     "gutterBrush": {
       "radiusM": 0.45,

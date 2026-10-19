@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { encodeBase64 } from '../../src/sim/base64.ts';
+import { addBody } from '../../src/sim/bodies.ts';
 import { EV, pushEvent, ShiftEndReason } from '../../src/sim/eventQueue.ts';
 import { addHazard } from '../../src/sim/hazards.ts';
 import { DumpSite } from '../../src/sim/hopper.ts';
@@ -265,6 +266,15 @@ describe('state hash', () => {
     world.complaints.honks = 1;
     world.complaints.honkTicks[0] = 3;
     world.complaints.honkCount = 1;
+    // A knocked, sliding, spinning cone, so the SSP-092 bodies section has a record (SSP-092).
+    const b = addBody(world.bodies, 1, 5.5, 3.25, 0.25);
+    world.bodies.flags[b] = 3;
+    world.bodies.rearmTicks[b] = 12;
+    world.bodies.vx[b] = 1.5;
+    world.bodies.vy[b] = -0.75;
+    world.bodies.omega[b] = 2.125;
+    world.bodies.knocks = 1;
+    world.bodies.bodiesKnocked = 1;
     return world;
   }
 
@@ -1161,6 +1171,75 @@ describe('state hash', () => {
     expect(hashOf(stale)).toBe(base);
   });
 
+  it('covers the knockable bodies (SSP-092)', () => {
+    const base = hashOf(handSetWorld());
+    const mutations: [string, (w: World) => void][] = [
+      [
+        'bodies.count (a second body)',
+        (w) => {
+          addBody(w.bodies, 0, 1.5, 1.5, 0);
+        },
+      ],
+      [
+        'bodies.knocks',
+        (w) => {
+          w.bodies.knocks += 1;
+        },
+      ],
+      [
+        'bodies.bodiesKnocked',
+        (w) => {
+          w.bodies.bodiesKnocked += 1;
+        },
+      ],
+      [
+        'bodies.itemsSpilled',
+        (w) => {
+          w.bodies.itemsSpilled += 1;
+        },
+      ],
+      [
+        'bodies.penaltyPts',
+        (w) => {
+          w.bodies.penaltyPts -= 25;
+        },
+      ],
+    ];
+    const columns = [
+      'kind',
+      'flags',
+      'rearmTicks',
+      'x',
+      'y',
+      'heading',
+      'prevX',
+      'prevY',
+      'prevHeading',
+      'vx',
+      'vy',
+      'omega',
+    ] as const;
+    for (const column of columns) {
+      mutations.push([
+        `bodies.${column}[0]`,
+        (w) => {
+          const arr = w.bodies[column];
+          const integer = column === 'kind' || column === 'flags' || column === 'rearmTicks';
+          arr[0] = (arr[0] as number) + (integer ? 1 : 0.001);
+        },
+      ]);
+    }
+    for (const [name, mutate] of mutations) {
+      const world = handSetWorld();
+      mutate(world);
+      expect(hashOf(world), name).not.toBe(base);
+    }
+    // This tick's pushes are scratch, zero between ticks: not hashed.
+    const scratch = handSetWorld();
+    scratch.bodies.pushX[0] = 0.5;
+    expect(hashOf(scratch)).toBe(base);
+  });
+
   it('absorbs the whole grime mask once per hasher, then the dirty rectangle every tick', () => {
     const world = handSetWorld();
     // An empty dirty rectangle: only the first absorb sees a change outside it.
@@ -1241,8 +1320,10 @@ describe('state hash', () => {
  * NPC state (store, handles, npc stream, stimuli, spawner) and gave it an NPC and a Horn: ada67916 → 0449a66a.
  * SSP-078 appended the complaints meter, the horn window and the penalty log, and gave the hand-set World two
  * complaints and a honk in the window: 0449a66a → b25f1a0a (2cab5426 on its branch, before SSP-080 merged).
+ * SSP-092 appended the knockable bodies and gave the hand-set World a knocked, sliding, spinning cone:
+ * b25f1a0a → e1d53cac.
  */
-const GOLDEN_HAND_SET_HASH = 'b25f1a0a';
+const GOLDEN_HAND_SET_HASH = 'e1d53cac';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

@@ -11,7 +11,9 @@
 //                       contacts: jolts, LU spills, the open-manhole hard stop (§8.2 steps 1–10; hazards.ts)
 //   3 Static collision  Bessie vs merged solids, map boundary and props: SAT/MTV, restitution, damage, EV.Impact
 //                       (collision/resolveStatic.ts over collision/grid.ts, SSP-036)
-//   4 Bodies            empty until M3
+//   4 Bodies            stepBodies (bodies.ts, SSP-092): knockable bins, cones, A-boards, trolleys and recycling
+//                       boxes: body vs body, Bessie's contacts (EV.Knock; on a body's first, its penalty fact
+//                       and its litter spill), the swept move against the static grid, ground friction
 //   5 Brush/litter/water beginLitterTick → stepBrushLitter (gutter, suction, fling, inlet, bulldozer; brush.ts)
 //                       → the brush-up rules: stepBrushUpLeaves (hazards.ts) then stepBrushUpSplats (stains.ts)
 //                       → stepLitter (arcs, pushes, drift; litter.ts) → stepWater (hydrant refill, spray;
@@ -32,8 +34,9 @@
 //  11 Emit events       seal the EventQueue
 //
 // Shift setup (createWorld, SSP-065): every store is allocated once, at its §7.1 capacity (litter 2,000, stains
-// 256, hazards 64, NPCs 80, penalty facts 64 per tick), then the shift starts: the initial litter is spawned
-// (spawnInitialLitter), the hazards (spawnHazards, with the oil slicks' paired stains), the grime is laid
+// 256, hazards 64, NPCs 80, knockables 128, penalty facts 64 per tick), then the shift starts: the initial
+// litter is spawned (spawnInitialLitter), the hazards (spawnHazards, with the oil slicks' paired stains), the
+// level's knockables (spawnKnockables, SSP-092, pushed clear of the static world), the grime is laid
 // (initGrime), the frontage tally is counted and attached (initTidy), the tank is filled (refillWater), the
 // hopper is empty and the complaints meter is at 0; the stain store's penalty hook records into the penalty log.
 //
@@ -43,6 +46,14 @@
 //
 // Hot path: stepWorld allocates nothing. Scratch objects live on the World, created once by createWorld.
 
+import {
+  type BodyStore,
+  type BodyStoreView,
+  createBodyStore,
+  setBodiesTuning,
+  spawnKnockables,
+  stepBodies,
+} from './bodies.ts';
 import { type Brush, type BrushView, createBrush, stepBrushLitter, stepBrushState } from './brush.ts';
 import { createStaticGrid, type StaticGrid } from './collision/grid.ts';
 import {
@@ -218,8 +229,13 @@ export type World = {
    */
   readonly hazards: HazardStore;
   /**
+   * The knockable bodies (bodies.ts, SSP-092), capacity 128, spawned at shift start from the level's compiled
+   * `knockables`. Phase 4 moves them; a first knock records its penalty fact and spills litter.
+   */
+  readonly bodies: BodyStore;
+  /**
    * The `events` stream, sfc32(seed ^ hash32('events')): dynamic litter (LEVEL_DESIGN §9.1 rule 7), so far
-   * the hazard spills. Later event systems draw from this same object.
+   * the hazard spills and the knock spills (SSP-092). Later event systems draw from this same object.
    */
   readonly eventsRng: Sfc32;
   /**
@@ -276,6 +292,7 @@ export type WorldView = {
   readonly penalties: PenaltyLogView;
   readonly complaints: ComplaintsView;
   readonly hazards: HazardStoreView;
+  readonly bodies: BodyStoreView;
   readonly npc: NpcStoreView;
   readonly viewRect: Readonly<ViewRect>;
   readonly surface: Readonly<VehicleSurface>;
@@ -316,6 +333,8 @@ export function createWorld(
   const stains = createStainStore(entities, undefined, litter.capacity);
   const eventsRng = createStream(seed >>> 0, 'events');
   const hazards = createHazardStore(level, entities, eventsRng, undefined, litter.capacity);
+  const staticGrid = createStaticGrid(level, tuning.propFootprints);
+  const bodies = createBodyStore(entities, tuning, staticGrid, hazards.spill, eventsRng);
   const dirt = createDirt(level, tuning);
   const scoring = createScoring(tuning, entities);
   const tidy = createTidy(level, tuning);
@@ -323,6 +342,7 @@ export function createWorld(
   // Shift setup (see above).
   spawnInitialLitter(litter, level, seed >>> 0);
   spawnHazards(hazards, level, seed >>> 0, stains);
+  spawnKnockables(bodies, level, staticGrid);
   initGrime(dirt, level, seed >>> 0);
   initTidy(tidy, dirt, litter);
   refillWater(water);
@@ -350,13 +370,14 @@ export function createWorld(
     penalties,
     complaints: createComplaints(tuning),
     hazards,
+    bodies,
     eventsRng,
     npc,
     npcAi,
     viewRect: createViewRect(vehicle),
     surface: { gripPerS: sweeper.lateralGripPerS.asphalt, rollMult: 1 },
     events: createEventQueue(),
-    staticGrid: createStaticGrid(level, tuning.propFootprints),
+    staticGrid,
     staticResolver: createStaticResolver(),
     shift: createShift(level, vehicle, hopper, water, tuning, shift),
     recordInput: null,
@@ -411,6 +432,7 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   setTidyTuning(world.tidy, tuning, world.dirt, world.litter);
   setNpcSpawnerTuning(world, tuning, world.npcAi.entities);
   setComplaintsTuning(world.complaints, tuning);
+  setBodiesTuning(world.bodies, tuning, world.npcAi.entities);
 }
 
 /** Advance the world by one tick (DT_S) under `input`, running the 11 phases of §5.2 in order. */
@@ -553,7 +575,7 @@ function emitKerbJolt(events: EventQueue, scratch: KerbCrossings, i: number, v: 
 }
 
 // Phases 3–10 are ordered call sites. Each takes the World so the systems that fill them (named below) slot in
-// without touching stepWorld; phases 4 and 8 intentionally do nothing until M3.
+// without touching stepWorld; phase 8 intentionally does nothing until SSP-089.
 
 /**
  * Phase 3 (§9.2): resolve Bessie against the static grid (merged solids, map boundary, props) with SAT/MTV,
@@ -563,9 +585,25 @@ function phaseStaticCollision(world: World): void {
   resolveStatic(world.staticGrid, world.staticResolver, world.vehicle, world.vehicleParams, world.events);
 }
 
-/** Phase 4: knockable bodies (bins, cones, A-boards, trolleys, recycling boxes). M3. */
-function phaseBodies(_world: World): void {
-  // Filled in M3.
+/**
+ * Phase 4 (§9.3, SSP-092; bodies.ts has the detail): the knockable bodies against Bessie's pose after phase 3.
+ *   1. Body vs body, once per pair with a mover, at the tick's start poses (no stacking solver).
+ *   2. Per body, in index order: Bessie's contact (push, impulse off her as an infinite-mass mover; a new
+ *      episode emits EV.Knock, and a body's first records its penalty fact and spills its litter through
+ *      addLitter on the `events` stream), the swept move against the static grid, ground friction.
+ * Bessie is read, never written: knockables never slow or damage her. Spilled items join the LitterField
+ * before phase 5, so the brush may collect them this very tick.
+ */
+function phaseBodies(world: World): void {
+  stepBodies(
+    world.bodies,
+    world.staticGrid,
+    world.vehicle,
+    world.tuning.vehicle.sweeper,
+    world.litter,
+    world.penalties,
+    world.events,
+  );
 }
 
 /**

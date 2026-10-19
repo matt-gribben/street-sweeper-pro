@@ -8,6 +8,7 @@ import {
   decodeLevel,
   encodeLevel,
   Ground,
+  type KnockableSpawn,
   type Level,
   type LevelProp,
   mergeSolids,
@@ -26,6 +27,8 @@ export type CollideGridSpec = {
   readonly player: PlayerStart;
   /** Static props (positions in metres); each id needs a footprint in the tuning's `propFootprints`. */
   readonly props?: readonly LevelProp[];
+  /** Knockable props (`spawns.knockables`, positions in metres); none when absent (SSP-092). */
+  readonly knockables?: readonly KnockableSpawn[];
 };
 
 /**
@@ -47,6 +50,7 @@ export function levelFromCollideGrid(spec: CollideGridSpec, id = 'test.collision
   }
   level.solids = mergeSolids(level.layers.collide, w, h);
   level.props = spec.props === undefined ? [] : spec.props.map((p) => ({ ...p }));
+  level.knockables = spec.knockables === undefined ? null : spec.knockables.map((k) => ({ ...k }));
   level.player = { x: spec.player.x, y: spec.player.y, heading: spec.player.heading };
   return decodeLevel(encodeLevel(level));
 }

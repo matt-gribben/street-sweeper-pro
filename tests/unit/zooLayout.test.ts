@@ -180,7 +180,9 @@ describe('zooLayout: asset=<id>', () => {
     }
     const doris = allPages('npc.old_woman')
       .flat()
-      .filter((c) => c.role === 'frame');
+      .filter(
+        (c) => c.role === 'frame' && c.frame.startsWith('npc.old_woman:idle:') && c.frame.endsWith(':0'),
+      );
     expect(doris.map((c) => c.dir)).toEqual(['s', 'sw', 'w', 'nw', 'n', 'ne', 'e', 'se']);
   });
 });

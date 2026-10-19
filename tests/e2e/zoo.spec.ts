@@ -213,6 +213,31 @@ test('asset=veh.sweeper shows every Bessie frame across its pages, Bessie h00 on
   expect(errors).toEqual([]);
 });
 
+// SSP-097: the six Monday people (104 placeholder frames each) review in-engine, every page pixel-exact.
+const MONDAY_PEOPLE = [
+  'npc.dog_walker',
+  'npc.mum_pushchair',
+  'npc.old_man_frame',
+  'npc.old_woman',
+  'npc.postie',
+  'npc.shopper',
+] as const;
+
+test('asset=<npc> shows every frame of each Monday person, drawn exactly', async ({ page }, testInfo) => {
+  const errors = collectPageErrors(page);
+  for (const asset of MONDAY_PEOPLE) {
+    const { pageCount } = zooLayout(FRAME_IDS, { asset });
+    for (let n = 0; n < pageCount; n++) {
+      await openTestScene(page, `/?test=1&seed=1&scene=zoo&freeze=1&asset=${asset}&page=${n}`);
+      const frame = await readTestFrame(page);
+      await capture(testInfo, `zoo_${asset}_p${n}.png`, frame);
+      const diff = mismatches(referenceFrame(zooLayout(FRAME_IDS, { asset, page: n }), 0), frame);
+      expect(diff.count, `${asset} page ${n}: first mismatches ${diff.first.join(' ')}`).toBe(0);
+    }
+  }
+  expect(errors).toEqual([]);
+});
+
 test('tick=<n> steps animations at 10 fps: the brush overlay spins one frame per 6 ticks', async ({
   page,
 }, testInfo) => {

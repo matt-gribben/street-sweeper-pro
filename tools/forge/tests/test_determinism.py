@@ -3,8 +3,8 @@ SSP-020, SSP-024, SSP-040, SSP-041, SSP-051, SSP-052, SSP-068, SSP-070, SSP-101)
 
 Builds ``assets-src/manifest.json`` twice with the cache off, into two temp dirs, and checks
 that every output file has the same SHA-256 (frames, atlas PNG/JSON, ``src/gen/assets.ts``,
-``asset-hashes.json``, the font metrics); then inspects the built frames: 858 of them, 64x64 Bessie / 96x96
-brush / 24x24 npc.old_woman (8 idle directions, 3 of them mirrored) / 32x32 prop.lamp_post
+``asset-hashes.json``, the font metrics); then inspects the built frames: 1,474 of them, 64x64 Bessie / 96x96
+brush / the six 24x24 SSP-097 Monday people (104 frames each: 13 per direction, SE/E/NE mirrored) / 32x32 prop.lamp_post
 (4 sprite-stack slices) / the 15 16x16 litter items (SSP-051: idle x1 + wobble x2 in the
 h00/h08/h16/h24 rotations, 12 frames each, 180 in all; the banana skin is the D-07 sample) / the
 SSP-041 Puddle Lane facade sets (64x80 lit/base/dark bays) and roof surfaces (32x32 variants) /
@@ -132,6 +132,8 @@ LITTER = tuple(
     )
 )
 """The 15 litter IDs (ENTITY_CATALOG §4.1), 12 frame IDs each."""
+PEOPLE = ("npc.dog_walker", "npc.mum_pushchair", "npc.old_man_frame", "npc.old_woman", "npc.postie", "npc.shopper")
+"""The SSP-097 Monday cast (24x24 placeholder grids; Doris keeps her SSP-014 ingested idle frames)."""
 CELLS = {
     **{f: (64, 80) for f in FACADES},
     **{r: (32, 32) for r in ROOF_VARIANTS},
@@ -144,12 +146,12 @@ CELLS = {
     **SITES,
     "prop.hydrant": (32, 32),
     **{li: (16, 16) for li in LITTER},
-    "npc.old_woman": (24, 24),
+    **{p: (24, 24) for p in PEOPLE},
     "prop.lamp_post": (32, 32),
     "veh.sweeper": (64, 64),
     "veh.sweeper_brush": (96, 96),
 }
-FRAME_COUNT = 858
+FRAME_COUNT = 1474
 ATLAS_OF = {
     **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES, *STAINS, *GRIME, *HAZARDS)},
     **{a: "items" for a in (*PICKUPS, *SITES, *PROPS, "prop.hydrant")},
@@ -157,7 +159,7 @@ ATLAS_OF = {
     **{p: "ui" for p in PANELS},
     **{h: "ui" for h in HUD_ART},
     **{li: "items" for li in LITTER},
-    "npc.old_woman": "actors",
+    **{p: "actors" for p in PEOPLE},
     "prop.lamp_post": "items",
     "veh.sweeper": "actors",
     "veh.sweeper_brush": "actors",
@@ -243,7 +245,7 @@ def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
         **{s: 1 for s in SITES},
         "prop.hydrant": 1,
         **{li: 12 for li in LITTER},
-        "npc.old_woman": 8,
+        **{p: 104 for p in PEOPLE},
         "prop.lamp_post": 4,
         "veh.sweeper": 64,
         "veh.sweeper_brush": 128,
@@ -325,7 +327,7 @@ def test_pivots_body_centre_for_vehicles_and_feet_for_people(builds: tuple[Build
     h00 fallback, SSP-020); the pedestrian grid pivots on its feet, row 22 of the 24x24 cell
     (ART_BIBLE §4.4, §7.2; SSP-018). Font frames pivot on the glyph's top-left, (1, 1) (SSP-068)."""
     result, _, _ = builds
-    special = {"npc.old_woman": (12, 22), "font.kerbside5x7": (1, 1)}
+    special = {**{p: (12, 22) for p in PEOPLE}, "font.kerbside5x7": (1, 1)}
     for f in result.frames:
         w, h = CELLS[f.asset_id]
         expected = special.get(f.asset_id, (w // 2, h // 2))
@@ -334,12 +336,14 @@ def test_pivots_body_centre_for_vehicles_and_feet_for_people(builds: tuple[Build
 
 
 def test_old_woman_mirrors_and_feet_on_the_pivot_row(builds: tuple[BuildResult, Path, Path]) -> None:
-    """SSP-014: SE/E/NE are left-right flips of SW/W/NW, and every figure fits 18x22 with its
-    feet (lowest opaque row) on row 22, row 23 clear (ART_BIBLE §7.2)."""
+    """SSP-014/SSP-097: SE/E/NE are left-right flips of SW/W/NW, and every figure fits 18x22 with
+    its feet (lowest opaque row) on row 22, row 23 clear (ART_BIBLE §7.2)."""
     result, _, _ = builds
-    by_id = {f.frame_id: f.indices for f in result.frames if f.asset_id == "npc.old_woman"}
-    for dst, src in (("se", "sw"), ("e", "w"), ("ne", "nw")):
-        np.testing.assert_array_equal(by_id[f"npc.old_woman:idle:{dst}:0"], by_id[f"npc.old_woman:idle:{src}:0"][:, ::-1])
+    by_id = {f.frame_id: f.indices for f in result.frames if f.asset_id in PEOPLE}
+    for fid in [f for f in by_id if f.split(":")[2] in ("sw", "w", "nw")]:
+        aid, state, src, n = fid.split(":")
+        dst = {"sw": "se", "w": "e", "nw": "ne"}[src]
+        np.testing.assert_array_equal(by_id[f"{aid}:{state}:{dst}:{n}"], by_id[fid][:, ::-1])
     for fid, idx in by_id.items():
         ys, xs = np.nonzero(idx != -1)
         assert ys.max() == 22, fid
@@ -379,7 +383,7 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
     ]
 
 
-@pytest.mark.parametrize(("name", "count"), [("world", 151), ("actors", 200), ("items", 263), ("ui", 244)])
+@pytest.mark.parametrize(("name", "count"), [("world", 151), ("actors", 816), ("items", 263), ("ui", 244)])
 def test_atlas_holds_every_frame_at_its_rect(
     builds: tuple[BuildResult, Path, Path], name: str, count: int
 ) -> None:

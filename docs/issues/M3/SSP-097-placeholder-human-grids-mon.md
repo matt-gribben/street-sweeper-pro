@@ -2,7 +2,7 @@
 id: SSP-097
 title: "Author placeholder grids for the six Monday human NPCs (24\u00d724, 13 frames/dir)"
 milestone: M3
-status: todo
+status: done
 type: asset
 estimate: L
 labels: [type:asset, area:assets, area:test, size:L, vertical-slice]

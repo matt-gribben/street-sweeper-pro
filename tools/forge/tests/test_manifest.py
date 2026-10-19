@@ -79,7 +79,12 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "haz.speed_bump",
         "haz.wet_leaves",
         *LITTER_IDS,
+        "npc.dog_walker",
+        "npc.mum_pushchair",
+        "npc.old_man_frame",
         "npc.old_woman",
+        "npc.postie",
+        "npc.shopper",
         "prop.a_board",
         "prop.bench",
         "prop.bollard",
@@ -157,19 +162,22 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
             "outline": False,
             "swaps": [],
         }
-    assert by_id["npc.old_woman"] == {
-        "id": "npc.old_woman",
-        "class": "npc",
-        "technique": "ai-ingest",
-        "source": "assets-src/sprites/npc/old_woman.sprite.txt",
-        "cell": [24, 24],
-        "states": ["idle"],
-        "dirs": ["s", "sw", "w", "nw", "n", "ne", "e", "se"],
-        "frames": {"idle": 1},
-        "atlas": "actors",
-        "outline": False,
-        "swaps": [],
-    }
+    for name in ("dog_walker", "mum_pushchair", "old_man_frame", "old_woman", "postie", "shopper"):
+        # SSP-097 placeholders; Doris keeps her SSP-014 ingest provenance (origin: ref.people_style).
+        assert by_id[f"npc.{name}"] == {
+            "id": f"npc.{name}",
+            "class": "npc",
+            "technique": "ai-ingest" if name == "old_woman" else "grid",
+            "source": f"assets-src/sprites/npc/{name}.sprite.txt",
+            "cell": [24, 24],
+            "states": ["walk", "idle", "startle", "fall", "angry"],
+            "dirs": ["s", "sw", "w", "nw", "n", "ne", "e", "se"],
+            "frames": {"walk": 4, "idle": 2, "startle": 2, "fall": 3, "angry": 2},
+            "atlas": "actors",
+            "outline": False,
+            "swaps": [],
+            "placeholder": True,
+        }
     assert by_id["prop.lamp_post"] == {
         "id": "prop.lamp_post",
         "class": "prop",
@@ -202,8 +210,9 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     # stain variants, 12 grime overlay variants, 3 pickups x 2 bob frames and 3 flat placeholders (33 frames);
     # + 200 SSP-068 font frames + the 3 SSP-285 placeholder 9-slice panels + the SSP-070 HUD bar fill (1) and
     # dump ring (9) + the SSP-299 Brush-o-meter (3), needle (1), brush state (11) and off-screen arrows (16)
-    # + SSP-101: 60 prop placeholder frames, 10 power-up bob frames, 11 hazard frames and 4 cobble tiles.
-    assert sum(len(e.frame_ids()) for e in entries) == 858
+    # + SSP-101: 60 prop placeholder frames, 10 power-up bob frames, 11 hazard frames and 4 cobble tiles
+    # + SSP-097: 616 frames for the six Monday people (104 each, replacing old_woman's 8 idle frames).
+    assert sum(len(e.frame_ids()) for e in entries) == 1474
     assert sum(len(e.frame_ids()) for e in entries if e.asset_class == "litter") == 180
     for e in raw["assets"]:
         assert list(e) == list(FIELDS) + [k for k in OPTIONAL_FIELDS if k in e], "fields in the documented order"

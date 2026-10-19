@@ -11,9 +11,10 @@
 // Gamepad rumble follows EV.Impact on the bus: src/input may not import the bus, so the wiring lives here.
 // Menus (SSP-286) also get the canvas pointer (src/input/pointer.ts, queued into Actions) and map its client
 // coordinates to internal pixels through SceneContext.clientToInternal (the inverse of the upscale transform).
-// Scenes read the frame's pause/map/dev-panel edges from `game.actions.sceneActions` (the dev panel reads F1 from
-// its `afterFrame` hook). `options.input`
-// replaces the whole source (then `actions` is null). In test mode the ticks sample through a ScriptedInput
+// The frame's scene-layer edges are in `game.actions.sceneActions` (the dev panel reads F1 from its `afterFrame`
+// hook); scenes that act on one per tick take it with `actions.takeSceneEdges` (ShiftScene and PauseOverlay take
+// PAUSE, SSP-287). `visibilitychange` → hidden goes to the SceneContext.onHidden subscribers (a running ShiftScene
+// pauses). `options.input` replaces the whole source (then `actions` is null). In test mode the ticks sample through a ScriptedInput
 // (src/debug/scriptedInput.ts, SSP-073) that passes the live input through until `__ssp.loadInputs` hands it a
 // replay's input log, which it then replays by World tick.
 //
@@ -39,7 +40,7 @@ import { DT_S } from '../sim/constants.ts';
 import { EV } from '../sim/eventQueue.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
 import type { Assets } from './assetRegistry.ts';
-import { EventBus } from './events.ts';
+import { EventBus, type Unsubscribe } from './events.ts';
 import { createLoop, type Loop } from './loop.ts';
 import { SceneManager } from './SceneManager.ts';
 
@@ -85,6 +86,11 @@ export type SceneContext = {
    * been applied yet (SSP-286).
    */
   clientToInternal(clientX: number, clientY: number, out: InternalPoint): boolean;
+  /**
+   * Calls `listener` whenever the page becomes hidden (`visibilitychange` with visibilityState 'hidden'), until the
+   * returned function unsubscribes it (SSP-287: a running ShiftScene opens the PauseOverlay; TECHNICAL_DESIGN §5.1).
+   */
+  onHidden(listener: () => void): Unsubscribe;
 };
 
 /** One InputFrame per tick, edges latched (src/input/actions.ts, SSP-044). */
@@ -157,6 +163,8 @@ export class Game {
   private focusZ = 0;
   /** Render time of the frame being drawn, for followCamera; 0 outside renderFrame (enter() placement). */
   private frameRenderS = 0;
+  /** SceneContext.onHidden subscribers, replaced (never mutated) on subscribe and unsubscribe. */
+  private hiddenListeners: readonly (() => void)[] = [];
 
   constructor(canvas: HTMLCanvasElement, options: GameOptions) {
     this.root = new Group();
@@ -207,6 +215,15 @@ export class Game {
         const layout = this.renderer.viewport;
         return layout !== null && clientToInternalPx(layout, clientX, clientY, out);
       },
+      onHidden: (listener) => {
+        this.hiddenListeners = [...this.hiddenListeners, listener];
+        let subscribed = true;
+        return () => {
+          if (!subscribed) return;
+          subscribed = false;
+          this.hiddenListeners = this.hiddenListeners.filter((l) => l !== listener);
+        };
+      },
     };
     this.scriptedInput =
       options.testMode && options.simTick !== undefined
@@ -231,12 +248,23 @@ export class Game {
     );
   }
 
-  /** Starts the loop and resets its accumulator whenever the tab becomes visible again. */
+  /**
+   * Starts the loop. On every `visibilitychange` the loop resets its accumulator when the tab becomes visible
+   * again, and becoming hidden is reported to the SceneContext.onHidden subscribers (handleVisibility).
+   */
   start(): void {
     document.addEventListener('visibilitychange', () => {
-      this.loop.handleVisibilityChange(document.hidden);
+      this.handleVisibility(document.visibilityState === 'hidden');
     });
     this.loop.start();
+  }
+
+  /** One visibility change: hidden goes to the onHidden subscribers; visible restarts the loop's clock. */
+  handleVisibility(hidden: boolean): void {
+    this.loop.handleVisibilityChange(hidden);
+    if (!hidden) return;
+    const listeners = this.hiddenListeners;
+    for (let i = 0; i < listeners.length; i += 1) listeners[i]?.();
   }
 
   /** The asset registry (SceneContext.assets). Throws until BootScene has installed it. */

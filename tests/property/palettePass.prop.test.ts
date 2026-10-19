@@ -1,5 +1,6 @@
 // Palette pass properties (SSP-016, TECHNICAL_DESIGN §12.6): the CPU reference of the pass never outputs a
-// colour outside Kerbside-32, and the remaps apply in the documented order (night unless lit, then shadow).
+// colour outside Kerbside-32, and the remaps apply in the documented order (night unless lit, then shadow, then the
+// SSP-287 pause dim on every pixel not flagged UI).
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import paletteJson from '../../assets-src/palette/kerbside32.json' with { type: 'json' };
@@ -25,6 +26,12 @@ function paletteKey(palette: Kerbside32, index: number): number {
 }
 
 const PALETTE_KEYS = new Set(Array.from({ length: PALETTE_SIZE }, (_, i) => paletteKey(KERBSIDE32, i)));
+
+/** The Kerbside-32 index of a 0xRRGGBB key (−1 if it is none). */
+function indexOfKey(key: number): number {
+  for (let i = 0; i < PALETTE_SIZE; i++) if (paletteKey(KERBSIDE32, i) === key) return i;
+  return -1;
+}
 
 /** A mask byte: mostly the 0/255 a MAX-blended mask draw writes, sometimes anything. */
 const maskByte = fc.oneof(fc.constantFrom(0, 255), fc.integer({ min: 0, max: 255 }));
@@ -132,6 +139,29 @@ describe('palette pass CPU reference', () => {
         },
       ),
       { numRuns: 60 },
+    );
+  });
+
+  it('dim (SSP-287) takes every non-UI pixel one more shadow step and leaves UI pixels exactly as without it', () => {
+    fc.assert(
+      fc.property(frame, fc.boolean(), (pixels, night) => {
+        const { colour, mask } = buffers(pixels);
+        const plain = palettePassReference(colour, mask, night, LUT);
+        const dimmed = palettePassReference(colour, mask, night, LUT, KERBSIDE32, true);
+        for (let p = 0; p < plain.length; p += 4) {
+          const ui = (mask[p + 2] ?? 0) >= MASK_SET_THRESHOLD;
+          const before = indexOfKey(
+            ((plain[p] ?? 0) << 16) | ((plain[p + 1] ?? 0) << 8) | (plain[p + 2] ?? 0),
+          );
+          const want = ui ? before : (KERBSIDE32.shadow[before] ?? -1);
+          const got = indexOfKey(
+            ((dimmed[p] ?? 0) << 16) | ((dimmed[p + 1] ?? 0) << 8) | (dimmed[p + 2] ?? 0),
+          );
+          if (got !== want || dimmed[p + 3] !== 255) return false;
+        }
+        return true;
+      }),
+      { numRuns: 300 },
     );
   });
 

@@ -15,6 +15,7 @@ import { BootScene, bootRoute, type TestSceneId } from './scenes/BootScene.ts';
 import { HudSampleScene } from './scenes/HudSampleScene.ts';
 import { LevelPreviewScene } from './scenes/LevelPreviewScene.ts';
 import { PanelSampleScene } from './scenes/PanelSampleScene.ts';
+import { PauseOverlay } from './scenes/PauseOverlay.ts';
 import { ShiftIntroScene } from './scenes/ShiftIntroScene.ts';
 import { ShiftScene } from './scenes/ShiftScene.ts';
 import {
@@ -109,6 +110,7 @@ function shiftFlow(district: string, atIntro: boolean): FirstScene {
       intro: (options) => new ShiftIntroScene(context, options),
       shift: (options) => new ShiftScene(context, options),
       tally: (options) => new TallyScene(context, options),
+      pause: (options) => new PauseOverlay(context, options),
     },
     menu: game.actions ?? NO_MENU_INPUT,
     district,
@@ -181,9 +183,11 @@ if (testMode) game.scenes.onEntered = (entered) => sceneHistory.push(entered.id)
 
 const testHooks = installTestHooks(window, search, {
   tick: () => game.loop.ticks,
-  // The top scene's World (a shift), or the snapshot the tally shows; null in scenes without a sim.
+  // The top scene's World (a shift), the snapshot the tally shows, or under the PauseOverlay (SSP-287) the paused
+  // shift's World; null in scenes without a sim.
   snapshot: () => {
     const top = game.scenes.top;
+    if (top instanceof PauseOverlay) return flow?.shift?.snapshot() ?? null;
     return top instanceof ShiftScene || top instanceof TallyScene ? top.snapshot() : null;
   },
   advance: (n) => game.loop.runTicks(n),
@@ -205,6 +209,7 @@ const testHooks = installTestHooks(window, search, {
   renders: () => game.renderer.renderCount,
   sceneId: () => game.scenes.top?.id ?? null,
   sceneHistory: () => sceneHistory,
+  sceneStack: () => game.scenes.ids(),
   boot: () => ({
     status: boot.status,
     error: boot.error === null ? null : errorMessage(boot.error),

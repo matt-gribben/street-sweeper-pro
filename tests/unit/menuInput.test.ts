@@ -123,7 +123,30 @@ describe('menu input never reaches the sim', () => {
     expect(actions.takeMenuEdges()).toBe(ACTION.MENU_BACK);
   });
 
+  it('latches the Pause edge until a scene takes it, across frames and without one (SSP-287)', () => {
+    const { keyboard, pad, actions } = rig();
+    tap(keyboard, 'KeyP');
+    actions.beginFrame();
+    actions.beginFrame(); // a frame that ran no tick: the edge stays latched
+    expect(actions.sceneActions).toBe(0);
+    expect(actions.takeSceneEdges(ACTION.MAP)).toBe(0);
+    expect(actions.takeSceneEdges(ACTION.PAUSE)).toBe(ACTION.PAUSE);
+    expect(actions.takeSceneEdges(ACTION.PAUSE)).toBe(0);
+    // A tick run outside any frame (__ssp.step) still sees a key pressed since the last frame.
+    tap(keyboard, 'Escape');
+    expect(actions.takeSceneEdges(ACTION.PAUSE | ACTION.MENU_BACK)).toBe(ACTION.PAUSE);
+    expect(actions.takeMenuEdges()).toBe(ACTION.MENU_BACK);
+    // Pad Start (button 9): PAUSE for the scene layer, MENU_SELECT for menus, nothing for the sim.
+    setButton(pad, PAD_BUTTON.START, true);
+    actions.beginFrame();
+    setButton(pad, PAD_BUTTON.START, false);
+    expect(actions.sampleForTick()).toEqual(createInputFrame());
+    expect(actions.takeSceneEdges(ACTION.PAUSE)).toBe(ACTION.PAUSE);
+    expect(actions.takeMenuEdges()).toBe(ACTION.MENU_SELECT);
+  });
+
   it('NO_MENU_INPUT never reports anything', () => {
     expect(NO_MENU_INPUT.takeMenuEdges()).toBe(0);
+    expect(NO_MENU_INPUT.takeSceneEdges(ACTION.PAUSE)).toBe(0);
   });
 });

@@ -6,7 +6,8 @@
 // Transitions are async because enter() loads assets. While a transition runs, the stack as it was keeps
 // updating and rendering (no blank frames); the new scene joins the stack only once enter() resolves, and a
 // second transition requested meanwhile is a programmer error (it throws). replace() enters the new scene
-// before the old one exits. A scene whose enter() rejects never joins the stack and must release whatever it
+// before the old one exits; replaceAll() (SSP-287) does the same for the whole stack (a PauseOverlay and the
+// ShiftScene under it leave together on Restart Shift or Retire). A scene whose enter() rejects never joins the stack and must release whatever it
 // loaded before rejecting.
 //
 // Events: after each tick the loop calls drainEvents(bus), which drains the sim EventQueue of every scene that
@@ -140,6 +141,24 @@ export class SceneManager {
       this.stack.push(scene);
       this.onEntered?.(scene);
       old?.exit();
+    } finally {
+      this.transitioning = false;
+    }
+  }
+
+  /**
+   * Enters `scene`, then exits every scene on the stack, top first, and leaves `scene` alone on it (SSP-287: Restart
+   * Shift and Retire leave a PauseOverlay over its ShiftScene). The old stack keeps updating and rendering until
+   * `scene` has entered, exactly as for replace(), which this equals on a stack of one.
+   */
+  async replaceAll(scene: Scene, params: SceneParams): Promise<void> {
+    this.beginTransition('replaceAll', scene);
+    try {
+      await scene.enter(params);
+      const old = this.stack.splice(0, this.stack.length);
+      this.stack.push(scene);
+      this.onEntered?.(scene);
+      for (let i = old.length - 1; i >= 0; i -= 1) old[i]?.exit();
     } finally {
       this.transitioning = false;
     }

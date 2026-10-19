@@ -237,7 +237,7 @@ Ducking is **event-driven gain automation, not a sidechain compressor.** That ma
 | `powerup` | `music` | −3 dB | 10 ms | 300 ms | 400 ms | |
 | `timer_warn` (final 10 s) | `music` | −2 dB | 5 ms | 120 ms | 200 ms | Ticks stay crisp without pumping the music |
 | `horn` | `amb` | −4 dB | 5 ms | 300 ms | 300 ms | |
-| Pause overlay open | `music` | −9 dB plus a 900 Hz low-pass | 150 ms | while paused | 250 ms | "Heard through a wall". `sfx`, `voice`, `live` and `amb` are suspended (gain 0, worklets frozen). |
+| Pause overlay open | `music` | −9 dB plus a 900 Hz low-pass | 150 ms | while paused | 250 ms | "Heard through a wall". `sfx`, `voice`, `live` and `amb` are suspended (gain 0, worklets frozen). Triggered by the bus's `PauseOpened` and released on `PauseClosed` (`src/app/events.ts` `PAUSE_EV`, built in SSP-287). |
 | Shift intro card | `live` | muted | — | while shown | 400 ms on dismiss | The engine starts with the shift |
 
 ---

@@ -19,7 +19,11 @@
 // reaches exactly one tick, and when several ticks run in one frame only the first sees the edge.
 //
 // Scene-layer actions (PAUSE, MAP, DEV_PANEL) never enter the sim frame: pausing and the map overlay are not
-// part of a replay. beginFrame() moves their edges into `sceneActions`, which holds them for that one frame.
+// part of a replay. beginFrame() moves their edges into `sceneActions`, which holds them for that one frame (the
+// dev panel reads F1 there, once per drawn frame). Since SSP-287 they are also latched until a scene takes them
+// with takeSceneEdges(mask), once per tick from its fixedUpdate (ShiftScene and PauseOverlay take PAUSE), so a
+// press is never lost to a frame that ran no tick and `__ssp.step(n)` delivers it on its first tick, exactly as
+// the menu edges below.
 //
 // Menu actions (MENU_UP, MENU_DOWN, MENU_SELECT, MENU_BACK; SSP-071) never enter the sim frame either. They share
 // keys and buttons with driving (Space is BRUSH and MENU_SELECT, W/↑ THROTTLE and MENU_UP), so a device reports
@@ -136,6 +140,11 @@ export type MenuInputSource = {
   readonly activeDevice: InputDeviceKind;
   /** Moves the oldest pointer sample not yet taken into `out`; false when there is none. */
   takePointer(out: PointerSample): boolean;
+  /**
+   * The rising edges of the SCENE_ACTIONS bits in `mask` latched since they were last taken (SSP-287: PAUSE, taken
+   * per tick by ShiftScene and PauseOverlay). Taking clears them; other bits stay latched.
+   */
+  takeSceneEdges(mask: number): number;
 };
 
 /** A menu source that never reports anything (a Game whose input is not the keyboard and gamepad). */
@@ -144,6 +153,7 @@ export const NO_MENU_INPUT: MenuInputSource = Object.freeze({
   menuHeld: 0,
   activeDevice: DEFAULT_INPUT_DEVICE,
   takePointer: () => false,
+  takeSceneEdges: () => 0,
 });
 
 /** See the quantisation rule at the top of this file. */
@@ -192,6 +202,8 @@ export class Actions implements MenuInputSource {
   private readonly pointer: PointerSource | null;
   private readonly frame: InputFrame = createInputFrame();
   private sceneEdges = 0;
+  /** SCENE_ACTIONS edges collected by beginFrame() and not yet taken by takeSceneEdges(). */
+  private sceneLatched = 0;
   private active: InputDeviceKind = DEFAULT_INPUT_DEVICE;
 
   /** `pointer` is the canvas pointer queue for menus (pointer.ts), or null (no mouse menus). */
@@ -244,7 +256,21 @@ export class Actions implements MenuInputSource {
       edges |= device.takeEdges(SCENE_ACTIONS);
     }
     this.sceneEdges = edges;
+    this.sceneLatched |= edges;
     this.noteActivity();
+  }
+
+  /**
+   * The scene-layer edges (SCENE_ACTIONS bits in `mask`) latched since they were last taken: those beginFrame()
+   * collected plus any a device latched since (a tick run outside a frame, `__ssp.step(n)`). Taking clears them.
+   */
+  takeSceneEdges(mask: number): number {
+    const wanted = mask & SCENE_ACTIONS;
+    const devices = this.devices;
+    let edges = this.sceneLatched & wanted;
+    for (let i = 0; i < devices.length; i += 1) edges |= devices[i]?.takeEdges(wanted) ?? 0;
+    this.sceneLatched &= ~wanted;
+    return edges;
   }
 
   /** Switches the active device to the kind of any source used since the last check (later sources win a tie). */

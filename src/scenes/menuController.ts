@@ -62,7 +62,20 @@ export class MenuController {
 
   /** One tick: commands, then pointer samples, into `menu` (null: consume and drop them). */
   update(menu: Menu | null): void {
-    const commands = menuCommandsFrom(this.sampler.sample());
+    this.dispatch(menu, this.takeCommands());
+  }
+
+  /**
+   * This tick's MENU_COMMAND bits (keyboard and pad, with hold-repeat), taken but not applied. A scene that reads
+   * them itself (PauseOverlay, SSP-287: Back and the Pause key both resume) calls dispatch() with what it keeps.
+   * Call it at most once per tick, instead of update().
+   */
+  takeCommands(): number {
+    return menuCommandsFrom(this.sampler.sample());
+  }
+
+  /** Applies `commands` to `menu`, then feeds it this tick's pointer samples (null: drop them all). */
+  dispatch(menu: Menu | null, commands: number): void {
     if (menu !== null && commands !== 0) menu.command(commands);
     const sample = this.sample;
     const point = this.point;

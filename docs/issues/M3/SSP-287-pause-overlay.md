@@ -2,7 +2,7 @@
 id: SSP-287
 title: "Add PauseOverlay: Esc/P/Start, visibilitychange auto-pause, dimmed world, Resume/Restart/Controls/Retire"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:ui, area:gameplay, area:platform, area:test, size:M, vertical-slice]

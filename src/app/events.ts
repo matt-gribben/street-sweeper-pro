@@ -18,6 +18,12 @@
 // yet). They are not sim events: they never enter an EventQueue, a replay or a hash, and they are dispatched at once
 // to the onUi() subscribers of their type (onAny() is for sim events only). Same rules otherwise: one preallocated
 // payload per type, copy-on-write listener lists.
+//
+// Pause events (SSP-287): the PauseOverlay emits PauseOpened when it joins the scene stack and PauseClosed when it
+// leaves (Resume, Restart Shift or Retire), through emitPauseOpened() / emitPauseClosed(), dispatched at once to
+// the onPause() subscribers of their type. The M5 audio director hooks them (AUDIO_DESIGN §4.5: music ducked −9 dB
+// under a 900 Hz low-pass, sfx/voice/live/amb suspended while paused; SSP-173, SSP-178, SSP-183). Like UI events
+// they are not sim events: never in an EventQueue, a replay or a hash.
 
 import { Offence } from '../sim/complaints.ts';
 import { LITTER_IDS, type LitterId, STAIN_IDS, type StainId } from '../sim/entities.ts';
@@ -367,6 +373,42 @@ export type UiEventByType = {
   [UI_EV.UiBack]: UiBackEvent;
 };
 
+/**
+ * Why the game paused (SSP-287): the player pressed Pause (Esc / P / pad Start), or the tab was hidden
+ * (`visibilitychange`). SSP-263 (M8) adds the rotate-to-landscape prompt's reason.
+ */
+export const PauseReason = { Player: 'player', Hidden: 'hidden' } as const;
+export type PauseReason = (typeof PauseReason)[keyof typeof PauseReason];
+
+/** How the PauseOverlay closed (SSP-287). */
+export const PauseExit = { Resume: 'resume', Restart: 'restart', Retire: 'retire' } as const;
+export type PauseExit = (typeof PauseExit)[keyof typeof PauseExit];
+
+/** Pause event types (SSP-287). Strings, so they never collide with EV ids or UI events. */
+export const PAUSE_EV = { PauseOpened: 'pause_opened', PauseClosed: 'pause_closed' } as const;
+export type PauseEventType = (typeof PAUSE_EV)[keyof typeof PAUSE_EV];
+
+/** The PauseOverlay joined the stack: the world is frozen and dimmed (audio ducks, M5). */
+export type PauseOpenedEvent = { readonly type: typeof PAUSE_EV.PauseOpened; readonly reason: PauseReason };
+/** The PauseOverlay left the stack (audio restores, M5). */
+export type PauseClosedEvent = { readonly type: typeof PAUSE_EV.PauseClosed; readonly exit: PauseExit };
+
+export type PauseEventByType = {
+  [PAUSE_EV.PauseOpened]: PauseOpenedEvent;
+  [PAUSE_EV.PauseClosed]: PauseClosedEvent;
+};
+
+/** A subscriber to one pause event type. The event object is reused: copy what you need, never keep it. */
+export type PauseEventListener<T extends PauseEventType> = (event: PauseEventByType[T]) => void;
+
+/** Where the PauseOverlay reports opening and closing (EventBus implements it). */
+export type PauseEventSink = {
+  emitPauseOpened(reason: PauseReason): void;
+  emitPauseClosed(exit: PauseExit): void;
+};
+
+type PauseListenerLists = { [T in PauseEventType]: readonly PauseEventListener<T>[] };
+
 /** A subscriber to one UI event type. The event object is reused: copy what you need, never keep it. */
 export type UiEventListener<T extends UiEventType> = (event: UiEventByType[T]) => void;
 
@@ -379,12 +421,24 @@ type UiListenerLists = { [T in UiEventType]: readonly UiEventListener<T>[] };
 type ListenerLists = { [T in EventType]: readonly SimEventListener<T>[] };
 
 /** The bus. One per Game; the loop drains each sim tick into it, and menus emit UI events on it. */
-export class EventBus implements UiEventSink {
+export class EventBus implements UiEventSink, PauseEventSink {
   private readonly payloads: Payloads = createPayloads();
   private readonly uiPayloads: { [T in UiEventType]: Writable<UiEventByType[T]> } = {
     [UI_EV.UiMove]: { type: UI_EV.UiMove, menu: '', item: -1 },
     [UI_EV.UiSelect]: { type: UI_EV.UiSelect, menu: '', item: -1 },
     [UI_EV.UiBack]: { type: UI_EV.UiBack, menu: '', item: -1 },
+  };
+  private readonly pauseOpened: Writable<PauseOpenedEvent> = {
+    type: PAUSE_EV.PauseOpened,
+    reason: PauseReason.Player,
+  };
+  private readonly pauseClosed: Writable<PauseClosedEvent> = {
+    type: PAUSE_EV.PauseClosed,
+    exit: PauseExit.Resume,
+  };
+  private pauseListeners: PauseListenerLists = {
+    [PAUSE_EV.PauseOpened]: [],
+    [PAUSE_EV.PauseClosed]: [],
   };
   private uiListeners: UiListenerLists = {
     [UI_EV.UiMove]: [],
@@ -456,6 +510,34 @@ export class EventBus implements UiEventSink {
     const listeners = (this.uiListeners as { [K in UiEventType]: readonly UiEventListener<K>[] })[
       type
     ] as readonly ((event: UiEventByType[UiEventType]) => void)[];
+    for (let i = 0; i < listeners.length; i += 1) listeners[i]?.(event);
+  }
+
+  /** Subscribes `listener` to pause events of `type` (SSP-287). Listeners run in subscription order. */
+  onPause<T extends PauseEventType>(type: T, listener: PauseEventListener<T>): Unsubscribe {
+    const lists = this.pauseListeners as { [K in T]: readonly PauseEventListener<T>[] };
+    lists[type] = [...lists[type], listener];
+    let subscribed = true;
+    return () => {
+      if (!subscribed) return;
+      subscribed = false;
+      lists[type] = lists[type].filter((l) => l !== listener);
+    };
+  }
+
+  /** Dispatches PauseOpened (the overlay joined the stack, for `reason`) to its onPause() subscribers, now. */
+  emitPauseOpened(reason: PauseReason): void {
+    const event = this.pauseOpened;
+    event.reason = reason;
+    const listeners = this.pauseListeners[PAUSE_EV.PauseOpened];
+    for (let i = 0; i < listeners.length; i += 1) listeners[i]?.(event);
+  }
+
+  /** Dispatches PauseClosed (the overlay left the stack by `exit`) to its onPause() subscribers, now. */
+  emitPauseClosed(exit: PauseExit): void {
+    const event = this.pauseClosed;
+    event.exit = exit;
+    const listeners = this.pauseListeners[PAUSE_EV.PauseClosed];
     for (let i = 0; i < listeners.length; i += 1) listeners[i]?.(event);
   }
 

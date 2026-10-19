@@ -40,6 +40,8 @@
 //                 the stack is empty (SSP-071): SimSnapshot has no field for it;
 //   sceneHistory() the IDs of every scene that joined the stack since boot, oldest first (SSP-071), so a spec can
 //                 check a transition skipped a scene (Try Again never shows the intro card);
+//   scenes()      the scene stack now, bottom first (SSP-287): `['shift', 'pause']` while the PauseOverlay is over a
+//                 shift. state() then returns the paused shift's World;
 //   boot()        BootScene's state (SSP-284): 'loading', 'loaded' or 'failed', the error that failed the boot (its
 //                 message, naming the asset, e.g. a 404 atlas) and how many times the palette LUT was built on this
 //                 page (palettePass.ts lutBuildCount: exactly 1 after boot).
@@ -151,6 +153,8 @@ export type SspTestApi = {
   scene(): string | null;
   /** IDs of the scenes that joined the stack since boot, oldest first. */
   sceneHistory(): string[];
+  /** The scene stack's IDs now, bottom first (SSP-287). */
+  scenes(): string[];
   /** BootScene's state, error and the page's LUT build count (SSP-284). */
   boot(): TestBoot;
   /** Replays a replay file's `inputs` (`ticks` frames) by World tick from the next tick on (SSP-073). */
@@ -180,6 +184,8 @@ export type TestHookHost = {
   sceneId(): string | null;
   /** IDs of the scenes that joined the stack since boot, oldest first. */
   sceneHistory(): readonly string[];
+  /** The scene stack's IDs, bottom first (SceneManager.ids). */
+  sceneStack(): readonly string[];
   /** BootScene's state (BootScene.status / error) and the LUT build count. */
   boot(): TestBoot;
   /** Hands a decoded input log to the Game's scripted input (Game.scriptedInput.load). */
@@ -307,6 +313,9 @@ export function installTestHooks(
     },
     sceneHistory(): string[] {
       return [...host.sceneHistory()];
+    },
+    scenes(): string[] {
+      return [...host.sceneStack()];
     },
     boot(): TestBoot {
       const b = host.boot();

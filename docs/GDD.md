@@ -542,6 +542,8 @@ Style bonuses are **not** multiplied by the combo and do not extend the chain (p
 
 ### 11.1 Two currencies of failure
 
+Since SSP-075 the shared numbers of this section (complaint rules, the SACKED threshold, the TOWED score share) are **mirrored from `src/data/tuning.json`** (`complaints`, `endStates`; the near miss and Pigeon Scatter of §10.3 and the splash and dust rules are in `streetLife` and `entities.json`), and per-entity penalties from `src/data/entities.json` ([ENTITY_CATALOG](ENTITY_CATALOG.md)). `tests/unit/tuning.test.ts` checks them.
+
 | | **Points penalty** | **Council Complaint** |
 |---|---|---|
 | What it costs | Score (and resets the chain) | Progress toward being SACKED |

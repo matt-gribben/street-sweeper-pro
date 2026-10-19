@@ -2,7 +2,7 @@
 id: SSP-075
 title: "Freeze the Mon\u2013Tue entity set in entities.json and add M3 shared tuning"
 milestone: M3
-status: todo
+status: done
 type: chore
 estimate: M
 labels: [type:chore, area:sim, area:gameplay, area:test, size:M, vertical-slice]

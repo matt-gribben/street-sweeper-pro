@@ -39,7 +39,7 @@ Knockables and stacks go in the items batch; hazard decals at layer 2 with the w
 Culling: query the sim spatial hashes with the camera ground rect plus 4 m.
 Draw calls ≤ 10 (9 allocated).
 
-Sprite resolution (ENTITY_CATALOG §15): add a unit test that every entities.json `sprite` is an AssetId in src/gen/assets.ts; all placeholder-* issues have landed by now.
+Sprite resolution (ENTITY_CATALOG §15): add a unit test that every entities.json `sprite` is an AssetId in src/gen/assets.ts; all placeholder-* issues have landed by now. SSP-075 left a `PENDING_PLACEHOLDER_SPRITES` list in tests/unit/entityCatalog.test.ts (the M3 sprites SSP-097 to SSP-101 add, which it tolerates while unresolved): delete it so every non-site sprite must resolve.
 
 Ramp-swap status in M3: SSP-297 provides the R8 index atlases and a 32x8 swap texture that stays identity until SSP-114 (M4) fills the tables. This issue writes the correct per-instance `swap` index: the shopper outfit from NpcStore.swap, the hatchback/saloon paint slot from the vehicle store, slot 0 for unique characters, and the coat slot for the walker's dog. All slots render identically until M4.
 

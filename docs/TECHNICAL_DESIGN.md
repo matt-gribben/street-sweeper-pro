@@ -511,7 +511,7 @@ Hand-written, synchronous, deterministic. Rapier2D stays a documented escape hat
 
 *As implemented (SSP-036, `src/sim/collision/grid.ts`):* `createStaticGrid(level, tuning.propFootprints)` builds the static world once per shift, as shapes in a fixed order (the shape index breaks every tie): the level's merged `solids` (tiles → metres), then the **map boundary** as four 4-tile-thick strips outside the map (N and S span the corners, so Bessie cannot leave the map, even diagonally), then one shape per `level.props` entry. Each shape is registered in every tile bucket its AABB overlaps; the buckets cover the map plus a one-tile ring and are stored as a CSR list. `queryStatic(grid, aabb)` gathers each overlapping shape once (a per-query stamp dedupes) into the preallocated `grid.candidates`.
 
-- **Prop footprints (provisional until M4).** ENTITY_CATALOG §9 defines the shape as the opaque bounding box of the lowest slice, which does not exist yet, so `src/data/tuning.json` → `propFootprints` holds one table keyed by the twelve static prop ids above (`STATIC_PROP_IDS` in `tuning.ts`, which requires exactly those keys), each a `circle` (`radiusM`) or a `box` (`widthM` along the prop's local +x, `lengthM` along its local +y, turned by the prop's `rot`). `provisional: true` marks it; the sizes come from the nominal widths in STYLE.md §8, `prop.bollard` is the 0.3 m-diameter circle of [§9.5](#95-property-tests), and every footprint fits its 2 m tile. The table moves to `entities.json` with the prop entries in M3 (SSP-075; M2 seeds only litter, stains and Puddle Lane's pickups) and is re-measured from the real slices in M4. A level prop with no footprint is a load error.
+- **Prop footprints (provisional until M4).** ENTITY_CATALOG §9 defines the shape as the opaque bounding box of the lowest slice, which does not exist yet, so `src/data/tuning.json` → `propFootprints` holds one table keyed by the twelve static prop ids above (`STATIC_PROP_IDS` in `tuning.ts`, which requires exactly those keys), each a `circle` (`radiusM`) or a `box` (`widthM` along the prop's local +x, `lengthM` along its local +y, turned by the prop's `rot`). `provisional: true` marks it; the sizes come from the nominal widths in STYLE.md §8, `prop.bollard` is the 0.3 m-diameter circle of [§9.5](#95-property-tests), and every footprint fits its 2 m tile. SSP-075 (M3) added the prop entries to `entities.json` but left this table in `tuning.json`: it is provisional collision data, so it moves into the prop entries when M4 re-measures it from the real slices. A level prop with no footprint is a load error.
 - **Ghost edges between merged rects.** The greedy merge cannot remove every internal edge: a terrace whose houses differ in depth merges into several rects with flush fronts. The grid keeps a solid-cell raster (outside the map counts as solid), and `rectOpenMask` closes the features of a rect that lie inside the solid union: a face is closed when every cell beyond it, along the rows (or columns) of the rect that Bessie's AABB overlaps, is solid, and a corner is closed unless both cells beside it outside the rect are empty. `obbVsRectMasked` (`sat.ts`) then takes the shallowest axis whose rect feature is open (falling back to the plain minimum only if every overlapping axis is closed). Together with resolving the deepest contact first ([§9.2](#92-vehicle-vs-static-phase-3)), sliding along a flush front never produces a sideways "ghost" normal; the unit tests show plain SAT picking the internal side face at a seam where the masked test does not.
 
 ### 9.2 Vehicle vs static (phase 3)
@@ -544,13 +544,13 @@ The TOWED stub runs in phase 10, where `shift.ts` will own it (SSP-062, SSP-079)
 
 ### 9.3 Knockables (phase 4)
 
-`bodies.ts` simulates `prop.wheelie_bin` (30 kg), `prop.traffic_cone` (2 kg), `prop.a_board`, `prop.shopping_trolley` and `prop.recycling_box` as circles or small OBBs with linear and angular velocity, ground friction and restitution against the static grid. Bessie is treated as an infinite-mass mover. Bodies do not stack. **Supplementary sub-step rule:** a knockable sub-steps when its displacement exceeds half its smallest extent, so a flung cone (about 0.4 m) cannot tunnel through a bollard. Spills (bin: 4 items; recycling box: 2 items) spawn litter through `litter.ts` on the first hit only.
+`bodies.ts` simulates `prop.wheelie_bin` (30 kg), `prop.traffic_cone` (2 kg), `prop.a_board` (8 kg), `prop.shopping_trolley` (15 kg) and `prop.recycling_box` (5 kg; the last three chosen in M3 tuning, SSP-075; masses, penalties and spill counts from `entities.json`) as circles or small OBBs with linear and angular velocity, ground friction and restitution against the static grid. Bessie is treated as an infinite-mass mover. Bodies do not stack. **Supplementary sub-step rule:** a knockable sub-steps when its displacement exceeds half its smallest extent, so a flung cone (about 0.4 m) cannot tunnel through a bollard. Spills (bin: 4 items; recycling box: 2 items) spawn litter through `litter.ts` on the first hit only.
 
 ### 9.4 Dynamic actors
 
 | Pair | Shape | Response |
 |---|---|---|
-| Bessie vs NPC | OBB vs circle (human r = 0.3 m, cat 0.2 m, dog 0.25 m) | No physics push. The NPC enters `Fallen` (or the cat's `LeapOnRoof`), the penalty is applied once per contact episode, and contact is ignored for 1.5 s. |
+| Bessie vs NPC | OBB vs circle (human r = 0.3 m, cat 0.2 m, dog 0.25 m; `tuning.json` → `streetLife.npcRadius`) | No physics push. The NPC enters `Fallen` (or the cat's `LeapOnRoof`), the penalty is applied once per contact episode, and contact is ignored for 1.5 s. |
 | Bessie vs dog lead | OBB vs segment (walker → dog, up to 5 m) | Lead Tangle penalty, the dog walker goes `Angry` |
 | Bessie vs traffic | OBB vs OBB (SAT) | Traffic is kinematic and stops. Bessie resolves as against static geometry, with damage. |
 | Bessie vs pigeons | circle query | Never a hit: scatter + Pigeon Scatter bonus |
@@ -665,7 +665,7 @@ export const catBehaviour: Behaviour = {
 - **Steering** (`npc/steering.ts`): seek/arrive along the **pavement nav graph** (from the compiled level), separation from other NPCs via the spatial hash, and sidestep of Bessie's predicted path. Crossings happen only at nav-graph crossing edges (`site.zebra`, `site.school_crossing`, or dropped kerbs) except for behaviours that explicitly jaywalk (cat, businessman, kid on skateboard, jogger swerves).
 - **Perception:** each NPC runs its perception query every 4 ticks, staggered by `index mod 4` (deterministic), against Bessie's pose, velocity and predicted path 1.5 s ahead.
 - **Stimuli** are pushed by the sim, not polled: `Horn` (radius 8 m, 12 m with `upg.two_tone_horn`), `Spray`, `Hit`, `NearMiss`, `HiVis` (`pwr.hi_vis`: all pedestrians yield and part), `BeaconYield` (pedestrians start yielding at 6 m, 10 m with `upg.led_beacon`).
-- **Stats** (speeds, radii, penalties) come from `entities.json`. Per-NPC behaviour descriptions are in [ENTITY_CATALOG.md](ENTITY_CATALOG.md); this section only defines the machinery.
+- **Stats** (speeds, penalties, per-type behaviour numbers under `rules`, the `behaviour` module key and the `yields` flag) come from `entities.json`; the shared rules (awareness and horn radii, near miss, dust, splash, the actor-hit closing speed, NPC radii, traffic and complaint timers) come from `tuning.json` → `streetLife`, `complaints` and `endStates` (SSP-075). Per-NPC behaviour descriptions are in [ENTITY_CATALOG.md](ENTITY_CATALOG.md); this section only defines the machinery.
 
 ### 11.2 Example: Doris (`npc.old_woman`)
 
@@ -675,11 +675,11 @@ stateDiagram-v2
   Walk --> Glare: Bessie's path blocked within 4 m
   Glare --> Walk: path clear for 1 s
   Glare --> FistShake: Horn
-  FistShake --> Walk: after 1.5 s, slower walk (0.4 m/s proposed; duration TBD (M3 tuning))
+  FistShake --> Walk: after 1.5 s, slower walk (0.4 m/s, M3 tuning; duration TBD (M3 tuning, SSP-083))
   Walk --> Chase: Spray hits her
   Glare --> Chase: Spray hits her
-  Chase --> Chase: handbag whack in reach, 2 HP per hit (every 1.0 s proposed)
-  Chase --> Walk: Bessie beyond the give-up distance (8 m proposed, TBD (M3 tuning))
+  Chase --> Chase: handbag whack in reach, 2 HP per hit (every 1.0 s, M3 tuning)
+  Chase --> Walk: Bessie beyond the give-up distance (8 m, M3 tuning)
   Walk --> Fallen: Hit
   Glare --> Fallen: Hit
   Chase --> Fallen: Hit
@@ -688,7 +688,7 @@ stateDiagram-v2
   Angry --> Walk: 54 ticks
 ```
 
-State durations follow the animation timings in [ART_BIBLE §10.2](ART_BIBLE.md#102-timing-table) (fall frames 3 × 5 ticks, hold 72 ticks, get-up 10 ticks, angry 54 ticks). Gameplay values marked proposed are owned by [ENTITY_CATALOG](ENTITY_CATALOG.md) and settled in M3 tuning.
+State durations follow the animation timings in [ART_BIBLE §10.2](ART_BIBLE.md#102-timing-table) (fall frames 3 × 5 ticks, hold 72 ticks, get-up 10 ticks, angry 54 ticks). Doris's gameplay values are owned by [ENTITY_CATALOG §6.3](ENTITY_CATALOG.md#63-doris-npcold_woman) and live in `entities.json` → `npc.old_woman.rules`; the 0.4 m/s, 1.0 s and 8 m values were chosen in M3 tuning (SSP-075).
 
 On `Hit`: −500, 2 complaints, spawn 6 `litter.spilled_shopping`. Doris **never yields** to Bessie: she ignores `BeaconYield`. The one exception is `HiVis` (`pwr.hi_vis`), which makes her yield and part, grudgingly, for its 12 s duration.
 

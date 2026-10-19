@@ -3,7 +3,9 @@
 // the source of truth for every handling number; GDD §7 mirrors it (CLAUDE.md §2). It also holds the
 // provisional static-prop collision footprints (`propFootprints`, SSP-036) until M4 measures the real slices,
 // and since SSP-053 the M2 sweeping, hopper, water, dumping, combo, scoring, shift, star and Tidy % values
-// (mirrored by GDD §8, §9, §10 and §12.1).
+// (mirrored by GDD §8, §9, §10 and §12.1). Since SSP-075 it also holds the M3 street-life rules every
+// pedestrian, animal and traffic issue shares (`streetLife`, `complaints`, `endStates`; mirrored by
+// ENTITY_CATALOG §3, GDD §10.3 and §11, and TECHNICAL_DESIGN §9.4 and §11).
 //
 // It is also the gateway for src/data/entities.json: the guards and types live in ./entities.ts (re-exported
 // below) and DEFAULT_ENTITIES is loaded here, because only this file may import src/data/.
@@ -19,7 +21,7 @@ import entitiesJson from '../data/entities.json' with { type: 'json' };
 import tuningJson from '../data/tuning.json' with { type: 'json' };
 import { DEG_TO_RAD, SIM_HZ } from './constants.ts';
 import { describeValue, isRecord } from './dataGuards.ts';
-import { type Entities, loadEntities } from './entities.ts';
+import { type Entities, loadEntities, STATIC_PROP_IDS, type StaticPropId } from './entities.ts';
 
 export * from './entities.ts';
 
@@ -38,7 +40,9 @@ type Check =
   /** any finite number: signed vehicle-local coordinates */
   | 'finite'
   /** an integer >= 1: counts and points per event */
-  | 'positiveInteger';
+  | 'positiveInteger'
+  /** an integer < 0: penalties */
+  | 'negativeInteger';
 
 type GroupSpec = Readonly<Record<string, Check>>;
 
@@ -299,6 +303,129 @@ const TIDY_SPEC = {
 } as const satisfies GroupSpec;
 
 // ---------------------------------------------------------------------------------------------------------
+// M3 street-life sections (SSP-075): the rules every pedestrian, animal and traffic issue shares
+// (ENTITY_CATALOG §3, GDD §10.3 and §11, TECHNICAL_DESIGN §9.4 and §11). Per-entity numbers (speeds, hit
+// penalties, behaviour timings) live in entities.json instead. The upgrade-dependent values (LED beacon,
+// two-tone horn) are stored beside their base values until upgrades.json and the tuning modifiers arrive (M6).
+// ---------------------------------------------------------------------------------------------------------
+
+/** ENTITY_CATALOG §3.4: yielding pedestrians react inside radiusM (ledBeaconRadiusM with upg.led_beacon). */
+const AWARENESS_SPEC = {
+  radiusM: 'positive',
+  ledBeaconRadiusM: 'positive',
+} as const satisfies GroupSpec;
+
+/** ENTITY_CATALOG §3.4, TECHNICAL_DESIGN §11.1: the Horn stimulus radius (twoToneRadiusM with upg.two_tone_horn). */
+const HORN_SPEC = {
+  radiusM: 'positive',
+  twoToneRadiusM: 'positive',
+} as const satisfies GroupSpec;
+
+/** GDD §10.3: passing within maxGapM of a pedestrian above minSpeedMps without contact scores pts. */
+const NEAR_MISS_SPEC = {
+  maxGapM: 'positive',
+  minSpeedMps: 'positive',
+  pts: 'positiveInteger',
+} as const satisfies GroupSpec;
+
+/** ENTITY_CATALOG §3.4: a pedestrian within radiusM of a dust cloud costs pts every everyS. No complaint. */
+const DUST_SPEC = {
+  radiusM: 'positive',
+  pts: 'negativeInteger',
+  everyS: 'positive',
+} as const satisfies GroupSpec;
+
+/**
+ * ENTITY_CATALOG §3.4, §10: driving through haz.puddle above minSpeedMps splashes each pedestrian within
+ * radiusM for pts; every complaintEvery-th splash is also 1 complaint.
+ */
+const SPLASH_SPEC = {
+  minSpeedMps: 'positive',
+  radiusM: 'positive',
+  pts: 'negativeInteger',
+  complaintEvery: 'positiveInteger',
+} as const satisfies GroupSpec;
+
+/**
+ * ENTITY_CATALOG §3.2, TECHNICAL_DESIGN §9.4: a contact is a hit only at a closing speed of at least
+ * minClosingSpeedMps (§17 Q2); after a hit, contact with that actor is ignored for ignoreContactS.
+ */
+const ACTOR_HIT_SPEC = {
+  minClosingSpeedMps: 'positive',
+  ignoreContactS: 'positive',
+} as const satisfies GroupSpec;
+
+/** TECHNICAL_DESIGN §9.4: actor collision circles. */
+const NPC_RADIUS_SPEC = {
+  humanM: 'positive',
+  catM: 'positive',
+  dogM: 'positive',
+} as const satisfies GroupSpec;
+
+/** ENTITY_CATALOG §8.3, TECHNICAL_DESIGN §11.4: a car blocked by Bessie honks after honkAfterBlockedS. */
+const TRAFFIC_SPEC = {
+  honkAfterBlockedS: 'positive',
+} as const satisfies GroupSpec;
+
+const STREET_LIFE_GROUPS = {
+  awareness: AWARENESS_SPEC,
+  horn: HORN_SPEC,
+  nearMiss: NEAR_MISS_SPEC,
+  dust: DUST_SPEC,
+  splash: SPLASH_SPEC,
+  actorHit: ACTOR_HIT_SPEC,
+  npcRadius: NPC_RADIUS_SPEC,
+  traffic: TRAFFIC_SPEC,
+} as const;
+
+/** GDD §11.1: the meter reaching sackedAt complaints is SACKED!. */
+const COMPLAINT_METER_SPEC = {
+  sackedAt: 'positiveInteger',
+} as const satisfies GroupSpec;
+
+/**
+ * ENTITY_CATALOG §3.3: more than maxHonks honks within windowS is `complaints` ("Noise"); the threshold is
+ * twoToneMaxHonks with upg.two_tone_horn.
+ */
+const HORN_SPAM_SPEC = {
+  maxHonks: 'positiveInteger',
+  twoToneMaxHonks: 'positiveInteger',
+  windowS: 'positive',
+  complaints: 'positiveInteger',
+} as const satisfies GroupSpec;
+
+/** ENTITY_CATALOG §3.3, §8.3: blocking one queue for more than afterBlockedS is `complaints` ("Road Rage"). */
+const ROAD_RAGE_SPEC = {
+  afterBlockedS: 'positive',
+  complaints: 'positiveInteger',
+} as const satisfies GroupSpec;
+
+/** ENTITY_CATALOG §3.3, §11: running an occupied site.zebra costs pts and complaints. */
+const ZEBRA_SPEC = {
+  pts: 'negativeInteger',
+  complaints: 'positiveInteger',
+} as const satisfies GroupSpec;
+
+/** ENTITY_CATALOG §3.3: a penalty within radiusM of a veh.police adds extraComplaints (stored now; M6). */
+const POLICE_WITNESS_SPEC = {
+  radiusM: 'positive',
+  extraComplaints: 'positiveInteger',
+} as const satisfies GroupSpec;
+
+const COMPLAINT_GROUPS = {
+  meter: COMPLAINT_METER_SPEC,
+  hornSpam: HORN_SPAM_SPEC,
+  roadRage: ROAD_RAGE_SPEC,
+  zebra: ZEBRA_SPEC,
+  policeWitness: POLICE_WITNESS_SPEC,
+} as const;
+
+/** GDD §11.3: TOWED! keeps towedScoreKeep of the score (and awards no stars). */
+const END_STATES_SPEC = {
+  towedScoreKeep: 'fraction',
+} as const satisfies GroupSpec;
+
+// ---------------------------------------------------------------------------------------------------------
 // The typed result. Groups keep their JSON shape except steering, whose degrees become radians.
 // ---------------------------------------------------------------------------------------------------------
 
@@ -335,26 +462,6 @@ export type SweeperTuning = {
   readonly provisional: readonly string[];
 };
 
-/**
- * The static props that block Bessie (TECHNICAL_DESIGN §9.1, ENTITY_CATALOG §9.2), in catalog order.
- * `propFootprints.shapes` must hold exactly these ids.
- */
-export const STATIC_PROP_IDS = [
-  'prop.lamp_post',
-  'prop.bollard',
-  'prop.bench',
-  'prop.bus_shelter',
-  'prop.phone_box',
-  'prop.post_box',
-  'prop.hydrant',
-  'prop.tree',
-  'prop.planter',
-  'prop.market_stall',
-  'prop.litter_bin',
-  'prop.roadworks_barrier',
-] as const;
-export type StaticPropId = (typeof STATIC_PROP_IDS)[number];
-
 /** A circle footprint centred on the prop's position (metres). */
 export type CirclePropFootprint = { readonly shape: 'circle'; readonly radiusM: number };
 
@@ -370,8 +477,9 @@ export type PropFootprint = CirclePropFootprint | BoxPropFootprint;
  * Collision footprints of the static props (SSP-036). PROVISIONAL until the M4 art pass: ENTITY_CATALOG §9
  * defines a prop's shape as the opaque bounding box of its lowest slice, which does not exist yet for most
  * props, so tuning.json holds one hand-picked table (sizes from STYLE.md §8's nominal widths) and
- * `provisional` stays true until M4 measures the real slices. The table moves to entities.json with the prop
- * entries (M3, SSP-075).
+ * `provisional` stays true until M4 measures the real slices. SSP-075 (M3) added the prop entries to
+ * entities.json but left this table here: it is provisional collision data that M4 replaces with measured
+ * slices, and it moves into the prop entries then.
  */
 export type PropFootprints = {
   readonly provisional: boolean;
@@ -407,6 +515,16 @@ export type ComboTuning = {
   readonly tiers: readonly ComboTier[];
 };
 
+/** The shared pedestrian, animal and traffic rules (M3, SSP-075). */
+export type StreetLifeTuning = {
+  readonly [G in keyof typeof STREET_LIFE_GROUPS]: Group<(typeof STREET_LIFE_GROUPS)[G]>;
+};
+
+/** The Council Complaints rules (M3, SSP-075). */
+export type ComplaintsTuning = {
+  readonly [G in keyof typeof COMPLAINT_GROUPS]: Group<(typeof COMPLAINT_GROUPS)[G]>;
+};
+
 /** Everything in src/data/tuning.json, validated. Pass it into the sim explicitly; never import a singleton. */
 export type Tuning = {
   readonly vehicle: {
@@ -422,6 +540,9 @@ export type Tuning = {
   readonly shift: Group<typeof SHIFT_SPEC>;
   readonly stars: Group<typeof STARS_SPEC>;
   readonly tidy: Group<typeof TIDY_SPEC>;
+  readonly streetLife: StreetLifeTuning;
+  readonly complaints: ComplaintsTuning;
+  readonly endStates: Group<typeof END_STATES_SPEC>;
 };
 
 /** The top-level keys of tuning.json, in file order. */
@@ -437,6 +558,9 @@ const ROOT_KEYS = [
   'shift',
   'stars',
   'tidy',
+  'streetLife',
+  'complaints',
+  'endStates',
 ] as const;
 
 // ---------------------------------------------------------------------------------------------------------
@@ -486,6 +610,9 @@ function readNumber(raw: unknown, path: string, check: Check): number {
       break;
     case 'positiveInteger':
       if (!(Number.isInteger(raw) && raw >= 1)) fail(path, `must be an integer >= 1, got ${raw}`);
+      break;
+    case 'negativeInteger':
+      if (!(Number.isInteger(raw) && raw < 0)) fail(path, `must be a negative integer, got ${raw}`);
       break;
   }
   return raw;
@@ -708,6 +835,40 @@ function readTidy(raw: unknown, path: string): Group<typeof TIDY_SPEC> {
   return tidy;
 }
 
+/** Read every group of `groups` from the object at `path`, which must hold exactly those groups. */
+function readGroups<G extends Readonly<Record<string, GroupSpec>>>(
+  raw: unknown,
+  path: string,
+  groups: G,
+): { readonly [K in keyof G]: Group<G[K]> } {
+  const obj = readObject(raw, path, Object.keys(groups));
+  const out: Record<string, Group<GroupSpec>> = {};
+  for (const [name, spec] of Object.entries(groups))
+    out[name] = readGroup(obj[name], `${path}.${name}`, spec);
+  // Every group of G was written just above.
+  return out as { readonly [K in keyof G]: Group<G[K]> };
+}
+
+/** An upgraded value must not be below its base value. */
+function checkNotBelow(value: number, base: number, path: string, what: string): void {
+  if (value < base) fail(path, `${what} (${value}) must not be below the base value (${base})`);
+}
+
+function readStreetLife(raw: unknown, path: string): StreetLifeTuning {
+  const streetLife = readGroups(raw, path, STREET_LIFE_GROUPS);
+  const { awareness, horn } = streetLife;
+  checkNotBelow(awareness.ledBeaconRadiusM, awareness.radiusM, `${path}.awareness`, 'ledBeaconRadiusM');
+  checkNotBelow(horn.twoToneRadiusM, horn.radiusM, `${path}.horn`, 'twoToneRadiusM');
+  return streetLife;
+}
+
+function readComplaints(raw: unknown, path: string): ComplaintsTuning {
+  const complaints = readGroups(raw, path, COMPLAINT_GROUPS);
+  const { hornSpam } = complaints;
+  checkNotBelow(hornSpam.twoToneMaxHonks, hornSpam.maxHonks, `${path}.hornSpam`, 'twoToneMaxHonks');
+  return complaints;
+}
+
 /**
  * Validate raw tuning data (the parsed JSON, or an edited copy of it) and return a new typed Tuning object.
  * Throws an Error naming the JSON path on any missing, unknown, mistyped or out-of-range value. Every call
@@ -728,6 +889,9 @@ export function loadTuning(raw: unknown): Tuning {
     shift: readShift(root.shift, 'shift'),
     stars: readStars(root.stars, 'stars'),
     tidy: readTidy(root.tidy, 'tidy'),
+    streetLife: readStreetLife(root.streetLife, 'streetLife'),
+    complaints: readComplaints(root.complaints, 'complaints'),
+    endStates: readGroup(root.endStates, 'endStates', END_STATES_SPEC),
   };
 }
 

@@ -134,7 +134,7 @@ flowchart LR
 |---|---|---|
 | **Solid** | Static props, buildings, parked vehicles, moving traffic | OBB vs OBB/AABB (SAT), restitution **0.2**. Damage = **4 HP per m/s** of normal impact speed above **2 m/s** (×0.6 with `upg.bumper`). SFX `bump_wall`; `crash` above the damage threshold. |
 | **Knockable** | `prop.wheelie_bin`, `traffic_cone`, `a_board`, `shopping_trolley`, `recycling_box` | Custom impulse body. Bessie barely slows; the prop slides or tips and may spill litter. Per-prop penalty. |
-| **Actor hit** | Pedestrians, dogs, cats, bicycles, mobility scooters | The actor plays its **fall** (3 frames), gets up and plays **angry** (shakes fist). Nobody is injured (PEGI 7). Penalty + complaints. **Any penalty resets the combo chain.** An actor hit counts only when Bessie's closing speed toward the actor is ≥ 1.0 m/s (proposed, M3). Actors that walk into a stationary or slower Bessie bump off, play startle, and incur no penalty. |
+| **Actor hit** | Pedestrians, dogs, cats, bicycles, mobility scooters | The actor plays its **fall** (3 frames), gets up and plays **angry** (shakes fist). Nobody is injured (PEGI 7). Penalty + complaints. **Any penalty resets the combo chain.** An actor hit counts only when Bessie's closing speed toward the actor is ≥ 1.0 m/s (settled in M3, SSP-075: `tuning.json` → `streetLife.actorHit`). Actors that walk into a stationary or slower Bessie bump off, play startle, and incur no penalty. |
 | **Line obstacle** | `npc.dog_walker` lead | Crossing the lead segment = **Lead Tangle**. No physical collision. |
 | **Ghost** | Pigeons, seagulls, all sites, stains, most hazards | No physical collision. Overlap triggers an effect. |
 | **Pickup** | `pwr.*`, `collect.*` | Collected when Bessie's body OBB overlaps the pickup, whatever the brush state. |
@@ -174,6 +174,8 @@ stateDiagram-v2
 - **Dust:** a pedestrian within 3 m of a dust cloud coughs (startle frames): −10 pts per pedestrian per 2 s. No complaint.
 - **Puddle splash:** above 3 m/s through `haz.puddle`, pedestrians within 1.5 m: −50 each. Every 3rd splash = 1 complaint.
 - **`pwr.hi_vis`:** every pedestrian yields and parts for 12 s, including the ones that normally never yield (Doris, the businessman). Stationary NPCs (`kid_chalk`, `market_trader`) do not move.
+- **Who yields** (`yields` in `entities.json`): `npc.shopper`, `npc.old_man_frame`, `npc.dog_walker`, `npc.litterbug`, `npc.mum_pushchair` and `npc.postie` yield inside the awareness radius. Doris and the businessman never yield, the market trader is stationary, and the animals have their own reactions ([§7](#7-animals-npc-animals)), so those have `yields: false`.
+- The numbers above (awareness, horn, near miss, dust, splash, actor hits, complaint rules) live in `src/data/tuning.json` → `streetLife`, `complaints` and `endStates` (SSP-075).
 
 ---
 
@@ -307,8 +309,8 @@ stateDiagram-v2
 
 - **Shuffle:** 0.6 m/s with her trolley.
 - **Glare:** she **stops in your path and glares** (idle frames, facing Bessie). She ignores the awareness radius and `upg.led_beacon`. Only `pwr.hi_vis` makes her part.
-- **Horn → she shakes her fist and walks slower.** The reduced speed is 0.4 m/s (proposed, TBD (M3 tuning)). The lesson: the horn makes things worse with Doris.
-- **Spray her → she chases you at 1.2 m/s, whacking with her handbag (2 HP per hit).** At 1.2 m/s she can only catch a stationary or reversing Bessie, which is the joke: she catches you while you are dumping or refilling. She whacks every 1.0 s and gives up at 8 m (both proposed, TBD (M3 tuning)).
+- **Horn → she shakes her fist and walks slower.** The reduced speed is 0.4 m/s (chosen in M3 tuning, SSP-075). The lesson: the horn makes things worse with Doris.
+- **Spray her → she chases you at 1.2 m/s, whacking with her handbag (2 HP per hit).** At 1.2 m/s she can only catch a stationary or reversing Bessie, which is the joke: she catches you while you are dumping or refilling. She whacks every 1.0 s and gives up at 8 m (both chosen in M3 tuning, SSP-075).
 - **Hit:** −500, 2 complaints, 6 `litter.spilled_shopping` scattered around her. Collecting them earns 0 pts.
 
 ---
@@ -416,7 +418,7 @@ Bessie's livery (default `upg.livery_council`): body 15 (shade 14), cab 07, stri
 | `veh.rival_sweeper` | Spotless Sid's sweeper | **Rival Sweep mode (M9) plus a Friday cameo; steals litter** using the same inlet rules as Bessie. | Solid | `horn` | **Fri** (cameo); Rival Sweep mode |
 | `veh.bicycle` | Cycle courier | **Fast, filters between lanes.** | Actor hit: **−250, 1 C** | `ped_oi` | Tue, Sat, Sun |
 | `veh.mobility_scooter` | Mobility scooter | **1.5 m/s on pavements.** | Actor hit: **−500, 2 C** | `granny_harrumph` | Mon, Fri, Sun |
-| `veh.<type>_parked` | Parked variants | **Static.** Reuse the parent's frames at a fixed heading, so they need no new art. Cats perch on their roofs. | Solid. **Denting one costs −100 and 5 HP.** | `crash` | All except Yard |
+| `veh.<type>_parked` | Parked variants | **Static.** Reuse the parent's frames at a fixed heading, so they need no new art. Cats perch on their roofs. | Solid. **Denting one costs −100 and 5 HP** (the flat 5 HP replaces impact damage). | `crash` | All except Yard |
 
 **Parked variants** exist for `hatchback`, `saloon`, `taxi`, `van_white`, `police` and `ice_cream_van` (`veh.hatchback_parked` and so on). Buses, bin lorries, bicycles and mobility scooters are never parked props.
 
@@ -440,7 +442,7 @@ The blocking timer resets when the path clears. Each continuous block of more th
 
 ## 9. Props and obstacles (`prop.*`)
 
-**Common spec:** cell **32×32 per slice**, `flat` (1 frame) or `stack` (4 or 8 horizontal slices, leaned by the perspective camera). Atlas: `items`. Collision shape = the opaque bounding box of the lowest slice, as an OBB. Until the M4 art pass measures those slices, the static props (§9.2) collide with a **provisional** footprint table, a circle or a box per id, in `src/data/tuning.json` → `propFootprints` (SSP-036; it moves to `entities.json` in M2; see [TECHNICAL_DESIGN §9.1](TECHNICAL_DESIGN.md#91-static-world)). Slice counts were locked in M0 ([`assets-src/STYLE.md`](../assets-src/STYLE.md) v1 §8, [ART_BIBLE §8.6](ART_BIBLE.md#86-props)) and appear in the Render column as `stack (n)`: 8 for tall props with thin members, 4 for broad or short ones. Only the lowest and highest slices cast drop shadows.
+**Common spec:** cell **32×32 per slice**, `flat` (1 frame) or `stack` (4 or 8 horizontal slices, leaned by the perspective camera). Atlas: `items`. Collision shape = the opaque bounding box of the lowest slice, as an OBB. Until the M4 art pass measures those slices, the static props (§9.2) collide with a **provisional** footprint table, a circle or a box per id, in `src/data/tuning.json` → `propFootprints` (SSP-036). It stays there until M4 measures the slices, then moves into the prop entries of `entities.json` (SSP-075 added those entries without it; see [TECHNICAL_DESIGN §9.1](TECHNICAL_DESIGN.md#91-static-world)). Slice counts were locked in M0 ([`assets-src/STYLE.md`](../assets-src/STYLE.md) v1 §8, [ART_BIBLE §8.6](ART_BIBLE.md#86-props)) and appear in the Render column as `stack (n)`: 8 for tall props with thin members, 4 for broad or short ones. Only the lowest and highest slices cast drop shadows.
 
 ### 9.1 Knockable props
 
@@ -450,11 +452,11 @@ Custom impulse bodies (`src/sim/bodies.ts`). They do not slow Bessie meaningfull
 |---|---|---|---|---|---|---|---|---|
 | `prop.wheelie_bin` | Wheelie bin | 30 kg | −50 | 4 items | grid (`assets-src/sprites/prop/`) | stack (4) | `bin_knock` | All except Yard |
 | `prop.traffic_cone` | Traffic cone | 2 kg | none | — | grid | stack (4) | `cone_knock` | Wed, Sun, **Yard** (Skip Run slalom) |
-| `prop.a_board` | A-board | TBD (M3 tuning) | −25 | — | grid | stack (4) | `cone_knock` | **Tue**, Fri, Sun |
-| `prop.shopping_trolley` | Shopping trolley | TBD (M3 tuning) | none | — | grid *(proposed)* | flat | `bin_knock` | Tue, Wed, Sat |
-| `prop.recycling_box` | Recycling box | TBD (M3 tuning) | −25 | 2 items | grid *(proposed)* | flat | `bin_knock` | Mon, Thu, Sun |
+| `prop.a_board` | A-board | 8 kg (chosen in M3 tuning) | −25 | — | grid | stack (4) | `cone_knock` | **Tue**, Fri, Sun |
+| `prop.shopping_trolley` | Shopping trolley | 15 kg (chosen in M3 tuning) | none | — | grid *(proposed)* | flat | `bin_knock` | Tue, Wed, Sat |
+| `prop.recycling_box` | Recycling box | 5 kg (chosen in M3 tuning) | −25 | 2 items | grid *(proposed)* | flat | `bin_knock` | Mon, Thu, Sun |
 
-Spilled items are drawn from the district's small-litter table and are worth their normal points (unlike `litter.spilled_shopping`). Knocking a prop is a penalty, so it **resets the combo chain** even when the spilled items let you rebuild it.
+The three masses marked *chosen in M3 tuning* were picked in SSP-075 (no source gave them): an A-board is a light folding sign (8 kg), a shopping trolley a steel basket on castors (15 kg), a recycling box a part-filled kerbside crate (5 kg), all between the cone (2 kg) and the bin (30 kg). They are tunable when `bodies.ts` is playtested. Spilled items are drawn from the district's small-litter table and are worth their normal points (unlike `litter.spilled_shopping`). Knocking a prop is a penalty, so it **resets the combo chain** even when the spilled items let you rebuild it.
 
 ### 9.2 Static props
 
@@ -595,16 +597,24 @@ Liveries are per-instance ramp swaps of the `veh.sweeper` frames: no extra rende
 
 `src/data/entities.json` is keyed by entity ID. The sim reads it once at boot into typed struct-of-arrays stores; render, audio and UI read the same file for sprite, SFX and display-name lookups. The shape below is the contract this catalog mirrors. [TECHNICAL_DESIGN](TECHNICAL_DESIGN.md) owns the loader: `src/sim/entities.ts` holds the types and guards, and `src/sim/tuning.ts` (the only sim file that may import `src/data/`) loads the file as `DEFAULT_ENTITIES`.
 
-Since SSP-053 (M2) the file holds the 15 `litter.*` and 5 `stain.*` entries plus the three pickups Puddle Lane references (`pwr.flask_of_tea`, `collect.false_teeth`, `collect.golden_crisp`); every other class arrives with SSP-075 (M3). Fields per class:
+SSP-053 (M2) seeded the 15 `litter.*` and 5 `stain.*` entries plus the three pickups Puddle Lane references (`pwr.flask_of_tea`, `collect.false_teeth`, `collect.golden_crisp`). SSP-075 froze the Mon–Tue set at the start of M3 ([ROADMAP M3](ROADMAP.md#m3-living-street) entity-scope table): the 11 people and animals, the 7 traffic vehicles and 4 parked variants, all 17 props, the 7 Mon–Tue hazards, 4 sites and all 6 power-ups, every one with `milestone: "M3"`. The Wed–Sun entities arrive in M6. Entries appear in this catalog's section order. Fields per class:
 
 | Class | Required fields (besides `class`, `name`, `sprite`, `districts`, `milestone`) |
 |---|---|
 | `litter` | `pts`, `lu`, `sfx.pickup`, `rules` (optional keys: `brushUp`, `flung`, `burst`, `drift`) |
 | `stain` | `pts`, `sprayS`, `rules` (optional keys: `pairedHazard`, `cleanWhileOwnerPresent`). Stains have no `sfx` ([§5](#5-stains-stain)). |
-| `pwr` | `effect` (`kind`, its values, `durationS`), `sfx.pickup` |
+| `npc` | `speed` (m/s; the cat's is its dart speed, 0 for the market trader and the pigeon, which never walk), `behaviour` (the behaviour module key), `yields` ([§3.4](#34-generic-pedestrian-reaction-model)), `hit` (`{ pts, complaints, drops }`, or `null` for the pigeon, which cannot be hit; `drops` maps a `litter.*` ID to a count and is `{}` for everyone but Doris, [§17](#17-open-questions) Q7), `sfx` (keys `hit`, `horn`, `tangle`, `scatter`), `rules` |
+| `veh` | `behaviour` (`traffic`, `taxi`, `van_white`, `bus`, `bicycle`, `mobility_scooter`, `parked`), `collision` (`solid` or `actor`, [§3.2](#32-collision-responses)), `speed` (m/s, or `null` where the lane speed limit sets it), `hit` (as `npc`, for actors; `null` for solid vehicles, which cost HP only, Q3), `sfx` (keys `horn`, `hit`, `dent`), `rules` |
+| `prop` (knockable) | `collision: "knockable"`, `massKg`, `knock` (`{ pts, spills }`; `pts` 0 is free), `sfx.knock` |
+| `prop` (static) | `collision: "solid"`. No `sfx`: static props use the shared `bump_wall`/`crash` rule. Collision footprints stay in `tuning.json` → `propFootprints` until M4 ([§9](#9-props-and-obstacles-prop)). |
+| `haz` | `effect` (`grip`, `jolt`, `drain`, `hardStop`), `surface` (for `grip`: the `tuning.json` `vehicle.sweeper.lateralGripPerS` key, `wet`, `oil` or `wetLeaves`, so each grip number lives in one place; `null` otherwise), `sfx` (keys `splash`, `jolt`, `sweep`, `hardStop`; may be empty), `rules` |
+| `site` | `sprite` is `null`: these sites are drawn by ground tiles, facades and props ([§11](#11-sites-site)). No other fields. |
+| `pwr` | `effect` (`kind` plus that kind's numbers: `chainTimerMul` `mul` `durationS`; `topSpeedMul` `mul` `durationS`; `pedestriansYield` `durationS`; `superSuction` `suctionMul` `flingThresholdMps` `durationS`; `repairHp` `hp`; `addWater` `units`), `sfx.pickup` |
 | `collect` | `kind` (`lostProperty` or `goldenCrisp`), `pts`, `sfx.pickup` |
 
-Angles in `rules` are stored in degrees and converted to radians at load, like `tuning.json`. "Any" in a Districts column means all eight districts; "All except Yard" means the seven shift districts.
+`rules` on `npc`, `veh` and `haz` entries holds the behaviour numbers of [§6](#6-pedestrians-npc-people)–[§10](#10-hazards-haz), with a fixed, required key set per ID (the loader's rule specs in `src/sim/entities.ts`): for example Doris has `chaseSpeedMps`, `handbagHitHp`, `whackEveryS`, `chaseGiveUpM` and `hornSlowSpeedMps`; the dog walker `leadMaxM`, `messEveryMinS`/`MaxS`, `tanglePts` and `tangleComplaints`; the bus `stopDwellS`; a parked car `dentPts` and `dentHp`; the pothole `hpLoss` and `spillLu`. Key names carry their unit. Shared street-life rules (awareness, horn, near miss, dust, splash, actor hits, complaints) are not per entity: they live in `tuning.json` → `streetLife`, `complaints` and `endStates`.
+
+Angles in `rules` are stored in degrees and converted to radians at load, like `tuning.json`. "Any" and "All" in a Districts column mean all eight districts; "All except Yard" means the seven shift districts.
 
 ```json
 {
@@ -633,14 +643,30 @@ Angles in `rules` are stored in degrees and converted to radians at load, like `
     "class": "npc",
     "name": "Doris",
     "speed": 0.6,
-    "chaseSpeed": 1.2,
     "behaviour": "old_woman",
     "yields": false,
     "hit": { "pts": -500, "complaints": 2, "drops": { "litter.spilled_shopping": 6 } },
-    "handbagHitHp": 2,
     "sprite": "npc.old_woman",
     "sfx": { "hit": "granny_harrumph", "horn": "granny_harrumph" },
     "districts": ["district.puddle_lane", "district.high_street", "district.conker_hill", "district.civic_quarter"],
+    "rules": {
+      "chaseSpeedMps": 1.2,
+      "handbagHitHp": 2,
+      "whackEveryS": 1.0,
+      "chaseGiveUpM": 8,
+      "hornSlowSpeedMps": 0.4
+    },
+    "milestone": "M3"
+  },
+  "haz.puddle": {
+    "class": "haz",
+    "name": "Puddle",
+    "effect": "grip",
+    "surface": "wet",
+    "sprite": "haz.puddle",
+    "sfx": { "splash": "splash" },
+    "districts": ["district.puddle_lane", "district.gasworks", "district.civic_quarter"],
+    "rules": {},
     "milestone": "M3"
   }
 }
@@ -648,11 +674,11 @@ Angles in `rules` are stored in degrees and converted to radians at load, like `
 
 Rules for the file:
 
-- Keys are canonical IDs from [§2](#2-id-index). The `sprite` field references an `AssetId` from `src/gen/assets.ts`. The sim may import that module for types only, so the loader checks the shape and `tests/unit/entityCatalog.test.ts` asserts that every `sprite` is a real `AssetId` with frames.
+- Keys are canonical IDs from [§2](#2-id-index). The `sprite` field references an `AssetId` from `src/gen/assets.ts`. The sim may import that module for types only, so the loader checks the shape and `tests/unit/entityCatalog.test.ts` asserts that every `sprite` is a real `AssetId` with frames. **Until the M3 placeholder issues land** (SSP-097 to SSP-101), the M3 sprites they create are listed in that test as pending, each against its issue; every other sprite must already resolve, and SSP-103 empties the list.
 - `sfx` values are bare IDs from [§1.4](#14-sfx-notation). Until the audio sources arrive in M5, `tests/unit/entityCatalog.test.ts` asserts that each one is in the canonical §1.4 list (and the loader rejects any other value); from M5 (SSP-168) the test also asserts that each one exists in `assets-src/audio/sfx/`.
 - `districts` here is a *membership* list. Weights and counts live in the level JSON spawn tables ([LEVEL_DESIGN](LEVEL_DESIGN.md)). The level compiler fails if a level spawns an entity whose `districts` list does not include that level.
 - `milestone` is the milestone that delivers the entity's behaviour (§6.1). The level compiler rejects a district that spawns an entity whose milestone is later than the milestone that delivers that district ([LEVEL_DESIGN §10.3](LEVEL_DESIGN.md#103-validation-rules), L007).
-- Numbers marked TBD in this document are absent from the JSON until decided; the loader must fail loudly on a missing required field rather than defaulting.
+- Numbers marked TBD in this document are absent from the JSON until decided; the loader must fail loudly on a missing required field rather than defaulting. Since SSP-075 no M3 value is TBD: the values chosen then are marked *chosen in M3 tuning*.
 
 ---
 
@@ -660,7 +686,7 @@ Rules for the file:
 
 1. Change `src/data/entities.json` (or `upgrades.json`) **and** this document in the same PR. A Vitest test (`tests/unit/entityCatalog.test.ts`) parses the tables in this file and diffs IDs, points, LU, speeds and penalties against the JSON.
 2. **Never rename an ID after M4** (Art Pass 1). Frame IDs are baked into atlases, replays and goldens. Deprecate instead: keep the old ID, mark it unused, and remove it at the next milestone boundary.
-3. A new entity needs, in the same PR: a manifest entry in `assets-src/manifest.json`, at least a code-defined placeholder sprite under its final ID (facts sheet §5.1, "placeholder first"), a behaviour file if it moves, an `sfx` mapping that uses only existing IDs, and a row here.
+3. A new entity needs, in the same PR: a manifest entry in `assets-src/manifest.json`, at least a code-defined placeholder sprite under its final ID (facts sheet §5.1, "placeholder first"), a behaviour file if it moves, an `sfx` mapping that uses only existing IDs, and a row here. (One exception: SSP-075 froze the M3 data before its placeholder sprites, which SSP-097 to SSP-101 add in parallel; see [§15](#15-entitiesjson-shape).)
 4. A tuning change that affects a replay updates the replay hash in the same PR, with a note explaining why.
 
 ---
@@ -672,13 +698,13 @@ Each item is resolved in the milestone named, then this section and the tables a
 | # | Question | Default until resolved | Resolve in |
 |---|---|---|---|
 | 1 | **Economy total:** listed prices sum to £6,500, but facts sheet §8.4 says buying everything costs £7,350. Either prices rise by £850 in total or the quoted total changes. | Prices in [§14](#14-upgrades-and-liveries-upg) stand | M6 |
-| 2 | Minimum relative speed for an actor **hit** (vs a harmless nudge that only startles). | Closing speed toward the actor ≥ 1.0 m/s counts; actors walking into a stationary or slower Bessie bump off with no penalty ([§3.2](#32-collision-responses)) | M3 |
-| 3 | Does colliding with **moving traffic** carry a points or complaint penalty, or only HP damage? | HP damage only | M3 |
-| 4 | Does denting a **parked car** (−100, 5 HP) replace or add to the impact-speed damage? | Flat 5 HP replaces it | M3 |
+| 2 | Minimum relative speed for an actor **hit** (vs a harmless nudge that only startles). | **Resolved (M3, SSP-075): the default.** Closing speed toward the actor ≥ 1.0 m/s counts (`tuning.json` → `streetLife.actorHit.minClosingSpeedMps`); actors walking into a stationary or slower Bessie bump off with no penalty ([§3.2](#32-collision-responses)) | M3 ✓ |
+| 3 | Does colliding with **moving traffic** carry a points or complaint penalty, or only HP damage? | **Resolved (M3, SSP-075): the default.** HP damage only: solid `veh.*` entries have `hit: null` | M3 ✓ |
+| 4 | Does denting a **parked car** (−100, 5 HP) replace or add to the impact-speed damage? | **Resolved (M3, SSP-075): the default.** The flat 5 HP (`rules.dentHp`) replaces it | M3 ✓ |
 | 5 | Do **stain cleans** and **style bonuses** take the combo multiplier and refresh the chain, or only litter pickups? | Litter and stains refresh the chain; style bonuses are not multiplied | M2 |
 | 6 | Does litter removed by a **seagull** or **Spotless Sid** reduce "litter spawned" in the Tidy % denominator? | Stolen litter is removed from both numerator and denominator (it was taken off the street), so the compiler's 3★ par, which does not model theft, stays valid. A "Pinched by Sid/gulls" count shows on the Mercury. | M6 |
-| 7 | How many `litter.spilled_shopping` do other carrying NPCs (shopper, postie) drop when hit? Only Doris (6) is specified. | 0 for everyone except Doris | M3 |
+| 7 | How many `litter.spilled_shopping` do other carrying NPCs (shopper, postie) drop when hit? Only Doris (6) is specified. | **Resolved (M3, SSP-075): the default.** 0 for everyone except Doris (`hit.drops` is `{}`) | M3 ✓ |
 | 8 | `stain.splat`: "Cleaning it removes −20 grime" is ambiguous (refund of the −20 penalty, or just removal of the grime). | No refund; cleaning clears the grime cells only | M2 |
 | 9 | Thursday's weather is "wind + leaf fall" but `haz.wind_gust` is listed as a Friday event. Does Thursday get gusts too? | No: Thursday wind only drives leaf fall | M6 |
-| 10 | Missing values: Doris's post-horn speed (0.4 m/s proposed), handbag whack interval (1.0 s) and give-up distance (8 m), lollipop crossing duration (6 s), knockable masses for A-board/trolley/recycling box, prop slice counts, animation frame rates. | Gameplay values: TBD (M3/M6 tuning) with the proposed defaults above. Stain spray times were settled in M2 (SSP-053: 1.0 / 1.5 / 2.0 s, splat = gum; [§5](#5-stains-stain)). Slice counts: decided in M0 (§9, [ART_BIBLE §8.6](ART_BIBLE.md#86-props)). Frame rates: [ART_BIBLE §10.2](ART_BIBLE.md#102-timing-table). | M0–M6 |
+| 10 | Missing values: Doris's post-horn speed (0.4 m/s proposed), handbag whack interval (1.0 s) and give-up distance (8 m), lollipop crossing duration (6 s), knockable masses for A-board/trolley/recycling box, prop slice counts, animation frame rates. | M3 values chosen in SSP-075: Doris 0.4 m/s, 1.0 s and 8 m (the proposed defaults; [§6.3](#63-doris-npcold_woman)), masses A-board 8 kg, trolley 15 kg, recycling box 5 kg ([§9.1](#91-knockable-props)), all marked *chosen in M3 tuning*. The lollipop crossing stays TBD (M6 tuning), 6 s proposed. Stain spray times were settled in M2 (SSP-053: 1.0 / 1.5 / 2.0 s, splat = gum; [§5](#5-stains-stain)). Slice counts: decided in M0 (§9, [ART_BIBLE §8.6](ART_BIBLE.md#86-props)). Frame rates: [ART_BIBLE §10.2](ART_BIBLE.md#102-timing-table). | M0–M6 |
 | 11 | SFX gaps with no ID in the canonical list: banana spin-out, Lead Tangle, seagull snatch, handbag whack, pothole/speed-bump spill. Currently mapped to the nearest existing ID or silent. | Reuse existing IDs | M5 ([AUDIO_DESIGN](AUDIO_DESIGN.md)) |

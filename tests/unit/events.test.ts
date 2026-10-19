@@ -34,7 +34,7 @@ function copy(event: SimEvent): SimEvent {
 }
 
 describe('EventBus', () => {
-  it('decodes every M1 event type into its typed payload', () => {
+  it('decodes every M1 and M2 event type into its typed payload', () => {
     const bus = new EventBus();
     const seen: SimEvent[] = [];
     bus.onAny((e) => seen.push(copy(e)));
@@ -43,13 +43,15 @@ describe('EventBus', () => {
       [EV.KerbJolt, -1, 3, 4, 2.5],
       [EV.ReverseBeeper, -1, 7, 8, 0],
       [EV.ShiftEnd, -1, ShiftEndReason.Towed, 0, 0],
+      [EV.HopperFull, -1, 12.5, 30.25, 100],
     ]);
-    expect(bus.drain(queue)).toBe(4);
+    expect(bus.drain(queue)).toBe(5);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
       { type: EV.ReverseBeeper, tick: 42, entity: -1, x: 7, y: 8 },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.Towed },
+      { type: EV.HopperFull, tick: 42, entity: -1, x: 12.5, y: 30.25, capacityLU: 100 },
     ]);
   });
 

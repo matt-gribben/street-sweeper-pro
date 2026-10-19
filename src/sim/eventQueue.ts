@@ -19,8 +19,8 @@ export const EVENTS_PER_TICK = 512;
 
 /**
  * Event type ids (`type`, Uint16). 0 is never a valid type. The values are hashed into replays: append new
- * types, never renumber. M1 holds the four below; later milestones append the rest of the §7.2 list
- * (LitterCollected, Fling, NpcHit, Complaint, ComboTier, HopperFull, DumpStart, Horn, ...).
+ * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull; later issues append the rest of
+ * the §7.2 list (LitterCollected, Fling, NpcHit, Complaint, ComboTier, DumpStart, Horn, ...).
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036).
@@ -28,12 +28,15 @@ export const EVENTS_PER_TICK = 512;
  *   crossing (m/s). The front axle also loses speed; the rear axle only jolts.
  * - ReverseBeeper: a = x, b = y (Bessie's body centre, m), c = 0. Once per engagement of REV.
  * - ShiftEnd: a = reason (ShiftEndReason), b = 0, c = 0. In M1 only the TOWED stub (SSP-036) emits it.
+ * - HopperFull: a = x, b = y (Bessie's body centre, m), c = capacity (LU). Once per fill, on the add that
+ *   reaches capacity (hopper.ts, SSP-058); again only after LU has dropped below capacity.
  */
 export const EV = {
   Impact: 1,
   KerbJolt: 2,
   ReverseBeeper: 3,
   ShiftEnd: 4,
+  HopperFull: 5,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

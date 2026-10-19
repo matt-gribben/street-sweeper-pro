@@ -2,7 +2,7 @@
 id: SSP-058
 title: "Implement hopper.ts LU accounting, mass coupling and bulldozer state"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: S
 labels: [type:feature, area:sim, area:physics, size:S, vertical-slice]
@@ -42,11 +42,11 @@ The 80% warning needs no new event: the HUD reads state. Spills from potholes an
 
 ## Acceptance criteria
 
-- [ ] Unit tests reproduce the GDD §7.4 table at 0/50/80/100% within 0.01
-- [ ] Property test: for any sequence of adds and drains, 0 ≤ hopperLU ≤ capacity
-- [ ] Adding a 1 LU item at 99.5 LU leaves the hopper at exactly 100 and full (unit test)
-- [ ] `EV.HopperFull` fires exactly once per transition to full and again only after a dump empties it below capacity
-- [ ] The overflow rule is documented in GDD §8.4
+- [x] Unit tests reproduce the GDD §7.4 table at 0/50/80/100% within 0.01
+- [x] Property test: for any sequence of adds and drains, 0 ≤ hopperLU ≤ capacity
+- [x] Adding a 1 LU item at 99.5 LU leaves the hopper at exactly 100 and full (unit test)
+- [x] `EV.HopperFull` fires exactly once per transition to full and again only after a dump empties it below capacity
+- [x] The overflow rule is documented in GDD §8.4
 
 ## Verification
 

@@ -388,6 +388,9 @@ export type SweepingTuning = {
   readonly fling: Group<typeof FLING_SPEC>;
 };
 
+/** Hopper capacity and HUD warning fraction (GDD §8.4); hopper.ts reads it. */
+export type HopperTuning = Group<typeof HOPPER_SPEC>;
+
 /** Depot bay and skip dumping (GDD §8.7, TECHNICAL_DESIGN §10.5). */
 export type DumpingTuning = {
   readonly depotBay: Group<typeof DEPOT_BAY_SPEC>;
@@ -411,7 +414,7 @@ export type Tuning = {
   };
   readonly propFootprints: PropFootprints;
   readonly sweeping: SweepingTuning;
-  readonly hopper: Group<typeof HOPPER_SPEC>;
+  readonly hopper: HopperTuning;
   readonly water: Group<typeof WATER_SPEC>;
   readonly dumping: DumpingTuning;
   readonly combo: ComboTuning;

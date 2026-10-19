@@ -322,7 +322,7 @@ The full-hopper multipliers scale **linearly with fill fraction** (LU in hopper 
 |---|---|---|---|
 | 0% | 2.40 m/s² | 6.0 / 11.0 m/s | 120°/s |
 | 50% | 2.04 m/s² | 5.7 / 10.45 m/s | 111°/s |
-| 80% (HUD warning) | 1.82 m/s² | 5.52 / 10.12 m/s | 106°/s |
+| 80% (HUD warning) | 1.82 m/s² | 5.52 / 10.12 m/s | 105.6°/s |
 | 100% | 1.68 m/s² | 5.4 / 9.9 m/s | 102°/s |
 
 ### 7.5 Camera behaviour as a handling aid
@@ -421,7 +421,8 @@ Puddle Lane is 64×48 tiles (128 × 96 m). Districts are sized so that a perfect
 |---|---|
 | Base capacity | **100 LU** (litter units). Upgrades: 140 LU (`upg.hopper` L1), 180 LU (L2). |
 | Warning | HUD warns at **80%**: gauge flashes, Pam bark "She's getting full, love." (proposed) |
-| Full | The brush pushes items ahead without collecting ("bulldozer"), with a clunk SFX |
+| Full | The brush pushes items ahead without collecting ("bulldozer"), with a clunk SFX (`EV.HopperFull`, once per fill). Full ends as soon as a dump takes the hopper below capacity, so the next fill clunks again. |
+| Overflow | An item that would push the hopper past capacity (99.5 LU + a 1 LU crisp packet, or a bin bag at 95 LU) is **still collected and scored**; the hopper is clamped to exactly capacity, the excess LU are lost, and the hopper is full. Without this rule, items of 0.5/1/2/3/8 LU could strand the hopper just below 100 so it never went full. (Decided in SSP-058.) |
 | Spills | `haz.pothole` spills 2 LU behind you; `haz.speed_bump` above 6 m/s spills 3 LU. Spilled LU become litter on the road (proposed: as generic small items, re-collectable but not re-scored). |
 | Weight | Up to +1,500 kg at full, with the handling multipliers in §7.4 |
 

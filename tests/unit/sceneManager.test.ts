@@ -152,6 +152,35 @@ describe('SceneManager', () => {
     expect(scenes.ids()).toEqual(['week_map']);
   });
 
+  it('replaceAll() enters the new scene, keeps the old stack running meanwhile, then exits it top first (SSP-287)', async () => {
+    const log: string[] = [];
+    const scenes = new SceneManager();
+    await scenes.push(new LogScene('shift', log, { id: 'shift' }), SEED);
+    await scenes.push(new LogScene('pause', log, { id: 'pause', blocks: true }), SEED);
+    const fresh = new LogScene('fresh', log, { id: 'shift' });
+    let open = (): void => {};
+    fresh.enterGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    log.length = 0;
+    const done = scenes.replaceAll(fresh, SEED);
+    expect(scenes.busy).toBe(true);
+    scenes.fixedUpdate(createInputFrame());
+    scenes.render(0);
+    expect(log).toEqual(['fresh enter', 'pause update', 'shift render 0', 'pause render 0']);
+    log.length = 0;
+    open();
+    await done;
+    expect(log).toEqual(['fresh entered', 'pause exit', 'shift exit']);
+    expect(scenes.ids()).toEqual(['shift']);
+    expect(scenes.top).toBe(fresh);
+    // On a stack of one it is replace().
+    log.length = 0;
+    await scenes.replaceAll(new LogScene('card', log, { id: 'shift_intro' }), SEED);
+    expect(log).toEqual(['card enter', 'card entered', 'fresh exit']);
+    expect(scenes.ids()).toEqual(['shift_intro']);
+  });
+
   it('calls onEntered as each scene joins the stack, after enter() and before the old top exits (SSP-071)', async () => {
     const log: string[] = [];
     const scenes = new SceneManager();

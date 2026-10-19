@@ -27,26 +27,28 @@ export class UiScreen {
   private readonly panels: Panels;
   private disposed = false;
 
-  private constructor(context: SceneContext, batch: UiSpriteBatch, font: BitmapFont) {
+  private constructor(context: SceneContext, batch: UiSpriteBatch, font: BitmapFont, order: number) {
     this.context = context;
     this.font = font;
     this.batch = batch;
     this.panels = new Panels(this.batch, font);
+    batch.mesh.renderOrder = order;
     context.ui.add(this.batch.mesh);
   }
 
   /**
    * Takes the `ui` atlas and the font from the registry and puts an empty batch on the UI root. Throws (naming
-   * `who`) if the font draws from another atlas.
+   * `who`) if the font draws from another atlas. `order` is the batch's renderOrder: a screen drawn over another
+   * scene's UI (PauseOverlay over the HUD, SSP-287) passes a higher one so its quads land on top.
    */
-  static open(context: SceneContext, who: string): UiScreen {
+  static open(context: SceneContext, who: string, order = 0): UiScreen {
     const assets = context.assets;
     const atlas = assets.atlas('ui');
     const font = assets.font(UI_SCREEN_FONT);
     if (font.metrics.atlas !== atlas.name) {
       throw new Error(`${who}: ${font.metrics.id} draws from atlas '${font.metrics.atlas}', not 'ui'`);
     }
-    return new UiScreen(context, new UiSpriteBatch(atlas, UI_SCREEN_CAPACITY), font);
+    return new UiScreen(context, new UiSpriteBatch(atlas, UI_SCREEN_CAPACITY), font, order);
   }
 
   /** Quads drawn last frame. */

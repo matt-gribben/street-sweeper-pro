@@ -96,6 +96,7 @@ function context() {
       released += 1;
     },
     clientToInternal: () => false,
+    onHidden: () => () => {},
   };
   return { ctx, follows, loaded, uploads, released: () => released };
 }
@@ -175,6 +176,7 @@ async function browserLike(search: string, options: ShiftSceneOptions = {}) {
     renders: () => renders,
     sceneId: () => scenes.top?.id ?? null,
     sceneHistory: () => scenes.ids(),
+    sceneStack: () => scenes.ids(),
     boot: () => ({ status: 'loaded', error: null, lutBuilds: 1 }),
     loadInputs: (log) => scripted.load(log),
   });
@@ -274,6 +276,45 @@ describe('ShiftScene', () => {
       expect(x).toBeCloseTo(v.prevXM + (v.xM - v.prevXM) * alpha, 12);
       expect(y).toBeCloseTo(v.prevYM + (v.yM - v.prevYM) * alpha, 12);
     }
+  });
+
+  it('requestPause (SSP-287) stops the World at once and freezes the drawn frame until resume()', async () => {
+    const reasons: string[] = [];
+    let accept = true;
+    const { scene: shift, follows } = scene({
+      onPause: (reason) => {
+        reasons.push(reason);
+        return accept;
+      },
+    });
+    expect(shift.requestPause('player')).toBe(false); // not entered yet
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    const input = createInputFrame();
+    input.throttle = 255;
+    for (let i = 0; i < 30; i++) shift.fixedUpdate(input);
+    shift.render(0.25);
+    const drawn = follows.length;
+    const pose = Array.from(shift.bessieSprite?.sprites.instanceData ?? []);
+    // Refused by the flow: the shift keeps running.
+    accept = false;
+    expect(shift.requestPause('player')).toBe(false);
+    expect(shift.paused).toBe(false);
+    accept = true;
+    expect(shift.requestPause('hidden')).toBe(true);
+    expect(shift.requestPause('player')).toBe(false); // already paused
+    expect(reasons).toEqual(['player', 'hidden']);
+    for (let i = 0; i < 10; i++) shift.fixedUpdate(input);
+    expect(shift.snapshot()?.tick).toBe(30);
+    // Any alpha while paused draws the last running frame: same pose, the camera left alone.
+    shift.render(0.9);
+    expect(follows.length).toBe(drawn);
+    expect(Array.from(shift.bessieSprite?.sprites.instanceData ?? [])).toEqual(pose);
+    expect(pose.some((v) => v !== 0)).toBe(true);
+    shift.resume();
+    shift.fixedUpdate(input);
+    expect(shift.snapshot()?.tick).toBe(31);
+    shift.render(0.5);
+    expect(follows.length).toBe(drawn + 1);
   });
 
   it("feeds the follow camera Bessie's real velocity and vLong (look-ahead and speed zoom, SSP-047)", async () => {

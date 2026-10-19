@@ -382,6 +382,7 @@ describe('freeze mode', () => {
       renders: () => 0,
       sceneId: () => null,
       sceneHistory: () => [],
+      sceneStack: () => [],
       boot: () => ({ status: 'loaded', error: null, lutBuilds: 1 }),
       loadInputs: () => {},
     });

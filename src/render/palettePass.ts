@@ -4,7 +4,11 @@
 //   1. idx = LUT[r>>2][g>>2][b>>2]          (64³ R8 Data3DTexture, built at boot in OKLab)
 //   2. if night is active and G == 0: idx = night[idx]
 //   3. if R == 1:                     idx = shadow[idx]   (shadow after night)
-//   4. output palette[idx]
+//   4. if dim is active and B == 0:   idx = shadow[idx]   (the pause dim, SSP-287: world pixels only)
+//   5. output palette[idx]
+// The dim step is the PauseOverlay's frozen world (GDD §15.4): one more step down the shadow ramp for every pixel
+// that is not UI (mask B, written only by the UI pass), after the normal shadow, so building and drop shadows stay
+// one step darker than the sun beside them. UI pixels (the HUD and the overlay itself) are never dimmed.
 // The colour maths (`nearestIndex`, `buildLut`, `palettePassReference`) is pure TS and unit-tested without
 // WebGL; the GPU side only uploads its results. Every colour comes from kerbside32.json (CLAUDE.md hard
 // rule 3): this file spells no colour value.
@@ -290,23 +294,29 @@ export function kerbside32Lut(): Uint8Array {
 // ---------------------------------------------------------------------------------------------------------
 // CPU reference of the pass (the shader below performs the same steps)
 
-/** Steps 2 and 3 of the pass: night remap unless lit, then shadow remap. */
+/**
+ * Steps 2 to 4 of the pass: night remap unless lit, then shadow remap, then (SSP-287) the pause dim: one more
+ * shadow step when `dimmed` (dim on and the pixel is not UI).
+ */
 export function remapIndex(
   index: number,
   shadowed: boolean,
   lit: boolean,
   night: boolean,
   palette: Kerbside32 = KERBSIDE32,
+  dimmed = false,
 ): number {
   let idx = index;
   if (night && !lit) idx = palette.night[idx] ?? idx;
   if (shadowed) idx = palette.shadow[idx] ?? idx;
+  if (dimmed) idx = palette.shadow[idx] ?? idx;
   return idx;
 }
 
 /**
  * CPU reference of the whole pass over RGBA8 colour and mask buffers of equal size. Returns RGBA8 output
  * (alpha 255). Mirrors PALETTE_FRAGMENT exactly; used by the property tests and by future readFrame checks.
+ * `dim` is the pause dim (SSP-287): every pixel whose mask B is unset takes one more shadow step.
  */
 export function palettePassReference(
   colour: Uint8Array,
@@ -314,6 +324,7 @@ export function palettePassReference(
   night: boolean,
   lut: Uint8Array = kerbside32Lut(),
   palette: Kerbside32 = KERBSIDE32,
+  dim = false,
 ): Uint8Array {
   if (colour.length !== mask.length || colour.length % 4 !== 0) {
     throw new Error('palettePassReference: colour and mask must be RGBA8 buffers of equal size');
@@ -323,7 +334,8 @@ export function palettePassReference(
     const idx0 = lut[lutCell(colour[p] ?? 0, colour[p + 1] ?? 0, colour[p + 2] ?? 0)] ?? 0;
     const shadowed = (mask[p] ?? 0) >= MASK_SET_THRESHOLD;
     const lit = (mask[p + 1] ?? 0) >= MASK_SET_THRESHOLD;
-    const idx = remapIndex(idx0, shadowed, lit, night, palette);
+    const ui = (mask[p + 2] ?? 0) >= MASK_SET_THRESHOLD;
+    const idx = remapIndex(idx0, shadowed, lit, night, palette, dim && !ui);
     out[p] = palette.rgb[idx * 3] ?? 0;
     out[p + 1] = palette.rgb[idx * 3 + 1] ?? 0;
     out[p + 2] = palette.rgb[idx * 3 + 2] ?? 0;
@@ -373,6 +385,7 @@ uniform highp sampler3D uLut;
 uniform highp sampler2D uRemap;
 uniform highp sampler2D uPalette;
 uniform bool uNight;
+uniform bool uDim;
 layout(location = 0) out highp vec4 fragColour;
 
 int toByte(float v) {
@@ -389,6 +402,9 @@ void main() {
     idx = toByte(texelFetch(uRemap, ivec2(idx, 0), 0).r);
   }
   if (mask.r >= 0.5) {
+    idx = toByte(texelFetch(uRemap, ivec2(idx, 1), 0).r);
+  }
+  if (uDim && mask.b < 0.5) {
     idx = toByte(texelFetch(uRemap, ivec2(idx, 1), 0).r);
   }
   fragColour = vec4(texelFetch(uPalette, ivec2(idx, 0), 0).rgb, 1.0);
@@ -472,6 +488,8 @@ export function disposePaletteTables(tables: PaletteTables): void {
 export type PalettePass = {
   /** Night remap on or off (outside the light mask). */
   night: boolean;
+  /** The pause dim on or off (SSP-287): one more shadow step on every non-UI pixel. */
+  dim: boolean;
   /** Draws the pass into `target` (one draw call). */
   render(webgl: WebGLRenderer, target: WebGLRenderTarget): void;
   /** Releases the pass's material. The tables belong to the asset registry and stay. */
@@ -491,6 +509,7 @@ export function createPalettePass(
 ): PalettePass {
   const { lutTexture, remapTexture, paletteTexture } = tables;
   const nightUniform = { value: false };
+  const dimUniform = { value: false };
   const material = new ShaderMaterial({
     glslVersion: GLSL3,
     vertexShader: PALETTE_VERTEX,
@@ -504,6 +523,7 @@ export function createPalettePass(
       uRemap: { value: remapTexture },
       uPalette: { value: paletteTexture },
       uNight: nightUniform,
+      uDim: dimUniform,
     },
   });
   const mesh = new Mesh(triangle, material);
@@ -518,6 +538,12 @@ export function createPalettePass(
     },
     set night(on: boolean) {
       nightUniform.value = on;
+    },
+    get dim(): boolean {
+      return dimUniform.value;
+    },
+    set dim(on: boolean) {
+      dimUniform.value = on;
     },
     render(webgl: WebGLRenderer, target: WebGLRenderTarget): void {
       webgl.setRenderTarget(target);

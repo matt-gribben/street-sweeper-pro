@@ -47,14 +47,25 @@
 // remembers whether any recorded tick ran on a tuning that differs from tuning.json (`logMatchesCommittedTuning`);
 // the dev panel's Save replay refuses (or asks twice) when it does.
 //
+// Pause (SSP-287, GDD §15.4, TECHNICAL_DESIGN §5.1, §6.1): requestPause(reason) is the one way into the PauseOverlay.
+// fixedUpdate() takes the Pause action's edge (Esc / P, pad Start: Actions.takeSceneEdges, never in the InputFrame)
+// before stepping and asks for a pause with reason 'player'; the SceneContext's onHidden (visibilitychange → hidden)
+// asks with 'hidden'; SSP-263 (M8) reuses it for the rotate-to-landscape prompt. A pause is refused before enter(),
+// once the shift has ended, while already paused, or when the flow cannot open the overlay (options.onPause returns
+// false, e.g. during a scene transition). From the accepted request on, the World is not stepped (even before the
+// overlay has joined the stack: a step(n) in test mode runs its ticks synchronously) and render() draws the frame it
+// drew last: the same alpha, and the follow camera is not moved, so nothing on screen moves under the overlay.
+// resume() (the flow, on Resume) lets it step again. Pause edges latched before the shift started (Esc on the card or
+// the tally) are dropped in enter().
+//
 // The shift end's scene change (the tally) is the shift flow's (src/app/shiftFlow.ts, SSP-071); no audio (M5).
 import type { FontName } from '../app/assetRegistry.ts';
-import type { Unsubscribe } from '../app/events.ts';
+import { PauseReason, type Unsubscribe } from '../app/events.ts';
 import type { SceneContext } from '../app/Game.ts';
 import { DEFAULT_GLYPHS } from '../app/glyphBindings.ts';
 import { type LevelSource, loadLevel } from '../app/levelLoader.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
-import { DEFAULT_INPUT_DEVICE, type MenuInputSource } from '../input/actions.ts';
+import { ACTION, DEFAULT_INPUT_DEVICE, type MenuInputSource } from '../input/actions.ts';
 import { type BessieSprite, createBessieSprite } from '../render/bessieSprite.ts';
 import { brushSpinFrameAt, createBrushSpin } from '../render/brushSpin.ts';
 import { cameraGroundRect, groundPxPerMetre } from '../render/camera.ts';
@@ -101,6 +112,16 @@ export type ShiftSceneOptions = {
   readonly recordInputs?: boolean;
   /** Where the active input device comes from (the radio's keycaps follow it). Default: always the keyboard. */
   readonly input?: Pick<MenuInputSource, 'activeDevice'>;
+  /**
+   * Where the Pause action's edges come from (Actions.takeSceneEdges, SSP-287). Without it only onHidden and direct
+   * requestPause() calls pause.
+   */
+  readonly pauseInput?: Pick<MenuInputSource, 'takeSceneEdges'>;
+  /**
+   * Opens the PauseOverlay for an accepted pause request (the shift flow pushes it); returns false if it cannot
+   * (then the shift keeps running). Without it requestPause() refuses every request.
+   */
+  readonly onPause?: (reason: PauseReason) => boolean;
 };
 
 /** `district.<name>` → `<name>`, the compiled level's file name; throws on anything else. */
@@ -135,6 +156,13 @@ export class ShiftScene implements Scene {
   /** True once an earlier off-tuning span covered at least one recorded tick. */
   private offTuningRecorded = false;
   private readonly recordInputs: boolean;
+  private readonly pauseInput: Pick<MenuInputSource, 'takeSceneEdges'> | null;
+  private readonly onPause: ((reason: PauseReason) => boolean) | null;
+  /** True from an accepted requestPause() until resume(): the World is not stepped. */
+  private pausedNow = false;
+  /** The alpha render() drew with last while running: a paused frame is drawn with it again. */
+  private lastAlpha = 0;
+  private unsubscribeHidden: Unsubscribe | null = null;
   private world: World | null = null;
   private city: LevelCity | null = null;
   private bessie: BessieSprite | null = null;
@@ -164,6 +192,34 @@ export class ShiftScene implements Scene {
     this.currentTuning = options.tuning ?? DEFAULT_TUNING;
     this.offTuningSinceTick = tuningsEqual(this.currentTuning, DEFAULT_TUNING) ? null : 0;
     this.recordInputs = options.recordInputs ?? false;
+    this.pauseInput = options.pauseInput ?? null;
+    this.onPause = options.onPause ?? null;
+  }
+
+  /** True while paused (from an accepted requestPause() until resume()): the World is not stepped. */
+  get paused(): boolean {
+    return this.pausedNow;
+  }
+
+  /**
+   * Asks for the PauseOverlay (SSP-287): the one path the Pause action, `visibilitychange` → hidden and (M8) the
+   * rotate prompt share. Refused (false) before enter() resolves, once the shift has ended, while already paused,
+   * and when there is no onPause or it cannot open the overlay. Accepted, the World stops stepping at once.
+   */
+  requestPause(reason: PauseReason): boolean {
+    const onPause = this.onPause;
+    if (this.pausedNow || onPause === null || this.world === null || this.ended) return false;
+    this.pausedNow = true;
+    if (!onPause(reason)) {
+      this.pausedNow = false;
+      return false;
+    }
+    return true;
+  }
+
+  /** The overlay closed with Resume: the World steps again from the next tick. */
+  resume(): void {
+    this.pausedNow = false;
   }
 
   /** The World's event queue, drained into the bus after every tick (null before enter() resolves). */
@@ -314,6 +370,10 @@ export class ShiftScene implements Scene {
     this.hud = hud;
     this.hudBatch = hudBatch;
     this.unsubscribeHud = hud.attach(this.context.events);
+    this.unsubscribeHidden = this.context.onHidden(() => this.requestPause(PauseReason.Hidden));
+    // A Pause press latched before the shift started (Esc on the card or the tally) must not pause it.
+    this.pauseInput?.takeSceneEdges(ACTION.PAUSE);
+    this.pausedNow = false;
     this.districtId = district;
     this.context.root.add(city.group, bessie.group, built.items.mesh);
     this.context.ui.add(hudBatch.mesh);
@@ -379,6 +439,8 @@ export class ShiftScene implements Scene {
     }
     this.unsubscribeHud?.();
     this.unsubscribeHud = null;
+    this.unsubscribeHidden?.();
+    this.unsubscribeHidden = null;
     if (this.hudBatch !== null) {
       this.context.ui.remove(this.hudBatch.mesh);
       this.hudBatch.dispose();
@@ -394,22 +456,30 @@ export class ShiftScene implements Scene {
 
   fixedUpdate(input: Readonly<InputFrame>): void {
     const world = this.world;
-    if (world === null || world.shift.phase === ShiftPhase.Ended) return;
+    if (world === null || world.shift.phase === ShiftPhase.Ended || this.pausedNow) return;
+    const pauseInput = this.pauseInput;
+    if (pauseInput !== null && pauseInput.takeSceneEdges(ACTION.PAUSE) !== 0) {
+      if (this.requestPause(PauseReason.Player)) return;
+    }
     world.step(input);
     this.city?.grime?.accumulate(world.dirt);
     this.hud?.tick(world);
   }
 
-  render(alpha: number): void {
+  render(frameAlpha: number): void {
     const world = this.world;
     const bessie = this.bessie;
     if (world === null || bessie === null) return;
+    // Paused: draw the last running frame again (same alpha, camera left where it was), so nothing moves.
+    const paused = this.pausedNow;
+    const alpha = paused ? this.lastAlpha : frameAlpha;
+    this.lastAlpha = alpha;
     const v = world.vehicle;
     const pose = this.pose;
     interpolatePose(v, alpha, pose);
     const velocity = this.velocity;
     bodyVelocity(pose.headingRad, v.vLongMps, v.vLatMps, velocity);
-    this.context.followCamera(pose.xM, pose.yM, velocity.xMps, velocity.yMps, v.vLongMps);
+    if (!paused) this.context.followCamera(pose.xM, pose.yM, velocity.xMps, velocity.yMps, v.vLongMps);
     const rig = this.context.renderer.rig;
     const spinFrame = brushSpinFrameAt(this.brushSpin, world.tick, v.rpm);
     bessie.update(pose, v.hp, v.brushDown, spinFrame, rig.snappedZ);

@@ -73,6 +73,7 @@ describe('LevelPreviewScene', () => {
       },
       releaseCamera: () => {},
       clientToInternal: () => false,
+      onHidden: () => () => {},
     };
     return { ctx, pins, loaded };
   }

@@ -23,14 +23,16 @@ import {
 /** A host that records calls: a tick counter, a camera and a 2x1 "frame" holding the tick. */
 function fakeHost(
   snapshot: TestHookHost['snapshot'] = () => null,
-): TestHookHost & { calls: string[]; history: string[] } {
+): TestHookHost & { calls: string[]; history: string[]; stack: string[] } {
   let tick = 0;
   const history: string[] = [];
+  const stack: string[] = [];
   let camera: TestCamera = { x: 0, y: 0, h: 31.5, leadX: 0, leadY: 0, pinned: false };
   const calls: string[] = [];
   return {
     calls,
     history,
+    stack,
     tick: () => tick,
     advance: (n) => {
       calls.push(`advance ${n}`);
@@ -50,6 +52,7 @@ function fakeHost(
     renders: () => calls.filter((c) => c === 'render').length,
     sceneId: () => history[history.length - 1] ?? null,
     sceneHistory: () => history,
+    sceneStack: () => stack,
     boot: () => ({ status: 'failed', error: "asset registry: atlas 'ui' failed to load", lutBuilds: 1 }),
     loadInputs: (log) => {
       calls.push(`loadInputs ${log.length}`);
@@ -185,6 +188,7 @@ describe('installTestHooks with test=1', () => {
       'ready',
       'scene',
       'sceneHistory',
+      'scenes',
       'setCamera',
       'state',
       'step',
@@ -205,6 +209,19 @@ describe('installTestHooks with test=1', () => {
     history?.push('mutated');
     expect(host.history).toHaveLength(4);
     expect(JSON.parse(JSON.stringify(history?.slice(0, 4)))).toEqual(host.history);
+  });
+
+  it('scenes() is a copy of the scene stack, bottom first (SSP-287)', () => {
+    const target: TestHookTarget = {};
+    const host = fakeHost();
+    installTestHooks(target, '?test=1', host);
+    const api = target.__ssp;
+    expect(api?.scenes()).toEqual([]);
+    host.stack.push('shift', 'pause');
+    const stack = api?.scenes();
+    expect(stack).toEqual(['shift', 'pause']);
+    stack?.pop();
+    expect(host.stack).toEqual(['shift', 'pause']);
   });
 
   it("boot() is BootScene's state as JSON-safe plain data (SSP-284)", () => {

@@ -5,7 +5,8 @@
 //      root's instanced draws (spriteBatch.ts UiSpriteBatch), each texel writing mask (0, 1, 1): never shadowed,
 //      lit (night never remaps it) and flagged as UI;
 //   3. palette pass into RT_final, (W+2)×272: RGB -> Kerbside-32 index via the 64³ OKLab LUT, night and
-//      shadow remaps, index -> palette RGB (palettePass.ts). Its tables (LUT, remaps, palette) are built once by
+//      shadow remaps, the pause dim on non-UI pixels while `dim` is on (SSP-287), index -> palette RGB
+//      (palettePass.ts). Its tables (LUT, remaps, palette) are built once by
 //      BootScene and installed with installPalette() (SSP-284); until then each frame only clears the canvas to
 //      palette index 00;
 //   4. integer-scale nearest blit of RT_final's inner W×270 window, shifted by the camera's sub-pixel
@@ -107,6 +108,8 @@ export class Renderer {
   private palettePass: PalettePass | null = null;
   /** Kept for the pass while it does not exist yet (Game sets the night switch every frame from the start). */
   private nightOn = false;
+  /** The pause dim (SSP-287), kept for the pass like the night switch. */
+  private dimOn = false;
   /** Palette index 00, the colour of the canvas before the palette pass exists (read from kerbside32.json). */
   private readonly index00 = new Color();
   /** Scratch for the clear colour the pre-boot clear restores. */
@@ -236,6 +239,7 @@ export class Renderer {
       throw new Error('Renderer.installPalette: the palette is already installed');
     const pass = createPalettePass(this.colourTexture, this.maskTexture, this.triangle, tables);
     pass.night = this.nightOn;
+    pass.dim = this.dimOn;
     this.palettePass = pass;
   }
 
@@ -322,6 +326,19 @@ export class Renderer {
   set night(on: boolean) {
     this.nightOn = on;
     if (this.palettePass !== null) this.palettePass.night = on;
+  }
+
+  /**
+   * The pause dim (SSP-287, GDD §15.4): while on, the palette pass takes every non-UI pixel one more step down the
+   * shadow ramp, so the frozen world dims under the PauseOverlay while the HUD and the overlay stay as drawn.
+   */
+  get dim(): boolean {
+    return this.dimOn;
+  }
+
+  set dim(on: boolean) {
+    this.dimOn = on;
+    if (this.palettePass !== null) this.palettePass.dim = on;
   }
 
   /** The window layout last applied by resize() (null before the first), for pointer mapping (SSP-286). */

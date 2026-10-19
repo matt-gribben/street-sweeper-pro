@@ -2,7 +2,7 @@
 // order; a type's listeners before the onAny listeners), exactly-once per sealed tick, unsubscription during
 // dispatch, and the errors for an unsealed queue or an event the bus cannot decode.
 import { describe, expect, it } from 'vitest';
-import { EventBus, type SimEvent } from '../../src/app/events.ts';
+import { EventBus, PAUSE_EV, PauseExit, PauseReason, type SimEvent } from '../../src/app/events.ts';
 import { Offence } from '../../src/sim/complaints.ts';
 import { LITTER_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
 import {
@@ -230,5 +230,21 @@ describe('EventBus', () => {
       ),
     );
     expect(types).toEqual(all);
+  });
+});
+
+describe('pause events (SSP-287)', () => {
+  it('dispatch PauseOpened and PauseClosed at once, to their own subscribers, until unsubscribed', () => {
+    const bus = new EventBus();
+    const seen: string[] = [];
+    const offOpened = bus.onPause(PAUSE_EV.PauseOpened, (e) => seen.push(`${e.type}:${e.reason}`));
+    bus.onPause(PAUSE_EV.PauseClosed, (e) => seen.push(`${e.type}:${e.exit}`));
+    bus.onAny(() => seen.push('sim'));
+    bus.emitPauseOpened(PauseReason.Hidden);
+    bus.emitPauseClosed(PauseExit.Restart);
+    offOpened();
+    bus.emitPauseOpened(PauseReason.Player);
+    bus.emitPauseClosed(PauseExit.Resume);
+    expect(seen).toEqual(['pause_opened:hidden', 'pause_closed:restart', 'pause_closed:resume']);
   });
 });

@@ -152,6 +152,7 @@ describe('ZooScene', () => {
       },
       releaseCamera: () => {},
       clientToInternal: () => false,
+      onHidden: () => () => {},
     };
     return { ctx, pins };
   }

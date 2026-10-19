@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { Group } from 'three';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Assets } from '../../src/app/assetRegistry.ts';
-import { EventBus } from '../../src/app/events.ts';
+import { EventBus, PAUSE_EV } from '../../src/app/events.ts';
 import type { SceneContext } from '../../src/app/Game.ts';
 import { SceneManager } from '../../src/app/SceneManager.ts';
 import { ShiftFlow } from '../../src/app/shiftFlow.ts';
@@ -18,13 +18,19 @@ import { KeyboardDevice } from '../../src/input/keyboard.ts';
 import { PointerDevice } from '../../src/input/pointer.ts';
 import type { Renderer } from '../../src/render/Renderer.ts';
 import { clientToInternalPx, computeViewportLayout, INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
+import { PauseOverlay, PausePage } from '../../src/scenes/PauseOverlay.ts';
 import { ShiftIntroScene } from '../../src/scenes/ShiftIntroScene.ts';
 import { DEFAULT_DISTRICT, ShiftScene } from '../../src/scenes/ShiftScene.ts';
 import { TALLY_INPUT_LOCK_TICKS, TallyScene } from '../../src/scenes/TallyScene.ts';
 import { DT_S, SHIFT_TICKS } from '../../src/sim/constants.ts';
 import { EV } from '../../src/sim/eventQueue.ts';
-import type { SimSnapshot } from '../../src/sim/snapshot.ts';
+import { PRESSED } from '../../src/sim/inputFrame.ts';
+import { runReplay } from '../../src/sim/replay.ts';
+import { type SimSnapshot, snapshotWorld } from '../../src/sim/snapshot.ts';
+import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import { IntroStatus } from '../../src/ui/introCard.ts';
+import { MENU_COMMAND } from '../../src/ui/menus.ts';
+import { PauseEntry, pauseButtonRects } from '../../src/ui/pausePage.ts';
 import { TallyButton, tallyButtonRects } from '../../src/ui/tallyPage.ts';
 import { checkoutAssets } from '../support/checkoutAssets.ts';
 import { fakePad, keyEvent, padSource, setButton } from '../support/fakeInput.ts';
@@ -39,7 +45,7 @@ beforeAll(async () => {
 });
 
 /** The browser wiring of main.ts without WebGL, ticked by hand. */
-function harness(levelGate: Promise<void> = Promise.resolve()) {
+function harness(levelGate: Promise<void> = Promise.resolve(), recordInputs = false) {
   const keyboard = new KeyboardDevice(DT_S);
   const pad = fakePad();
   const pads = padSource(pad);
@@ -53,6 +59,7 @@ function harness(levelGate: Promise<void> = Promise.resolve()) {
   const bus = new EventBus();
   const ends: number[] = [];
   bus.on(EV.ShiftEnd, (event) => ends.push(event.reason));
+  let hiddenListeners: (() => void)[] = [];
   const ctx: SceneContext = {
     // The rig at the sweep height (the items batch takes its cull rect from it) and a no-op grime uploader.
     renderer: {
@@ -67,6 +74,16 @@ function harness(levelGate: Promise<void> = Promise.resolve()) {
     followCamera: () => {},
     releaseCamera: () => {},
     clientToInternal: (x, y, out) => clientToInternalPx(layout, x, y, out),
+    onHidden: (listener) => {
+      hiddenListeners.push(listener);
+      return () => {
+        hiddenListeners = hiddenListeners.filter((l) => l !== listener);
+      };
+    },
+  };
+  /** `visibilitychange` → hidden, as Game.handleVisibility reports it. */
+  const hide = (): void => {
+    for (const listener of [...hiddenListeners]) listener();
   };
   const levelFetches: string[] = [];
   const levelSource = async (url: string): Promise<string> => {
@@ -82,11 +99,12 @@ function harness(levelGate: Promise<void> = Promise.resolve()) {
       intro: (options) => new ShiftIntroScene(ctx, { ...options, levelSource }),
       shift: (options) => new ShiftScene(ctx, { ...options, levelSource }),
       tally: (options) => new TallyScene(ctx, options),
+      pause: (options) => new PauseOverlay(ctx, options),
     },
     menu: actions,
     district: DEFAULT_DISTRICT,
     seed: 7,
-    recordInputs: false,
+    recordInputs,
     onError: (error) => errors.push(error),
   });
   /** One display frame: poll, `n` ticks (input → scenes → event drain), render. */
@@ -156,6 +174,8 @@ function harness(levelGate: Promise<void> = Promise.resolve()) {
     levelFetches,
     errors,
     ctx,
+    hide,
+    hiddenListeners: () => hiddenListeners.length,
   };
 }
 
@@ -407,4 +427,300 @@ describe('ShiftFlow', () => {
     expect(h.flow.shift?.tuning).toBe(edited);
     expect(dev.worldView?.tick).toBe(0);
   }, 60_000);
+});
+
+describe('PauseOverlay in the shift flow (SSP-287)', () => {
+  /** A running shift (the intro skipped) with the pause events recorded. */
+  async function running(recordInputs = false) {
+    const h = harness(Promise.resolve(), recordInputs);
+    const pauses: string[] = [];
+    h.ctx.events.onPause(PAUSE_EV.PauseOpened, (e) => pauses.push(`opened:${e.reason}`));
+    h.ctx.events.onPause(PAUSE_EV.PauseClosed, (e) => pauses.push(`closed:${e.exit}`));
+    await h.flow.startAtShift();
+    const shift = h.scenes.top;
+    if (!(shift instanceof ShiftScene)) throw new Error('not the shift');
+    return { ...h, shift, pauses };
+  }
+
+  type Running = Awaited<ReturnType<typeof running>>;
+
+  /** The overlay once it has joined the stack. */
+  async function overlayOf(h: Running): Promise<PauseOverlay> {
+    await h.topIs('pause');
+    const top = h.scenes.top;
+    if (!(top instanceof PauseOverlay)) throw new Error('not the overlay');
+    return top;
+  }
+
+  const dim = (h: Running): boolean => h.ctx.renderer.dim === true;
+
+  it('P opens the overlay over the frozen shift and closes it; the World resumes from the same tick', async () => {
+    const h = await running();
+    h.keyboard.handleKeyDown(keyEvent('KeyW'));
+    h.frame(60);
+    const before = h.shift.snapshot();
+    expect(before?.tick).toBe(60);
+    h.tap('KeyP');
+    h.frame();
+    expect(h.shift.paused).toBe(true);
+    const overlay = await overlayOf(h);
+    expect(h.scenes.ids()).toEqual(['shift', 'pause']);
+    expect(overlay.blocksUpdateBelow).toBe(true);
+    expect(overlay.reason).toBe('player');
+    expect(dim(h)).toBe(true);
+    expect(h.pauses).toEqual(['opened:player']);
+    // The overlay's UI batch draws over the HUD's.
+    const meshes = h.ctx.ui.children;
+    expect(meshes).toHaveLength(2);
+    expect(meshes[1]?.renderOrder).toBeGreaterThan(meshes[0]?.renderOrder ?? 0);
+    // 120 frames, W still held: nothing in the World moves.
+    for (let i = 0; i < 120; i++) h.frame();
+    expect(h.shift.snapshot()).toEqual(before);
+    expect(h.shift.snapshot()?.shift.ticksRemaining).toBe(before?.shift.ticksRemaining);
+    expect(overlay.text).toEqual(['PAUSED', 'RESUME', 'RESTART SHIFT', 'CONTROLS', 'RETIRE']);
+    h.tap('KeyP');
+    h.frame();
+    expect(overlay.choice).toBe('resume');
+    expect(h.scenes.ids()).toEqual(['shift']);
+    expect(h.shift.paused).toBe(false);
+    expect(dim(h)).toBe(false);
+    expect(h.pauses).toEqual(['opened:player', 'closed:resume']);
+    expect(h.ctx.ui.children).toHaveLength(1);
+    h.frame();
+    expect(h.shift.snapshot()?.tick).toBe(61);
+    h.keyboard.handleKeyUp(keyEvent('KeyW'));
+    expect(h.errors).toEqual([]);
+  });
+
+  it('the pad Start button (index 9) opens and closes the overlay', async () => {
+    const h = await running();
+    h.frame(10);
+    expect(PAD_BUTTON.START).toBe(9);
+    h.press(PAD_BUTTON.START);
+    h.frame();
+    const overlay = await overlayOf(h);
+    h.frame(30);
+    expect(h.shift.snapshot()?.tick).toBe(10);
+    h.press(PAD_BUTTON.DPAD_DOWN);
+    h.frame();
+    expect(overlay.menu.focus).toBe(PauseEntry.RestartShift);
+    // Start is also a menu select: it must resume, never pick the focused entry.
+    h.press(PAD_BUTTON.START);
+    h.frame();
+    expect(overlay.choice).toBe('resume');
+    expect(h.scenes.ids()).toEqual(['shift']);
+    h.frame(5);
+    expect(h.shift.snapshot()?.tick).toBe(15);
+    expect(h.history).toEqual(['shift', 'pause']);
+  });
+
+  it('Esc pauses and Esc resumes; pad B (back) resumes too', async () => {
+    const h = await running();
+    h.frame(3);
+    h.tap('Escape');
+    h.frame();
+    const overlay = await overlayOf(h);
+    h.frame(2);
+    h.tap('Escape');
+    h.frame();
+    expect(overlay.choice).toBe('resume');
+    expect(h.scenes.ids()).toEqual(['shift']);
+    h.tap('Escape');
+    h.frame();
+    const again = await overlayOf(h);
+    expect(again).not.toBe(overlay);
+    h.frame();
+    h.press(PAD_BUTTON.EAST);
+    h.frame();
+    expect(again.choice).toBe('resume');
+    expect(h.shift.snapshot()?.tick).toBe(3);
+    expect(h.pauses).toEqual(['opened:player', 'closed:resume', 'opened:player', 'closed:resume']);
+  });
+
+  it('the PAUSE edge never reaches the World: the recorded input log replays the paused run exactly', async () => {
+    const h = await running(true);
+    const log = h.shift.inputLog;
+    if (log === null) throw new Error('no log');
+    h.tap('Space'); // brush down
+    h.keyboard.handleKeyDown(keyEvent('KeyW'));
+    h.frame(40);
+    h.tap('KeyP');
+    h.frame(5);
+    await overlayOf(h);
+    h.frame(50);
+    h.tap('KeyP');
+    h.frame(30);
+    h.keyboard.handleKeyUp(keyEvent('KeyW'));
+    h.tap('KeyH');
+    h.frame();
+    h.press(PAD_BUTTON.START);
+    h.frame();
+    await overlayOf(h);
+    h.frame(20);
+    h.press(PAD_BUTTON.START);
+    h.frame(30);
+    const world = h.shift.worldView;
+    if (world === null) throw new Error('no world');
+    // Only the ticks the World stepped are logged (40 + 29 + 1 + 29: each resume tick is the overlay's), and no frame
+    // carries a scene-layer bit.
+    expect(world.tick).toBe(99);
+    expect(log.length).toBe(99);
+    let pressedAny = 0;
+    for (let t = 0; t < log.length; t++) {
+      const pressed = log.pressed[t] ?? 0;
+      expect(pressed & ~(PRESSED.BRUSH | PRESSED.HORN)).toBe(0);
+      pressedAny |= pressed;
+    }
+    expect(pressedAny).toBe(PRESSED.BRUSH | PRESSED.HORN);
+    const level = h.shift.level;
+    if (level === null) throw new Error('no level');
+    const replayed = runReplay(level, DEFAULT_TUNING, 7, log, log.length);
+    expect(snapshotWorld(replayed.world)).toEqual(h.shift.snapshot());
+  });
+
+  it('Restart Shift restarts the same seed at tick 0 with the intro skipped', async () => {
+    const h = await running();
+    h.keyboard.handleKeyDown(keyEvent('KeyW'));
+    h.frame(30);
+    h.keyboard.handleKeyUp(keyEvent('KeyW'));
+    const start = harness();
+    await start.flow.startAtShift();
+    const startState = (start.scenes.top as ShiftScene).snapshot();
+    h.tap('KeyP');
+    h.frame();
+    const overlay = await overlayOf(h);
+    h.tap('KeyS');
+    h.frame();
+    expect(overlay.menu.focus).toBe(PauseEntry.RestartShift);
+    h.tap('Enter');
+    h.frame();
+    expect(overlay.choice).toBe('restart');
+    await vi.waitFor(() => expect(h.scenes.ids()).toEqual(['shift']));
+    const fresh = h.scenes.top as ShiftScene;
+    expect(fresh).not.toBe(h.shift);
+    expect(fresh.snapshot()?.tick).toBe(0);
+    expect(fresh.snapshot()).toEqual(startState);
+    expect(fresh.worldView?.seed).toBe(7);
+    expect(fresh.paused).toBe(false);
+    expect(h.shift.snapshot()).toBeNull(); // the old shift exited
+    expect(h.history).toEqual(['shift', 'pause', 'shift']);
+    expect(h.levelFetches).toHaveLength(1); // the level was kept
+    expect(dim(h)).toBe(false);
+    expect(h.pauses).toEqual(['opened:player', 'closed:restart']);
+    expect(h.ctx.ui.children).toEqual([fresh.uiBatch?.mesh]);
+    h.frame(5);
+    expect(fresh.snapshot()?.tick).toBe(5);
+    expect(h.hiddenListeners()).toBe(1); // only the fresh shift listens for visibilitychange
+  });
+
+  it('Retire (a mouse click) returns to the intro card, the Week Map stand-in', async () => {
+    const h = await running();
+    h.tap('Escape');
+    h.frame();
+    const overlay = await overlayOf(h);
+    const rects = pauseButtonRects(assets.font('kerbside5x7'), 480, INTERNAL_HEIGHT_PX, overlay.conditions);
+    const retire = rects[PauseEntry.Retire];
+    if (retire === null || retire === undefined) throw new Error('no Retire rect');
+    h.frame();
+    h.click(retire.x + (retire.w >> 1), retire.y + (retire.h >> 1));
+    h.frame();
+    expect(overlay.choice).toBe('retire');
+    await h.topIs('shift_intro');
+    expect(h.scenes.ids()).toEqual(['shift_intro']);
+    expect(h.history).toEqual(['shift', 'pause', 'shift_intro']);
+    expect(h.pauses).toEqual(['opened:player', 'closed:retire']);
+    expect(dim(h)).toBe(false);
+    expect(h.hiddenListeners()).toBe(0);
+  });
+
+  it('visibilitychange → hidden opens the overlay, which stays open until the player resumes', async () => {
+    const h = await running();
+    h.frame(12);
+    h.hide();
+    expect(h.shift.paused).toBe(true);
+    const overlay = await overlayOf(h);
+    expect(overlay.reason).toBe('hidden');
+    h.hide(); // hidden again while paused: nothing new
+    h.frame(60);
+    expect(h.scenes.ids()).toEqual(['shift', 'pause']);
+    expect(h.shift.snapshot()?.tick).toBe(12);
+    h.tap('Enter'); // Resume is the default focus
+    h.frame();
+    expect(overlay.choice).toBe('resume');
+    h.frame();
+    expect(h.shift.snapshot()?.tick).toBe(13);
+    expect(h.pauses).toEqual(['opened:hidden', 'closed:resume']);
+  });
+
+  it('refuses a pause once the shift has ended, and the tally ignores the Pause key', async () => {
+    const h = await running();
+    const { shift } = await h.finishShift();
+    expect(shift.requestPause('player')).toBe(false);
+    h.hide();
+    h.tap('KeyP');
+    h.frame(5);
+    expect(h.scenes.ids()).toEqual(['tally']);
+    expect(h.pauses).toEqual([]);
+  }, 60_000);
+
+  it('the Controls page lists the bindings for the active device; Back returns, Pause resumes', async () => {
+    const h = await running();
+    h.tap('KeyP');
+    h.frame();
+    const overlay = await overlayOf(h);
+    h.tap('KeyS');
+    h.frame();
+    h.tap('KeyS');
+    h.frame();
+    expect(overlay.menu.focus).toBe(PauseEntry.Controls); // Settings is hidden: skipped
+    h.tap('Space');
+    h.frame();
+    expect(overlay.page).toBe(PausePage.Controls);
+    h.frame();
+    expect(overlay.text).toContain('KEYBOARD');
+    expect(overlay.text).toContain('Left Shift');
+    h.press(PAD_BUTTON.DPAD_DOWN); // the pad is now the active device
+    h.frame();
+    expect(overlay.text).toContain('GAMEPAD');
+    expect(overlay.text).toContain('Start');
+    h.tap('Escape'); // Esc is Back here: to the main page, not out of the pause
+    h.frame();
+    expect(overlay.page).toBe(PausePage.Main);
+    expect(overlay.choice).toBeNull();
+    expect(overlay.menu.focus).toBe(PauseEntry.Controls);
+    h.tap('Enter');
+    h.frame();
+    expect(overlay.page).toBe(PausePage.Controls);
+    h.tap('KeyP'); // the Pause key resumes from any page
+    h.frame();
+    expect(overlay.choice).toBe('resume');
+    expect(h.scenes.ids()).toEqual(['shift']);
+  });
+
+  it('hidden entries (Settings, Finish Sweep) are not shown and never take the focus', async () => {
+    const h = await running();
+    h.tap('KeyP');
+    h.frame();
+    const overlay = await overlayOf(h);
+    const menu = overlay.menu;
+    expect(menu.isVisible(PauseEntry.Settings)).toBe(false);
+    expect(menu.isVisible(PauseEntry.FinishSweep)).toBe(false);
+    const seen = new Set<number>([menu.focus]);
+    for (let i = 0; i < 12; i++) {
+      menu.command(MENU_COMMAND.Down);
+      seen.add(menu.focus);
+    }
+    for (let i = 0; i < 12; i++) {
+      menu.command(MENU_COMMAND.Up);
+      seen.add(menu.focus);
+    }
+    expect([...seen].sort()).toEqual([
+      PauseEntry.Resume,
+      PauseEntry.RestartShift,
+      PauseEntry.Controls,
+      PauseEntry.Retire,
+    ]);
+    expect(overlay.text).not.toContain('SETTINGS');
+    expect(overlay.text).not.toContain('FINISH SWEEP');
+  });
 });

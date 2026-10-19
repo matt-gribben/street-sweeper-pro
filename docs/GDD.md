@@ -962,7 +962,7 @@ Buttons: **Skip Run**, **Workshop**, **Try Again**, **Week Map**. After SACKED o
 | Week Map | Seven district cards (Mon–Sun) as a seafront map of Muckleford; stars, Gleaming badge, Lost Property and Golden Crisp ticks per district; total stars; Workshop button. |
 | Shift intro card | Pam portrait, briefing, district, target, weather, "Press Space to start". `jng.shift_start`. |
 | Depot Workshop | Bessie on a lift; upgrade list with current level, next level, price, stat preview (before → after); livery selector; £ balance. `mus.workshop`, "Tea Break". |
-| Pause | Resume, Restart Shift, Settings, Controls, Retire to Week Map, and Finish Sweep (Free Sweep only). The world freezes under a dimmed palette (proposed: shadow remap applied to the whole frame). |
+| Pause | Resume, Restart Shift, Settings, Controls, Retire to Week Map, and Finish Sweep (Free Sweep only). The world freezes under a dimmed palette. *(Built in SSP-287, M3, on a `ui.panel_dark` panel. Lead call on the dim, refining the proposal "shadow remap applied to the whole frame": every **world** pixel takes **one more** step down the Kerbside-32 shadow ramp, after its normal shadow, so building and drop shadows stay one step darker than the sun beside them instead of flattening into it; HUD and overlay pixels are never dimmed. Esc / P / Start opens it and also resumes; Esc, Backspace and B go back; hiding the tab opens it, and it stays up until the player resumes. In M3 it shows Resume, Restart Shift (same seed, intro card skipped), Controls and **Retire**, which returns to the intro card until the Week Map exists (SSP-191); Settings (SSP-235) and Finish Sweep (SSP-196) are hidden until their scene and mode exist.)* |
 | Settings | Volume sliders (master, music, sound effects, ambience), controls and remapping, assists, accessibility, display (Fullscreen, mph/km/h, speed zoom if shipped). Stored in `ssp.settings.v1`. |
 
 ### 15.5 Save behaviour
@@ -1004,7 +1004,7 @@ Later days introduce their new idea with one or two barks in the same style. **T
 
 ### 16.3 Controls reference
 
-The Pause menu has a **Controls** page showing the current bindings for the active device, and the shift intro card shows a compact 4-key reminder on the first three shifts (proposed).
+The Pause menu has a **Controls** page showing the current bindings for the active device, and the shift intro card shows a compact 4-key reminder on the first three shifts (proposed). *(Controls page built in SSP-287: read-only, one row per §6.1 action plus menu select and back, labelled for the device used last; the dev panel is left off. SSP-236 makes it show remapped keys.)*
 
 ---
 

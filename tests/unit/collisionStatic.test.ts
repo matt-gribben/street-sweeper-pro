@@ -19,6 +19,7 @@ import {
   createStaticResolver,
   impactDamage,
   MAX_RESOLVE_ITERATIONS,
+  ResolveOutcome,
   resolveStatic,
 } from '../../src/sim/collision/resolveStatic.ts';
 import {
@@ -41,13 +42,20 @@ import {
 } from '../../src/sim/collision/sweep.ts';
 import { TILE_M } from '../../src/sim/constants.ts';
 import { countEvents, createEventQueue, EV, resetEvents, ShiftEndReason } from '../../src/sim/eventQueue.ts';
-import { createInputFrame, type InputFrame, STEER_MAX, THROTTLE_MAX } from '../../src/sim/inputFrame.ts';
+import {
+  BRAKE_MAX,
+  createInputFrame,
+  type InputFrame,
+  STEER_MAX,
+  THROTTLE_MAX,
+} from '../../src/sim/inputFrame.ts';
 import { COLLIDE, createBlankLevel, type Level, type LevelProp, mergeSolids } from '../../src/sim/map.ts';
 import { nextInt, sfc32 } from '../../src/sim/rng.ts';
 import { DEFAULT_TUNING, loadTuning, type Tuning } from '../../src/sim/tuning.ts';
 import { createVehicleParams, createVehicleState } from '../../src/sim/vehicle.ts';
 import { createWorld, Phase, stepWorld, type World } from '../../src/sim/world.ts';
 import { assertHeapDeltaWithinThresholds, measureHeapDelta } from '../support/heapDelta.ts';
+import { type BodyBox, solidOverlapM } from '../support/solidOverlap.ts';
 
 const sweeper = DEFAULT_TUNING.vehicle.sweeper;
 const HW = sweeper.body.widthM / 2; // 0.875
@@ -819,6 +827,170 @@ describe('primitives added for phase 3', () => {
   });
 });
 
+// Failures tests/property/collision.prop.test.ts found (SSP-037), each fixed in resolveStatic.ts / grid.ts and
+// pinned here. Overlap is measured with the test-side SAT of tests/support/solidOverlap.ts.
+
+/** An 8 × 8 level, solid except the given open cells ("col,row"), with Bessie spawned at `player`. */
+function pocket(open: readonly string[], player: { x: number; y: number; heading: number }): Level {
+  const cells = new Set(open);
+  return level(8, 8, (col, row) => !cells.has(`${col},${row}`), player);
+}
+
+/** Bessie's OBB in `world`, as tests/support/solidOverlap.ts takes it. */
+function body(world: World): BodyBox {
+  const v = world.vehicle;
+  return {
+    xM: v.xM,
+    yM: v.yM,
+    headingRad: v.headingRad,
+    widthM: sweeper.body.widthM,
+    lengthM: sweeper.body.lengthM,
+  };
+}
+
+/** Impacts in the log (vn > 0); a tick's EV.Impact count must equal it, even after an undone attempt. */
+function loggedImpacts(world: World): number {
+  const log = world.staticResolver.log;
+  let n = 0;
+  for (let i = 0; i < log.count; i++) if ((log.vnMps[i] ?? 0) > 0) n += 1;
+  return n;
+}
+
+/** Drive `world` with `input` for `ticks`, checking every tick; returns how often each outcome happened. */
+function driveChecked(world: World, input: InputFrame, ticks: number): number[] {
+  const outcomes = [0, 0, 0];
+  expect(solidOverlapM(world.level, body(world))).toBe(0);
+  for (let t = 0; t < ticks; t++) {
+    const hp = world.vehicle.hp;
+    world.step(input);
+    const r = world.staticResolver;
+    outcomes[r.outcome] = (outcomes[r.outcome] ?? 0) + 1;
+    expect(solidOverlapM(world.level, body(world)), `tick ${t}`).toBeLessThanOrEqual(1e-3);
+    expect(countEvents(world.events, EV.Impact), `tick ${t}`).toBe(loggedImpacts(world));
+    if (r.outcome === ResolveOutcome.Stopped) {
+      // Stopped short: no velocity, no impact, no damage, and the heading the tick started with.
+      expect([world.vehicle.vLongMps, world.vehicle.vLatMps]).toEqual([0, 0]);
+      expect(world.vehicle.headingRad).toBe(world.vehicle.prevHeadingRad);
+      expect(countEvents(world.events, EV.Impact)).toBe(0);
+      expect(world.vehicle.hp).toBe(hp);
+    }
+    if (r.outcome === ResolveOutcome.HeadingHeld) {
+      expect(world.vehicle.headingRad).toBe(world.vehicle.prevHeadingRad);
+      expect(world.vehicle.yawRateRadPerS).toBe(0);
+    }
+  }
+  return outcomes;
+}
+
+describe('SSP-037 regressions (found by the collision properties)', () => {
+  it('turning in a pocket barely wider than Bessie: the turn is undone instead of ending inside a wall', () => {
+    // The first counterexample property 1 shrank to: a 1 × 2 tile pocket (2 m × 4 m) in a solid map, Bessie
+    // reversing on full left lock. The reverse turn swings her into both side walls, which no translation
+    // frees; before the fix she ended ticks up to ~0.1 m inside them.
+    const world = createWorld(pocket(['0,0', '0,1'], { x: 1, y: 2, heading: NORTH }), 1, DEFAULT_TUNING);
+    const [clear = 0, held = 0, stopped = 0] = driveChecked(world, frame(0, BRAKE_MAX, -STEER_MAX), 600);
+    expect(held).toBeGreaterThan(0);
+    expect(clear + held + stopped).toBe(600);
+  });
+
+  it('wedged in an L-shaped pocket: a move MTV cannot resolve stops at the furthest clear point', () => {
+    const world = createWorld(
+      pocket(['0,0', '0,1', '1,1'], { x: 1, y: 1.7, heading: NORTH }),
+      1,
+      DEFAULT_TUNING,
+    );
+    const [, held = 0, stopped = 0] = driveChecked(world, frame(0, BRAKE_MAX, STEER_MAX), 600);
+    expect(held).toBeGreaterThan(0);
+    expect(stopped).toBeGreaterThan(0);
+  });
+
+  it('Stopped moves as far as it can: 0.1 mm further along the attempted move overlaps a solid', () => {
+    const world = createWorld(
+      pocket(['0,0', '0,1', '1,1'], { x: 1, y: 1.7, heading: NORTH }),
+      1,
+      DEFAULT_TUNING,
+    );
+    const input = frame(0, BRAKE_MAX, STEER_MAX);
+    let checked = 0;
+    for (let t = 0; t < 600; t++) {
+      world.step(input);
+      const r = world.staticResolver;
+      if (r.outcome !== ResolveOutcome.Stopped) continue;
+      // The sweep still holds the attempted (heading-held) move: start pose → integrated end.
+      const dx = r.sweep.x1 - r.sweep.x0;
+      const dy = r.sweep.y1 - r.sweep.y0;
+      const d = Math.hypot(dx, dy);
+      if (!(d > 1e-4)) continue;
+      const v = world.vehicle;
+      // The stop is on the attempted line, between its start and its end...
+      const along = ((v.xM - r.sweep.x0) * dx + (v.yM - r.sweep.y0) * dy) / d;
+      const off = Math.abs((v.xM - r.sweep.x0) * dy - (v.yM - r.sweep.y0) * dx) / d;
+      expect(off).toBeLessThan(1e-12);
+      expect(along).toBeGreaterThanOrEqual(0);
+      expect(along).toBeLessThan(d);
+      // ...and as far along it as bisection allows: 0.1 mm further overlaps.
+      const ahead = { ...body(world), xM: v.xM + (dx / d) * 1e-4, yM: v.yM + (dy / d) * 1e-4 };
+      expect(solidOverlapM(world.level, ahead)).toBeGreaterThan(0);
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('a bollard by the front corner at 17.2 m/s is hit, not passed through (sub-step 0.15 m)', () => {
+    // Property 2b's counterexample: heading north at 17.2 m/s (0.287 m a tick) with the bollard touching
+    // the front face 0.79 m right of centre. In one 0.287 m step the bollard's centre ended inside the OBB,
+    // nearer the right face than the front, so the MTV pushed Bessie sideways and she drove through it.
+    const bollard = DEFAULT_TUNING.propFootprints.shapes['prop.bollard'];
+    const radius = bollard.shape === 'circle' ? bollard.radiusM : 0;
+    const bx = 16 + 0.9 * HW;
+    const by = 16 - HL - radius - 1e-6;
+    const lvl = level(16, 16, () => false, { x: 16, y: 16, heading: NORTH }, [
+      { id: 'prop.bollard', x: bx, y: by, rot: 0 },
+    ]);
+    const world = createWorld(lvl, 1, noDrag());
+    expect(world.staticGrid.subStepMaxM).toBe(radius);
+    world.vehicleParams.topSpeedMult = 17.2 / sweeper.drive.topSpeedTransitMps;
+    world.vehicle.vLongMps = 17.2;
+    stepToImpact(world, frame(THROTTLE_MAX, 0, 0), 5);
+    const log = world.staticResolver.log;
+    // Two 0.143 m sub-steps: the first hits at the full 17.2 m/s, the second only pushes out (already
+    // bouncing). Every push is straight back (+y), never sideways.
+    expect(log.count).toBe(2);
+    expect(log.vnMps[0]).toBeCloseTo(17.2, 9);
+    expect(log.vnMps[1]).toBeLessThan(0);
+    for (let i = 0; i < log.count; i++) {
+      expect(Math.abs(log.normalX[i] ?? 1)).toBeLessThan(EPS);
+      expect(log.normalY[i]).toBeCloseTo(1, 9);
+    }
+    expect(countEvents(world.events, EV.Impact)).toBe(1);
+    for (let t = 0; t < 120; t++) {
+      world.step(frame(THROTTLE_MAX, 0, 0));
+      expect(world.vehicle.yM - by).toBeGreaterThan(HL); // the bollard stays ahead of the front face
+    }
+  });
+
+  it('the grid step is 1.0 m with tiles only, and half the thinnest prop footprint otherwise', () => {
+    expect(
+      createStaticGrid(
+        level(8, 8, () => false, { x: 4, y: 4, heading: 0 }),
+        DEFAULT_TUNING.propFootprints,
+      ).subStepMaxM,
+    ).toBe(1);
+    const bench = DEFAULT_TUNING.propFootprints.shapes['prop.bench'];
+    const benchHalf = bench.shape === 'box' ? Math.min(bench.widthM, bench.lengthM) / 2 : 0;
+    const withBench = level(8, 8, () => false, { x: 4, y: 4, heading: 0 }, [
+      { id: 'prop.bench', x: 9, y: 9, rot: 0 },
+    ]);
+    expect(createStaticGrid(withBench, DEFAULT_TUNING.propFootprints).subStepMaxM).toBe(benchHalf);
+    // sweepStepCount honours the sweep's own step.
+    const sweep = createSweep();
+    sweep.x1 = 0.287;
+    expect(sweepStepCount(sweep)).toBe(1);
+    sweep.maxStepM = 0.15;
+    expect(sweepStepCount(sweep)).toBe(2);
+  });
+});
+
 describe('allocation', () => {
   it('stepWorld allocates nothing per tick with Bessie pressed into walls and props (§17 heap-delta check)', () => {
     // Three Worlds stepped together, each in a steady state that resolves contacts on every tick: wedged at
@@ -867,5 +1039,25 @@ describe('allocation', () => {
     expect(impacts).toBe(1200);
     const delta = measureHeapDelta(step);
     assertHeapDeltaWithinThresholds(delta);
+  });
+
+  it('the SSP-037 fallbacks allocate nothing: wedged in a pocket, every tick is undone twice and stops short', () => {
+    // Full throttle on full left lock in the L-shaped pocket: every tick the turn fails, the heading-held
+    // retry fails, and Bessie stops short by bisection, so all three paths run on every tick (steady state).
+    const wedged = createWorld(
+      pocket(['0,0', '0,1', '1,1'], { x: 1.1, y: 2.2, heading: -0.1 }),
+      7,
+      DEFAULT_TUNING,
+    );
+    const input = frame(THROTTLE_MAX, 0, -STEER_MAX);
+    const step = (): void => stepWorld(wedged, input);
+    for (let tick = 0; tick < 30_000; tick++) step();
+    let stopped = 0;
+    for (let tick = 0; tick < 600; tick++) {
+      step();
+      if (wedged.staticResolver.outcome === ResolveOutcome.Stopped) stopped += 1;
+    }
+    expect(stopped).toBe(600);
+    assertHeapDeltaWithinThresholds(measureHeapDelta(step));
   });
 });

@@ -1,9 +1,12 @@
 // Sub-stepping rule for moving bodies against static geometry (TECHNICAL_DESIGN §9.2 step 2).
 // When a body's per-tick displacement exceeds 0.5 tile (1.0 m), the move is split into `ceil(d / 1.0)` equal
 // sub-steps and each intermediate pose is collision-tested, so nothing can jump over a thin obstacle.
-// Bessie tops out at about 17.2 m/s ≈ 0.29 m/tick, so she always takes one step; the rule is a safety net.
-// The knockables' extra rule (sub-step past half the smallest extent, §9.3) arrives with bodies.ts in M3 and
-// reuses subStepCount with a smaller `maxStepM`.
+// Bessie tops out at about 17.2 m/s ≈ 0.29 m/tick, so against tiles alone she always takes one step.
+// Thin props tighten the step (SSP-037): the static grid's `subStepMaxM` is the smaller of 1.0 m and half the
+// smallest extent of any static shape (a 0.3 m bollard: 0.15 m), so Bessie can never move far enough in one
+// step for a bollard's centre to end up inside her OBB, where the MTV would leave through a side face and
+// let her pass straight through it. The knockables' extra rule (sub-step past half their own smallest extent,
+// §9.3) arrives with bodies.ts in M3 and reuses subStepCount with a smaller `maxStepM`.
 // Allocation-free: poses are written into a caller-supplied object.
 import { TILE_M } from '../constants.ts';
 import { sqrt } from '../fmath.ts';
@@ -71,22 +74,25 @@ export type Sweep = {
   x1: number;
   y1: number;
   heading1Rad: number;
+  /** Largest displacement per sub-step, metres (SUBSTEP_MAX_M unless the static grid needs less). */
+  maxStepM: number;
 };
 
-/** Allocate a zeroed sweep. Setup only, never per tick. */
+/** Allocate a zeroed sweep with the 1.0 m step. Setup only, never per tick. */
 export function createSweep(): Sweep {
-  return { x0: 0, y0: 0, heading0Rad: 0, x1: 0, y1: 0, heading1Rad: 0 };
+  return { x0: 0, y0: 0, heading0Rad: 0, x1: 0, y1: 0, heading1Rad: 0, maxStepM: SUBSTEP_MAX_M };
 }
 
 const scratchSweep = createSweep();
 
-/** subStepCount for the sweep's displacement with the 1.0 m step (SUBSTEP_MAX_M). */
+/** subStepCount for the sweep's displacement with the sweep's own step (`maxStepM`). */
 export function sweepStepCount(sweep: Sweep): number {
   const dx = sweep.x1 - sweep.x0;
   const dy = sweep.y1 - sweep.y0;
   const d = sqrt(dx * dx + dy * dy);
-  if (!(d > SUBSTEP_MAX_M) || d === Infinity) return 1;
-  return Math.ceil(d / SUBSTEP_MAX_M);
+  const maxStepM = sweep.maxStepM;
+  if (!(d > maxStepM) || d === Infinity) return 1;
+  return Math.ceil(d / maxStepM);
 }
 
 /** subStepPose for `sweep`: the pose after sub-step `step` of `count`, written into `out`. */

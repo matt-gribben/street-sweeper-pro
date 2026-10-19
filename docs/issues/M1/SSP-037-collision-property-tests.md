@@ -2,7 +2,7 @@
 id: SSP-037
 title: "Add fast-check collision properties: never inside a solid, no tunnelling at 17.2 m/s"
 milestone: M1
-status: todo
+status: done
 type: test
 estimate: M
 labels: [type:test, area:test, area:physics, area:sim, size:M, vertical-slice]

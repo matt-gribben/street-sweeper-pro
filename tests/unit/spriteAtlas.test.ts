@@ -63,13 +63,14 @@ describe('loadAtlas: the committed actors atlas', () => {
     const source = sourceOf(ATLAS_PNG);
     const atlas = await loadAtlas('actors', source);
     expect(source.urls.sort()).toEqual([atlasUrl('actors', 'json'), atlasUrl('actors', 'png')].sort());
-    expect([atlas.width, atlas.height]).toEqual([2048, 1024]);
-    expect(atlas.indices).toHaveLength(2048 * 1024);
+    // 2048×2048 since SSP-099's animals pushed the actors atlas past 2048×1024 (ART_BIBLE §14.6 cap: 2048²).
+    expect([atlas.width, atlas.height]).toEqual([2048, 2048]);
+    expect(atlas.indices).toHaveLength(2048 * 2048);
     expect(atlas.indices.every((i) => i < PALETTE_SIZE || i === TRANSPARENT_INDEX)).toBe(true);
     // The atlas corner pixel outside every frame is transparent; Bessie's body centre is opaque.
     const h00 = FRAME['veh.sweeper:body:h00:0'];
     expect(atlas.indices[(h00.y + h00.py) * 2048 + h00.x + h00.px]).toBeLessThan(PALETTE_SIZE);
-    expect(atlas.indices[1023 * 2048 + 2047]).toBe(TRANSPARENT_INDEX);
+    expect(atlas.indices[2047 * 2048 + 2047]).toBe(TRANSPARENT_INDEX);
     // Bessie is sweeper_yellow somewhere in every heading.
     const yellow = paletteIndex('sweeper_yellow');
     const rect = FRAME['veh.sweeper:body:h09:0'];

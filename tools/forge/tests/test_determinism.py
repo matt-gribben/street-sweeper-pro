@@ -1,11 +1,12 @@
 """Determinism and acceptance checks over a real build of the committed M0 assets (SSP-009, SSP-010, SSP-014,
-SSP-020, SSP-024, SSP-040, SSP-041, SSP-051, SSP-052, SSP-068, SSP-070, SSP-097, SSP-098, SSP-101).
+SSP-020, SSP-024, SSP-040, SSP-041, SSP-051, SSP-052, SSP-068, SSP-070, SSP-097, SSP-098, SSP-099, SSP-101).
 
 Builds ``assets-src/manifest.json`` twice with the cache off, into two temp dirs, and checks
 that every output file has the same SHA-256 (frames, atlas PNG/JSON, ``src/gen/assets.ts``,
-``asset-hashes.json``, the font metrics); then inspects the built frames: 1,786 of them, 64x64 Bessie / 96x96
+``asset-hashes.json``, the font metrics); then inspects the built frames: 1,958 of them, 64x64 Bessie / 96x96
 brush / the nine 24x24 placeholder people, the SSP-097 Monday cast and the SSP-098 businessman, litterbug and
-market trader (104 frames each: 13 per direction, SE/E/NE mirrored) / 32x32 prop.lamp_post
+market trader (104 frames each: 13 per direction, SE/E/NE mirrored) / the SSP-099 placeholder animals
+(16x16 cat x88, 20x20 dog_loose x64, 12x12 pigeon x20, outlined, feet on row h - 2) / 32x32 prop.lamp_post
 (4 sprite-stack slices) / the 15 16x16 litter items (SSP-051: idle x1 + wobble x2 in the
 h00/h08/h16/h24 rotations, 12 frames each, 180 in all; the banana skin is the D-07 sample) / the
 SSP-041 Puddle Lane facade sets (64x80 lit/base/dark bays) and roof surfaces (32x32 variants) /
@@ -146,6 +147,10 @@ PEOPLE = (
 )
 """The 24x24 placeholder people, 104 frames each: the SSP-097 Monday cast (Doris keeps her SSP-014 ingested
 idle frames) and the SSP-098 Tuesday businessman, litterbug and market trader."""
+ANIMALS = {"npc.cat": (16, 16), "npc.dog_loose": (20, 20), "npc.pigeon": (12, 12)}
+"""SSP-099: the placeholder animal grids (ENTITY_CATALOG §7.1), outlined, in the actors atlas."""
+ANIMAL_FRAMES = {"npc.cat": 88, "npc.dog_loose": 64, "npc.pigeon": 20}
+"""8 dirs x (walk 4, sit 2, dart 2, leap 3) / 8 dirs x (walk 4, sit 2, bark 2) / 4 dirs x (peck 2, fly 3)."""
 CELLS = {
     **{f: (64, 80) for f in FACADES},
     **{r: (32, 32) for r in ROOF_VARIANTS},
@@ -159,11 +164,12 @@ CELLS = {
     "prop.hydrant": (32, 32),
     **{li: (16, 16) for li in LITTER},
     **{p: (24, 24) for p in PEOPLE},
+    **ANIMALS,
     "prop.lamp_post": (32, 32),
     "veh.sweeper": (64, 64),
     "veh.sweeper_brush": (96, 96),
 }
-FRAME_COUNT = 1786
+FRAME_COUNT = 1958
 ATLAS_OF = {
     **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES, *STAINS, *GRIME, *HAZARDS)},
     **{a: "items" for a in (*PICKUPS, *SITES, *PROPS, "prop.hydrant")},
@@ -172,6 +178,7 @@ ATLAS_OF = {
     **{h: "ui" for h in HUD_ART},
     **{li: "items" for li in LITTER},
     **{p: "actors" for p in PEOPLE},
+    **{a: "actors" for a in ANIMALS},
     "prop.lamp_post": "items",
     "veh.sweeper": "actors",
     "veh.sweeper_brush": "actors",
@@ -258,6 +265,7 @@ def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
         "prop.hydrant": 1,
         **{li: 12 for li in LITTER},
         **{p: 104 for p in PEOPLE},
+        **ANIMAL_FRAMES,
         "prop.lamp_post": 4,
         "veh.sweeper": 64,
         "veh.sweeper_brush": 128,
@@ -337,9 +345,13 @@ def test_pngs_have_no_metadata_chunks(builds: tuple[BuildResult, Path, Path]) ->
 def test_pivots_body_centre_for_vehicles_and_feet_for_people(builds: tuple[BuildResult, Path, Path]) -> None:
     """Vehicles and the lamp post's slices take the cell centre from render.json (slices through the
     h00 fallback, SSP-020); the pedestrian grid pivots on its feet, row 22 of the 24x24 cell
-    (ART_BIBLE §4.4, §7.2; SSP-018). Font frames pivot on the glyph's top-left, (1, 1) (SSP-068)."""
+    (ART_BIBLE §4.4, §7.2; SSP-018), and the SSP-099 animals on row h - 2 of their own cells. Font frames pivot on the glyph's top-left, (1, 1) (SSP-068)."""
     result, _, _ = builds
-    special = {**{p: (12, 22) for p in PEOPLE}, "font.kerbside5x7": (1, 1)}
+    special = {
+        **{p: (12, 22) for p in PEOPLE},
+        **{a: (w // 2, h - 2) for a, (w, h) in ANIMALS.items()},
+        "font.kerbside5x7": (1, 1),
+    }
     for f in result.frames:
         w, h = CELLS[f.asset_id]
         expected = special.get(f.asset_id, (w // 2, h // 2))
@@ -398,7 +410,7 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
     ]
 
 
-@pytest.mark.parametrize(("name", "count"), [("world", 151), ("actors", 1128), ("items", 263), ("ui", 244)])
+@pytest.mark.parametrize(("name", "count"), [("world", 151), ("actors", 1300), ("items", 263), ("ui", 244)])
 def test_atlas_holds_every_frame_at_its_rect(
     builds: tuple[BuildResult, Path, Path], name: str, count: int
 ) -> None:

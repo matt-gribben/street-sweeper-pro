@@ -371,6 +371,20 @@ const TRAFFIC_SPEC = {
   honkAfterBlockedS: 'positive',
 } as const satisfies GroupSpec;
 
+/**
+ * TECHNICAL_DESIGN §11.4, LEVEL_DESIGN §7.1 (SSP-076, M3 tuning): the speed limit the level compiler bakes
+ * into each lane edge by road class. Residential: a two-way road 3 tiles wide; main road: two-way and at least
+ * 4 tiles wide everywhere; one-way: any `> < ^ v` road; junction: connectors through a junction box and
+ * dead-end turn-arounds; roundabout: a mini-roundabout's ring and its connectors.
+ */
+const LANE_SPEED_SPEC = {
+  residentialMps: 'positive',
+  mainRoadMps: 'positive',
+  oneWayMps: 'positive',
+  junctionMps: 'positive',
+  roundaboutMps: 'positive',
+} as const satisfies GroupSpec;
+
 const STREET_LIFE_GROUPS = {
   awareness: AWARENESS_SPEC,
   horn: HORN_SPEC,
@@ -380,6 +394,7 @@ const STREET_LIFE_GROUPS = {
   actorHit: ACTOR_HIT_SPEC,
   npcRadius: NPC_RADIUS_SPEC,
   traffic: TRAFFIC_SPEC,
+  laneSpeed: LANE_SPEED_SPEC,
 } as const;
 
 /** GDD §11.1: the meter reaching sackedAt complaints is SACKED!. */

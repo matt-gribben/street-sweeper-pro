@@ -148,7 +148,14 @@
     "splash": { "minSpeedMps": 3, "radiusM": 1.5, "pts": -50, "complaintEvery": 3 },
     "actorHit": { "minClosingSpeedMps": 1.0, "ignoreContactS": 1.5 },
     "npcRadius": { "humanM": 0.3, "catM": 0.2, "dogM": 0.25 },
-    "traffic": { "honkAfterBlockedS": 3 }
+    "traffic": { "honkAfterBlockedS": 3 },
+    "laneSpeed": {
+      "residentialMps": 7,
+      "mainRoadMps": 9,
+      "oneWayMps": 6,
+      "junctionMps": 4,
+      "roundaboutMps": 4
+    }
   },
   "complaints": {
     "meter": { "sackedAt": 5 },

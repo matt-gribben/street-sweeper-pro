@@ -2,7 +2,7 @@
 id: SSP-076
 title: "Compile the traffic lane graph and pavement nav graph in compile-level.ts"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:tooling, area:sim, area:test, size:L, vertical-slice]

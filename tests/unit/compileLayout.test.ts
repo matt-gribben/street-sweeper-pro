@@ -96,7 +96,7 @@ function compileLayers(rows: readonly string[]): NonNullable<CompileResult['outp
     levelText: `${JSON.stringify(level)}\n`,
     knownAssetIds: KNOWN,
     kerbBlob: BLOB,
-    skipCodes: ['L014', 'L015', 'L020', 'L021', 'L022'],
+    skipCodes: ['L014', 'L015', 'L020', 'L021', 'L022', 'L011', 'L012', 'L013'],
   });
   return ok(result);
 }
@@ -637,6 +637,8 @@ describe('the LEVEL_DESIGN §8.6 Depot Yard', () => {
         P: { storeys: 2, roof: 'roof.depot', wall: 'facade.depot_shed', use: 'depot', landmark: true },
         Q: { storeys: 1, roof: 'roof.corrugated', wall: 'facade.workshop', use: 'depot', roofkit: ['vent'] },
       },
+      // The depot road (row 23) is decorative: no traffic, so no lane graph and no L011 (SSP-076).
+      traffic: { none: true },
     };
     const result = compileLevel({
       name: 'depot_yard',
@@ -647,6 +649,7 @@ describe('the LEVEL_DESIGN §8.6 Depot Yard', () => {
     });
     const { level: compiled, map } = ok(result);
     expect(compiled.sites.filter((s) => s.id === 'site.depot_bay')).toHaveLength(6);
+    expect(compiled.lanes.nodeCount).toBe(0);
     expect(tileLayerViolations(compiled, map, BLOB)).toEqual([]);
     // The gate's dropped kerbs carry no kerb; the pavement either side has a straight kerb to the road.
     expect(compiled.layers.autotile[22 * 32 + 13]).toBe(AUTOTILE_NONE);

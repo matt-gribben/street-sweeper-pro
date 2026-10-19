@@ -1,7 +1,8 @@
 // Puddle Lane, the M1 street (SSP-042; LEVEL_DESIGN §5.1, §8.5, §12): the authored map.txt / level.json pair
 // compiles with no diagnostics, keeps the §8.5 excerpt byte for byte, places the depot, skip, hydrants and
 // anchors the later milestones rely on, and gives every raised-kerb cell a kerb blob autotile index. Since
-// SSP-056 it also carries the M2 sweeping content (litter, grime, uses, pledges, power-up, collectibles).
+// SSP-056 it also carries the M2 sweeping content (litter, grime, uses, pledges, power-up, collectibles), and
+// since SSP-076 its lane and nav graphs.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,14 +14,16 @@ import {
   COLLIDE,
   decodeLevel,
   Ground,
+  LANE_FLAG,
   LITTER_PLACE,
+  NAV_FLAG,
 } from '../../src/sim/map.ts';
 import { compileLevel, readManifestIds } from '../../tools/levels/compile-level.ts';
 import { computeStreets, frontageStreet } from '../../tools/levels/frontages.ts';
 import { KERB_BLOB_PATH, readKerbBlob } from '../../tools/levels/kerbBlob.ts';
 import { carriagewayMask, pathSteps, squareCover } from '../../tools/levels/layoutChecks.ts';
 import { isRaisedKerbCell, isRoadCell } from '../../tools/levels/tileLayers.ts';
-import { tileLayerViolations } from '../support/levelInvariants.ts';
+import { graphViolations, tileLayerViolations } from '../support/levelInvariants.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const read = (rel: string): string => readFileSync(join(REPO_ROOT, rel), 'utf8');
@@ -379,5 +382,107 @@ describe('the M2 sweeping content (SSP-056, LEVEL_DESIGN §5.1)', () => {
     expect(bench, 'a bench within 1 tile').toBeDefined();
     expect(Math.abs((bench?.y ?? 0) / TILE_M - ly)).toBeLessThanOrEqual(1.01);
     expect(doc.collectibles?.goldenCrisp.at).toEqual([44.5, 30.5]);
+  });
+});
+
+describe('the M3 lane and nav graphs (SSP-076)', () => {
+  const decoded = decodeLevel(read('public/assets/levels/puddle_lane.json'));
+  const tileOf = (x: number, y: number): string => `${Math.floor(x / TILE_M)},${Math.floor(y / TILE_M)}`;
+
+  it('compiles non-empty graphs that pass L011–L013 and hold their invariants', () => {
+    expect(RESULT.diagnostics).toEqual([]);
+    expect(decoded.lanes.nodeCount).toBeGreaterThan(0);
+    expect(decoded.lanes.edgeCount).toBeGreaterThan(0);
+    expect(decoded.nav.nodeCount).toBeGreaterThan(0);
+    expect(graphViolations(decoded, map)).toEqual([]);
+  });
+
+  it('lets traffic in and out only at the west end of Puddle Lane (its one map-edge road)', () => {
+    const { lanes } = decoded;
+    const ends: string[] = [];
+    for (let e = 0; e < lanes.edgeCount; e += 1) {
+      const flags = lanes.edgeFlags[e] ?? 0;
+      if ((flags & (LANE_FLAG.PORTAL_IN | LANE_FLAG.PORTAL_OUT)) === 0) continue;
+      const entry = (flags & LANE_FLAG.PORTAL_IN) !== 0;
+      const node = (entry ? lanes.edgeFrom[e] : lanes.edgeTo[e]) ?? 0;
+      ends.push(`${entry ? 'in' : 'out'} ${lanes.nodeX[node]},${lanes.nodeY[node]}`);
+    }
+    // Eastbound enters on the north half of rows 4–6 (y = 9.5 m), westbound leaves on the south half.
+    expect(ends.sort()).toEqual(['in 0,9.5', 'out 0,12.5']);
+  });
+
+  it('stops both lanes at both zebras, and has the depot road turn round at the apron', () => {
+    const { lanes } = decoded;
+    const zebraTiles = new Set<string>();
+    let turns = 0;
+    for (let e = 0; e < lanes.edgeCount; e += 1) {
+      const flags = lanes.edgeFlags[e] ?? 0;
+      const to = lanes.edgeTo[e] ?? 0;
+      if ((flags & LANE_FLAG.ZEBRA) !== 0) zebraTiles.add(tileOf(lanes.nodeX[to] ?? 0, lanes.nodeY[to] ?? 0));
+      if ((flags & LANE_FLAG.U_TURN) !== 0) turns += 1;
+    }
+    // Puddle Lane's zebra (x = 17–18; the lane nodes are in rows 4 and 6) and Gutter Row's (rows 11–12).
+    expect([...zebraTiles].sort()).toEqual([
+      '17,4',
+      '17,6',
+      '18,4',
+      '18,6',
+      '22,11',
+      '22,12',
+      '24,11',
+      '24,12',
+    ]);
+    expect(turns).toBe(1);
+  });
+
+  it('records the four bay runs with the heading of the lane beside them', () => {
+    expect(decoded.lanes.bays).toEqual([
+      { rect: [28, 6, 34, 7], heading: (3 * Math.PI) / 2 },
+      { rect: [41, 6, 47, 7], heading: (3 * Math.PI) / 2 },
+      { rect: [50, 11, 51, 17], heading: 0 },
+      { rect: [52, 30, 53, 36], heading: Math.PI },
+    ]);
+  });
+
+  it('crosses roads on foot at the two zebras and the two pairs of dropped kerbs only', () => {
+    const { nav } = decoded;
+    const crossings: string[] = [];
+    for (let e = 0; e < nav.edgeCount; e += 1) {
+      const flags = nav.edgeFlags[e] ?? 0;
+      if (flags === 0) continue;
+      const a = nav.edgeFrom[e] ?? 0;
+      const b = nav.edgeTo[e] ?? 0;
+      const ends = `${tileOf(nav.nodeX[a] ?? 0, nav.nodeY[a] ?? 0)}>${tileOf(nav.nodeX[b] ?? 0, nav.nodeY[b] ?? 0)}`;
+      crossings.push(`${ends}:${flags}`);
+    }
+    const z = NAV_FLAG.ZEBRA;
+    const d = NAV_FLAG.DROPPED_KERB;
+    expect(crossings.sort()).toEqual(
+      [
+        `12,3>12,7:${d}`,
+        `13,3>13,7:${d}`,
+        `17,3>17,7:${z}`,
+        `18,3>18,7:${z}`,
+        `21,11>25,11:${z}`,
+        `21,12>25,12:${z}`,
+        `21,30>25,30:${d}`,
+        `21,31>25,31:${d}`,
+      ].sort(),
+    );
+  });
+
+  it('tags anchors 1–7 on their own tiles and gives every frontage a door', () => {
+    const { nav } = decoded;
+    const at = (node: number): string => tileOf(nav.nodeX[node] ?? 0, nav.nodeY[node] ?? 0);
+    expect(nav.anchors.map((a) => `${a.char} ${a.name} ${at(a.node)}`)).toEqual([
+      '1 doris_home 4,3',
+      '2 zebra_puddle_s 17,7',
+      '3 corner_shop_door 21,8',
+      '4 pump_green_ne 40,7',
+      '5 pump_green_east_walk 40,14',
+      '6 pump_green_se 40,20',
+      '7 pump_green_sw 25,20',
+    ]);
+    expect(nav.doors.map((d) => d.frontage)).toEqual(decoded.frontages.map((f) => f.id));
   });
 });

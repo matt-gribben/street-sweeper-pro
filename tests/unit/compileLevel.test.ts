@@ -35,6 +35,7 @@ import {
   syncLevelHashes,
 } from '../../tools/levels/compile-level.ts';
 import { KERB_BLOB_PATH, readKerbBlob } from '../../tools/levels/kerbBlob.ts';
+import type { LaneCode } from '../../tools/levels/laneGraph.ts';
 import type { LayoutCode } from '../../tools/levels/layoutChecks.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -44,6 +45,11 @@ const KNOWN = readManifestIds(join(REPO_ROOT, MANIFEST));
 const KERB_BLOB = readKerbBlob(join(REPO_ROOT, KERB_BLOB_PATH));
 /** The SSP-034 layout codes, skipped for the tiny inline maps here (they have no depot bays or hydrants). */
 const LAYOUT_CODES: readonly LayoutCode[] = ['L014', 'L015', 'L020', 'L021', 'L022'];
+/**
+ * The SSP-076 lane codes, also skipped for the inline maps here: their 1–5 tile roads are not legal road
+ * networks. The lane checks have their own tests and fixtures (compileLanes.test.ts).
+ */
+const LANE_CODES: readonly LaneCode[] = ['L011', 'L012', 'L013'];
 
 const tempDirs: string[] = [];
 function tempDir(): string {
@@ -109,7 +115,7 @@ function compileInline(
     levelText: levelJson('t', rows, extra),
     knownAssetIds: KNOWN,
     kerbBlob: KERB_BLOB,
-    skipCodes: LAYOUT_CODES,
+    skipCodes: [...LAYOUT_CODES, ...LANE_CODES],
   });
 }
 
@@ -211,7 +217,15 @@ describe('one failing fixture per implemented code', () => {
       'l010_disconnected',
       'l010_disconnected.map.txt:1:7 L010 drivable area of 4 tile(s) not reachable from @',
     ],
-    ['l013_isolated', 'l013_isolated.map.txt:1:7 L013 isolated road tile'],
+    [
+      'l011_two_way',
+      'l011_two_way.map.txt:3:1 L011 two-way traffic on a road 2 tile(s) wide; a two-way road needs at least 3 (use > < ^ v for a one-way street)',
+    ],
+    [
+      'l012_stuck',
+      'l012_stuck.map.txt:3:1 L012 lane graph not strongly connected: a car here can never rejoin the rest of the road network (a one-way dead end, or arrows that trap it)',
+    ],
+    ['l013_isolated', 'l013_isolated.map.txt:1:7 L013 road tile not connected to the lane graph'],
     [
       'l014_dead_end',
       'l014_dead_end.map.txt:13:17 L014 dead end of 8 tiles without a 5×5 turning head (max 6)',
@@ -305,8 +319,8 @@ describe('the valid fixture', () => {
       '00000000880000000000',
       '00000000880000000000',
       '66666666666666666666',
-      '11111111111111111111',
-      '11111111111111111111',
+      '22221222211222222211',
+      '22221222211222222222',
       '66666666666666666666',
       '66966666bbbbbbbbbbbb',
       '99999666bbbbbbbbbbbb',
@@ -362,8 +376,11 @@ describe('the valid fixture', () => {
       ['fr_10_2', 's', [10, 2, 16, 4], 12, false],
       ['fr_16_2', 's', [16, 2, 20, 4], 8, false],
     ]);
-    expect(level.lanes).toEqual({ nodes: [], edges: [] });
-    expect(level.nav).toEqual({ nodes: [], edges: [] });
+    // The one-way street (rows 3–4) is one eastbound lane from portal to portal (SSP-076), and the pavements
+    // either side are joined by the zebra and the dropped kerbs; the graphs are tested in compileLanes.test.ts.
+    expect(level.lanes.nodeCount).toBe(22);
+    expect(level.lanes.bays).toEqual([{ rect: [18, 3, 20, 4], heading: Math.PI / 2 }]);
+    expect(level.nav.nodeCount).toBeGreaterThan(40);
     expect(level.spawns).toEqual({});
     expect(level.schedules).toEqual([]);
   });
@@ -653,18 +670,6 @@ describe('L010 drivable connectivity and alleys', () => {
     const rows = ['@Awe~_ r.', '.........'];
     const { map } = ok(compileInline(rows));
     expect(layerRows(map.drivable, 9)).toEqual(['100000001', '111111111']);
-  });
-});
-
-describe('L013 isolated road', () => {
-  it('flags a road tile with no orthogonal road neighbour (road features and one-ways count as road)', () => {
-    expect(messages(compileInline(['@.#.', '....']))).toEqual(['t.map.txt:1:3 L013 isolated road tile']);
-    expect(messages(compileInline(['@.#.', '..z.']))).toEqual([]);
-    expect(messages(compileInline(['@.>.', '..#.']))).toEqual([]);
-    expect(messages(compileInline(['@#..', '..#.']))).toEqual([
-      't.map.txt:1:2 L013 isolated road tile',
-      't.map.txt:2:3 L013 isolated road tile',
-    ]);
   });
 });
 

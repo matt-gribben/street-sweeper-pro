@@ -354,7 +354,7 @@ Each milestone has the same shape:
 
 *Level*
 
-- [x] `tools/levels/compile-level.ts`: legend parse, building columns, autotile, collision grid. The lane graph and pavement nav graph are stubbed until M3. *(The file exists since M0 as an input-count guard (SSP-006): it exits non-zero with "not implemented until M1" once a map exists. SSP-033 replaces it.)* *(Done: SSP-033 core and M1 checks, SSP-034 autotile, kerb edges, markings layer and merged solids; the graphs are stubbed until M3. Map size is checked against `level.json` → `size` until `districts.json` exists.)*
+- [x] `tools/levels/compile-level.ts`: legend parse, building columns, autotile, collision grid. The lane graph and pavement nav graph are stubbed until M3. *(The file exists since M0 as an input-count guard (SSP-006): it exits non-zero with "not implemented until M1" once a map exists. SSP-033 replaces it.)* *(Done: SSP-033 core and M1 checks, SSP-034 autotile, kerb edges, markings layer and merged solids; the graphs are stubbed until M3. Map size is checked against `level.json` → `size` until `districts.json` exists.)* *(M3, SSP-076: the lane graph and the pavement nav graph are compiled now, with L011–L013; this is the compile part of M3's `traffic.ts` deliverable.)*
 - [x] Author `puddle_lane.map.txt` (64×48) and `puddle_lane.level.json` following [LEVEL_DESIGN.md](LEVEL_DESIGN.md): terraces of 2–3 storeys, `site.depot_bay` reachable, at least one `site.skip` and one `prop.hydrant` placed (for M2). *(SSP-042: 2 depot bays, 1 skip, 2 hydrants, the depot shed the only 2-storey landmark, nothing over 3 storeys.)*
 
 *Placeholder art (forge `procedural` technique, placeholder quality)*

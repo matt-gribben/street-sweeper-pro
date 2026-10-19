@@ -367,7 +367,7 @@ The two code-defined bitmap fonts. **Kerbside 5×7** (5×7 glyph in a 6×8 cell)
 ## L
 
 ### Lane graph
-The directed road network that traffic follows, compiled from the level map by `tools/levels/compile-level.ts`. Compare [Nav graph](#nav-graph).
+The directed road network that traffic follows, compiled from the level map by `tools/levels/compile-level.ts` (`laneGraph.ts`, SSP-076): one lane each way on the left of a two-way road, one on a one-way road, joined through junctions, with map-edge **portals** where traffic enters and leaves ([LEVEL_DESIGN §7.1](LEVEL_DESIGN.md#71-roads)). Compare [Nav graph](#nav-graph).
 
 ### Lead Tangle
 Driving through the extendable lead (up to 5 m) between `npc.dog_walker` and the dog. The lead acts as a line obstacle. A tangle costs −150 and 1 complaint.
@@ -428,7 +428,7 @@ The fictional British seaside town where the game is set. Its council is Mucklef
 ## N
 
 ### Nav graph
-The pavement navigation graph that pedestrians walk, compiled alongside the [lane graph](#lane-graph) and the collision grid.
+The pavement navigation graph that pedestrians walk, compiled alongside the [lane graph](#lane-graph) and the collision grid (`navGraph.ts`, SSP-076). It crosses a road only at a zebra, a school crossing or a dropped kerb ([LEVEL_DESIGN §7.2](LEVEL_DESIGN.md#72-pavements-and-kerbs)).
 
 ### Near miss
 A style bonus of **+25** for passing within 0.5 m of a pedestrian at more than 3 m/s without contact. Joggers are the usual source.

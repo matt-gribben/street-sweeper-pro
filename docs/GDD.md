@@ -901,7 +901,7 @@ All UI renders in the same internal pixel space as the game (base 480×270; widt
 | Score | Top-centre | Counts up with a short roll |
 | Combo | Top-centre, beside score | Multiplier and tier word; shrinking chain-timer bar beneath |
 | Complaints meter | Top-right | Five empty stamp boxes; each complaint slams a red "COMPLAINT" stamp in with `sfx.complaint_stamp` and a 2-frame shake |
-| Radio panel | Bottom-left, above gauges | Pam's barks: 9-slice panel, one line, auto-dismiss after 3 s (proposed). Never covers the road ahead of Bessie. |
+| Radio panel | Bottom-left, above gauges | Pam's barks: 9-slice panel, one line, auto-dismiss after 3 s (proposed). Never covers the road ahead of Bessie: it moves to the bottom-right when she drives towards it (decided in SSP-289, below). |
 | Hopper gauge | Bottom-left | Fill bar and %. Flashes and shows "!" at 80%. Shows "FULL" and the dump-site arrow at 100%. |
 | Dump prompt | Bottom-centre, above the gauges | Whenever a dump is available (stopped at a depot bay or beside a skip with something to dump): the interact key label in a ring that fills over the 1.0 s hold (§6.2, §8.7); it empties on a cancel and goes when the drain starts (SSP-070) |
 | Water gauge | Bottom-left | Fill bar; hydrant icon pulses when below 20% (proposed) |
@@ -925,9 +925,16 @@ All UI renders in the same internal pixel space as the game (base 480×270; widt
 - **Tutorial hook:** `Hud.highlightCleanZone(untilTick)` blinks the clean zone (beat 3 in §16.2, wired by SSP-290). Beat 7's "the arrow'll show you" is the depot arrow, which needs no hook.
 - **Second channel:** besides their colours (depot yellow, hydrant blue) the two arrows differ in shape (a solid arrow and a double chevron), so neither relies on colour alone (§17.2).
 
+**M3 radio panel (SSP-289).** Pam's barks are built (`src/ui/radio.ts`; pixels and the keycap look in [ART_BIBLE §12.2–12.3](ART_BIBLE.md)), with the 4th-complaint bark (§11.3) as the first producer and SSP-290's tutorial layer as the next. Decided there, all tunable:
+
+- **One at a time.** Barks queue first in, first out and never overlap; a bark queued while nothing shows starts at once. Each page shows for **180 sim ticks (3 s)**, so barks freeze whenever the sim does (Pause, the shift's end). A producer can cancel a bark it queued: a waiting bark is dropped, a showing one goes at once (a tutorial beat the player has already performed, §16.1).
+- **Paging.** The panel is at most 204 px wide (a 192 px line, 32 characters), so it fits its half of the narrowest 432 px frame. A longer bark is split **at word boundaries** into consecutive one-line pages, each shown for its own 3 s (beat 1 of §16.2 is three pages); a key glyph stays with the word it touches. "One more and you're off the van!" fits one page.
+- **Relocation.** Home is bottom-left above the brush row; away is bottom-right above the minimap. The **look-ahead point** is where Bessie will be in **2.0 s** (her position plus her velocity × 2 s, on screen). When it is more than **8 px** inside the panel's half of the frame, the panel moves to the other corner; otherwise it stays where it is. So it always sits on the side Bessie is not driving towards, and a parked or creeping Bessie (whose point stays near the centre) never makes it flicker.
+- **Key glyphs.** Bark text names actions as tokens (`{throttle}`, `{steer}`, `{brush}`, `{interact}`, `{horn}`, `{spray}` and the other §6.1 actions), each drawn as a keycap holding the active device's label (§16.1: 'Space' on the keyboard, 'A' on a pad), re-laid out if the player switches device mid-bark. `{cleanSpeed}` prints the clean-pickup speed, '9 mph' (4.0 m/s, §7.2); SSP-235's units setting switches it later. An unknown token is an authoring error.
+
 **HUD principles:**
 
-- **The road ahead of Bessie is sacred.** HUD elements never overlap the look-ahead zone. The radio panel moves to the opposite corner if Bessie is driving toward it (proposed).
+- **The road ahead of Bessie is sacred.** HUD elements never overlap the look-ahead zone. The radio panel moves to the opposite corner if Bessie is driving toward it (rule decided in SSP-289, above).
 - **State changes are audio-visual pairs.** Every warning has both a visual and an SFX (see [AUDIO_DESIGN.md](AUDIO_DESIGN.md) for the `sfx.*` list).
 - **Diegesis where cheap.** NPC reactions ("Oi!", "Not the cat!", "WAAAH!") are speech bubbles in the world, not HUD text.
 

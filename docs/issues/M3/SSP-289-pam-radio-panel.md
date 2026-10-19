@@ -2,7 +2,7 @@
 id: SSP-289
 title: "Add Big Pam's HUD radio panel with a one-at-a-time bark queue and inline key glyphs"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:ui, area:gameplay, area:test, size:M, vertical-slice]

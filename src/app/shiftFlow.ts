@@ -123,9 +123,14 @@ export class ShiftFlow {
   }
 
   private shiftScene(): ShiftScene {
-    const { factory, recordInputs } = this.options;
+    const { factory, recordInputs, menu } = this.options;
     const level = this.level;
-    const scene = factory.shift({ tuning: this.tuning, recordInputs, ...(level === null ? {} : { level }) });
+    const scene = factory.shift({
+      tuning: this.tuning,
+      recordInputs,
+      input: menu,
+      ...(level === null ? {} : { level }),
+    });
     this.current = scene;
     return scene;
   }

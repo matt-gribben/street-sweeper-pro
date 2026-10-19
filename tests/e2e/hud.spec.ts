@@ -19,13 +19,16 @@
 //   Tidy % bar and both off-screen arrows at every width (every arrow pixel inside its 11×11 box, which the unit
 //   tests keep 1 px clear of every reserved box), and the shift's first frame shows them at rest (transit
 //   pattern, 0 mph, ▲, PUDDLE LANE, 0%); spraying parked at the depot start until the tank is below 20% brings up
-//   the hydrant arrow, pointing at the nearer Puddle Lane hydrant.
+//   the hydrant arrow, pointing at the nearer Puddle Lane hydrant;
+// - SSP-289: the sample also shows Pam's radio panel at home with a 'Space' keycap (hud_sample_w432.png and
+//   hud_sample_w640.png are the panel's captures at the narrowest and widest frames), pixel-exact and inside its
+//   slot and the margin like every other element.
 import { expect, type Page, type TestInfo, test } from '@playwright/test';
 import type { ShiftTestState, TestState } from '../../src/debug/testHooks.ts';
 import { groundPxPerMetre, snapToTexelM } from '../../src/render/camera.ts';
 import { KERBSIDE32 } from '../../src/render/palettePass.ts';
 import { INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
-import { hudSampleModel } from '../../src/scenes/HudSampleScene.ts';
+import { hudSampleModel, hudSamplePages, hudSampleRadio } from '../../src/scenes/HudSampleScene.ts';
 import { HUD_FONT } from '../../src/scenes/ShiftScene.ts';
 import { HUD_MARGIN_PX, Hud, type HudRect, hudLayout } from '../../src/ui/hud.ts';
 import {
@@ -38,6 +41,7 @@ import {
   type HudSnapshot,
   hudModel,
 } from '../../src/ui/hudModel.ts';
+import type { RadioModel } from '../../src/ui/radio.ts';
 import { readBitmapFont, readIndexedAtlas, TextRaster } from '../support/textRaster.ts';
 import { collectPageErrors, openTestScene, type RgbaFrame, readTestFrame } from '../support/visualGolden.ts';
 import { saveFrame } from './helpers/saveFrame.ts';
@@ -80,10 +84,10 @@ function pixelIndex(frame: RgbaFrame, x: number, y: number): number {
   return -1;
 }
 
-/** `model` drawn on the CPU by the real Hud at width `w`. */
-function rasterise(model: HudModel, w: number): TextRaster {
+/** `model` (and the radio panel's `radio`) drawn on the CPU by the real Hud at width `w`. */
+function rasterise(model: HudModel, w: number, radio: RadioModel | null = null): TextRaster {
   const raster = new TextRaster(w, INTERNAL_HEIGHT_PX, uiAtlas);
-  new Hud(raster, font).drawModel(model, w);
+  new Hud(raster, font).drawModel(model, w, radio);
   return raster;
 }
 
@@ -187,8 +191,17 @@ for (const viewport of VIEWPORTS) {
 
     const sample = hudSampleModel(createHudModel(), hudLayout(font, w).arrowFrame);
     expect([sample.depotArrow.visible, sample.hydrantArrow.visible]).toEqual([true, true]);
-    const raster = rasterise(sample, w);
+    const radio = hudSampleRadio(hudSamplePages(font), w);
+    expect(radio.visible).toBe(true);
+    expect(radio.runs.some((run) => run.keycap && run.text === 'Space')).toBe(true);
+    const raster = rasterise(sample, w, radio);
     expect(raster.covered, 'the sample draws thousands of HUD pixels').toBeGreaterThan(3_000);
+    // The radio panel is on screen: its slot is full of UI pixels.
+    const slot = hudLayout(font, w).reserved.radioHome;
+    let radioPixels = 0;
+    for (let y = slot.y; y < slot.y + slot.h; y++)
+      for (let x = slot.x; x < slot.x + slot.w; x++) if (raster.at(x, y) >= 0) radioPixels++;
+    expect(radioPixels, 'the radio panel').toBeGreaterThan(2_000);
     const mismatches = uiMismatches(raster, frame);
     expect(mismatches.first).toEqual([]);
     expect(mismatches.count).toBe(0);

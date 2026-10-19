@@ -8,7 +8,7 @@
 // - `__ssp.step(n)` advances exactly n World ticks and renders exactly once (Renderer.renderCount via
 //   `perf().renders`, read inside one evaluate so no animation frame can interleave), also with freeze=1;
 // - `__ssp.state()` is the JSON-safe SimSnapshot (tick, bessie x/y/heading/speed, hp; since SSP-065 the sweeping
-//   state: score, tidy, stars, hopper, water, combo, litter and grime counts, frontages) plus the camera;
+//   state: score, tidy, stars, hopper, water, combo, litter and grime counts, frontages; SSP-080 npcs) plus the camera;
 // - `tick=600` in the URL gives `state().tick === 600` at ready;
 // - the keyboard drives Bessie (W/↑ throttle, D steer right, Space brush) and the camera follows her.
 import { writeFileSync } from 'node:fs';
@@ -134,6 +134,7 @@ test('step(n) advances exactly n ticks and renders exactly once, with freeze=1; 
     'hopper',
     'hp',
     'litter',
+    'npcs',
     'score',
     'stars',
     'tick',

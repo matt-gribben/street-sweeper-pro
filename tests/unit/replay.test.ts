@@ -17,6 +17,9 @@ import {
 } from '../../src/sim/inputFrame.ts';
 import { addLitter } from '../../src/sim/litter.ts';
 import { createBlankLevel, decodeLevel } from '../../src/sim/map.ts';
+import { Stimulus } from '../../src/sim/npc/behaviour.ts';
+import { pushStimulus } from '../../src/sim/npc/stimuli.ts';
+import { addNpcAt, NO_NPC_HANDLE, NpcOrigin, removeNpc } from '../../src/sim/npc/store.ts';
 import {
   absorbTick,
   appendInput,
@@ -246,6 +249,15 @@ describe('state hash', () => {
     addLitter(world.litter, 3, 5.125, 2.75, 2);
     addStain(world.stains, 1, 2.5, 6.25);
     world.dirt.mask[100] = 70;
+    // An NPC and a queued stimulus, so the SSP-080 NPC section has a record of each (SSP-080).
+    const n = addNpcAt(world.npc, 2, NpcOrigin.Ambient, 1.25, 2.5);
+    world.npc.radius[n] = 0.3;
+    world.npc.heading[n] = 0.5;
+    world.npc.seenDistM[n] = 3.125;
+    const k = pushStimulus(world.npcAi.stimuli, Stimulus.Horn, NO_NPC_HANDLE);
+    world.npcAi.stimuli.x[k] = 3.25;
+    world.npcAi.stimuli.y[k] = 4.5;
+    world.npcAi.stimuli.radiusM[k] = 8;
     return world;
   }
 
@@ -910,6 +922,127 @@ describe('state hash', () => {
     }
   });
 
+  it('covers the NPC state: the store, its handles, the npc stream, the stimuli and the spawner (SSP-080)', () => {
+    const base = hashOf(handSetWorld());
+    const f64 = [
+      'x',
+      'y',
+      'prevX',
+      'prevY',
+      'heading',
+      'speed',
+      'radius',
+      'seenDistM',
+      'pathGapM',
+      'pathEtaS',
+    ];
+    const ints = ['kind', 'state', 'stateTicks', 'targetNode', 'swap', 'flags', 'origin', 'group', 'link'];
+    const mutations: [string, (w: World) => void][] = [
+      ...f64.map((key): [string, (w: World) => void] => [
+        `npc.${key}`,
+        (w) => {
+          const col = (w.npc as unknown as Record<string, Float64Array>)[key] as Float64Array;
+          col[0] = (col[0] as number) + 0.001;
+        },
+      ]),
+      ...ints.map((key): [string, (w: World) => void] => [
+        `npc.${key}`,
+        (w) => {
+          const col = (w.npc as unknown as Record<string, Int32Array>)[key] as Int32Array;
+          col[0] = (col[0] as number) + 1;
+        },
+      ]),
+      [
+        'npc.perceivedTick',
+        (w) => {
+          w.npc.perceivedTick[0] = 3;
+        },
+      ],
+      ['npc.count', (w) => addNpcAt(w.npc, 0, NpcOrigin.Ambient, 1, 1)],
+      [
+        'npc removal (generations, free slots)',
+        (w) => {
+          removeNpc(w.npc, 0);
+          addNpcAt(w.npc, 2, NpcOrigin.Ambient, 1.25, 2.5);
+          w.npc.radius[0] = 0.3;
+          w.npc.heading[0] = 0.5;
+          w.npc.seenDistM[0] = 3.125;
+          w.npc.perceivedTick[0] = -1;
+          w.npc.npcsAdded -= 1;
+          w.npc.npcsRemoved -= 1;
+        },
+      ],
+      [
+        'npc.npcsAdded',
+        (w) => {
+          w.npc.npcsAdded += 1;
+        },
+      ],
+      [
+        'npc.npcsRemoved',
+        (w) => {
+          w.npc.npcsRemoved += 1;
+        },
+      ],
+      [
+        'npcAi.rng',
+        (w) => {
+          nextU32(w.npcAi.rng);
+        },
+      ],
+      ['stimuli.count', (w) => pushStimulus(w.npcAi.stimuli, Stimulus.Hit, 0)],
+      [
+        'stimuli.type',
+        (w) => {
+          w.npcAi.stimuli.type[0] = Stimulus.Spray;
+        },
+      ],
+      [
+        'stimuli.target',
+        (w) => {
+          w.npcAi.stimuli.target[0] = 0;
+        },
+      ],
+      [
+        'stimuli.x',
+        (w) => {
+          w.npcAi.stimuli.x[0] = 3.251;
+        },
+      ],
+      [
+        'stimuli.y',
+        (w) => {
+          w.npcAi.stimuli.y[0] = 4.501;
+        },
+      ],
+      [
+        'stimuli.radiusM',
+        (w) => {
+          w.npcAi.stimuli.radiusM[0] = 12;
+        },
+      ],
+      [
+        'stimuli.delivered',
+        (w) => {
+          w.npcAi.stimuli.delivered += 1;
+        },
+      ],
+      ...(['perchPending', 'flocksPlaced', 'ambientSpawned', 'ambientRetired', 'ambientCount'] as const).map(
+        (key): [string, (w: World) => void] => [
+          `spawner.${key}`,
+          (w) => {
+            w.npcAi.spawner[key] += 1;
+          },
+        ],
+      ),
+    ];
+    for (const [name, mutate] of mutations) {
+      const world = handSetWorld();
+      mutate(world);
+      expect(hashOf(world), name).not.toBe(base);
+    }
+  });
+
   it('absorbs the whole grime mask once per hasher, then the dirty rectangle every tick', () => {
     const world = handSetWorld();
     // An empty dirty rectangle: only the first absorb sees a change outside it.
@@ -986,9 +1119,10 @@ describe('state hash', () => {
  * Pinned by 'keeps its canonical byte layout'. SSP-093 appended the hazard store and the LitterField to the
  * hashed state (and a hazard and an item to the hand-set World): c80faedc → 648c18d0. SSP-065 appended the
  * rest of the litter store and the M2 state (brush, hopper, water, stains, grime mask, scoring, Tidy, shift),
- * and gave the hand-set World a frontage, a stain and a grime cell: 648c18d0 → ada67916.
+ * and gave the hand-set World a frontage, a stain and a grime cell: 648c18d0 → ada67916. SSP-080 appended the
+ * NPC state (store, handles, npc stream, stimuli, spawner) and gave it an NPC and a Horn: ada67916 → 0449a66a.
  */
-const GOLDEN_HAND_SET_HASH = 'ada67916';
+const GOLDEN_HAND_SET_HASH = '0449a66a';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

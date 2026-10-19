@@ -499,7 +499,7 @@ Each milestone has the same shape:
 - [ ] `src/sim/complaints.ts`: 0–5 meter, horn-spam window, SACKED at 5.
 - [ ] Horn (8 m radius), near miss (+25), Pigeon Scatter (+25), Caught! (+100), dust coughing (−10 per pedestrian per 2 s).
 - [ ] Power-up spawning (1–3 per shift on pavements) and effects with durations.
-- [ ] Fill in tick order steps 4, 7 and 8.
+- [ ] Fill in tick order steps 4, 7 and 8. *(SSP-080: step 7, NPC AI: the NPC store, behaviour registry, stimuli, staggered perception and the population controller, in `src/sim/npc/`.)*
 - [ ] `litter.spilled_shopping` drops on knocked-over NPCs (0 points).
 - [ ] Placeholder grids for all M3 NPCs: 24×24 humans with 13 frames per direction (S, SW, W, NW, N authored; SE, E, NE mirrored); cat 16×16; pigeon 12×12; the walker's dog 20×20 (`npc.dog_loose` grid).
 - [ ] Placeholder renders for `veh.hatchback`, `veh.saloon`, `veh.van_white`, `veh.taxi`, `veh.bus`, `veh.bicycle`, `veh.mobility_scooter`: run the Blender rig with flat-colour primitive boxes, so the 32-heading frame IDs are final from day one.

@@ -2,7 +2,7 @@
 id: SSP-080
 title: "Add the NPC store, behaviour registry, spawner and phase 7 of the tick"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:ai-npc, area:test, area:perf, size:M, vertical-slice]
@@ -60,13 +60,13 @@ Zero allocations per tick: no closures, map or filter in per-tick loops; iterate
 
 ## Acceptance criteria
 
-- [ ] Unit test: across 3,600 ticks with population target 22, no NPC is ever spawned with its shape intersecting world.viewRect, and at most 2 ambient spawns or retirements happen per 60-tick window.
-- [ ] Unit test: swap-removing an NPC invalidates its old handle (generation check fails) and its slot is reused.
-- [ ] Unit test: a named NPC with spawnAt 70 appears on tick 4,200 at its anchor and is never despawned by distance.
-- [ ] Unit test: the store never exceeds 80 NPCs, flock birds included.
-- [ ] Unit test: perception for NPC i runs only on ticks where tick mod 4 == i mod 4.
-- [ ] tickOrder.test.ts: phase 7 runs after phase 6 (dirt) and before phase 8 (traffic).
-- [ ] The zero-allocation heap check passes with 80 NPCs active, and simPurity passes.
+- [x] Unit test: across 3,600 ticks with population target 22, no NPC is ever spawned with its shape intersecting world.viewRect, and at most 2 ambient spawns or retirements happen per 60-tick window.
+- [x] Unit test: swap-removing an NPC invalidates its old handle (generation check fails) and its slot is reused.
+- [x] Unit test: a named NPC with spawnAt 70 appears on tick 4,200 at its anchor and is never despawned by distance.
+- [x] Unit test: the store never exceeds 80 NPCs, flock birds included.
+- [x] Unit test: perception for NPC i runs only on ticks where tick mod 4 == i mod 4.
+- [x] tickOrder.test.ts: phase 7 runs after phase 6 (dirt) and before phase 8 (traffic).
+- [x] The zero-allocation heap check passes with 80 NPCs active, and simPurity passes.
 
 ## Verification
 

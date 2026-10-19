@@ -599,6 +599,7 @@ describe('__ssp hooks bound to the ShiftScene', () => {
       'hopper',
       'hp',
       'litter',
+      'npcs',
       'score',
       'stars',
       'tick',

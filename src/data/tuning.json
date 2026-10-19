@@ -71,5 +71,22 @@
       },
       "provisional": ["body.wheelTrackM", "body.frontAxleOffsetM", "body.rearAxleOffsetM"]
     }
+  },
+  "propFootprints": {
+    "provisional": true,
+    "shapes": {
+      "prop.lamp_post": { "shape": "circle", "radiusM": 0.2 },
+      "prop.bollard": { "shape": "circle", "radiusM": 0.15 },
+      "prop.bench": { "shape": "box", "widthM": 1.8, "lengthM": 0.6 },
+      "prop.bus_shelter": { "shape": "box", "widthM": 2.0, "lengthM": 1.2 },
+      "prop.phone_box": { "shape": "box", "widthM": 1.0, "lengthM": 1.0 },
+      "prop.post_box": { "shape": "circle", "radiusM": 0.3 },
+      "prop.hydrant": { "shape": "circle", "radiusM": 0.2 },
+      "prop.tree": { "shape": "circle", "radiusM": 0.25 },
+      "prop.planter": { "shape": "box", "widthM": 1.4, "lengthM": 1.4 },
+      "prop.market_stall": { "shape": "box", "widthM": 2.0, "lengthM": 1.5 },
+      "prop.litter_bin": { "shape": "circle", "radiusM": 0.3 },
+      "prop.roadworks_barrier": { "shape": "box", "widthM": 1.6, "lengthM": 0.3 }
+    }
   }
 }

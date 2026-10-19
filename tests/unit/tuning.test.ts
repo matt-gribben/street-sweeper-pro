@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import tuningJson from '../../src/data/tuning.json' with { type: 'json' };
 import { DEG_TO_RAD } from '../../src/sim/constants.ts';
-import { DEFAULT_TUNING, loadTuning } from '../../src/sim/tuning.ts';
+import { DEFAULT_TUNING, loadTuning, STATIC_PROP_IDS } from '../../src/sim/tuning.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const sweeper = DEFAULT_TUNING.vehicle.sweeper;
@@ -320,6 +320,130 @@ describe('loadTuning', () => {
     ])('a provisional list with %s', (_name, value, message) => {
       expect(() => loadTuning(replaced('vehicle.sweeper.provisional', value))).toThrow(message);
     });
+  });
+});
+
+describe('propFootprints (SSP-036, provisional until M4)', () => {
+  const footprints = DEFAULT_TUNING.propFootprints;
+
+  /** A copy of the committed JSON with propFootprints.shapes edited by `edit`. */
+  function withShapes(edit: (shapes: Json) => void): unknown {
+    const copy = structuredClone(tuningJson) as Json;
+    const fp = copy.propFootprints;
+    if (!isJson(fp) || !isJson(fp.shapes)) throw new Error('propFootprints.shapes missing from the fixture');
+    edit(fp.shapes);
+    return copy;
+  }
+
+  it('is flagged provisional and holds exactly the twelve static props of TECHNICAL_DESIGN §9.1', () => {
+    expect(footprints.provisional).toBe(true);
+    expect(Object.keys(footprints.shapes)).toEqual([...STATIC_PROP_IDS]);
+    expect(STATIC_PROP_IDS).toEqual([
+      'prop.lamp_post',
+      'prop.bollard',
+      'prop.bench',
+      'prop.bus_shelter',
+      'prop.phone_box',
+      'prop.post_box',
+      'prop.hydrant',
+      'prop.tree',
+      'prop.planter',
+      'prop.market_stall',
+      'prop.litter_bin',
+      'prop.roadworks_barrier',
+    ]);
+  });
+
+  it('lists every static prop that ENTITY_CATALOG §9.2 names', () => {
+    const catalog = readFileSync(`${REPO_ROOT}docs/ENTITY_CATALOG.md`, 'utf8');
+    const section = catalog.slice(catalog.indexOf('### 9.2 Static props'), catalog.indexOf('## 10.'));
+    const ids = [...section.matchAll(/^\| `(prop\.[a-z_]+)` \|/gm)].map((m) => m[1]);
+    expect(ids).toEqual([...STATIC_PROP_IDS]);
+  });
+
+  it('gives the bollard a 0.3 m-diameter circle (TECHNICAL_DESIGN §9.5) and every footprint fits a 2 m tile', () => {
+    expect(footprints.shapes['prop.bollard']).toEqual({ shape: 'circle', radiusM: 0.15 });
+    for (const id of STATIC_PROP_IDS) {
+      const fp = footprints.shapes[id];
+      if (fp.shape === 'circle') expect(fp.radiusM, id).toBeLessThanOrEqual(1);
+      else {
+        expect(fp.widthM, id).toBeLessThanOrEqual(2);
+        expect(fp.lengthM, id).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  it.each([
+    [
+      'a missing prop',
+      (s: Json) => {
+        delete s['prop.tree'];
+      },
+      'tuning: propFootprints.shapes.prop.tree is missing',
+    ],
+    [
+      'an unknown prop',
+      (s: Json) => {
+        s['prop.wheelie_bin'] = { shape: 'circle', radiusM: 0.4 };
+      },
+      'tuning: propFootprints.shapes has unknown key "prop.wheelie_bin"',
+    ],
+    [
+      'an unknown shape',
+      (s: Json) => {
+        s['prop.bench'] = { shape: 'capsule', radiusM: 0.4 };
+      },
+      'tuning: propFootprints.shapes.prop.bench.shape must be "circle" or "box", got string "capsule"',
+    ],
+    [
+      'a zero radius',
+      (s: Json) => {
+        s['prop.bollard'] = { shape: 'circle', radiusM: 0 };
+      },
+      'tuning: propFootprints.shapes.prop.bollard.radiusM must be > 0, got 0',
+    ],
+    [
+      'a box missing its length',
+      (s: Json) => {
+        s['prop.bench'] = { shape: 'box', widthM: 1.8 };
+      },
+      'tuning: propFootprints.shapes.prop.bench.lengthM is missing',
+    ],
+    [
+      'a circle with a box key',
+      (s: Json) => {
+        s['prop.hydrant'] = { shape: 'circle', radiusM: 0.2, widthM: 1 };
+      },
+      'tuning: propFootprints.shapes.prop.hydrant has unknown key "widthM"',
+    ],
+    [
+      'a non-object footprint',
+      (s: Json) => {
+        s['prop.tree'] = 0.25;
+      },
+      'tuning: propFootprints.shapes.prop.tree must be an object, got number 0.25',
+    ],
+  ])('rejects %s, naming the JSON path', (_name, edit, message) => {
+    expect(() => loadTuning(withShapes(edit))).toThrow(message);
+  });
+
+  it('requires the provisional flag to be a boolean and the block itself to exist', () => {
+    const copy = structuredClone(tuningJson) as Json;
+    const fp = copy.propFootprints;
+    if (isJson(fp)) fp.provisional = 'yes';
+    expect(() => loadTuning(copy)).toThrow(
+      'tuning: propFootprints.provisional must be a boolean, got string "yes"',
+    );
+    expect(() => loadTuning(without('propFootprints'))).toThrow('tuning: root.propFootprints is missing');
+  });
+
+  it('returns fresh footprint objects on every load', () => {
+    const a = loadTuning(tuningJson);
+    expect(a.propFootprints).not.toBe(DEFAULT_TUNING.propFootprints);
+    expect(a.propFootprints.shapes['prop.bench']).not.toBe(
+      DEFAULT_TUNING.propFootprints.shapes['prop.bench'],
+    );
+    expect(a.propFootprints).toEqual(DEFAULT_TUNING.propFootprints);
   });
 });
 

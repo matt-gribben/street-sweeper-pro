@@ -6,6 +6,7 @@
 // reuses subStepCount with a smaller `maxStepM`.
 // Allocation-free: poses are written into a caller-supplied object.
 import { TILE_M } from '../constants.ts';
+import { sqrt } from '../fmath.ts';
 
 /** Largest displacement taken in one collision step: 0.5 tile = 1.0 m (§9.2). */
 export const SUBSTEP_MAX_M = TILE_M / 2;
@@ -48,17 +49,59 @@ export function subStepPose(
   count: number,
   out: Pose,
 ): Pose {
+  const s = scratchSweep;
+  s.x0 = x0;
+  s.y0 = y0;
+  s.heading0Rad = heading0Rad;
+  s.x1 = x1;
+  s.y1 = y1;
+  s.heading1Rad = heading1Rad;
+  return sweepPose(s, step, count, out);
+}
+
+/**
+ * A move from pose 0 to pose 1, for the per-tick forms sweepStepCount and sweepPose (SSP-036). They take the
+ * poses in this object instead of as number arguments, so a call V8 does not inline never boxes a double
+ * (see eventQueue.ts); subStepCount and subStepPose are the same rules for tests and cold paths.
+ */
+export type Sweep = {
+  x0: number;
+  y0: number;
+  heading0Rad: number;
+  x1: number;
+  y1: number;
+  heading1Rad: number;
+};
+
+/** Allocate a zeroed sweep. Setup only, never per tick. */
+export function createSweep(): Sweep {
+  return { x0: 0, y0: 0, heading0Rad: 0, x1: 0, y1: 0, heading1Rad: 0 };
+}
+
+const scratchSweep = createSweep();
+
+/** subStepCount for the sweep's displacement with the 1.0 m step (SUBSTEP_MAX_M). */
+export function sweepStepCount(sweep: Sweep): number {
+  const dx = sweep.x1 - sweep.x0;
+  const dy = sweep.y1 - sweep.y0;
+  const d = sqrt(dx * dx + dy * dy);
+  if (!(d > SUBSTEP_MAX_M) || d === Infinity) return 1;
+  return Math.ceil(d / SUBSTEP_MAX_M);
+}
+
+/** subStepPose for `sweep`: the pose after sub-step `step` of `count`, written into `out`. */
+export function sweepPose(sweep: Sweep, step: number, count: number, out: Pose): Pose {
   if (step >= count) {
-    out.x = x1;
-    out.y = y1;
-    out.headingRad = heading1Rad;
+    out.x = sweep.x1;
+    out.y = sweep.y1;
+    out.headingRad = sweep.heading1Rad;
     return out;
   }
   const t = step / count;
-  let dh = heading1Rad - heading0Rad;
+  let dh = sweep.heading1Rad - sweep.heading0Rad;
   dh -= TWO_PI * Math.round(dh / TWO_PI);
-  out.x = x0 + (x1 - x0) * t;
-  out.y = y0 + (y1 - y0) * t;
-  out.headingRad = heading0Rad + dh * t;
+  out.x = sweep.x0 + (sweep.x1 - sweep.x0) * t;
+  out.y = sweep.y0 + (sweep.y1 - sweep.y0) * t;
+  out.headingRad = sweep.heading0Rad + dh * t;
   return out;
 }

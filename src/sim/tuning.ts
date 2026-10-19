@@ -1,6 +1,7 @@
 // Typed, validated access to src/data/tuning.json (TECHNICAL_DESIGN §2.1, §3.2 rule 4, §8). This is the
 // only src/sim file allowed to import src/data/*.json (tests/unit/simPurity.test.ts enforces it). The JSON is
-// the source of truth for every handling number; GDD §7 mirrors it (CLAUDE.md §2).
+// the source of truth for every handling number; GDD §7 mirrors it (CLAUDE.md §2). It also holds the
+// provisional static-prop collision footprints (`propFootprints`, SSP-036) until M4 measures the real slices.
 //
 // The sim never reads DEFAULT_TUNING implicitly: the composition root passes a Tuning object into
 // createWorld(level, seed, tuning), so the dev panel (SSP-048) can hand the World an edited copy. loadTuning
@@ -197,11 +198,54 @@ export type SweeperTuning = {
   readonly provisional: readonly string[];
 };
 
+/**
+ * The static props that block Bessie (TECHNICAL_DESIGN §9.1, ENTITY_CATALOG §9.2), in catalog order.
+ * `propFootprints.shapes` must hold exactly these ids.
+ */
+export const STATIC_PROP_IDS = [
+  'prop.lamp_post',
+  'prop.bollard',
+  'prop.bench',
+  'prop.bus_shelter',
+  'prop.phone_box',
+  'prop.post_box',
+  'prop.hydrant',
+  'prop.tree',
+  'prop.planter',
+  'prop.market_stall',
+  'prop.litter_bin',
+  'prop.roadworks_barrier',
+] as const;
+export type StaticPropId = (typeof STATIC_PROP_IDS)[number];
+
+/** A circle footprint centred on the prop's position (metres). */
+export type CirclePropFootprint = { readonly shape: 'circle'; readonly radiusM: number };
+
+/**
+ * A box footprint centred on the prop's position: widthM along the prop's local +x (east at rot 0) and
+ * lengthM along its local +y (north at rot 0), turned by the prop's `rot` like any heading (§4).
+ */
+export type BoxPropFootprint = { readonly shape: 'box'; readonly widthM: number; readonly lengthM: number };
+
+export type PropFootprint = CirclePropFootprint | BoxPropFootprint;
+
+/**
+ * Collision footprints of the static props (SSP-036). PROVISIONAL until the M4 art pass: ENTITY_CATALOG §9
+ * defines a prop's shape as the opaque bounding box of its lowest slice, which does not exist yet for most
+ * props, so tuning.json holds one hand-picked table (sizes from STYLE.md §8's nominal widths) and
+ * `provisional` stays true until M4 measures the real slices. The table moves to entities.json in M2.
+ */
+export type PropFootprints = {
+  readonly provisional: boolean;
+  readonly shapes: { readonly [K in StaticPropId]: PropFootprint };
+};
+
 /** Everything in src/data/tuning.json, validated. Pass it into the sim explicitly; never import a singleton. */
 export type Tuning = {
   readonly vehicle: {
     readonly sweeper: SweeperTuning;
   };
+  readonly propFootprints: PropFootprints;
 };
 
 // ---------------------------------------------------------------------------------------------------------
@@ -349,15 +393,52 @@ function readSweeper(raw: unknown, path: string): SweeperTuning {
   return sweeper;
 }
 
+function readPropFootprint(raw: unknown, path: string): PropFootprint {
+  if (!isRecord(raw)) fail(path, `must be an object, got ${describeValue(raw)}`);
+  const shape = raw.shape;
+  if (shape === 'circle') {
+    const obj = readObject(raw, path, ['shape', 'radiusM']);
+    return { shape, radiusM: readNumber(obj.radiusM, `${path}.radiusM`, 'positive') };
+  }
+  if (shape === 'box') {
+    const obj = readObject(raw, path, ['shape', 'widthM', 'lengthM']);
+    return {
+      shape,
+      widthM: readNumber(obj.widthM, `${path}.widthM`, 'positive'),
+      lengthM: readNumber(obj.lengthM, `${path}.lengthM`, 'positive'),
+    };
+  }
+  return fail(`${path}.shape`, `must be "circle" or "box", got ${describeValue(shape)}`);
+}
+
+/** `propFootprints`: a provisional flag and exactly one footprint per STATIC_PROP_IDS entry. */
+function readPropFootprints(raw: unknown, path: string): PropFootprints {
+  const obj = readObject(raw, path, ['provisional', 'shapes']);
+  const provisional = obj.provisional;
+  if (typeof provisional !== 'boolean') {
+    fail(`${path}.provisional`, `must be a boolean, got ${describeValue(provisional)}`);
+  }
+  const shapesRaw = readObject(obj.shapes, `${path}.shapes`, STATIC_PROP_IDS);
+  const shapes: Partial<Record<StaticPropId, PropFootprint>> = {};
+  for (const id of STATIC_PROP_IDS) {
+    shapes[id] = readPropFootprint(shapesRaw[id], `${path}.shapes.${id}`);
+  }
+  // Every STATIC_PROP_IDS key was written just above (readObject proved none is missing or unknown).
+  return { provisional, shapes: shapes as PropFootprints['shapes'] };
+}
+
 /**
  * Validate raw tuning data (the parsed JSON, or an edited copy of it) and return a new typed Tuning object.
  * Throws an Error naming the JSON path on any missing, unknown, mistyped or out-of-range value. Every call
  * builds a fresh object, so callers may hold or hand on their own copy.
  */
 export function loadTuning(raw: unknown): Tuning {
-  const root = readObject(raw, 'root', ['vehicle']);
+  const root = readObject(raw, 'root', ['vehicle', 'propFootprints']);
   const vehicle = readObject(root.vehicle, 'vehicle', ['sweeper']);
-  return { vehicle: { sweeper: readSweeper(vehicle.sweeper, 'vehicle.sweeper') } };
+  return {
+    vehicle: { sweeper: readSweeper(vehicle.sweeper, 'vehicle.sweeper') },
+    propFootprints: readPropFootprints(root.propFootprints, 'propFootprints'),
+  };
 }
 
 /**

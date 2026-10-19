@@ -2,7 +2,7 @@
 id: SSP-036
 title: "Resolve Bessie against static geometry with impact damage and TOWED stub"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:physics, area:gameplay, area:test, size:M, vertical-slice]
@@ -66,13 +66,13 @@ Zero allocations per tick. All trig through fmath.
 
 ## Acceptance criteria
 
-- [ ] Unit test: normal impacts at 11, 6, 4 and 2 m/s cost 36, 16, 8 and 0 HP; with damageMult 0.6, 11 m/s costs 21.6 HP
-- [ ] After an impact, the outgoing normal speed is 0.2 × the incoming normal speed (±1e-9), and the tangential speed is unchanged
-- [ ] Driving into an inside corner of two merged rects ends the tick with penetration ≤ 1 mm
-- [ ] Each resolved approaching contact emits exactly one EV.Impact carrying vn, x and y
-- [ ] HP reaching 0 emits a single EV.ShiftEnd (TOWED), and further impacts keep HP at 0 with no extra ShiftEnd
-- [ ] Sliding while pressed against a 20-tile merged terrace wall produces only contact normals equal to the wall's outward normal (no ghost-edge normals) and no tangential speed loss from contacts
-- [ ] Bessie cannot leave the map: driving at the map edge resolves against the boundary
+- [x] Unit test: normal impacts at 11, 6, 4 and 2 m/s cost 36, 16, 8 and 0 HP; with damageMult 0.6, 11 m/s costs 21.6 HP
+- [x] After an impact, the outgoing normal speed is 0.2 × the incoming normal speed (±1e-9), and the tangential speed is unchanged
+- [x] Driving into an inside corner of two merged rects ends the tick with penetration ≤ 1 mm
+- [x] Each resolved approaching contact emits exactly one EV.Impact carrying vn, x and y
+- [x] HP reaching 0 emits a single EV.ShiftEnd (TOWED), and further impacts keep HP at 0 with no extra ShiftEnd
+- [x] Sliding while pressed against a 20-tile merged terrace wall produces only contact normals equal to the wall's outward normal (no ghost-edge normals) and no tangential speed loss from contacts
+- [x] Bessie cannot leave the map: driving at the map edge resolves against the boundary
 
 ## Verification
 

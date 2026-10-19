@@ -4,14 +4,15 @@
 //
 //   1 Input             copy the InputFrame into the sim; hand it to the replay recorder (SSP-038)
 //   2 Vehicle (+hopper) surface sample → stepVehicle → EV.ReverseBeeper → kerb crossing (§8.2 steps 1–9)
-//   3 Static collision  call site only until SSP-036
+//   3 Static collision  Bessie vs merged solids, map boundary and props: SAT/MTV, restitution, damage, EV.Impact
+//                       (collision/resolveStatic.ts over collision/grid.ts, SSP-036)
 //   4 Bodies            empty until M3
 //   5 Brush/litter/water empty until M2 (SSP-065)
 //   6 Dirt              empty until M2 (SSP-065)
 //   7 NPC               empty until M3 (SSP-080)
 //   8 Traffic           empty until M3 (SSP-089)
 //   9 Scoring/combo/complaints empty until M2 (SSP-065)
-//  10 Shift timer       empty until M2 (SSP-062, SSP-065)
+//  10 Shift timer       M1: the TOWED stub only (HP 0 → EV.ShiftEnd once, SSP-036); the timer is SSP-062
 //  11 Emit events       seal the EventQueue
 //
 // The EventQueue is reset before phase 1, so every tick starts with it empty. Renderers, audio and UI read
@@ -20,6 +21,13 @@
 //
 // Hot path: stepWorld allocates nothing. Scratch objects live on the World, created once by createWorld.
 
+import { createStaticGrid, type StaticGrid } from './collision/grid.ts';
+import {
+  createStaticResolver,
+  type ReadonlyContactLog,
+  resolveStatic,
+  type StaticResolver,
+} from './collision/resolveStatic.ts';
 import {
   createEventQueue,
   EV,
@@ -27,6 +35,7 @@ import {
   emitEvent,
   type ReadonlyEventQueue,
   resetEvents,
+  ShiftEndReason,
   sealEvents,
 } from './eventQueue.ts';
 import { cos, sin } from './fmath.ts';
@@ -91,6 +100,16 @@ export type World = {
   /** The surface sample phase 2 used this tick (average grip k and rolling-drag multiplier). */
   readonly surface: VehicleSurface;
   readonly events: EventQueue;
+  /** The static collision world (merged solids, map boundary, props), built once from the level (§9.1). */
+  readonly staticGrid: StaticGrid;
+  /** Phase-3 scratch; its `log` lists this tick's contacts. */
+  readonly staticResolver: StaticResolver;
+  /**
+   * Why the shift ended (ShiftEndReason), or 0 while it runs. In M1 only the TOWED stub sets it, when HP
+   * reaches 0, and EV.ShiftEnd is emitted on that tick only. The sim keeps running (the end-of-shift flow is
+   * M2/M3: SSP-062, SSP-079).
+   */
+  shiftEndReason: ShiftEndReason | 0;
   /** Phase-1 hook for the replay log (SSP-038). Null until a recorder is attached. */
   recordInput: InputRecorder | null;
   /** Optional phase-order trace. Null by default. */
@@ -110,6 +129,10 @@ export type WorldView = {
   readonly vehicle: Readonly<VehicleState>;
   readonly surface: Readonly<VehicleSurface>;
   readonly events: ReadonlyEventQueue;
+  readonly staticGrid: StaticGrid;
+  /** This tick's phase-3 contacts. */
+  readonly staticResolver: { readonly log: ReadonlyContactLog };
+  readonly shiftEndReason: ShiftEndReason | 0;
 };
 
 /**
@@ -131,6 +154,9 @@ export function createWorld(level: Level, seed: number, tuning: Tuning): World {
     vehicleParams: createVehicleParams(sweeper, M1_HOPPER_CAPACITY_LU),
     surface: { gripPerS: sweeper.lateralGripPerS.asphalt, rollMult: 1 },
     events: createEventQueue(),
+    staticGrid: createStaticGrid(level, tuning.propFootprints),
+    staticResolver: createStaticResolver(),
+    shiftEndReason: 0,
     recordInput: null,
     phaseTrace: null,
     surfaceTable: createSurfaceTable(sweeper),
@@ -274,9 +300,12 @@ function emitKerbJolt(events: EventQueue, scratch: KerbCrossings, i: number, v: 
 // Phases 3–10 are ordered call sites. Each takes the World so the systems that fill them (named below) slot in
 // without touching stepWorld; until then they intentionally do nothing.
 
-/** Phase 3: static collision (OBB vs merged solids and props, SAT/MTV, damage, EV.Impact). SSP-036. */
-function phaseStaticCollision(_world: World): void {
-  // Filled by SSP-036.
+/**
+ * Phase 3 (§9.2): resolve Bessie against the static grid (merged solids, map boundary, props) with SAT/MTV,
+ * restitution and impact damage, emitting EV.Impact per approaching contact. See collision/resolveStatic.ts.
+ */
+function phaseStaticCollision(world: World): void {
+  resolveStatic(world.staticGrid, world.staticResolver, world.vehicle, world.vehicleParams, world.events);
 }
 
 /** Phase 4: knockable bodies (bins, cones, A-boards, trolleys, recycling boxes). M3. */
@@ -309,7 +338,15 @@ function phaseScoring(_world: World): void {
   // Filled by SSP-065.
 }
 
-/** Phase 10: shift timer and SACKED/TOWED/time-up transitions. SSP-062 and SSP-065. */
-function phaseShiftTimer(_world: World): void {
-  // Filled by SSP-062 / SSP-065.
+/**
+ * Phase 10: shift timer and SACKED/TOWED/time-up transitions. In M1 only the TOWED stub (§9.2 step 6,
+ * SSP-036): the first tick that ends with HP at 0 emits EV.ShiftEnd (a = ShiftEndReason.Towed) and records
+ * the reason, so it never fires again. SSP-062 adds the timer, SSP-079 the real end-of-shift rules.
+ */
+function phaseShiftTimer(world: World): void {
+  if (world.shiftEndReason === 0 && world.vehicle.hp <= 0) {
+    world.shiftEndReason = ShiftEndReason.Towed;
+    const e = emitEvent(world.events, EV.ShiftEnd, -1);
+    world.events.a[e] = ShiftEndReason.Towed;
+  }
 }

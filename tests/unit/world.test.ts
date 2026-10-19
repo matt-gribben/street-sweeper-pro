@@ -456,7 +456,9 @@ describe('kerb crossing (TECHNICAL_DESIGN §8.2 step 9)', () => {
   it('crossing a dropped kerb changes neither speed nor events', () => {
     const world = createWorld(kerbStrip(false), 1, tuningWithNoDrag());
     world.vehicle.vLongMps = 5;
-    for (let i = 0; i < 180; i++) {
+    // 150 ticks = 12.5 m: both axles cross x = 10 m and the front bumper (x 19.125 m) stays short of the map
+    // edge at x = 20 m, which is solid since SSP-036.
+    for (let i = 0; i < 150; i++) {
       world.step(NEUTRAL);
       expect(world.events.count).toBe(0);
       expect(world.vehicle.vLongMps).toBe(5);

@@ -96,6 +96,7 @@ test('the shift flow with the mouse alone: click the card, then Try Again on the
   const again = (await page.evaluate(() => window.__ssp?.state())) as SimSnapshot;
   expect(again.bessie).toEqual(start.bessie);
   expect(await page.evaluate(() => window.__ssp?.sceneHistory())).toEqual([
+    'boot',
     'shift_intro',
     'shift',
     'tally',

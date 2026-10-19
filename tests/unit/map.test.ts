@@ -1,5 +1,6 @@
 // Compiled-level codec, id tables and solid merge (TECHNICAL_DESIGN §9.1, §15.2; SSP-032; audio header SSP-033;
-// grime cell bits, `spawns.grime` and `spawns.litter` SSP-054; lane and nav graphs SSP-076).
+// grime cell bits, `spawns.grime` and `spawns.litter` SSP-054; lane and nav graphs SSP-076; the M3 spawn specs
+// and schedules SSP-077).
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +15,8 @@ import {
   COLLIDE_ALL_BITS,
   createBlankLevel,
   decodeLevel,
+  EVENT_ANCHOR_PARAMS,
+  EVENT_TYPES,
   encodeLevel,
   GRIME_CELL,
   GRIME_CELL_ALL_BITS,
@@ -21,6 +24,10 @@ import {
   GROUND_SURFACE,
   Ground,
   GUTTER_CELLS_PER_TILE,
+  HAZARD_RULE,
+  HAZARD_RULE_ALL_BITS,
+  HAZARD_RULES,
+  hazardRuleBit,
   LANE_FLAG,
   LANE_FLAG_ALL_BITS,
   LAYER_NAMES,
@@ -41,10 +48,12 @@ import {
   NAV_FLAG,
   NAV_FLAG_ALL_BITS,
   NAV_FLAG_CROSSING,
+  PERCH_SURFACES,
   resolveStyle,
   SURFACE_COUNT,
   Surface,
   surfaceOfGround,
+  TYPED_SPAWN_KINDS,
 } from '../../src/sim/map.ts';
 import { nextU32, sfc32 } from '../../src/sim/rng.ts';
 
@@ -172,10 +181,45 @@ function handBuiltLevel(): Level {
     w,
     h,
   );
-  level.spawns = {
-    npc: [{ id: 'npc.old_woman', anchor: 'doris_home' }],
-    traffic: [{ id: 'veh.hatchback' }],
+  level.spawns = { stains: [{ id: 'stain.gum', near: 'site.bus_stop' }] };
+  level.npc = {
+    population: [
+      { fromS: 0, toS: 60, target: 3 },
+      { fromS: 60, toS: 240, target: 5 },
+    ],
+    mix: [
+      { id: 'npc.postie', weight: 1 },
+      { id: 'npc.shopper', weight: 3 },
+    ],
+    caps: [{ id: 'npc.shopper', cap: 4 }],
+    named: [{ id: 'npc.old_woman', count: 1, spawnAtS: 70, anchor: 2, route: [2, 0, 2], loop: false }],
+    perches: { id: 'npc.cat', count: 2, on: ['walls', 'carRoofs'], walls: [[1, 1]] },
+    flocks: [{ id: 'npc.pigeon', count: 1, size: [6, 10], points: [[5, 3]] }],
   };
+  level.traffic = {
+    densityPerKm: 4,
+    laneKm: 0.024,
+    moving: 1,
+    mix: [{ id: 'veh.hatchback', weight: 1 }],
+    parkedFill: 0.5,
+    parkedBays: 1,
+    parked: 1,
+    parkedMix: [{ id: 'veh.saloon_parked', weight: 1 }],
+    pavement: [{ id: 'veh.mobility_scooter', count: 1 }],
+    taxiRank: [[3, 5]],
+    busRoute: [0, 2],
+    busEveryS: 45,
+  };
+  level.pickups = { count: 1, table: [{ id: 'pwr.flask_of_tea', weight: 1 }], at: [[7, 3]] };
+  const candidates = new Uint8Array(w * h);
+  for (let x = 0; x < w; x += 1)
+    candidates[2 * w + x] = HAZARD_RULE.KERBSIDE_LOW_POINTS | (x % 2 === 0 ? HAZARD_RULE.CARRIAGEWAY : 0);
+  level.hazards = {
+    place: [{ id: 'haz.pothole', x: 5, y: 5 }],
+    random: [{ id: 'haz.puddle', count: 2, rule: 'kerbside_low_points' }],
+    candidates,
+  };
+  level.knockables = [{ id: 'prop.wheelie_bin', x: 3, y: 3 }];
   const n = litterFieldLength(w, h);
   const places = new Uint8Array(n);
   const weights = new Uint16Array(n);
@@ -194,7 +238,10 @@ function handBuiltLevel(): Level {
     weights,
   };
   level.grime = { cells: 40, gutterCells: 6, speckle: 0.03 };
-  level.schedules = [{ npc: 'npc.old_woman', at: 12, route: ['doris_home', 'shop'] }];
+  level.schedules = [
+    { type: 'dawn', atS: [0], untilS: null, trigger: null, params: { durationS: 20 } },
+    { type: 'inspection', atS: [60], untilS: 230, trigger: null, params: { speed: 1, route: [2, 0] } },
+  ];
   level.weather = 'rain';
   level.timerS = 240;
   level.player = { x: 10, y: 3, heading: (3 * Math.PI) / 2 };
@@ -363,14 +410,14 @@ describe('encodeLevel / decodeLevel', () => {
     expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
   });
 
-  it('encodes opaque spawn and schedule entries in one canonical key order', () => {
+  it('encodes opaque spawn entries and schedule params in one canonical key order', () => {
     const a = handBuiltLevel();
     const b = handBuiltLevel();
-    b.spawns = {
-      traffic: [{ id: 'veh.hatchback' }],
-      npc: [{ anchor: 'doris_home', id: 'npc.old_woman' }],
-    };
-    b.schedules = [{ route: ['doris_home', 'shop'], at: 12, npc: 'npc.old_woman' }];
+    b.spawns = { stains: [{ near: 'site.bus_stop', id: 'stain.gum' }] };
+    b.schedules = [
+      { type: 'dawn', atS: [0], untilS: null, trigger: null, params: { durationS: 20 } },
+      { type: 'inspection', atS: [60], untilS: 230, trigger: null, params: { route: [2, 0], speed: 1 } },
+    ];
     expect(encodeLevel(b)).toBe(encodeLevel(a));
   });
 
@@ -554,7 +601,16 @@ describe('grime cells and the typed spawns (SSP-054)', () => {
     const level = handBuiltLevel();
     const text = encodeLevel(level);
     const root = JSON.parse(text) as { spawns: Record<string, unknown> };
-    expect(Object.keys(root.spawns)).toEqual(['grime', 'litter', 'npc', 'traffic']);
+    expect(Object.keys(root.spawns)).toEqual([
+      'grime',
+      'hazards',
+      'knockables',
+      'litter',
+      'npc',
+      'pickups',
+      'stains',
+      'traffic',
+    ]);
     expect(root.spawns.grime).toEqual({ cells: 40, gutterCells: 6, speckle: 0.03 });
     const litter = root.spawns.litter as Record<string, unknown>;
     expect(Object.keys(litter)).toEqual(['initial', 'minSpacingM', 'table', 'places', 'weights']);
@@ -573,7 +629,14 @@ describe('grime cells and the typed spawns (SSP-054)', () => {
     level.grime = null;
     const text = encodeLevel(level);
     const root = JSON.parse(text) as { spawns: Record<string, unknown> };
-    expect(Object.keys(root.spawns)).toEqual(['npc', 'traffic']);
+    expect(Object.keys(root.spawns)).toEqual([
+      'hazards',
+      'knockables',
+      'npc',
+      'pickups',
+      'stains',
+      'traffic',
+    ]);
     const decoded = decodeLevel(text);
     expect(decoded.litter).toBeNull();
     expect(decoded.grime).toBeNull();
@@ -876,5 +939,181 @@ describe('music and ambience header fields (SSP-033)', () => {
     const root = JSON.parse(encodeLevel(handBuiltLevel())) as Record<string, unknown>;
     expect(() => decodeLevel({ ...root, ambience: 'amb.Town' })).toThrow(/ambience must match/);
     expect(() => decodeLevel({ ...root, music: 7 })).toThrow(/music must be a string/);
+  });
+});
+
+describe('the M3 spawn specs and schedules (SSP-077)', () => {
+  it('round-trips npc, traffic, pickups, hazards, knockables and schedules as typed values', () => {
+    const level = handBuiltLevel();
+    const text = encodeLevel(level);
+    const decoded = decodeLevel(text);
+    expect(decoded.npc).toEqual(level.npc);
+    expect(decoded.traffic).toEqual(level.traffic);
+    expect(decoded.pickups).toEqual(level.pickups);
+    expect(decoded.hazards?.candidates).toBeInstanceOf(Uint8Array);
+    expect(decoded.hazards).toEqual(level.hazards);
+    expect(decoded.knockables).toEqual(level.knockables);
+    expect(decoded.schedules).toEqual(level.schedules);
+    expect(decoded.spawns).toEqual(level.spawns);
+    expect(encodeLevel(decoded)).toBe(text);
+    const root = JSON.parse(text) as { spawns: Record<string, Record<string, unknown>> };
+    expect(Object.keys(root.spawns.npc ?? {})).toEqual([
+      'population',
+      'mix',
+      'caps',
+      'named',
+      'perches',
+      'flocks',
+    ]);
+    expect(Object.keys(root.spawns.traffic ?? {})).toEqual([
+      'densityPerKm',
+      'laneKm',
+      'moving',
+      'mix',
+      'parkedFill',
+      'parkedBays',
+      'parked',
+      'parkedMix',
+      'pavement',
+      'taxiRank',
+      'busRoute',
+      'busEveryS',
+    ]);
+    expect(Object.keys(root.spawns.hazards ?? {})).toEqual(['place', 'random', 'candidates']);
+  });
+
+  it('omits every M3 kind the level has none of and decodes it as null', () => {
+    const level = handBuiltLevel();
+    level.npc = null;
+    level.traffic = null;
+    level.pickups = null;
+    level.hazards = null;
+    level.knockables = null;
+    level.schedules = [];
+    const text = encodeLevel(level);
+    expect(Object.keys((JSON.parse(text) as { spawns: object }).spawns)).toEqual([
+      'grime',
+      'litter',
+      'stains',
+    ]);
+    const decoded = decodeLevel(text);
+    expect([decoded.npc, decoded.traffic, decoded.pickups, decoded.hazards, decoded.knockables]).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    expect(decoded.schedules).toEqual([]);
+  });
+
+  it('refuses typed kinds in the opaque spawn lists and malformed specs on encode', () => {
+    const listed = handBuiltLevel();
+    listed.spawns = { npc: [] };
+    expect(() => encodeLevel(listed)).toThrow(/spawns\.npc must be set through level\.npc/);
+    const badNode = handBuiltLevel();
+    const doris = badNode.npc?.named[0];
+    if (doris !== undefined) doris.anchor = 3;
+    expect(() => encodeLevel(badNode)).toThrow(
+      /npc\.named\[0\]\.anchor must be a node index 0\.\.2 \(got 3\)/,
+    );
+    const unsorted = handBuiltLevel();
+    unsorted.npc?.mix.reverse();
+    expect(() => encodeLevel(unsorted)).toThrow(/npc\.mix must be sorted by unique id/);
+    const overlap = handBuiltLevel();
+    if (overlap.npc !== null) overlap.npc.population[1] = { fromS: 30, toS: 240, target: 5 };
+    expect(() => encodeLevel(overlap)).toThrow(/windows must ascend without overlapping/);
+    const parked = handBuiltLevel();
+    if (parked.traffic !== null) parked.traffic.parked = 2;
+    expect(() => encodeLevel(parked)).toThrow(/traffic\.parked must not exceed parkedBays/);
+    const bus = handBuiltLevel();
+    if (bus.traffic !== null) bus.traffic.busEveryS = null;
+    expect(() => encodeLevel(bus)).toThrow(
+      /traffic\.busEveryS must be set exactly when there is a bus route/,
+    );
+    const outside = handBuiltLevel();
+    if (outside.pickups !== null) outside.pickups.at = [[13, 1]];
+    expect(() => encodeLevel(outside)).toThrow(/pickups\.at\[0\] \(13, 1\) lies outside the 12×8 m map/);
+    const bits = handBuiltLevel();
+    if (bits.hazards !== null) bits.hazards.candidates[0] = 1 << 3;
+    expect(() => encodeLevel(bits)).toThrow(/hazards\.candidates has unknown rule bits at tile 0/);
+    const prop = handBuiltLevel();
+    if (prop.knockables !== null) prop.knockables[0] = { id: 'veh.hatchback', x: 1, y: 1 };
+    expect(() => encodeLevel(prop)).toThrow(/knockables\[0\]\.id must be a prop\.\* id/);
+    const lane = handBuiltLevel();
+    lane.schedules = [
+      { type: 'bin_round', atS: [15], untilS: null, trigger: null, params: { route: [0, 9] } },
+    ];
+    expect(() => encodeLevel(lane)).toThrow(/schedules\[0\]\.params\.route\[1\] must be a node index 0\.\.3/);
+    const perch = handBuiltLevel();
+    if (perch.npc?.perches) perch.npc.perches.on = ['carRoofs', 'walls'];
+    expect(() => encodeLevel(perch)).toThrow(
+      /npc\.perches\.on must list surfaces from walls, carRoofs, road/,
+    );
+  });
+
+  it('rejects malformed compiled M3 spawns and schedules with the field named', () => {
+    const text = encodeLevel(handBuiltLevel());
+    type Root = Record<string, unknown> & { spawns: Record<string, Record<string, unknown>> };
+    const edit = (change: (root: Root, spawns: Record<string, Record<string, unknown>>) => void): unknown => {
+      const root = JSON.parse(text) as Root;
+      change(root, root.spawns);
+      return root;
+    };
+    const hazards = (root: Root): Record<string, unknown> => root.spawns.hazards ?? {};
+    expect(() =>
+      decodeLevel(edit((r) => (hazards(r).random = [{ id: 'haz.puddle', count: 1, rule: 'drains' }]))),
+    ).toThrow(
+      /spawns\.hazards\.random\[0\]\.rule must be one of kerbside_low_points, carriageway, near_parking/,
+    );
+    expect(() => decodeLevel(edit((r) => (hazards(r).candidates = 'AAAA')))).toThrow(
+      /hazards\.candidates has 3 entries, expected 24/,
+    );
+    expect(() => decodeLevel(edit((_, s) => ((s.traffic ?? {}).busRoute = [0, 4])))).toThrow(
+      /traffic\.busRoute\[1\] must be a node index 0\.\.3 \(got 4\)/,
+    );
+    expect(() =>
+      decodeLevel(
+        edit((_, s) => ((s.npc ?? {}).perches = { id: 'npc.cat', count: 1, on: ['sofa'], walls: [] })),
+      ),
+    ).toThrow(/spawns\.npc\.perches\.on\[0\] must be one of walls, carRoofs, road/);
+    expect(() => decodeLevel(edit((_, s) => delete s.pickups?.count))).toThrow(
+      /spawns\.pickups\.count must be a finite number/,
+    );
+    const event = (e: Record<string, unknown>): unknown =>
+      edit((r) => (r.schedules = [{ atS: [], untilS: null, trigger: null, params: {}, ...e }]));
+    expect(() => decodeLevel(event({ type: 'fireworks' }))).toThrow(
+      /schedules\[0\]\.type must be one of dawn/,
+    );
+    expect(() => decodeLevel(event({ type: 'gust', atS: [95, 40] }))).toThrow(
+      /schedules\[0\]\.atS must ascend/,
+    );
+    expect(() =>
+      decodeLevel(edit((_, s) => (s.knockables = [{ id: 'prop.wheelie_bin', x: 1 }] as never))),
+    ).toThrow(/spawns\.knockables\[0\]\.y must be a finite number/);
+  });
+
+  it('names one candidate bit per hazard rule and one graph per anchor-valued event param', () => {
+    expect(HAZARD_RULES.map(hazardRuleBit)).toEqual([
+      HAZARD_RULE.KERBSIDE_LOW_POINTS,
+      HAZARD_RULE.CARRIAGEWAY,
+      HAZARD_RULE.NEAR_PARKING,
+    ]);
+    expect(HAZARD_RULE_ALL_BITS).toBe(7);
+    expect(PERCH_SURFACES).toEqual(['walls', 'carRoofs', 'road']);
+    expect(EVENT_TYPES).toHaveLength(16);
+    for (const [type, params] of Object.entries(EVENT_ANCHOR_PARAMS)) {
+      expect(EVENT_TYPES).toContain(type);
+      for (const graph of Object.values(params ?? {})) expect(['lane', 'nav']).toContain(graph);
+    }
+    expect(TYPED_SPAWN_KINDS).toEqual([
+      'grime',
+      'hazards',
+      'knockables',
+      'litter',
+      'npc',
+      'pickups',
+      'traffic',
+    ]);
   });
 });

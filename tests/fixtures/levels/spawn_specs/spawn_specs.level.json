@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "id": "district.fixture_spawn_specs",
+  "name": "Fixture spawn_specs",
+  "day": "mon",
+  "mode": "shift",
+  "map": "spawn_specs.map.txt",
+  "size": [40, 23],
+  "timer": 240,
+  "seed": 1,
+  "timeOfDay": "morning",
+  "weather": "clear",
+  "start": { "heading": 0 },
+  "depot": { "rect": [5, 17, 6, 6] },
+  "buildings": {
+    "A": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick", "use": "house" },
+    "B": { "storeys": 2, "roof": "roof.felt", "wall": "facade.corner_shop", "use": "shop" },
+    "C": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick_bay", "use": "house" },
+    "D": { "storeys": 2, "roof": "roof.felt", "wall": "facade.corner_shop", "use": "pub" },
+    "E": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick", "use": "house" },
+    "F": { "storeys": 2, "roof": "roof.depot", "wall": "facade.depot_shed", "use": "depot" }
+  },
+  "pledges": ["fr_0_1", "fr_6_1", "fr_24_1", "fr_32_1", "fr_17_6", "fr_21_6", "fr_3_12", "fr_26_16"],
+  "powerups": { "count": 1, "table": { "pwr.flask_of_tea": 1 } },
+  "collectibles": {
+    "lostProperty": { "id": "collect.false_teeth", "at": [17.5, 8.5] },
+    "goldenCrisp": { "at": [38.5, 12.5] }
+  },
+  "anchors": {
+    "1": "west_door",
+    "2": "zebra_north",
+    "3": "east_corner",
+    "4": "back_lane"
+  },
+  "npcs": {
+    "population": [{ "from": 0, "to": 120, "target": 6 }, { "from": 120, "to": 240, "target": 10 }],
+    "mix": { "npc.shopper": 70, "npc.postie": 10, "npc.dog_walker": 20 },
+    "caps": { "npc.shopper": 6, "npc.postie": 1, "npc.dog_walker": 1 },
+    "named": [{ "id": "npc.old_woman", "anchor": "1", "spawnAt": 70, "route": ["1", "2", "4", "2", "1"] }],
+    "perches": { "id": "npc.cat", "count": 2, "on": ["walls", "carRoofs"] },
+    "flocks": [{ "id": "npc.pigeon", "count": 1, "size": [6, 8], "near": "prop.litter_bin" }]
+  },
+  "traffic": {
+    "densityPerKm": 4,
+    "mix": { "veh.hatchback": 60, "veh.saloon": 40 },
+    "parkedFill": 0.5,
+    "parkedMix": { "veh.hatchback_parked": 2, "veh.saloon_parked": 1 },
+    "pavement": { "veh.mobility_scooter": 1 },
+    "taxiRank": [[30.5, 14.5]],
+    "busRoute": ["1", "3"],
+    "busEveryS": 45
+  },
+  "hazards": {
+    "place": [{ "id": "haz.pothole", "at": [30.5, 3.5] }],
+    "random": [{ "id": "haz.puddle", "count": 3, "rule": "kerbside_low_points" }]
+  },
+  "knockables": [
+    { "id": "prop.wheelie_bin", "at": [25.5, 5.5] },
+    { "id": "prop.recycling_box", "at": [3.5, 5.5] }
+  ],
+  "events": [
+    { "type": "dawn", "at": 0, "durationS": 20 },
+    { "type": "tutorial_beat", "trigger": "shift_start", "text": "Morning, rookie." },
+    { "type": "inspection", "at": 60, "route": ["2", "4"], "speed": 1 },
+    { "type": "population_wave", "at": 90, "untilS": 150, "npc": "npc.shopper", "delta": 2 }
+  ]
+}

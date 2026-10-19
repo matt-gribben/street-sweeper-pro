@@ -15,10 +15,15 @@
 //   §15.1), because no M1 task creates districts.json. (SSP-033 open question 1.)
 // - The compiler validates only the fields M1 consumes (identity, mode, map, size, timer, seed, timeOfDay,
 //   weather, music, ambience, start, depot, legend, buildings, anchors), plus `litter` and `grime` since
-//   SSP-054, `frontageWidth`, `pledges`, `powerups` and `collectibles` since SSP-055 and `junctions` since
-//   SSP-076. The other spawn-side fields (`stains`, `hazards`, `knockables`, `npcs`, `traffic`, `events`,
-//   `skipRun`, `par`) are typed for authors but passed over unchecked until the tasks that consume them
-//   (M3 SSP-077, M6 SSP-190) add their guards.
+//   SSP-054, `frontageWidth`, `pledges`, `powerups` and `collectibles` since SSP-055, `junctions` since
+//   SSP-076, and `npcs`, `traffic`, `hazards`, `knockables` and `events` since SSP-077 (their runtime guards
+//   are in tools/levels/spawnSpecs.ts). The other fields (`stains`, `skipRun`, `par`, and the params of the M6
+//   event types) are typed for authors but passed over unchecked until M6 (SSP-190) adds their guards.
+// - SSP-077 schema decisions: `traffic.pavement` (pavement vehicle id → how many at once) is new. The mobility
+//   scooter follows the nav graph, not the lanes, so it cannot be drawn from `mix` by lane density, and a
+//   weight cannot say how many there are; `mix` holds lane vehicles only and `parkedMix` parked cars only.
+//   Anchor references (`named[].anchor`, `route`, `busRoute`, event anchors) take a digit of `anchors` or one
+//   of its names. Event times (`at`, `untilS`, `spawnAt`, `population`) are elapsed seconds within the timer.
 // - `junctions` (SSP-076): `major` became optional and `roundabout` was added, because LEVEL_DESIGN §7.4's
 //   mini-roundabout has no map character. An entry names the junction whose cells include its `at` tile and
 //   sets its major sides (give-way on the others), marks it a mini-roundabout, or both; it must do one.
@@ -125,36 +130,98 @@ export interface GrimeSpec {
   speckle: number;
 }
 
+/** An anchor reference: a digit key of level.json → anchors, or one of its names (L080 otherwise). */
+export type AnchorRef = string;
+
+/** level.json → npcs (LEVEL_DESIGN §8.4, §9.4). Checked and compiled by SSP-077 (spawnSpecs.ts checkNpcs). */
 export interface NpcSpec {
+  /** Ambient targets by elapsed-seconds window: 0 ≤ from < to ≤ timer, ascending, never overlapping. */
   population: { from: number; to: number; target: number }[];
+  /** `npc.*` id → weight for ambient spawns (L005, L007). */
   mix: Weights;
+  /** Per-id hard caps (non-negative integers) on ids of `mix`. */
   caps?: Record<string, number>;
+  /** Scripted NPCs: `count` (default 1) spawn at `anchor` at `spawnAt` s and walk `route` on the nav graph. */
   named?: {
     id: `npc.${string}`;
-    anchor: string;
+    anchor: AnchorRef;
     spawnAt: number;
-    route: string[];
+    route: AnchorRef[];
     loop?: boolean;
     count?: number;
   }[];
+  /** Cats only; at least one listed surface must exist on the level (`w` walls, parked cars, lanes). */
   perches?: { id: 'npc.cat'; count: number; on: ('walls' | 'carRoofs' | 'road')[] };
-  flocks?: { id: 'npc.pigeon' | 'npc.seagull'; count: number; size: [number, number]; near: string }[];
+  /** Bird flocks (a pigeon or seagull behaviour) of size [min, max] near a NearRef that matches the map. */
+  flocks?: { id: 'npc.pigeon' | 'npc.seagull'; count: number; size: [number, number]; near: NearRef }[];
 }
 
+/** level.json → traffic (LEVEL_DESIGN §8.4, §9.5). Checked and compiled by SSP-077 (checkTraffic). */
 export interface TrafficSpec {
+  /** Moving vehicles per lane-km of the compiled lane graph (≥ 0). */
   densityPerKm: number;
+  /** Lane vehicles `veh.*` → weight: not parked cars, not pavement vehicles. */
   mix: Weights;
+  /** 0..1 of the parking bays (`p` cells) filled at shift start. */
   parkedFill: number;
+  /** `veh.*_parked` → weight. */
   parkedMix: Weights;
+  /** Pavement vehicles (the mobility scooter) → how many at once (SSP-077). */
+  pavement?: Record<string, number>;
+  /** Taxi rank positions in tiles, on road tiles. */
   taxiRank?: XY[];
-  busRoute?: string[];
+  /** At least 2 anchors the bus drives between along the lane graph, in order; needs `busEveryS`. */
+  busRoute?: AnchorRef[];
   busEveryS?: number;
 }
 
+/** The named random-hazard rules (LEVEL_DESIGN §9.3; HAZARD_RULES in src/sim/map.ts). */
+export type HazardRuleName = 'kerbside_low_points' | 'carriageway' | 'near_parking';
+
+/** level.json → hazards (LEVEL_DESIGN §9.3). Placements and candidates keep off the §9.3 exclusions (L073). */
+export interface HazardsSpec {
+  place?: { id: `haz.${string}`; at: XY }[];
+  random?: { id: `haz.${string}`; count: number; rule: HazardRuleName }[];
+}
+
+/** One level.json → knockables entry: a `collision: knockable` prop at a tile position off solid tiles. */
+export interface KnockableSpec {
+  id: `prop.${string}`;
+  at: XY;
+}
+
+/** The event types of LEVEL_DESIGN §4.3 (EVENT_TYPES in src/sim/map.ts). */
+export type EventType =
+  | 'dawn'
+  | 'tutorial_beat'
+  | 'market'
+  | 'market_close'
+  | 'bin_round'
+  | 'rain'
+  | 'leaf_fall'
+  | 'school_out'
+  | 'gust'
+  | 'vehicle_stop'
+  | 'rival_cameo'
+  | 'kicking_out'
+  | 'crossing_patrol'
+  | 'parade'
+  | 'inspection'
+  | 'population_wave';
+
+/**
+ * level.json → events[] (LEVEL_DESIGN §4.3, §8.4). SSP-077 checks the envelope, the entity ids in `npc`,
+ * `vehicle`, `table` and `mix` (L005, L007), the anchors of `anchor`, `route` and `anchors` (L080), the
+ * tutorial_beat `trigger`/`text`, the population_wave `npc`/`delta`/`at`/`untilS`, market_close
+ * `itemsPerPitch`, and L081; the other params are SSP-190's (M6).
+ */
 export interface EventSpec {
-  type: string;
+  type: EventType;
+  /** Elapsed seconds (0 ≤ at < timer), or an ascending list of them. */
   at?: number | number[];
+  /** After `at`, at most the timer. */
   untilS?: number;
+  /** The sim event that fires it (tutorial beats). */
   trigger?: string;
   [param: string]: unknown;
 }
@@ -207,11 +274,8 @@ export interface LevelFile {
   /** Optional (see the decisions above). */
   grime?: GrimeSpec;
   stains?: { count: number; table: Weights; near?: string[] };
-  hazards?: {
-    place?: { id: `haz.${string}`; at: XY }[];
-    random?: { id: `haz.${string}`; count: number; rule: string }[];
-  };
-  knockables?: { id: `prop.${string}`; at: XY }[];
+  hazards?: HazardsSpec;
+  knockables?: KnockableSpec[];
   /** 1..3 on a shift level (L040); `pwr.*` ids allowed in the district (L005); `at` inside the map. */
   powerups?: { count: 1 | 2 | 3; table: Weights; at?: XY[] };
   /** Shift levels place both, on tiles Bessie's body can reach and not in a footway (L041). */

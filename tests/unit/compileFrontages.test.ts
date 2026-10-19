@@ -366,14 +366,17 @@ describe('pledges (L030, L031)', () => {
   it('fails 7 or 21 pledges, and unknown or repeated ids, with L030', () => {
     const { level } = ok(compileFixture());
     const ids = level.frontages.map((f) => f.id);
+    // A count error no longer stops the compile (SSP-077 reports every problem), so the spread warning of the
+    // first 7 ids, all on one street, is printed too.
     expect(messages(compileFixture({ pledges: ids.slice(0, 7) }))).toEqual([
       expect.stringMatching(
         /^frontages\.level\.json:\d+:3 L030 pledges lists 7 frontage\(s\); a shift level needs 8–20$/,
       ),
+      expect.stringMatching(/^frontages\.level\.json:\d+:3 L031 6 of 7 pledges /),
     ]);
-    expect(messages(compileFixture({ pledges: ids.slice(0, 21) }))).toEqual([
-      expect.stringMatching(/L030 pledges lists 21 frontage\(s\); a shift level needs 8–20$/),
-    ]);
+    expect(
+      messages(compileFixture({ pledges: ids.slice(0, 21) })).filter((m) => !m.includes(' L031 ')),
+    ).toEqual([expect.stringMatching(/L030 pledges lists 21 frontage\(s\); a shift level needs 8–20$/)]);
     // Exactly at the bounds there is no L030 (only L031 spread warnings, if any).
     const l030 = (pledges: string[]): string[] =>
       messages(compileFixture({ pledges })).filter((m) => m.includes('L030'));

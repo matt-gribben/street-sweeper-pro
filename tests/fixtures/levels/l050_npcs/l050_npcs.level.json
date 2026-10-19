@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "id": "district.fixture_l050_npcs",
+  "name": "Fixture l050_npcs",
+  "day": "mon",
+  "mode": "shift",
+  "map": "l050_npcs.map.txt",
+  "size": [40, 23],
+  "timer": 240,
+  "seed": 1,
+  "timeOfDay": "morning",
+  "weather": "clear",
+  "start": { "heading": 0 },
+  "depot": { "rect": [5, 17, 6, 6] },
+  "buildings": {
+    "A": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick", "use": "house" },
+    "B": { "storeys": 2, "roof": "roof.felt", "wall": "facade.corner_shop", "use": "shop" },
+    "C": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick_bay", "use": "house" },
+    "D": { "storeys": 2, "roof": "roof.felt", "wall": "facade.corner_shop", "use": "pub" },
+    "E": { "storeys": 2, "roof": "roof.slate", "wall": "facade.terrace_brick", "use": "house" },
+    "F": { "storeys": 2, "roof": "roof.depot", "wall": "facade.depot_shed", "use": "depot" }
+  },
+  "pledges": ["fr_0_1", "fr_6_1", "fr_24_1", "fr_32_1", "fr_17_6", "fr_21_6", "fr_3_12", "fr_26_16"],
+  "powerups": { "count": 1, "table": { "pwr.flask_of_tea": 1 } },
+  "collectibles": {
+    "lostProperty": { "id": "collect.false_teeth", "at": [17.5, 8.5] },
+    "goldenCrisp": { "at": [38.5, 12.5] }
+  },
+  "anchors": {
+    "1": "west_door",
+    "2": "zebra_north",
+    "3": "east_corner",
+    "4": "back_lane"
+  },
+  "npcs": {
+    "population": [{ "from": 0, "to": 240, "target": 81 }],
+    "mix": { "npc.shopper": 1 }
+  }
+}

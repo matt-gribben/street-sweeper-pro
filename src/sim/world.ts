@@ -9,6 +9,8 @@
 //                       sample, hazard grip overrides included → stepVehicle (handling scaled by the hopper
 //                       fill, top speed by the brush state) → EV.ReverseBeeper → kerb crossing → hazard
 //                       contacts: jolts, LU spills, the open-manhole hard stop (§8.2 steps 1–10; hazards.ts)
+//                       contacts: jolts, LU spills, the open-manhole hard stop, the broken-glass HP drain
+//                       (§8.2 steps 1–10; hazards.ts)
 //   3 Static collision  Bessie vs merged solids, map boundary, props, parked cars and moving traffic: SAT/MTV,
 //                       restitution, damage, EV.Impact (collision/resolveStatic.ts over collision/grid.ts,
 //                       SSP-036; vehicles SSP-090), then the parked cars' contact episodes and dents: the flat
@@ -19,15 +21,18 @@
 //                       → stepPickups (pickups.ts, SSP-096): timed power-ups whose time is up end, then every
 //                       pickup Bessie's body overlaps is collected (EV.PowerUp) and its effect applied
 //   5 Brush/litter/water beginLitterTick → stepBrushLitter (gutter, suction, fling, inlet, bulldozer; brush.ts)
+//                       → stepGlassSweep (broken glass swept up, SSP-094; hazards.ts)
 //                       → the brush-up rules: stepBrushUpLeaves (hazards.ts) then stepBrushUpSplats (stains.ts)
-//                       → stepLitter (arcs, pushes, drift; litter.ts) → stepWater (hydrant refill, spray;
-//                       water.ts) (SSP-065)
+//                       → stepLitter (arcs, pushes, drift; a flung glass bottle's landing smashes it into
+//                       haz.broken_glass, SSP-094; litter.ts) → stepWater (hydrant refill, spray; water.ts)
+//                       (SSP-065)
 //   6 Dirt              stepDirt (grime footprint erase, Kerb Hugger; dirt.ts) → cleanStainsInCone (water.ts);
 //                       dust is M3 (SSP-065)
 //   7 NPC               beginNpcTick (prev positions) → updateViewRect (world.viewRect from Bessie's pose) →
 //                       stepNpcSpawner (named arrivals; once a second cats, flocks and the ambient population)
 //                       → stepReactions (Horn from EV.Horn, HiVis, BeaconYield; then actor hits: penalty,
-//                       EV.NpcHit, drops; bumps; npc/reactions.ts, SSP-082)
+//                       EV.NpcHit, drops; bumps; npc/reactions.ts, SSP-082; then the puddle splashes:
+//                       EV.Splash, the pedestrians within 1.5 m, npc/splash.ts, SSP-094)
 //                       → deliverStimuli → perceiveNpcs (index mod 4 == tick mod 4) → tickNpcBehaviours
 //                       (npc/, SSP-080; the behaviours steer with npc/steering.ts, SSP-081); the litterbug's
 //                       Caught! emits EV.Caught and flags the tick's honk here (markHornCaught, SSP-084) →
@@ -104,11 +109,13 @@ import {
 } from './eventQueue.ts';
 import { cos, sin } from './fmath.ts';
 import {
+  attachGlassSmash,
   createHazardStore,
   type HazardStore,
   type HazardStoreView,
   spawnHazards,
   stepBrushUpLeaves,
+  stepGlassSweep,
   stepHazardContacts,
 } from './hazards.ts';
 import { createHopper, type Hopper, type HopperView, setHopperCapacity } from './hopper.ts';
@@ -127,6 +134,7 @@ import { createNpcAi, type NpcAi, tickNpcBehaviours } from './npc/npcAi.ts';
 import { perceiveNpcs } from './npc/perception.ts';
 import { setReactionTuning, stepReactions } from './npc/reactions.ts';
 import { setNpcSpawnerTuning, stepNpcSpawner } from './npc/spawner.ts';
+import { setPuddleSplashTuning } from './npc/splash.ts';
 import { createZebras, setSteeringTuning, type Zebras, type ZebrasView } from './npc/steering.ts';
 import { deliverStimuli } from './npc/stimuli.ts';
 import { beginNpcTick, createNpcStore, type NpcStore, type NpcStoreView } from './npc/store.ts';
@@ -467,6 +475,8 @@ export function createWorld(
       stepWorld(world, input);
     },
   };
+  // A flung glass bottle smashes into haz.broken_glass where it lands (SSP-094; phase 5, stepLitter).
+  attachGlassSmash(hazards, litter, world.events);
   return world;
 }
 
@@ -514,6 +524,7 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   setSteeringTuning(world.npcAi.steering, world.level, world.staticGrid, tuning, world.npcAi.entities);
   setBodiesTuning(world.bodies, tuning, world.npcAi.entities);
   setReactionTuning(world.npcAi.reactions, tuning);
+  setPuddleSplashTuning(world.npcAi.splash, tuning);
   setTrafficTuning(world.traffic, tuning);
 }
 
@@ -714,11 +725,13 @@ function phaseBodies(world: World): void {
  *   1. beginLitterTick: prevX/prevY for render interpolation, before anything moves litter this tick.
  *   2. stepBrushLitter (brush.ts): while the brush collects, the fling roll, the bulldozer at a full hopper,
  *      inlet collection (EV.LitterCollected, addToHopper, maybe EV.HopperFull) and the gutter and suction
- *      pushes; otherwise it clears the brush flags it left.
+ *      pushes; otherwise it clears the brush flags it left. Then stepGlassSweep (hazards.ts, SSP-094): while it
+ *      collects, the brush sweeps up haz.broken_glass whose centre is in its zone (EV.GlassSwept, +20).
  *   3. The brush-up rules, only while the brush is Raised: leaf piles driven through become haz.wet_leaves
  *      (stepBrushUpLeaves, hazards.ts, SSP-093), then dog mess becomes stain.splat with its −20 through
  *      scoring's penalty hook (stepBrushUpSplats, stains.ts).
- *   4. stepLitter: fling arcs, this tick's pushes and drift.
+ *   4. stepLitter: fling arcs (a flung glass bottle smashes into haz.broken_glass where it lands: the hook
+ *      attachGlassSmash set, EV.GlassSmash; SSP-094), this tick's pushes and drift.
  *   5. stepWater: the hydrant refill, then the spray (it touches no litter, so its place in the phase changes
  *      nothing but the order of its reads).
  */
@@ -727,6 +740,7 @@ function phaseBrushLitter(world: World): void {
   const litter = world.litter;
   beginLitterTick(litter);
   stepBrushLitter(world.brush, litter, world.vehicle, world.hopper, world.events);
+  stepGlassSweep(world.hazards, world.brush, world.vehicle, world.events);
   stepBrushUpLeaves(world.hazards, litter, world.brush, world.vehicle, sweeper);
   stepBrushUpSplats(world.stains, litter, world.brush, world.vehicle, sweeper);
   stepLitter(litter);

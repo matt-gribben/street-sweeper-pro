@@ -18,8 +18,8 @@
 //            shift.
 //   Startle  frame 0 for STARTLE_HOP_TICKS (the hop, standing), then frame 1 held while it sidesteps Bessie's
 //            predicted path (or, when she is on top of it, steps away from her) until STARTLE_TICKS; then Yield
-//            when it wants to, else back to walking. Horn, Bump (touched below the hit speed), NearMiss and Spray
-//            start it from Walk, Cross, Idle or Yield.
+//            when it wants to, else back to walking. Horn, Bump (touched below the hit speed), NearMiss, Spray
+//            and Splash (a puddle splash, SSP-094) start it from Walk, Cross, Idle or Yield.
 //   Fallen   a Hit, from any state but Fallen and GetUp: fall frames 3 × FALL_FRAME_TICKS, then frame 2 held
 //            FALL_HOLD_TICKS: FALLEN_TICKS = 15 + 72 = 87. Stands still. Nobody is hurt (CLAUDE.md rule 11).
 //   GetUp    frames 1, 0 at FALL_FRAME_TICKS: GET_UP_TICKS = 10.
@@ -344,6 +344,7 @@ export function pedestrianStimulus(w: World, i: number, s: Stimulus, stationary:
     case Stimulus.Bump:
     case Stimulus.NearMiss:
     case Stimulus.Spray:
+    case Stimulus.Splash:
       if (state === PED.Walk || state === PED.Cross || state === PED.Idle || state === PED.Yield) {
         enterPedestrianState(w, i, PED.Startle, STARTLE_TICKS);
       }

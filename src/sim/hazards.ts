@@ -1,7 +1,8 @@
 // The hazard store (ENTITY_CATALOG §10, TECHNICAL_DESIGN §7.1 and §8.2 steps 7 and 10, LEVEL_DESIGN §9.3;
 // SSP-093): every `haz.*` ground effect on the street, as a fixed-capacity struct-of-arrays store, the
 // shift-start spawner, the per-tile grip override that surface.ts reads, the jolts and the hard stop Bessie
-// gets for driving into one, and the leaf-pile brush-up hook that leaves wet leaves behind.
+// gets for driving into one, the leaf-pile brush-up hook that leaves wet leaves behind, and broken glass
+// (SSP-094): the flung-bottle smash that makes it, its HP drain and the brush sweep that clears it.
 //
 // Store. Hazard i lives in slot i of every array, 0 <= i < count (capacity 64, §7.1); removal is swap-remove.
 // Every hazard covers a rectangle of whole 2 m tiles, its footprint (`col0`/`row0` inclusive, `col1`/`row1`
@@ -27,8 +28,30 @@
 //     pothole has none and always jolts). HP −hpLoss (pothole 2, speed bump 0), never below 0; then spillLu
 //     litter units leave the hopper as small litter items behind her (below); then EV.HazardJolt.
 //   - hard stop (haz.open_manhole): HP −hpLoss (10), never below 0; vLong = vLat = 0; EV.HazardStop.
-//   - grip and drain hazards do nothing on entry (broken glass's HP drain is SSP-094).
-// Hazards are visited in store order, so two episodes starting on one tick resolve deterministically.
+//   - grip and drain hazards do nothing on entry.
+// Hazards are visited in store order, so two episodes starting on one tick resolve deterministically. The end of
+// an episode also clears HazardFlag.Splashed, the puddle-splash mark npc/splash.ts sets (SSP-094).
+//
+// Broken glass (ENTITY_CATALOG §10, §4.2; SSP-094).
+//   - Drain: every tick Bessie's wheel rectangle overlaps a drain hazard (haz.broken_glass), from the first tick
+//     of the episode on, she loses rules.hpPerS / 60 HP (5 HP/s: 1/12 HP a tick), never below 0. Standing on it
+//     counts too: the tyres are on the glass. Overlapping several glass hazards at once drains once (the
+//     largest rate), not once per hazard: the rule is "−5 HP/s while driving on it".
+//   - Smash: attachGlassSmash makes the LitterField's flung-landing hook. A flung item of a kind with a `flung`
+//     rule (litter.glass_bottle → haz.broken_glass) that lands on a tile with no hazard adds that hazard on the
+//     tile and is removed (removeLitter: it stays in litterSpawned and can never be collected, like a leaf pile
+//     driven through); landing on a tile its hazard already covers, it is removed into the glass already there.
+//     Landing on a tile another hazard covers (one ground decal per tile, as for wet leaves), off the map, or
+//     with the store full (the 64 cap, TECHNICAL_DESIGN §7.1), it lands whole as ordinary litter. Each smash
+//     emits EV.GlassSmash at the landing point.
+//   - Sweep: stepGlassSweep (phase 5, after the brush's litter step): while the brush collects
+//     (brush.collecting, as stepBrushLitter found it), every hazard with rules.sweepPts whose footprint centre
+//     lies inside the brush's collection zone (vehicle-local x within the suction rect's width, y from the
+//     inlet's back edge to the suction rect's front edge; edges inclusive) is removed and emits EV.GlassSwept
+//     with its points. Scoring takes it as a pickup (phase 9): × the combo multiplier, +1 to the chain; it adds
+//     no LU (the hopper may be full) and is not litter, so it does not count toward Tidy % (proposed in SSP-094,
+//     owner to review). Head-on, the zone reaches a tile's centre before the front wheels reach the tile, so a
+//     brush-down approach clears glass without a scratch.
 //
 // LU spills (ENTITY_CATALOG §10). A spill of S LU takes min(S, hopperLU) out of the hopper as whole small
 // litter items, added to the LitterField through addLitter (so they count toward litterSpawned, Tidy %'s
@@ -57,13 +80,14 @@
 // the boxed doubles addLitter's arguments may cost on the rare tick a spill happens. Setup (createHazardStore,
 // spawnHazards) may allocate.
 
-import { BrushState, type BrushView } from './brush.ts';
-import { TILE_M } from './constants.ts';
+import { type Brush, BrushState, type BrushView } from './brush.ts';
+import { SIM_HZ, TILE_M } from './constants.ts';
 import {
   type Entities,
   HAZARD_ENTITY_IDS,
   type HazardEntityId,
   type HazardGripSurface,
+  type HazardId,
   LITTER_IDS,
   type LitterId,
   STAIN_IDS,
@@ -74,6 +98,7 @@ import { cos, sin } from './fmath.ts';
 import { type Hopper, spillFromHopper } from './hopper.ts';
 import {
   addLitter,
+  type FlungLandHook,
   LITTER_CAPACITY,
   LITTER_ROTATIONS,
   type LitterField,
@@ -96,8 +121,13 @@ export const HAZARD_CAPACITY = 64;
 export const HazardFlag = {
   /** Bessie's wheel rectangle overlaps the footprint: a crossing episode is running. */
   Contact: 1,
+  /** A puddle: this crossing episode has splashed (EV.Splash, npc/splash.ts, SSP-094). Cleared with Contact. */
+  Splashed: 2,
 } as const;
 export type HazardFlag = (typeof HazardFlag)[keyof typeof HazardFlag];
+
+/** The flags a crossing episode owns: cleared on the first tick Bessie is off the hazard. */
+const EPISODE_FLAGS = HazardFlag.Contact | HazardFlag.Splashed;
 
 /** What a hazard does (entities.json `effect`), as a small integer. */
 export const HazardEffectCode = { Grip: 0, Jolt: 1, Drain: 2, HardStop: 3 } as const;
@@ -148,6 +178,10 @@ export type HazardKinds = {
   readonly litterLu: Float64Array;
   /** By LITTER_IDS index: 1 when the kind has any brush-up rule (spin-out, stain or hazard), else 0. */
   readonly litterBrushUp: Uint8Array;
+  /** HP a drain hazard costs per tick on it (rules.hpPerS / SIM_HZ), 0 for the rest. */
+  readonly drainHpPerTick: Float64Array;
+  /** Points for sweeping the hazard up (rules.sweepPts), 0 when it cannot be swept. */
+  readonly sweepPts: Int32Array;
 };
 
 /** The small-litter table spills draw from (built at shift start from the level's litter table). */
@@ -173,6 +207,10 @@ export type HazardStore = {
   count: number;
   /** Hazards added this shift (spawned and created, e.g. wet leaves). */
   hazardsSpawned: number;
+  /** Flung bottles that smashed this shift (EV.GlassSmash; SSP-094). */
+  glassSmashed: number;
+  /** Hazards swept up this shift (EV.GlassSwept; SSP-094). */
+  glassSwept: number;
   /** Index into HAZARD_ENTITY_IDS. */
   readonly kind: Uint8Array;
   /** Footprint in tiles: columns col0..col1−1, rows row0..row1−1. */
@@ -219,6 +257,8 @@ export type HazardStoreView = {
   readonly h: number;
   readonly count: number;
   readonly hazardsSpawned: number;
+  readonly glassSmashed: number;
+  readonly glassSwept: number;
   readonly kind: Uint8Array;
   readonly col0: Int32Array;
   readonly row0: Int32Array;
@@ -273,6 +313,8 @@ export function createHazardKinds(entities: Entities): HazardKinds {
   const spillLu = new Float64Array(n);
   const minSpeedMps = new Float64Array(n).fill(-1);
   const pairedStain = new Int16Array(n).fill(-1);
+  const drainHpPerTick = new Float64Array(n);
+  const sweepPts = new Int32Array(n);
   for (let k = 0; k < n; k += 1) {
     const e = entities.hazards[HAZARD_ENTITY_IDS[k] as HazardEntityId];
     effect[k] = EFFECT_CODE[e.effect];
@@ -281,6 +323,8 @@ export function createHazardKinds(entities: Entities): HazardKinds {
     hpLoss[k] = rules.hpLoss ?? 0;
     spillLu[k] = rules.spillLu ?? 0;
     minSpeedMps[k] = rules.minSpeedMps ?? -1;
+    if (e.effect === 'drain') drainHpPerTick[k] = (rules.hpPerS ?? 0) / SIM_HZ;
+    sweepPts[k] = rules.sweepPts ?? 0;
   }
   for (let s = 0; s < STAIN_IDS.length; s += 1) {
     const paired = entities.stains[STAIN_IDS[s] as StainId].rules.pairedHazard;
@@ -312,6 +356,8 @@ export function createHazardKinds(entities: Entities): HazardKinds {
     brushUpHazard,
     litterLu,
     litterBrushUp,
+    drainHpPerTick,
+    sweepPts,
   };
 }
 
@@ -336,6 +382,8 @@ export function createHazardStore(
     capacity,
     count: 0,
     hazardsSpawned: 0,
+    glassSmashed: 0,
+    glassSwept: 0,
     kind: new Uint8Array(capacity),
     col0: new Int32Array(capacity),
     row0: new Int32Array(capacity),
@@ -420,6 +468,8 @@ export function createSpillTable(level: Level, kinds: HazardKinds): SpillTable {
 export function clearHazards(store: HazardStore): void {
   store.count = 0;
   store.hazardsSpawned = 0;
+  store.glassSmashed = 0;
+  store.glassSwept = 0;
   store.tileHazard.fill(-1);
   store.surfaceOverride.fill(NO_SURFACE);
 }
@@ -482,7 +532,7 @@ export function addHazard(
 }
 
 /**
- * Remove hazard `i` without touching the counter (SSP-094 sweeps broken glass). Swap-remove: the last live
+ * Remove hazard `i` without touching hazardsSpawned (stepGlassSweep sweeps broken glass, SSP-094). Swap-remove: the last live
  * hazard moves into slot `i`. The tile layers are rebuilt over both footprints from the store, in store
  * order, so they stay "first hazard covering the tile". Allocation-free.
  */
@@ -693,7 +743,8 @@ function quadOverlapsHazard(store: HazardStore, i: number): boolean {
  * Phase 2, §8.2 step 10, after the kerb crossings: update every hazard's crossing episode against Bessie's
  * integrated pose and apply the effects of the episodes that start this tick (see the header): jolts (HP,
  * LU spill behind her, EV.HazardJolt) and the open manhole's hard stop (HP, vLong = vLat = 0,
- * EV.HazardStop). Returns how many episodes started. Allocation-free except a spill's addLitter arguments.
+ * EV.HazardStop); then broken glass's per-tick HP drain while she is on it (SSP-094). Returns how many episodes
+ * started. Allocation-free except a spill's addLitter arguments.
  */
 export function stepHazardContacts(
   store: HazardStore,
@@ -707,17 +758,22 @@ export function stepHazardContacts(
   updateWheelQuad(store, vehicle, sweeper);
   const kinds = store.kinds;
   let started = 0;
+  let drain = 0;
   for (let i = 0; i < store.count; i += 1) {
     const flags = store.flags[i] as number;
     if (!quadOverlapsHazard(store, i)) {
-      if ((flags & HazardFlag.Contact) !== 0) store.flags[i] = flags & ~HazardFlag.Contact;
+      if ((flags & EPISODE_FLAGS) !== 0) store.flags[i] = flags & ~EPISODE_FLAGS;
       continue;
+    }
+    const kind = store.kind[i] as number;
+    const effect = kinds.effect[kind] as number;
+    if (effect === HazardEffectCode.Drain) {
+      const d = kinds.drainHpPerTick[kind] as number;
+      if (d > drain) drain = d;
     }
     if ((flags & HazardFlag.Contact) !== 0) continue;
     store.flags[i] = flags | HazardFlag.Contact;
     started += 1;
-    const kind = store.kind[i] as number;
-    const effect = kinds.effect[kind] as number;
     if (effect === HazardEffectCode.Jolt) {
       if (!(Math.abs(vehicle.vLongMps) > (kinds.minSpeedMps[kind] as number))) continue;
       loseHp(vehicle, kinds.hpLoss[kind] as number);
@@ -735,6 +791,11 @@ export function stepHazardContacts(
       vehicle.vLongMps = 0;
       vehicle.vLatMps = 0;
     }
+  }
+  if (drain > 0) {
+    // loseHp written out: a double argument to a call V8 does not inline boxes, and this runs every tick on glass.
+    const hp = vehicle.hp - drain;
+    vehicle.hp = hp > 0 ? hp : 0;
   }
   return started;
 }
@@ -884,4 +945,97 @@ export function stepBrushUpLeaves(
     if (addHazard(store, hazard, col, row, col + 1, row + 1) >= 0) created += 1;
   }
   return created;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Broken glass: the flung-bottle smash (phase 5, stepLitter) and the brush sweep (ENTITY_CATALOG §10; SSP-094)
+// ---------------------------------------------------------------------------------------------------------
+
+/**
+ * The flung-landing hook for a LitterField (see the header): a landed bottle smashes into its `flung` hazard on
+ * its tile, or lands whole when it cannot. Emits EV.GlassSmash into `events` (the World's queue, open in phase
+ * 5). Made once at shift start; never per tick.
+ */
+export function createGlassSmashHook(store: HazardStore, events: EventQueue): FlungLandHook {
+  return (field: LitterField, index: number, hazard: HazardId): boolean => {
+    const kind = (HAZARD_ENTITY_IDS as readonly string[]).indexOf(hazard);
+    if (kind < 0) return false;
+    const x = field.x[index] as number;
+    const y = field.y[index] as number;
+    const col = Math.floor(x / TILE_M);
+    const row = Math.floor(y / TILE_M);
+    let h = hazardAtTile(store, col, row);
+    let made = 0;
+    if (h >= 0) {
+      if ((store.kind[h] as number) !== kind) return false;
+    } else {
+      h = addHazard(store, kind, col, row, col + 1, row + 1);
+      if (h < 0) return false;
+      made = 1;
+    }
+    removeLitter(field, index);
+    store.glassSmashed += 1;
+    const e = emitEvent(events, EV.GlassSmash, h);
+    events.a[e] = x;
+    events.b[e] = y;
+    events.c[e] = made;
+    return true;
+  };
+}
+
+/** Attach the glass smash to `field` at shift setup (createWorld): its onFlungLand is createGlassSmashHook's. */
+export function attachGlassSmash(store: HazardStore, field: LitterField, events: EventQueue): void {
+  field.onFlungLand = createGlassSmashHook(store, events);
+}
+
+/**
+ * Phase 5, after stepBrushLitter (which set `brush.collecting` and the brush's zone numbers): while the brush
+ * collects, sweep up every hazard with sweep points whose footprint centre is inside the collection zone (see
+ * the header): removeHazard and EV.GlassSwept, in store order. Returns how many were swept. Allocation-free.
+ */
+export function stepGlassSweep(
+  store: HazardStore,
+  brush: Brush,
+  vehicle: Readonly<VehicleState>,
+  events: EventQueue,
+): number {
+  if (!brush.collecting || store.count === 0) return 0;
+  const kinds = store.kinds;
+  writeBodyAxes(store, vehicle);
+  const c = store.axisC;
+  const s = store.axisS;
+  const px = vehicle.xM;
+  const py = vehicle.yM;
+  const minX = brush.cSuctionMinX;
+  const maxX = brush.cSuctionMaxX;
+  const minY = brush.cInletMinY;
+  const maxY = brush.cSuctionMaxY;
+  let swept = 0;
+  let i = 0;
+  while (i < store.count) {
+    const kind = store.kind[i] as number;
+    const pts = kinds.sweepPts[kind] as number;
+    if (pts > 0) {
+      const x = store.x[i] as number;
+      const y = store.y[i] as number;
+      const dx = x - px;
+      const dy = y - py;
+      // local = (d·right, d·forward), right = (c, s), forward = (s, −c) (src/sim/coords.ts).
+      const lx = dx * c + dy * s;
+      const ly = dx * s - dy * c;
+      if (lx >= minX && lx <= maxX && ly >= minY && ly <= maxY) {
+        removeHazard(store, i);
+        store.glassSwept += 1;
+        swept += 1;
+        const e = emitEvent(events, EV.GlassSwept, kind);
+        events.a[e] = x;
+        events.b[e] = y;
+        events.c[e] = pts;
+        // Swap-remove moved the last hazard into slot i: look at it without advancing.
+        continue;
+      }
+    }
+    i += 1;
+  }
+  return swept;
 }

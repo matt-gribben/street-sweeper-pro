@@ -22,8 +22,8 @@ export const EVENTS_PER_TICK = 512;
  * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
  * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd, SSP-093 HazardJolt and HazardStop, SSP-063
  * ComboTier, SSP-078 Complaint and Horn, SSP-092 Knock, SSP-082 NpcHit, SSP-089 CarHorn, SSP-083
- * HandbagWhack, SSP-084 Caught, SSP-090 Dent, SSP-086 LeadTangle, SSP-096 PowerUp; later issues append the rest
- * of the §7.2 list.
+ * HandbagWhack, SSP-084 Caught, SSP-090 Dent, SSP-086 LeadTangle, SSP-096 PowerUp, SSP-094 Splash, NpcSplash,
+ * GlassSmash and GlassSwept; later issues append the rest of the §7.2 list.
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036), for
@@ -94,6 +94,21 @@ export const EVENTS_PER_TICK = 512;
  *   centre, m), c = its kind (POWERUP_IDS index). Phase 4 (pickups.ts stepPickups, SSP-096), once per power-up
  *   collected, the tick Bessie's body OBB first overlaps it; the effect is applied as it is emitted.
  *   sfx.powerup (M5).
+ * - Splash: entity = the puddle's HazardStore index, a = x, b = y (the puddle's footprint centre, m), c = |vLong|
+ *   (m/s). Phase 7 (npc/splash.ts, SSP-094), once per crossing episode of a haz.puddle: the first tick of the
+ *   episode on which |vLong| is above streetLife.splash.minSpeedMps (3 m/s). sfx.splash and fx.splash read it.
+ * - NpcSplash: entity = the pedestrian's NPC store index, a = x, b = y (its centre, m), c = the complaints the
+ *   splash filed (1 on every streetLife.splash.complaintEvery-th splash of the shift, else 0). Phase 7
+ *   (npc/splash.ts, SSP-094), once per pedestrian per puddle crossing above 3 m/s with it within 1.5 m of
+ *   Bessie's body; its −50 penalty fact is recorded with it. sfx.splash's `soak` and ped_oi (M5) read it.
+ * - GlassSmash: entity = the haz.broken_glass's HazardStore index, a = x, b = y (where the bottle landed, m),
+ *   c = 1 when the smash made a new hazard, 0 when the bottle landed on glass already there. Phase 5 (stepLitter's
+ *   flung-landing hook, hazards.ts, SSP-094), once per flung litter.glass_bottle that smashes. fx.glass_smash and
+ *   pickup_glass's `smash` (M5) read it.
+ * - GlassSwept: entity = the hazard's kind (HAZARD_ENTITY_IDS index: the hazard is swap-removed as it is
+ *   emitted), a = x, b = y (its footprint centre, m), c = its points (entities.json rules.sweepPts, 20, before the
+ *   combo). Phase 5 (hazards.ts stepGlassSweep, SSP-094), once per haz.broken_glass the collecting brush sweeps
+ *   up. Scoring takes it as a pickup (phase 9); pickup_glass reads it.
  */
 export const EV = {
   Impact: 1,
@@ -119,6 +134,10 @@ export const EV = {
   Dent: 21,
   LeadTangle: 22,
   PowerUp: 23,
+  Splash: 24,
+  NpcSplash: 25,
+  GlassSmash: 26,
+  GlassSwept: 27,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

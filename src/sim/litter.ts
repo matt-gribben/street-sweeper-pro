@@ -17,8 +17,9 @@
 // afterwards. stepLitter moves items itself:
 //   - FLUNG: a kinematic arc from (arcX0, arcY0) to (arcX1, arcY1) over arcDur ticks at constant speed (flat:
 //     items stay on the ground plane, §12.5). The item is uncollectable until it lands. On landing, a kind
-//     with a `flung` rule (litter.glass_bottle → haz.broken_glass) is handed to `onFlungLand`; the hazard
-//     store arrives in M3 (SSP-094), so until a hook is attached the item simply lands as litter.
+//     with a `flung` rule (litter.glass_bottle → haz.broken_glass) is handed to `onFlungLand`, which the World
+//     attaches to the hazard store's glass smash (hazards.ts createGlassSmashHook, SSP-094); a field with no
+//     hook (unit tests) simply lands the item as litter.
 //   - PINNED: not moved here (the brush pushes bulldozed items itself).
 //   - otherwise: x += vx·dt. A drifting item (driftTicks > 0) keeps its velocity until the drift ends; any
 //     other velocity is a one-tick push (the brush's sweep-in and suction set it every tick they act) and is
@@ -156,7 +157,7 @@ export type LitterField = {
   readonly kinds: LitterKinds;
   /** Fling distances and arc length (tuning.json → sweeping.fling). Replace between ticks only. */
   flingTuning: SweepingTuning['fling'];
-  /** Flung-landing hook (glass → broken glass, M3). Null until attached. */
+  /** Flung-landing hook (glass → broken glass: the World attaches hazards.ts's glass smash, SSP-094). */
   onFlungLand: FlungLandHook | null;
   /** Spawn scratch: the box for the spacing query, and the query output. */
   readonly scratchBox: Aabb;

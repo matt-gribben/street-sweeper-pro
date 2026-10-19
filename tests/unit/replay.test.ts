@@ -279,6 +279,15 @@ describe('state hash', () => {
     // Its behaviour words (SSP-086).
     world.npc.dueTick[n] = 2_500;
     world.npc.routeAt[n] = 2;
+    // A splashed NPC in a running puddle crossing, and broken glass smashed and swept (SSP-094).
+    world.npc.splashEpisode[n] = 2;
+    world.npcAi.splash.wet = true;
+    world.npcAi.splash.episode = 2;
+    world.npcAi.splash.splashes = 4;
+    world.npcAi.splash.crossingSplashes = 3;
+    world.npcAi.splash.complaints = 1;
+    world.hazards.glassSmashed = 2;
+    world.hazards.glassSwept = 1;
     world.npcAi.reactions.hiVisUntilTick = 700;
     world.npcAi.reactions.hits = 1;
     world.npcAi.reactions.bumps = 2;
@@ -461,6 +470,25 @@ describe('state hash', () => {
     const edits: [string, (w: World) => void][] = [
       ['dueTick', (w) => (w.npc.dueTick[0] = 2_501)],
       ['routeAt', (w) => (w.npc.routeAt[0] = 3)],
+    ];
+    for (const [name, edit] of edits) {
+      const w = handSetWorld();
+      edit(w);
+      expect(hashOf(w), name).not.toBe(base);
+    }
+  });
+
+  it('absorbs broken glass and the puddle splashes (SSP-094): the counters, the crossing and each NPC’s', () => {
+    const base = hashOf(handSetWorld());
+    const edits: [string, (w: World) => void][] = [
+      ['splashEpisode', (w) => (w.npc.splashEpisode[0] = 1)],
+      ['splash.wet', (w) => (w.npcAi.splash.wet = false)],
+      ['splash.episode', (w) => (w.npcAi.splash.episode = 3)],
+      ['splash.splashes', (w) => (w.npcAi.splash.splashes = 5)],
+      ['splash.crossingSplashes', (w) => (w.npcAi.splash.crossingSplashes = 4)],
+      ['splash.complaints', (w) => (w.npcAi.splash.complaints = 2)],
+      ['hazards.glassSmashed', (w) => (w.hazards.glassSmashed = 3)],
+      ['hazards.glassSwept', (w) => (w.hazards.glassSwept = 2)],
     ];
     for (const [name, edit] of edits) {
       const w = handSetWorld();
@@ -1530,8 +1558,12 @@ describe('state hash', () => {
  * SSP-096 appended the power-ups (the pickup store, the timers, the top-speed multiplier) after the behaviours'
  * words, and gave the hand-set World a pickup, a running flask of tea and a butty's top-speed multiplier:
  * ee810692 → 1421aa0f (440ed8ae on its branch, before SSP-083, SSP-084, SSP-085, SSP-090 and SSP-086 merged).
+ * SSP-094 appended broken glass and the puddle splashes (the hazard store's glassSmashed and glassSwept, the
+ * splash crossing and counters, then each NPC's splashEpisode) after the power-ups, and gave the hand-set World a
+ * splashed NPC in a running crossing and some smashed and swept glass: 1421aa0f → 7e840dcb (4f2347ac on its branch,
+ * before SSP-084, SSP-085, SSP-090, SSP-086 and SSP-096 merged).
  */
-const GOLDEN_HAND_SET_HASH = '1421aa0f';
+const GOLDEN_HAND_SET_HASH = '7e840dcb';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

@@ -19,7 +19,9 @@ import type { World } from '../world.ts';
  * the NPC below the actor-hit closing speed (ENTITY_CATALOG §3.2: it bumps off and startles, no penalty). Phase 7
  * pushes Horn, HiVis, BeaconYield, Hit and Bump (npc/reactions.ts). SSP-086 appends Tangle: Bessie drove through
  * the lead the dog is on (the dog walker pushes it to its dog, which barks; behaviours/dogWalker.ts). Hashed:
- * append, never renumber.
+ * the lead the dog is on (the dog walker pushes it to its dog, which barks; behaviours/dogWalker.ts). SSP-094
+ * appends Splash: Bessie drove through a puddle above 3 m/s with the NPC within 1.5 m (npc/splash.ts); the
+ * generic pedestrian startles. Hashed: append, never renumber.
  */
 export const Stimulus = {
   Horn: 1,
@@ -30,11 +32,12 @@ export const Stimulus = {
   BeaconYield: 6,
   Bump: 7,
   Tangle: 8,
+  Splash: 9,
 } as const;
 export type Stimulus = (typeof Stimulus)[keyof typeof Stimulus];
 
 /** The largest Stimulus id. */
-export const STIMULUS_MAX = 8;
+export const STIMULUS_MAX = 9;
 
 /** One NPC kind's state machine. */
 export type Behaviour = {

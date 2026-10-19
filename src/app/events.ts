@@ -27,6 +27,8 @@
 
 import { Offence } from '../sim/complaints.ts';
 import {
+  HAZARD_ENTITY_IDS,
+  type HazardEntityId,
   KNOCKABLE_IDS,
   type KnockableId,
   LITTER_IDS,
@@ -326,6 +328,61 @@ export type PowerUpEvent = SimEventBase & {
   readonly kind: PowerupId;
 };
 
+/**
+ * Bessie crossed a puddle above 3 m/s (phase 7, npc/splash.ts, SSP-094): once per puddle crossing episode, on its
+ * first fast tick. `entity` is the puddle's HazardStore index. sfx.splash and fx.splash (SSP-102) read it.
+ */
+export type SplashEvent = SimEventBase & {
+  readonly type: typeof EV.Splash;
+  /** The puddle's footprint centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** |vLong| on that tick, m/s. */
+  readonly speedMps: number;
+};
+
+/**
+ * A pedestrian within 1.5 m was splashed by a fast puddle crossing (phase 7, npc/splash.ts, SSP-094): once per
+ * pedestrian per crossing, with its −50 penalty. `entity` is its NPC store index. sfx.splash's `soak` and ped_oi
+ * (M5) read it.
+ */
+export type NpcSplashEvent = SimEventBase & {
+  readonly type: typeof EV.NpcSplash;
+  /** The pedestrian's centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** Complaints this splash filed: 1 on every 3rd splash of the shift, else 0. */
+  readonly complaints: number;
+};
+
+/**
+ * A flung glass bottle smashed where it landed (phase 5, hazards.ts, SSP-094). `entity` is the haz.broken_glass's
+ * HazardStore index. fx.glass_smash and pickup_glass's `smash` (M5) read it.
+ */
+export type GlassSmashEvent = SimEventBase & {
+  readonly type: typeof EV.GlassSmash;
+  /** Where the bottle landed, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** True when the smash made a new hazard; false when it landed on glass already there. */
+  readonly created: boolean;
+};
+
+/**
+ * The brush swept up a hazard (phase 5, hazards.ts stepGlassSweep, SSP-094): haz.broken_glass, +20 as a pickup.
+ * `entity` is its kind (the hazard is removed as the event is emitted). pickup_glass reads it.
+ */
+export type GlassSweptEvent = SimEventBase & {
+  readonly type: typeof EV.GlassSwept;
+  /** The hazard's footprint centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** What was swept. */
+  readonly kind: HazardEntityId;
+  /** Its points before the combo (rules.sweepPts). */
+  readonly pts: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -351,6 +408,10 @@ export type SimEventByType = {
   [EV.Dent]: DentEvent;
   [EV.LeadTangle]: LeadTangleEvent;
   [EV.PowerUp]: PowerUpEvent;
+  [EV.Splash]: SplashEvent;
+  [EV.NpcSplash]: NpcSplashEvent;
+  [EV.GlassSmash]: GlassSmashEvent;
+  [EV.GlassSwept]: GlassSweptEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -435,6 +496,18 @@ function createPayloads(): Payloads {
     [EV.Dent]: { type: EV.Dent, tick: 0, entity: -1, x: 0, y: 0, vn: 0 },
     [EV.LeadTangle]: { type: EV.LeadTangle, tick: 0, entity: -1, x: 0, y: 0, dog: -1 },
     [EV.PowerUp]: { type: EV.PowerUp, tick: 0, entity: -1, x: 0, y: 0, kind: 'pwr.flask_of_tea' },
+    [EV.Splash]: { type: EV.Splash, tick: 0, entity: -1, x: 0, y: 0, speedMps: 0 },
+    [EV.NpcSplash]: { type: EV.NpcSplash, tick: 0, entity: -1, x: 0, y: 0, complaints: 0 },
+    [EV.GlassSmash]: { type: EV.GlassSmash, tick: 0, entity: -1, x: 0, y: 0, created: false },
+    [EV.GlassSwept]: {
+      type: EV.GlassSwept,
+      tick: 0,
+      entity: -1,
+      x: 0,
+      y: 0,
+      kind: 'haz.broken_glass',
+      pts: 0,
+    },
   };
 }
 
@@ -476,6 +549,16 @@ function powerUpKindOf(c: number, tick: number): PowerupId {
   return id;
 }
 
+/** The hazard id carried in a GlassSwept event's `entity` (a HAZARD_ENTITY_IDS index); throws on anything else. */
+function hazardKindOf(entity: number, tick: number): HazardEntityId {
+  const id = Number.isInteger(entity) ? HAZARD_ENTITY_IDS[entity] : undefined;
+  if (id === undefined)
+    throw new Error(
+      `EventBus: event type ${EV.GlassSwept} at tick ${tick} carries unknown hazard kind ${entity}`,
+    );
+  return id;
+}
+
 /** The stain id carried in a StainCleaned event's `entity` (a STAIN_IDS index); throws on anything else. */
 function stainKindOf(entity: number, tick: number): StainId {
   const id = Number.isInteger(entity) ? STAIN_IDS[entity] : undefined;
@@ -510,7 +593,11 @@ function isEventType(type: number): type is EventType {
     type === EV.Caught ||
     type === EV.Dent ||
     type === EV.LeadTangle ||
-    type === EV.PowerUp
+    type === EV.PowerUp ||
+    type === EV.Splash ||
+    type === EV.NpcSplash ||
+    type === EV.GlassSmash ||
+    type === EV.GlassSwept
   );
 }
 
@@ -635,6 +722,10 @@ export class EventBus implements UiEventSink, PauseEventSink {
     [EV.Dent]: [],
     [EV.LeadTangle]: [],
     [EV.PowerUp]: [],
+    [EV.Splash]: [],
+    [EV.NpcSplash]: [],
+    [EV.GlassSmash]: [],
+    [EV.GlassSwept]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -978,6 +1069,47 @@ export class EventBus implements UiEventSink, PauseEventSink {
         e.y = b;
         e.kind = powerUpKindOf(c, tick);
         this.emit(EV.PowerUp, e);
+        return;
+      }
+      case EV.Splash: {
+        const e = this.payloads[EV.Splash];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.speedMps = c;
+        this.emit(EV.Splash, e);
+        return;
+      }
+      case EV.NpcSplash: {
+        const e = this.payloads[EV.NpcSplash];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.complaints = c;
+        this.emit(EV.NpcSplash, e);
+        return;
+      }
+      case EV.GlassSmash: {
+        const e = this.payloads[EV.GlassSmash];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.created = c === 1;
+        this.emit(EV.GlassSmash, e);
+        return;
+      }
+      case EV.GlassSwept: {
+        const e = this.payloads[EV.GlassSwept];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.kind = hazardKindOf(entity, tick);
+        e.pts = c;
+        this.emit(EV.GlassSwept, e);
         return;
       }
     }

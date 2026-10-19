@@ -156,6 +156,11 @@ export type NpcStore = {
    * next; −1 before it starts the route.
    */
   readonly routeAt: Int16Array;
+  /**
+   * Puddle splash (npc/splash.ts, SSP-094): the serial of the puddle crossing that last splashed it, 0 = never.
+   * A pedestrian is splashed at most once per crossing.
+   */
+  readonly splashEpisode: Int32Array;
   /** Handle slot of each live index. */
   readonly handleSlot: Int32Array;
   /** Live index of each handle slot, −1 while the slot is free. */
@@ -212,6 +217,7 @@ export type NpcStoreView = {
   readonly timerB: Int32Array;
   readonly dueTick: Int32Array;
   readonly routeAt: Int16Array;
+  readonly splashEpisode: Int32Array;
   readonly handleSlot: Int32Array;
   readonly slotIndex: Int32Array;
   readonly slotGen: Uint32Array;
@@ -269,6 +275,7 @@ export function createNpcStore(level: Level, capacity: number = NPC_CAPACITY): N
     timerB: new Int32Array(capacity),
     dueTick: new Int32Array(capacity).fill(-1),
     routeAt: new Int16Array(capacity).fill(-1),
+    splashEpisode: new Int32Array(capacity),
     handleSlot: new Int32Array(capacity).fill(-1),
     slotIndex: new Int32Array(capacity).fill(-1),
     slotGen: new Uint32Array(capacity),
@@ -464,6 +471,7 @@ export function addNpc(
   store.timerB[i] = 0;
   store.dueTick[i] = -1;
   store.routeAt[i] = -1;
+  store.splashEpisode[i] = 0;
   linkCell(store, i, npcCellIndex(store, i));
   return i;
 }
@@ -527,6 +535,7 @@ export function removeNpc(store: NpcStore, i: number): void {
     store.timerB[i] = store.timerB[last] as number;
     store.dueTick[i] = store.dueTick[last] as number;
     store.routeAt[i] = store.routeAt[last] as number;
+    store.splashEpisode[i] = store.splashEpisode[last] as number;
     const movedSlot = store.handleSlot[last] as number;
     store.handleSlot[i] = movedSlot;
     store.slotIndex[movedSlot] = i;

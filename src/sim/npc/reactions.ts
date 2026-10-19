@@ -4,9 +4,12 @@
 // per-type modules that extend it); this file only decides who is told what, and applies the hit penalty.
 //
 // Phase 7 calls stepReactions once, after the spawner and before deliverStimuli: pushReactionStimuli, then
-// stepActorContacts. One entry point rather than two calls in the World's phase: with two, V8's inlining of the
-// whole tick into World.step grew enough that it tiered up inside the m1_drive_puddle_lane replay's measured
-// window and broke the §17 heap check (37 KB pre-final-GC; 16.7 KB with one call, as before SSP-082).
+// stepActorContacts, then the puddle splashes (npc/splash.ts stepPuddleSplash, SSP-094). One entry point rather
+// than two calls in the World's phase: with two, V8's inlining of the whole tick into World.step grew enough that
+// it tiered up inside the m1_drive_puddle_lane replay's measured window and broke the §17 heap check (37 KB
+// pre-final-GC; 16.7 KB with one call, as before SSP-082). The splash step returns before any double arithmetic
+// when the level has no hazards: without that early return the world.test.ts heap check (a town with none)
+// grew 61–64 KB over 3,600 ticks (SSP-094).
 //
 // Stimuli (pushReactionStimuli), in this push order:
 //   1. Every NPC's AWARE and HI_VIS flags are cleared: they mark this tick's BeaconYield and HiVis deliveries.
@@ -70,6 +73,7 @@ import { nextFloat, nextInt } from '../rng.ts';
 import type { Tuning } from '../tuning.ts';
 import type { World } from '../world.ts';
 import { Stimulus } from './behaviour.ts';
+import { stepPuddleSplash } from './splash.ts';
 import { STEER_TILE } from './steering.ts';
 import { pushStimulus, STIMULUS_EVERYONE } from './stimuli.ts';
 import { NO_NPC_HANDLE, NPC_FLAG, npcHandle, queryNpcs, resolveNpcHandle } from './store.ts';
@@ -409,8 +413,12 @@ function spawnDrops(w: World, i: number, kind: number, count: number): void {
   }
 }
 
-/** Phase 7, after the spawner and before deliverStimuli: the tick's stimuli, then actor contact (header). */
+/**
+ * Phase 7, after the spawner and before deliverStimuli: the tick's stimuli, then actor contact (header), then the
+ * puddle splashes (splash.ts, SSP-094).
+ */
 export function stepReactions(w: World): void {
   pushReactionStimuli(w);
   stepActorContacts(w);
+  stepPuddleSplash(w);
 }

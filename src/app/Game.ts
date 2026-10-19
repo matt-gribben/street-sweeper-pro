@@ -39,6 +39,11 @@ export type SceneContext = {
   readonly root: Group;
   /** Loads one sprite atlas (spriteAtlas.ts loadAtlas). */
   loadAtlas(name: AtlasName): Promise<SpriteAtlas>;
+  /**
+   * Pins the camera at (x, y) sim metres and height h metres, springs off for good (Game.pinCamera). Test
+   * scenes with a fixed view use it (`level_preview`, SSP-045); `__ssp.setCamera` can still move it after.
+   */
+  pinCamera(x: number, y: number, h: number): void;
 };
 
 /** One InputFrame per tick, edges latched (src/input/actions.ts, SSP-044). */
@@ -113,6 +118,7 @@ export class Game {
       renderer: this.renderer,
       root: this.root,
       loadAtlas: (name) => loadAtlas(name),
+      pinCamera: (x, y, h) => this.pinCamera(x, y, h),
     };
     const scenes = this.scenes;
     const events = this.events;

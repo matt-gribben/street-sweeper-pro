@@ -1,83 +1,104 @@
-// City mesh, M0 spike version (TECHNICAL_DESIGN §12.4, ART_BIBLE §3.1, §4.2, §9.3). A cell grid of 2 m cells
-// becomes ONE BufferGeometry (ground + walls + roofs, one draw call, frustumCulled = false):
-//   - building cells with equal storeys merge into boxes (greedy rectangles, row-major);
+// City mesh (TECHNICAL_DESIGN §12.4, ART_BIBLE §4.2, §9.3, §9.4). Since SSP-045 this is the one city renderer for
+// both compiled levels (levelCity.ts, sampling the `world` atlas through FRAME) and the M0 test grids
+// (placeholderCity.ts, sampling a code-defined placeholder atlas). Everything a district draws on the ground
+// plane and above it goes into ONE indexed BufferGeometry with one ShaderMaterial, so the city (ground + walls +
+// roofs) is one draw call with `frustumCulled = false` (§12.7).
+//
+// Buildings, from a cell grid of 2 m cells with per-cell storeys and wall/roof style values:
+//   - adjacent building cells with equal storeys merge into boxes (greedy rectangles, row-major);
 //   - only walls facing lower or open cells are emitted, from the neighbour's height up to the box top; walls
 //     toward equal or taller neighbours are never built, and backface culling hides the rest (a straight-down
-//     camera sees a wall exactly when it is on the wall's outward side);
-//   - UVs are world metres, so the 32×40 px facade module tiles at 2 m × 1 storey (2.5 m) and roofs and ground
-//     align to the 32 px tile grid;
-//   - roofs are one quad per building cell carrying which of its edges drop to a lower or open neighbour, so the
-//     1 px parapet line follows the real roof outline (never the seams between merged boxes);
-//   - facade variant by face normal: N and W walls `_lit`, E and S walls `_dark`, roofs `_base`.
+//     camera sees a wall exactly when it is on the wall's outward side). A wall run along a box edge splits
+//     where the neighbour's height or the owning cell's facade style changes;
+//   - UVs are world metres, so 32×40 px facade modules tile at 2 m × 1 storey (2.5 m). A wall's facade frame
+//     is one bay (ASSET_PIPELINE §10.9): `u` wraps across the frame width, the ground storey (0–2.5 m) samples
+//     the bottom 40 rows and every storey above it the top 40 rows;
+//   - facade variant by face normal: N and W walls `lit`, E and S walls `dark` (`base` is the authored values);
+//   - roofs are one quad per building cell, sampling its roof style's variant (a deterministic hash of the cell,
+//     never the sim RNG) and carrying the edges that drop to a lower or open neighbour, so the 1 px parapet line
+//     follows the real roof outline, never the seams between merged boxes. The NW parapet is 06 kerb; the SE
+//     parapet is the roof's dark step, `shadow[i]` of the roof frame's dominant index (slate 02 → 01).
 // Sim XY maps to render XZ (x east, sim y south = render +z) and buildings extrude along +Y.
 //
-// Textures are code-defined placeholders built from Kerbside-32 indices (CLAUDE.md hard rule 3: no colour value
-// is spelled here): a brick module with a stone string course and one bold window per storey, a slate roof with
-// a 1 px parapet line (06 kerb on the NW edges, the roof's dark step 01 tar on the SE edges), and flat 02
-// asphalt / 05 slab ground, plus flat 06 kerb and 22 grass swatches (SSP-021: the shadow and night tuning needs
-// building and drop shadows over every ground tile type). Real facades are M4, procedural facades and ground tiles M1: this is deliberately
-// not a facade system. The full cell merge from compiled levels replaces this file's input in SSP-045.
+// Vertex format (per vertex; 4 vertices and 6 indices per quad):
+//   position (vec3, metres), aUvM (vec2, world metres: ground/roofs (x, z), walls (along-wall, height)),
+//   aRect (vec4, atlas rect x, y, w, h in pixels, from FRAME), aCellM (vec2, the cell's NW corner, which ground
+//   and roof texels are clamped to), aInfo (vec4: SurfaceKind, roof edge bits, SE parapet index, grime flag).
+// The grime flag is 1 on ground and markings and 0 on walls, roofs and the skirt: the M2 grime overlay
+// (SSP-066) reads it so walls and roofs never show grime.
+//
+// The fragment shader reads a Kerbside-32 index from the R8 atlas texture (255 = transparent, discarded: the
+// marking overlays) and looks the colour up in the palette texture, so nothing here spells a colour. Texel
+// lookups add 1/256 texel before flooring: magnified roofs and walls put texel edges exactly on pixel centres at
+// some camera positions, and the two triangles of a quad would otherwise round that pixel row differently.
+import { BufferAttribute, BufferGeometry, GLSL3, Mesh, ShaderMaterial, Texture } from 'three';
+import { PX_PER_M, TILE_M } from '../sim/constants.ts';
 import {
-  BufferAttribute,
-  BufferGeometry,
-  DataTexture,
-  GLSL3,
-  Mesh,
-  NearestFilter,
-  RGBAFormat,
-  ShaderMaterial,
-  UnsignedByteType,
-} from 'three';
-import { PX_PER_M } from '../sim/constants.ts';
-import { KERBSIDE32, type Kerbside32, paletteIndex } from './palettePass.ts';
-import { DEPTH_LAYER_GLSL, DepthLayer, paletteColourVector, WORLD_OUTPUTS_GLSL } from './worldMaterial.ts';
+  createPaletteTexture,
+  KERBSIDE32,
+  type Kerbside32,
+  PALETTE_SIZE,
+  paletteIndex,
+} from './palettePass.ts';
+import { DEPTH_LAYER_GLSL, DepthLayer, WORLD_OUTPUTS_GLSL } from './worldMaterial.ts';
 
 /** Map cell size: 2 m (one 32 px tile). */
-export const CELL_M = 2;
+export const CELL_M = TILE_M;
 
 /** Stylised storey height: 2.5 m = 40 px of facade (ART_BIBLE §3.1). */
 export const STOREY_M = 2.5;
 
-/** Facade module size in texels: 2 m wide × 1 storey. */
-export const FACADE_MODULE_W_PX = CELL_M * PX_PER_M;
-export const FACADE_MODULE_H_PX = STOREY_M * PX_PER_M;
+/** One storey of facade in texels (a module's height). */
+export const STOREY_PX = STOREY_M * PX_PER_M;
 
-/** Roof and ground tile size in texels (16 px/m, aligned to the 2 m grid). */
+/** Ground tile and roof tile size in texels (16 px/m, aligned to the 2 m grid). */
 export const TILE_PX = CELL_M * PX_PER_M;
 
-/** Ground beyond the grid: an asphalt skirt this far out on every side, so a panning camera never sees void. */
+/** Ground beyond the grid: a skirt this far out on every side, so a panning camera never sees void. */
 export const GROUND_SKIRT_M = 512;
 
-/** Ground type of a cell without a building (placeholder ground, M0). */
-export const GroundType = { Asphalt: 0, Slab: 1, Kerb: 2, Grass: 3 } as const;
-export type GroundType = (typeof GroundType)[keyof typeof GroundType];
+/** Atlas value of a fully transparent texel (spriteAtlas.ts TRANSPARENT_INDEX): the shader discards it. */
+const TRANSPARENT_TEXEL = 255;
 
 /** Outward direction of a surface. Walls are N/E/S/W; roofs and ground face Up. */
 export const Face = { N: 0, E: 1, S: 2, W: 3, Up: 4 } as const;
 export type Face = (typeof Face)[keyof typeof Face];
 
+/** A wall's outward direction. */
+export type WallFace = Exclude<Face, typeof Face.Up>;
+
 /** Facade ramp variant (ART_BIBLE §6.2, §9.4). */
 export const FacadeVariant = { Lit: 0, Base: 1, Dark: 2 } as const;
 export type FacadeVariant = (typeof FacadeVariant)[keyof typeof FacadeVariant];
 
-/** Tiles of the placeholder atlas, each TILE_PX wide and FACADE_MODULE_H_PX tall (square tiles use the top rows). */
-export const AtlasTile = {
-  FacadeLit: 0,
-  FacadeBase: 1,
-  FacadeDark: 2,
-  RoofSlate: 3,
-  GroundAsphalt: 4,
-  GroundSlab: 5,
-  GroundKerb: 6,
-  GroundGrass: 7,
-} as const;
-export type AtlasTile = (typeof AtlasTile)[keyof typeof AtlasTile];
+/**
+ * How the shader samples a quad's frame:
+ * - Ground: a ground tile clamped to its own cell (opaque);
+ * - Overlay: a marking tile over a ground cell, clamped likewise; transparent texels are discarded and the quad
+ *   sits a hair in front of the ground (sort bias 0.5 within depth layer 0);
+ * - Wall: a facade bay, wrapped by world metres (§12.4);
+ * - Roof: a roof tile clamped to its cell, plus the parapet line on its flagged edges;
+ * - Skirt: a ground tile repeated by world metres (the ground beyond the map).
+ */
+export const SurfaceKind = { Ground: 0, Overlay: 1, Wall: 2, Roof: 3, Skirt: 4 } as const;
+export type SurfaceKind = (typeof SurfaceKind)[keyof typeof SurfaceKind];
 
-const ATLAS_TILE_COUNT = 8;
-export const ATLAS_WIDTH_PX = ATLAS_TILE_COUNT * TILE_PX;
-export const ATLAS_HEIGHT_PX = FACADE_MODULE_H_PX;
+/** Roof edge bits: set when the neighbour across that edge is lower or open, so the edge gets a parapet line. */
+export const RoofEdge = { N: 1, E: 2, S: 4, W: 8 } as const;
+export type RoofEdge = (typeof RoofEdge)[keyof typeof RoofEdge];
 
-/** A cell grid: row-major, row 0 is the north edge, column 0 the west edge. */
+/** Palette name of the parapet line on a roof's NW edges (ART_BIBLE §9.3: "06 or the roof's lit step"). */
+export const ROOF_PARAPET_NW = 'kerb';
+
+/** A frame's rectangle in its atlas, in pixels (x, y top-left, y down). */
+export type AtlasRect = {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+};
+
+/** A building cell grid: row-major, row 0 is the north edge, column 0 the west edge. */
 export type CityGrid = {
   readonly cols: number;
   readonly rows: number;
@@ -86,8 +107,30 @@ export type CityGrid = {
   readonly originYM: number;
   /** Storeys per cell; 0 means open (no building). */
   readonly storeys: Uint8Array;
-  /** Ground type per cell (ignored under buildings). */
-  readonly ground: Uint8Array;
+  /** Facade style value per building cell (an index into {@link CityStyles.facades}); 0 on open cells. */
+  readonly wall: Uint8Array;
+  /** Roof style value per building cell (an index into {@link CityStyles.roofs}); 0 on open cells. */
+  readonly roof: Uint8Array;
+};
+
+/** One facade set: the bay frame for each face variant (N/W `lit`, E/S `dark`). */
+export type FacadeStyle = {
+  readonly lit: AtlasRect;
+  readonly base: AtlasRect;
+  readonly dark: AtlasRect;
+};
+
+/** One roof style: its tile variants (picked per cell by hash) and its SE parapet colour index. */
+export type RoofStyle = {
+  readonly variants: readonly AtlasRect[];
+  /** Palette index of the parapet line on SE edges: the roof's dark step. */
+  readonly parapetSe: number;
+};
+
+/** Styles a {@link CityGrid}'s wall and roof values name; entry 0 is unused (STYLE_NONE). */
+export type CityStyles = {
+  readonly facades: readonly (FacadeStyle | undefined)[];
+  readonly roofs: readonly (RoofStyle | undefined)[];
 };
 
 /** A merged box of equal-storey building cells, in sim metres (x0 < x1 west to east, y0 < y1 north to south). */
@@ -102,7 +145,7 @@ export type CityBox = {
 
 /** One emitted wall: a vertical quad on a box edge, `face` its outward direction. */
 export type CityWall = {
-  readonly face: Exclude<Face, typeof Face.Up>;
+  readonly face: WallFace;
   /** Wall segment endpoints on the ground plane (sim metres), west→east or north→south. */
   readonly x0M: number;
   readonly y0M: number;
@@ -111,70 +154,9 @@ export type CityWall = {
   /** Bottom edge: the neighbour's height (0 for an open cell). */
   readonly bottomM: number;
   readonly topM: number;
+  /** Facade style value of the building cells behind the wall. */
+  readonly style: number;
 };
-
-/** Roof edge bits: set when the neighbour across that edge is lower or open, so the edge gets a parapet line. */
-export const RoofEdge = { N: 1, E: 2, S: 4, W: 8 } as const;
-export type RoofEdge = (typeof RoofEdge)[keyof typeof RoofEdge];
-
-/** Geometry buffers before upload, plus per-vertex faces for tests. Non-indexed: 6 vertices per quad. */
-export type CityGeometryData = {
-  readonly vertexCount: number;
-  /** Render-space positions (x, y, z), metres. */
-  readonly positions: Float32Array;
-  /** World-metre UVs: walls (along-wall, height), roofs and ground (x, z). */
-  readonly uvs: Float32Array;
-  /** Atlas tile per vertex. */
-  readonly tiles: Float32Array;
-  /** {@link RoofEdge} bits of the roof cell for roof vertices (parapet lines), 0 elsewhere. */
-  readonly roofEdges: Float32Array;
-  /** NW corner (x, z) of the roof cell in metres for roof vertices, (0, 0) elsewhere. */
-  readonly roofCells: Float32Array;
-  /** Outward face per vertex (not uploaded). */
-  readonly faces: Uint8Array;
-};
-
-/**
- * ASCII cell codes for {@link parseCityGrid}: `.` asphalt, `:` slab pavement, `k` kerb stone, `,` grass (as in
- * LEVEL_DESIGN maps), `1`–`8` a building of that many storeys.
- */
-export const CITY_CELL_ASPHALT = '.';
-export const CITY_CELL_SLAB = ':';
-export const CITY_CELL_KERB = 'k';
-export const CITY_CELL_GRASS = ',';
-const MAX_STOREYS = 8;
-
-/** Parses an ASCII cell grid (one character per 2 m cell, row 0 north) placed with its NW corner at the origin. */
-export function parseCityGrid(lines: readonly string[], originXM: number, originYM: number): CityGrid {
-  const rows = lines.length;
-  const cols = lines[0]?.length ?? 0;
-  if (rows === 0 || cols === 0) throw new Error('city grid must have at least one cell');
-  const storeys = new Uint8Array(cols * rows);
-  const ground = new Uint8Array(cols * rows);
-  lines.forEach((line, r) => {
-    if (line.length !== cols)
-      throw new Error(`city grid row ${r} has ${line.length} cells, expected ${cols}`);
-    for (let c = 0; c < cols; c++) {
-      const ch = line[c] ?? '';
-      const i = r * cols + c;
-      if (ch === CITY_CELL_ASPHALT) {
-        ground[i] = GroundType.Asphalt;
-      } else if (ch === CITY_CELL_SLAB) {
-        ground[i] = GroundType.Slab;
-      } else if (ch === CITY_CELL_KERB) {
-        ground[i] = GroundType.Kerb;
-      } else if (ch === CITY_CELL_GRASS) {
-        ground[i] = GroundType.Grass;
-      } else if (ch >= '1' && ch <= String(MAX_STOREYS)) {
-        storeys[i] = Number(ch);
-        ground[i] = GroundType.Slab;
-      } else {
-        throw new Error(`city grid row ${r} col ${c}: unknown cell '${ch}'`);
-      }
-    }
-  });
-  return { cols, rows, originXM, originYM, storeys, ground };
-}
 
 /** Storeys at (col, row); 0 outside the grid (open). */
 export function storeysAt(grid: CityGrid, col: number, row: number): number {
@@ -182,9 +164,28 @@ export function storeysAt(grid: CityGrid, col: number, row: number): number {
   return grid.storeys[row * grid.cols + col] ?? 0;
 }
 
+/** Checks a grid's layer lengths and that every building cell names a wall and a roof style. */
+export function validateCityGrid(grid: CityGrid): void {
+  const n = grid.cols * grid.rows;
+  if (!Number.isInteger(grid.cols) || !Number.isInteger(grid.rows) || grid.cols <= 0 || grid.rows <= 0) {
+    throw new Error(`city grid must be at least 1×1 cells, got ${grid.cols}×${grid.rows}`);
+  }
+  if (grid.storeys.length !== n || grid.wall.length !== n || grid.roof.length !== n) {
+    throw new Error(`city grid layers must hold ${n} cells`);
+  }
+  for (let i = 0; i < n; i++) {
+    if ((grid.storeys[i] ?? 0) > 0 && ((grid.wall[i] ?? 0) === 0 || (grid.roof[i] ?? 0) === 0)) {
+      throw new Error(
+        `city grid cell (${i % grid.cols}, ${Math.floor(i / grid.cols)}) has no wall or roof style`,
+      );
+    }
+  }
+}
+
 /**
  * Merges building cells with equal storeys into boxes: greedy, row-major. Each box grows east as far as the
- * run of equal, unclaimed cells goes, then south while every cell of the next row's span matches.
+ * run of equal, unclaimed cells goes, then south while every cell of the next row's span matches. Styles do
+ * not split boxes: walls split by style, roofs are per cell and shadows only need the massing.
  */
 export function mergeBoxes(grid: CityGrid): CityBox[] {
   const claimed = new Uint8Array(grid.cols * grid.rows);
@@ -219,7 +220,7 @@ export function mergeBoxes(grid: CityGrid): CityBox[] {
 
 /**
  * Walls of one box: along each edge, consecutive cells whose outside neighbour is lower (or open) with the same
- * neighbour height merge into one wall from that height up to the box top.
+ * neighbour height and the same facade style merge into one wall from that height up to the box top.
  */
 function boxWalls(grid: CityGrid, box: CityBox, out: CityWall[]): void {
   const c0 = Math.round((box.x0M - grid.originXM) / CELL_M);
@@ -227,16 +228,17 @@ function boxWalls(grid: CityGrid, box: CityBox, out: CityWall[]): void {
   const c1 = Math.round((box.x1M - grid.originXM) / CELL_M);
   const r1 = Math.round((box.y1M - grid.originYM) / CELL_M);
   const s = box.storeys;
-  // [face, horizontal edge?, fixed coordinate (cell index of the neighbour line), span start, span end]
+  // [face, horizontal edge?, neighbour line (cell index outside the box), owner line (inside), span]
   const edges = [
-    [Face.N, true, r0 - 1, c0, c1],
-    [Face.S, true, r1, c0, c1],
-    [Face.W, false, c0 - 1, r0, r1],
-    [Face.E, false, c1, r0, r1],
+    [Face.N, true, r0 - 1, r0, c0, c1],
+    [Face.S, true, r1, r1 - 1, c0, c1],
+    [Face.W, false, c0 - 1, c0, r0, r1],
+    [Face.E, false, c1, c1 - 1, r0, r1],
   ] as const;
-  for (const [face, horizontal, fixed, start, end] of edges) {
+  for (const [face, horizontal, outside, inside, start, end] of edges) {
     let runStart = start;
     let runNeighbour = -1;
+    let runStyle = -1;
     const flush = (runEnd: number): void => {
       if (runNeighbour < 0 || runNeighbour >= s) return;
       const a = runStart * CELL_M;
@@ -252,14 +254,18 @@ function boxWalls(grid: CityGrid, box: CityBox, out: CityWall[]): void {
         y1M: horizontal ? lineY : grid.originYM + b,
         bottomM: runNeighbour * STOREY_M,
         topM: box.heightM,
+        style: runStyle,
       });
     };
     for (let k = start; k < end; k++) {
-      const n = horizontal ? storeysAt(grid, k, fixed) : storeysAt(grid, fixed, k);
-      if (n !== runNeighbour) {
+      const n = horizontal ? storeysAt(grid, k, outside) : storeysAt(grid, outside, k);
+      const ownerIndex = horizontal ? inside * grid.cols + k : k * grid.cols + inside;
+      const style = grid.wall[ownerIndex] ?? 0;
+      if (n !== runNeighbour || style !== runStyle) {
         flush(k);
         runStart = k;
         runNeighbour = n;
+        runStyle = style;
       }
     }
     flush(end);
@@ -299,11 +305,11 @@ export function facadeVariant(face: Face): FacadeVariant {
   }
 }
 
-/** Atlas tile of a wall facing `face`. */
-export function wallTile(face: Exclude<Face, typeof Face.Up>): AtlasTile {
+/** The bay frame of `style` a wall facing `face` samples. */
+export function facadeRect(style: FacadeStyle, face: WallFace): AtlasRect {
   const variant = facadeVariant(face);
-  if (variant === FacadeVariant.Lit) return AtlasTile.FacadeLit;
-  return variant === FacadeVariant.Dark ? AtlasTile.FacadeDark : AtlasTile.FacadeBase;
+  if (variant === FacadeVariant.Lit) return style.lit;
+  return variant === FacadeVariant.Dark ? style.dark : style.base;
 }
 
 /** Render-space outward unit normal (x, y, z) of a face. */
@@ -322,53 +328,149 @@ export function faceNormal(face: Face): readonly [number, number, number] {
   }
 }
 
-type Vertex = readonly [x: number, y: number, z: number, u: number, v: number];
+// Integer hash multipliers (decimal: src/render keeps hex-looking literals out, tests/unit/noHexColours.test.ts).
+const HASH_X = 374761393;
+const HASH_Y = 668265263;
+const HASH_SALT = 1274126177;
+const HASH_MIX_1 = 2246822519;
+const HASH_MIX_2 = 3266489917;
 
-/** Growable vertex writer for the city geometry. */
-class CityGeometryWriter {
-  private positions: number[] = [];
-  private uvs: number[] = [];
-  private tiles: number[] = [];
-  private roofEdges: number[] = [];
-  private roofCells: number[] = [];
-  private faces: number[] = [];
+/**
+ * A deterministic 32-bit hash of a cell (x, y) and a salt: the per-cell variant choice for ground tiles and
+ * roofs (SSP-045). Render-only and stateless, so it never touches the sim RNG and a cell always draws the same
+ * variant.
+ */
+export function cellHash(x: number, y: number, salt: number): number {
+  let h = Math.imul(x, HASH_X) ^ Math.imul(y, HASH_Y) ^ Math.imul(salt + 1, HASH_SALT);
+  h = Math.imul(h ^ (h >>> 15), HASH_MIX_1);
+  h = Math.imul(h ^ (h >>> 13), HASH_MIX_2);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/** Variant index in 0..count−1 for cell (x, y): {@link cellHash} modulo the variant count. */
+export function cellVariant(x: number, y: number, count: number, salt: number): number {
+  if (!Number.isInteger(count) || count < 1) throw new Error(`cellVariant: ${count} variants`);
+  return cellHash(x, y, salt) % count;
+}
+
+/** Hash salts, so ground and roof variants of the same cell are independent. */
+export const VariantSalt = { Ground: 0, Roof: 1 } as const;
+export type VariantSalt = (typeof VariantSalt)[keyof typeof VariantSalt];
+
+/**
+ * The most common index inside `rect` of an index atlas (`width` pixels wide), ignoring transparent texels; ties
+ * go to the lower index. A roof's dominant index is its base colour.
+ */
+export function dominantIndex(indices: Uint8Array, width: number, rect: AtlasRect): number {
+  const counts = new Uint32Array(PALETTE_SIZE);
+  for (let y = rect.y; y < rect.y + rect.h; y++) {
+    for (let x = rect.x; x < rect.x + rect.w; x++) {
+      const index = indices[y * width + x] ?? TRANSPARENT_TEXEL;
+      if (index < PALETTE_SIZE) counts[index] = (counts[index] ?? 0) + 1;
+    }
+  }
+  let best = -1;
+  let bestCount = 0;
+  counts.forEach((count, index) => {
+    if (count > bestCount) {
+      best = index;
+      bestCount = count;
+    }
+  });
+  if (best < 0) throw new Error(`frame at (${rect.x}, ${rect.y}) has no opaque texel`);
+  return best;
+}
+
+/** The SE parapet index of a roof whose base colour is `dominant`: its dark step, `shadow[dominant]`. */
+export function roofParapetSe(dominant: number, palette: Kerbside32 = KERBSIDE32): number {
+  const index = palette.shadow[dominant];
+  if (index === undefined) throw new Error(`roofParapetSe: index ${dominant} is not a palette index`);
+  return index;
+}
+
+/** A quad corner: render position (x, y, z) and world-metre UV (u, v). */
+export type QuadCorner = readonly [x: number, y: number, z: number, u: number, v: number];
+
+/** Geometry buffers before upload, plus per-quad faces and kinds for tests. Indexed: 4 vertices per quad. */
+export type CityGeometryData = {
+  readonly quadCount: number;
+  readonly vertexCount: number;
+  /** Render-space positions (x, y, z), metres. */
+  readonly positions: Float32Array;
+  /** World-metre UVs. */
+  readonly uvs: Float32Array;
+  /** Atlas rect (x, y, w, h) per vertex. */
+  readonly rects: Float32Array;
+  /** NW corner (x, z) of the quad's cell in metres (ground, overlays, roofs), (0, 0) elsewhere. */
+  readonly cells: Float32Array;
+  /** (SurfaceKind, roof edge bits, SE parapet index, grime flag) per vertex. */
+  readonly info: Float32Array;
+  /** Triangle indices, 6 per quad, wound counter-clockwise as seen from outside. */
+  readonly indices: Uint32Array;
+  /** Outward face per quad (not uploaded). */
+  readonly faces: Uint8Array;
+  /** SurfaceKind per quad (not uploaded). */
+  readonly kinds: Uint8Array;
+};
+
+/** Growable vertex writer for the city geometry: ground chunks, markings, the skirt, walls and roofs. */
+export class CityGeometryWriter {
+  private readonly positions: number[] = [];
+  private readonly uvs: number[] = [];
+  private readonly rects: number[] = [];
+  private readonly cells: number[] = [];
+  private readonly info: number[] = [];
+  private readonly indices: number[] = [];
+  private readonly faces: number[] = [];
+  private readonly kinds: number[] = [];
+
+  /** Quads written so far. */
+  get quadCount(): number {
+    return this.faces.length;
+  }
 
   /**
-   * One quad as two triangles. `corners` go round the quad's perimeter; the triangle order is flipped if
-   * needed so the winding faces `face` (counter-clockwise seen from outside, which backface culling keeps).
+   * One quad as two triangles sharing the corner 0 → corner 2 diagonal. `corners` go round the quad's
+   * perimeter; the triangle order is flipped if needed so the winding faces `face` (counter-clockwise seen from
+   * outside, which backface culling keeps).
    */
   quad(
-    corners: readonly [Vertex, Vertex, Vertex, Vertex],
+    corners: readonly [QuadCorner, QuadCorner, QuadCorner, QuadCorner],
     face: Face,
-    tile: AtlasTile,
-    roofEdges = 0,
-    roofCellXM = 0,
-    roofCellZM = 0,
+    kind: SurfaceKind,
+    rect: AtlasRect,
+    cellXM = 0,
+    cellZM = 0,
+    edges = 0,
+    parapetSe = 0,
   ): void {
     const [a, b, c] = corners;
     const n = faceNormal(face);
-    const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]] as const;
-    const e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]] as const;
-    const cross = [
-      e1[1] * e2[2] - e1[2] * e2[1],
-      e1[2] * e2[0] - e1[0] * e2[2],
-      e1[0] * e2[1] - e1[1] * e2[0],
-    ];
-    const dot = (cross[0] ?? 0) * n[0] + (cross[1] ?? 0) * n[1] + (cross[2] ?? 0) * n[2];
-    const order = dot > 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2];
-    for (const k of order) {
-      const v = corners[k as 0 | 1 | 2 | 3];
+    const e1x = b[0] - a[0];
+    const e1y = b[1] - a[1];
+    const e1z = b[2] - a[2];
+    const e2x = c[0] - a[0];
+    const e2y = c[1] - a[1];
+    const e2z = c[2] - a[2];
+    const dot =
+      (e1y * e2z - e1z * e2y) * n[0] + (e1z * e2x - e1x * e2z) * n[1] + (e1x * e2y - e1y * e2x) * n[2];
+    const base = this.positions.length / 3;
+    if (dot > 0) this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    else this.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+    const grime = kind === SurfaceKind.Ground || kind === SurfaceKind.Overlay ? 1 : 0;
+    for (const v of corners) {
       this.positions.push(v[0], v[1], v[2]);
       this.uvs.push(v[3], v[4]);
-      this.tiles.push(tile);
-      this.roofEdges.push(roofEdges);
-      this.roofCells.push(roofCellXM, roofCellZM);
-      this.faces.push(face);
+      this.rects.push(rect.x, rect.y, rect.w, rect.h);
+      this.cells.push(cellXM, cellZM);
+      this.info.push(kind, edges, parapetSe, grime);
     }
+    this.faces.push(face);
+    this.kinds.push(kind);
   }
 
-  /** A ground rectangle at y = 0, sim metres; UVs are world metres. */
-  groundRect(x0: number, y0: number, x1: number, y1: number, tile: AtlasTile): void {
+  /** A ground-plane rectangle at y = 0 in sim metres, UVs in world metres, clamped to the cell at (x0, y0). */
+  groundQuad(x0: number, y0: number, x1: number, y1: number, kind: SurfaceKind, rect: AtlasRect): void {
     this.quad(
       [
         [x0, 0, y0, x0, y0],
@@ -377,19 +479,34 @@ class CityGeometryWriter {
         [x0, 0, y1, x0, y1],
       ],
       Face.Up,
-      tile,
+      kind,
+      rect,
+      x0,
+      y0,
     );
+  }
+
+  /** Four skirt quads of `rect` around the rectangle (x0, y0)–(x1, y1), `skirtM` wide. */
+  skirt(x0: number, y0: number, x1: number, y1: number, skirtM: number, rect: AtlasRect): void {
+    if (skirtM <= 0) return;
+    this.groundQuad(x0 - skirtM, y0 - skirtM, x1 + skirtM, y0, SurfaceKind.Skirt, rect);
+    this.groundQuad(x0 - skirtM, y1, x1 + skirtM, y1 + skirtM, SurfaceKind.Skirt, rect);
+    this.groundQuad(x0 - skirtM, y0, x0, y1, SurfaceKind.Skirt, rect);
+    this.groundQuad(x1, y0, x1 + skirtM, y1, SurfaceKind.Skirt, rect);
   }
 
   build(): CityGeometryData {
     return {
-      vertexCount: this.faces.length,
+      quadCount: this.faces.length,
+      vertexCount: this.positions.length / 3,
       positions: new Float32Array(this.positions),
       uvs: new Float32Array(this.uvs),
-      tiles: new Float32Array(this.tiles),
-      roofEdges: new Float32Array(this.roofEdges),
-      roofCells: new Float32Array(this.roofCells),
+      rects: new Float32Array(this.rects),
+      cells: new Float32Array(this.cells),
+      info: new Float32Array(this.info),
+      indices: new Uint32Array(this.indices),
       faces: new Uint8Array(this.faces),
+      kinds: new Uint8Array(this.kinds),
     };
   }
 }
@@ -398,7 +515,7 @@ class CityGeometryWriter {
  * Wall corners with world-metre UVs. `u` runs left to right as seen from outside, so modules are never
  * mirrored: S walls +x, N walls −x, E walls −z, W walls +z. `v` is height above the ground.
  */
-function wallCorners(wall: CityWall): [Vertex, Vertex, Vertex, Vertex] {
+function wallCorners(wall: CityWall): [QuadCorner, QuadCorner, QuadCorner, QuadCorner] {
   const { x0M, y0M, x1M, y1M, bottomM, topM } = wall;
   const u = (x: number, z: number): number => {
     switch (wall.face) {
@@ -420,66 +537,39 @@ function wallCorners(wall: CityWall): [Vertex, Vertex, Vertex, Vertex] {
   ];
 }
 
-/** Atlas tile of an open cell's ground type. */
-export function groundTile(type: number): AtlasTile {
-  switch (type) {
-    case GroundType.Slab:
-      return AtlasTile.GroundSlab;
-    case GroundType.Kerb:
-      return AtlasTile.GroundKerb;
-    case GroundType.Grass:
-      return AtlasTile.GroundGrass;
-    default:
-      return AtlasTile.GroundAsphalt;
-  }
+function facadeStyleOf(styles: CityStyles, value: number): FacadeStyle {
+  const style = styles.facades[value];
+  if (style === undefined) throw new Error(`city: no facade style for wall value ${value}`);
+  return style;
 }
 
-/** Builds the city's geometry buffers: ground (grid plus skirt), walls and roofs. Pure: no WebGL. */
-export function buildCityGeometryData(grid: CityGrid, skirtM: number = GROUND_SKIRT_M): CityGeometryData {
-  const writer = new CityGeometryWriter();
+function roofStyleOf(styles: CityStyles, value: number): RoofStyle {
+  const style = styles.roofs[value];
+  if (style === undefined || style.variants.length === 0) {
+    throw new Error(`city: no roof style for roof value ${value}`);
+  }
+  return style;
+}
+
+/**
+ * Writes the buildings of `grid`: every emitted wall (lit/dark bay by face), then one roof quad per building
+ * cell at its height (hash-picked variant, parapet edge bits). Returns the merged boxes (for the shadows).
+ */
+export function writeBuildings(grid: CityGrid, styles: CityStyles, writer: CityGeometryWriter): CityBox[] {
+  validateCityGrid(grid);
+  const boxes = mergeBoxes(grid);
+  for (const wall of emitWalls(grid, boxes)) {
+    const rect = facadeRect(facadeStyleOf(styles, wall.style), wall.face);
+    writer.quad(wallCorners(wall), wall.face, SurfaceKind.Wall, rect);
+  }
   const { cols, rows, originXM: ox, originYM: oy } = grid;
-
-  // Ground: per row, runs of open cells with the same ground type. Building footprints get no ground: the box's
-  // roof and visible walls always cover its footprint as seen from above.
-  for (let r = 0; r < rows; r++) {
-    let c = 0;
-    while (c < cols) {
-      const i = r * cols + c;
-      if ((grid.storeys[i] ?? 0) > 0) {
-        c++;
-        continue;
-      }
-      const type = grid.ground[i] ?? GroundType.Asphalt;
-      let end = c + 1;
-      while (
-        end < cols &&
-        (grid.storeys[r * cols + end] ?? 0) === 0 &&
-        grid.ground[r * cols + end] === type
-      ) {
-        end++;
-      }
-      const tile = groundTile(type);
-      writer.groundRect(ox + c * CELL_M, oy + r * CELL_M, ox + end * CELL_M, oy + (r + 1) * CELL_M, tile);
-      c = end;
-    }
-  }
-  if (skirtM > 0) {
-    const x0 = ox;
-    const y0 = oy;
-    const x1 = ox + cols * CELL_M;
-    const y1 = oy + rows * CELL_M;
-    writer.groundRect(x0 - skirtM, y0 - skirtM, x1 + skirtM, y0, AtlasTile.GroundAsphalt);
-    writer.groundRect(x0 - skirtM, y1, x1 + skirtM, y1 + skirtM, AtlasTile.GroundAsphalt);
-    writer.groundRect(x0 - skirtM, y0, x0, y1, AtlasTile.GroundAsphalt);
-    writer.groundRect(x1, y0, x1 + skirtM, y1, AtlasTile.GroundAsphalt);
-  }
-
-  for (const wall of emitWalls(grid)) writer.quad(wallCorners(wall), wall.face, wallTile(wall.face));
-  // Roofs: one quad per building cell at its height, flagged with the edges that drop to a lower neighbour.
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const s = storeysAt(grid, c, r);
       if (s === 0) continue;
+      const style = roofStyleOf(styles, grid.roof[r * cols + c] ?? 0);
+      const rect = style.variants[cellVariant(c, r, style.variants.length, VariantSalt.Roof)];
+      if (rect === undefined) throw new Error('city: roof variant out of range');
       const h = s * STOREY_M;
       const x0 = ox + c * CELL_M;
       const z0 = oy + r * CELL_M;
@@ -493,142 +583,16 @@ export function buildCityGeometryData(grid: CityGrid, skirtM: number = GROUND_SK
           [x0, h, z1, x0, z1],
         ],
         Face.Up,
-        AtlasTile.RoofSlate,
-        roofEdges(grid, c, r),
+        SurfaceKind.Roof,
+        rect,
         x0,
         z0,
+        roofEdges(grid, c, r),
+        style.parapetSe,
       );
     }
   }
-  return writer.build();
-}
-
-// ---------------------------------------------------------------------------------------------------------
-// Placeholder textures, as palette indices. Rows are numbered from the top of the tile (row 0 = top of the
-// storey for facades, the north edge for roofs and ground).
-
-/** Ramp steps [lit, base, dark] of each placeholder facade element, by Kerbside-32 name. */
-export const FACADE_ELEMENT_RAMPS = {
-  brick: ['terracotta', 'brick', 'brick_dk'],
-  stone: ['kerb', 'slab', 'slab_dk'],
-  frame: ['chalk', 'kerb', 'slab'],
-  glass: ['navy', 'navy', 'navy'],
-} as const;
-type FacadeElement = keyof typeof FACADE_ELEMENT_RAMPS;
-
-/** Slate roof (ART_BIBLE §9.5): 02 base with a 03 course line every 4 px; parapet 06 NW, the dark step 01 SE. */
-export const ROOF_COLOURS = {
-  base: 'asphalt',
-  course: 'asphalt_lt',
-  parapetNw: 'kerb',
-  parapetSe: 'tar',
-} as const;
-const ROOF_COURSE_SPACING_PX = 4;
-
-/** Flat placeholder ground (procedural tiles are M1). */
-export const GROUND_COLOURS = { asphalt: 'asphalt', slab: 'slab', kerb: 'kerb', grass: 'grass' } as const;
-
-// Module layout (32×40): a 2 px string course at the floor line of every storey, and one bold window per module
-// (ART_BIBLE §9.4: glass block ≥ 8×12 px, light frame, 1 px sill) so storeys read through foreshortening.
-const STRING_COURSE_ROWS: readonly [number, number] = [38, 39];
-const WINDOW_FRAME = { c0: 10, c1: 21, r0: 8, r1: 29 } as const;
-const WINDOW_SILL = { c0: 9, c1: 22, row: 30 } as const;
-
-function facadeElementAt(col: number, row: number): FacadeElement {
-  if (row >= STRING_COURSE_ROWS[0] && row <= STRING_COURSE_ROWS[1]) return 'stone';
-  if (row === WINDOW_SILL.row && col >= WINDOW_SILL.c0 && col <= WINDOW_SILL.c1) return 'stone';
-  const f = WINDOW_FRAME;
-  if (col >= f.c0 && col <= f.c1 && row >= f.r0 && row <= f.r1) {
-    return col === f.c0 || col === f.c1 || row === f.r0 || row === f.r1 ? 'frame' : 'glass';
-  }
-  return 'brick';
-}
-
-/** One facade module (32×40, row-major from the top) in the given variant, as palette indices. */
-export function facadeModuleIndices(variant: FacadeVariant, palette: Kerbside32 = KERBSIDE32): Uint8Array {
-  const out = new Uint8Array(FACADE_MODULE_W_PX * FACADE_MODULE_H_PX);
-  for (let row = 0; row < FACADE_MODULE_H_PX; row++) {
-    for (let col = 0; col < FACADE_MODULE_W_PX; col++) {
-      const name = FACADE_ELEMENT_RAMPS[facadeElementAt(col, row)][variant];
-      out[row * FACADE_MODULE_W_PX + col] = paletteIndex(name, palette);
-    }
-  }
-  return out;
-}
-
-/** The slate roof tile (32×32, row-major from the north edge), as palette indices; parapets are drawn per box. */
-export function roofTileIndices(palette: Kerbside32 = KERBSIDE32): Uint8Array {
-  const out = new Uint8Array(TILE_PX * TILE_PX);
-  const base = paletteIndex(ROOF_COLOURS.base, palette);
-  const course = paletteIndex(ROOF_COLOURS.course, palette);
-  for (let row = 0; row < TILE_PX; row++) {
-    out.fill(
-      row % ROOF_COURSE_SPACING_PX === ROOF_COURSE_SPACING_PX - 1 ? course : base,
-      row * TILE_PX,
-      (row + 1) * TILE_PX,
-    );
-  }
-  return out;
-}
-
-/**
- * The whole placeholder atlas as palette indices, ATLAS_WIDTH_PX × ATLAS_HEIGHT_PX, row 0 at the top. Square
- * tiles occupy rows 0..31 of their column; the rows below repeat the tile's first rows (never sampled).
- */
-export function buildCityAtlasIndices(palette: Kerbside32 = KERBSIDE32): Uint8Array {
-  const atlas = new Uint8Array(ATLAS_WIDTH_PX * ATLAS_HEIGHT_PX);
-  const put = (tile: AtlasTile, src: Uint8Array, srcHeight: number): void => {
-    for (let row = 0; row < ATLAS_HEIGHT_PX; row++) {
-      const srcRow = row % srcHeight;
-      atlas.set(
-        src.subarray(srcRow * TILE_PX, (srcRow + 1) * TILE_PX),
-        row * ATLAS_WIDTH_PX + tile * TILE_PX,
-      );
-    }
-  };
-  put(AtlasTile.FacadeLit, facadeModuleIndices(FacadeVariant.Lit, palette), FACADE_MODULE_H_PX);
-  put(AtlasTile.FacadeBase, facadeModuleIndices(FacadeVariant.Base, palette), FACADE_MODULE_H_PX);
-  put(AtlasTile.FacadeDark, facadeModuleIndices(FacadeVariant.Dark, palette), FACADE_MODULE_H_PX);
-  put(AtlasTile.RoofSlate, roofTileIndices(palette), TILE_PX);
-  put(
-    AtlasTile.GroundAsphalt,
-    new Uint8Array(TILE_PX * TILE_PX).fill(paletteIndex(GROUND_COLOURS.asphalt, palette)),
-    TILE_PX,
-  );
-  put(
-    AtlasTile.GroundSlab,
-    new Uint8Array(TILE_PX * TILE_PX).fill(paletteIndex(GROUND_COLOURS.slab, palette)),
-    TILE_PX,
-  );
-  put(
-    AtlasTile.GroundKerb,
-    new Uint8Array(TILE_PX * TILE_PX).fill(paletteIndex(GROUND_COLOURS.kerb, palette)),
-    TILE_PX,
-  );
-  put(
-    AtlasTile.GroundGrass,
-    new Uint8Array(TILE_PX * TILE_PX).fill(paletteIndex(GROUND_COLOURS.grass, palette)),
-    TILE_PX,
-  );
-  return atlas;
-}
-
-/** Uploads the placeholder atlas as RGBA8 palette colours. Texel (x, row) holds atlas row `row` from the top. */
-export function createCityAtlasTexture(palette: Kerbside32 = KERBSIDE32): DataTexture {
-  const indices = buildCityAtlasIndices(palette);
-  const rgba = new Uint8Array(indices.length * 4);
-  indices.forEach((index, i) => {
-    rgba[i * 4] = palette.rgb[index * 3] ?? 0;
-    rgba[i * 4 + 1] = palette.rgb[index * 3 + 1] ?? 0;
-    rgba[i * 4 + 2] = palette.rgb[index * 3 + 2] ?? 0;
-    rgba[i * 4 + 3] = 255;
-  });
-  const texture = new DataTexture(rgba, ATLAS_WIDTH_PX, ATLAS_HEIGHT_PX, RGBAFormat, UnsignedByteType);
-  texture.minFilter = NearestFilter;
-  texture.magFilter = NearestFilter;
-  texture.generateMipmaps = false;
-  texture.needsUpdate = true;
-  return texture;
+  return boxes;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -637,21 +601,23 @@ export function createCityAtlasTexture(palette: Kerbside32 = KERBSIDE32): DataTe
 const CITY_VERTEX = /* glsl */ `
 ${DEPTH_LAYER_GLSL}
 in vec2 aUvM;
-in float aTile;
-in float aRoofEdges;
-in vec2 aRoofCellM;
+in vec4 aRect;
+in vec2 aCellM;
+in vec4 aInfo;
 out vec2 vUvM;
-flat out int vTile;
-flat out int vRoofEdges;
-flat out vec2 vRoofCellM;
+flat out ivec4 vRect;
+flat out vec2 vCellM;
+flat out ivec3 vInfo;
 void main() {
   vUvM = aUvM;
-  vTile = int(aTile + 0.5);
-  vRoofEdges = int(aRoofEdges + 0.5);
-  vRoofCellM = aRoofCellM;
-  // Ground is layer 0 (no offset); walls and roofs keep their real heights.
+  vRect = ivec4(aRect + 0.5);
+  vCellM = aCellM;
+  vInfo = ivec3(aInfo.xyz + 0.5);
+  // Everything is depth layer 0: ground and markings lie at y = 0 (markings a hair in front, sort bias 0.5),
+  // walls and roofs keep their real heights.
+  float sortBias = vInfo.x == ${SurfaceKind.Overlay} ? 0.5 : 0.0;
   gl_Position = applyDepthLayer(projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0),
-    ${DepthLayer.Ground}.0, 0.0);
+    ${DepthLayer.Ground}.0, sortBias);
 }
 `;
 
@@ -659,76 +625,100 @@ const CITY_FRAGMENT = /* glsl */ `
 precision highp float;
 precision highp int;
 uniform highp sampler2D uAtlas;
-uniform vec3 uParapetNw;
-uniform vec3 uParapetSe;
+uniform highp sampler2D uPalette;
+uniform int uParapetNw;
 in vec2 vUvM;
-flat in int vTile;
-flat in int vRoofEdges;
-flat in vec2 vRoofCellM;
+flat in ivec4 vRect;
+flat in vec2 vCellM;
+flat in ivec3 vInfo;
 ${WORLD_OUTPUTS_GLSL}
-// Texel lookups add 1/256 texel before flooring. Magnified roofs and walls put texel edges exactly on pixel
-// centres at some camera positions (at H = 31.5 m a 3-storey roof is 21 px/m, so every 16th texel edge lands on
-// a centre with the camera at the origin); the two triangles of a quad then interpolate UVs a few ulps apart and
-// round that pixel row differently, leaving a 1 px step in a course line. The bias settles the tie the same way
-// for every triangle and moves no texel by a visible amount.
 const float TEXEL_BIAS = 1.0 / 256.0;
+const float STOREY_PX = ${STOREY_PX}.0;
 void main() {
-  vec2 px = floor(vUvM * ${PX_PER_M}.0 + TEXEL_BIAS);
-  int col = int(mod(px.x, ${TILE_PX}.0));
-  int row;
-  if (vTile <= ${AtlasTile.FacadeDark}) {
-    // Walls: v is height above the ground; module row 0 is the top of the storey.
-    row = ${FACADE_MODULE_H_PX - 1} - int(mod(px.y, ${FACADE_MODULE_H_PX}.0));
-  } else if (vTile == ${AtlasTile.RoofSlate}) {
-    // Roof texel within its own cell, clamped: a pixel on the seam between two roof cells can be covered by
-    // either quad, with UVs a hair beyond that quad's edge, and must not read as the neighbour's first texel.
-    ivec2 t = clamp(ivec2(floor((vUvM - vRoofCellM) * ${PX_PER_M}.0 + TEXEL_BIAS)), ivec2(0), ivec2(${TILE_PX - 1}));
-    col = t.x;
-    row = t.y;
+  int kind = vInfo.x;
+  vec2 size = vec2(vRect.zw);
+  ivec2 t;
+  if (kind == ${SurfaceKind.Wall}) {
+    // A bay frame: u wraps across its width; the ground storey samples the bottom 40 rows, every storey above
+    // it the top 40 rows (v is height above the ground; module row 0 is the top of the storey).
+    vec2 px = floor(vUvM * ${PX_PER_M}.0 + TEXEL_BIAS);
+    int k = int(mod(px.y, STOREY_PX));
+    int row = px.y < STOREY_PX ? vRect.w - 1 - k : ${STOREY_PX - 1} - k;
+    t = ivec2(int(mod(px.x, size.x)), row);
+  } else if (kind == ${SurfaceKind.Skirt}) {
+    t = ivec2(mod(floor(vUvM * ${PX_PER_M}.0 + TEXEL_BIAS), size));
   } else {
-    row = int(mod(px.y, ${TILE_PX}.0));
+    // Ground, markings and roofs: the texel within the quad's own cell, clamped. A pixel on the seam between two
+    // cells can be covered by either quad, with UVs a hair beyond that quad's edge, and must not read as the
+    // neighbouring frame's first texel.
+    t = clamp(ivec2(floor((vUvM - vCellM) * ${PX_PER_M}.0 + TEXEL_BIAS)), ivec2(0), vRect.zw - 1);
   }
-  vec3 colour = texelFetch(uAtlas, ivec2(vTile * ${TILE_PX} + col, row), 0).rgb;
-  if (vTile == ${AtlasTile.RoofSlate}) {
+  int idx = int(texelFetch(uAtlas, vRect.xy + t, 0).r * 255.0 + 0.5);
+  if (idx == ${TRANSPARENT_TEXEL}) discard;
+  if (kind == ${SurfaceKind.Roof}) {
     // 1 roof texel parapet line on the cell edges that drop to a lower neighbour: NW edges light, SE edges the
     // roof's dark step (ART_BIBLE §9.3).
-    if (((vRoofEdges & ${RoofEdge.N}) != 0 && row == 0) || ((vRoofEdges & ${RoofEdge.W}) != 0 && col == 0)) {
-      colour = uParapetNw;
-    } else if (((vRoofEdges & ${RoofEdge.S}) != 0 && row == ${TILE_PX - 1}) ||
-        ((vRoofEdges & ${RoofEdge.E}) != 0 && col == ${TILE_PX - 1})) {
-      colour = uParapetSe;
+    int edges = vInfo.y;
+    if (((edges & ${RoofEdge.N}) != 0 && t.y == 0) || ((edges & ${RoofEdge.W}) != 0 && t.x == 0)) {
+      idx = uParapetNw;
+    } else if (((edges & ${RoofEdge.S}) != 0 && t.y == vRect.w - 1) ||
+        ((edges & ${RoofEdge.E}) != 0 && t.x == vRect.z - 1)) {
+      idx = vInfo.z;
     }
   }
-  outColour = vec4(colour, 1.0);
+  outColour = vec4(texelFetch(uPalette, ivec2(idx, 0), 0).rgb, 1.0);
   outMask = vec4(0.0);
 }
 `;
 
-/** Uploads {@link CityGeometryData} into a BufferGeometry with the attributes the city material reads. */
+/** Uploads {@link CityGeometryData} into an indexed BufferGeometry with the attributes the city material reads. */
 export function createCityGeometry(data: CityGeometryData): BufferGeometry {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(data.positions, 3));
   geometry.setAttribute('aUvM', new BufferAttribute(data.uvs, 2));
-  geometry.setAttribute('aTile', new BufferAttribute(data.tiles, 1));
-  geometry.setAttribute('aRoofEdges', new BufferAttribute(data.roofEdges, 1));
-  geometry.setAttribute('aRoofCellM', new BufferAttribute(data.roofCells, 2));
+  geometry.setAttribute('aRect', new BufferAttribute(data.rects, 4));
+  geometry.setAttribute('aCellM', new BufferAttribute(data.cells, 2));
+  geometry.setAttribute('aInfo', new BufferAttribute(data.info, 4));
+  geometry.setIndex(new BufferAttribute(data.indices, 1));
   return geometry;
 }
 
-/** The city as one mesh, one draw call: ground + walls + roofs, frustum culling off. */
-export function createCityMesh(grid: CityGrid, palette: Kerbside32 = KERBSIDE32): Mesh {
-  const material = new ShaderMaterial({
+/**
+ * The city material: an R8 index atlas (`texelFetch(x, y)` is atlas pixel (x, y), y down; 255 = transparent)
+ * looked up in the palette texture. One instance per city; it owns its palette texture, not the atlas.
+ */
+export function createCityMaterial(atlas: Texture, palette: Kerbside32 = KERBSIDE32): ShaderMaterial {
+  return new ShaderMaterial({
     glslVersion: GLSL3,
     vertexShader: CITY_VERTEX,
     fragmentShader: CITY_FRAGMENT,
     uniforms: {
-      uAtlas: { value: createCityAtlasTexture(palette) },
-      uParapetNw: { value: paletteColourVector(paletteIndex(ROOF_COLOURS.parapetNw, palette), palette) },
-      uParapetSe: { value: paletteColourVector(paletteIndex(ROOF_COLOURS.parapetSe, palette), palette) },
+      uAtlas: { value: atlas },
+      uPalette: { value: createPaletteTexture(palette) },
+      uParapetNw: { value: paletteIndex(ROOF_PARAPET_NW, palette) },
     },
   });
-  const mesh = new Mesh(createCityGeometry(buildCityGeometryData(grid)), material);
+}
+
+/** The city as one mesh, one draw call: ground + markings + walls + roofs, frustum culling off. */
+export function createCityMesh(
+  data: CityGeometryData,
+  atlas: Texture,
+  palette: Kerbside32 = KERBSIDE32,
+): Mesh {
+  const mesh = new Mesh(createCityGeometry(data), createCityMaterial(atlas, palette));
   mesh.name = 'cityMesh';
   mesh.frustumCulled = false;
   return mesh;
+}
+
+/** Releases a city mesh's geometry, material and palette texture (not the shared atlas texture). */
+export function disposeCityMesh(mesh: Mesh): void {
+  mesh.geometry.dispose();
+  const material = mesh.material;
+  if (material instanceof ShaderMaterial) {
+    const palette: unknown = material.uniforms.uPalette?.value;
+    if (palette instanceof Texture) palette.dispose();
+    material.dispose();
+  }
 }

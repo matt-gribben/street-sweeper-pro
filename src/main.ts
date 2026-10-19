@@ -3,15 +3,20 @@
 // the M0 spike city until the Boot/Title flow; ShiftScene arrives in SSP-046.
 
 import { Game } from './app/Game.ts';
+import type { Scene } from './app/SceneManager.ts';
 import { installTestHooks, readTestParams } from './debug/testHooks.ts';
+import { LevelPreviewScene } from './scenes/LevelPreviewScene.ts';
 import {
   createDevWorldScene,
   createSpikeCityScene,
   createSpikeTestScene,
   isSpikeTestScene,
   SPIKE_TEST_SCENES,
-  type SpikeScene,
+  SpikeScene,
 } from './scenes/SpikeScene.ts';
+
+/** `?test=1&scene=` IDs that are not spike scenes: the SSP-045 compiled-level preview. */
+const LEVEL_PREVIEW_SCENE = 'level_preview';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game');
 if (canvas === null) {
@@ -47,17 +52,20 @@ const game = new Game(canvas, {
     : null,
 });
 
-// Scene choice. `?test=1&scene=<id>` boots the named spike scene; an unknown ID throws. Without a scene the
-// world is the SSP-017 spike city plus the SSP-018 spike actors. Dev builds can pick another world with `?world=`
+// Scene choice. `?test=1&scene=<id>` boots the named spike scene, or `level_preview` (compiled Puddle Lane from a
+// pinned camera, SSP-045); an unknown ID throws. Without a scene the world is the SSP-017 spike city plus the
+// SSP-018 spike actors. Dev builds can pick another world with `?world=`
 // (`palette_test`, the SSP-016 palette test world for tools/spikes/swiftShaderPalettePass.ts; `empty`, the
 // draw-call baseline for tools/spikes/spikeCityFrame.ts) and leave the actors out with `?actors=0`
 // (tools/spikes/spriteBatchFrame.ts); outside test mode they can also pin the drawn frame with `?actorFrame=N`. Release builds without
 // a test scene always get the city with its actors, and the dev alternatives are tree-shaken away.
-function createFirstScene(): SpikeScene {
+function createFirstScene(): Scene {
   const sceneId = testParams?.scene ?? null;
   if (sceneId !== null) {
+    if (sceneId === LEVEL_PREVIEW_SCENE) return new LevelPreviewScene(game.sceneContext);
     if (!isSpikeTestScene(sceneId)) {
-      throw new Error(`?test=1: unknown scene '${sceneId}' (known: ${SPIKE_TEST_SCENES.join(', ')})`);
+      const known = [...SPIKE_TEST_SCENES, LEVEL_PREVIEW_SCENE].join(', ');
+      throw new Error(`?test=1: unknown scene '${sceneId}' (known: ${known})`);
     }
     return createSpikeTestScene(sceneId, game.sceneContext);
   }
@@ -103,7 +111,7 @@ game.scenes.push(scene, { seed: testParams?.seed ?? 0 }).then(
     game.loop.setFrozen(testHooks.params.freeze);
   },
   (error: unknown) => {
-    console.error('Street Sweeper Pro: a sprite atlas failed to load', error);
+    console.error('Street Sweeper Pro: a sprite atlas or level failed to load', error);
   },
 );
 
@@ -116,7 +124,9 @@ if (import.meta.env.DEV && !testMode) {
         `H ${rig.height.value.toFixed(2)} m  W ${rig.internalWidth}  scale ${renderer.upscale}x`,
         `cam ${rig.snappedX.toFixed(4)}, ${rig.snappedZ.toFixed(4)} m  frac ${rig.fractionX.toFixed(3)}, ${rig.fractionY.toFixed(3)} px`,
         `draw calls ${renderer.drawCalls} (world + palette + blit)  night ${renderer.night ? 'on' : 'off'}`,
-        `actor frame ${scene.drawnFrame}${scene.hasSprites ? '' : ' (no actors)'}  ticks ${game.loop.ticks}`,
+        scene instanceof SpikeScene
+          ? `actor frame ${scene.drawnFrame}${scene.hasSprites ? '' : ' (no actors)'}  ticks ${game.loop.ticks}`
+          : `scene ${scene.id}  ticks ${game.loop.ticks}`,
       ].join('\n');
     });
   });

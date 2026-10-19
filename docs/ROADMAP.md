@@ -355,8 +355,8 @@ Each milestone has the same shape:
 
 *Render and app*
 
-- [ ] `src/render/groundLayer.ts`: chunked merged ground geometry sampling the `world` atlas.
-- [ ] `src/render/cityMesh.ts`: full cell merge, walls only toward lower or open cells, UVs in world metres.
+- [x] `src/render/groundLayer.ts`: chunked merged ground geometry sampling the `world` atlas. *(SSP-045: with the marking overlays; ground and city share one draw.)*
+- [x] `src/render/cityMesh.ts`: full cell merge, walls only toward lower or open cells, UVs in world metres. *(SSP-045: `src/render/levelCity.ts` builds a compiled level's city and shadows; the test-only `level_preview` scene shows Puddle Lane until ShiftScene, SSP-046.)*
 - [ ] `src/render/camera.ts`: look-ahead (up to 3.0 m, damped spring) and speed zoom from real speed.
 - [ ] `src/app/loop.ts`, `Game.ts`, `SceneManager.ts`, `events.ts` (typed event bus), and `ShiftScene` (drive-only).
 - [ ] `src/input/actions.ts`, `keyboard.ts`, `gamepad.ts` (standard mapping, left-stick deadzone 0.15).

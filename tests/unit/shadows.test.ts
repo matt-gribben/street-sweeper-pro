@@ -2,7 +2,8 @@
 // mask-only mesh at y = 0 on depth layer 1, MAX-blended and depth-tested; plus the spike city's draw count.
 import { MaxEquation, Mesh, type ShaderMaterial } from 'three';
 import { describe, expect, it } from 'vitest';
-import { type CityBox, mergeBoxes, parseCityGrid } from '../../src/render/cityMesh.ts';
+import { type CityBox, mergeBoxes } from '../../src/render/cityMesh.ts';
+import { parseCityGrid } from '../../src/render/placeholderCity.ts';
 import {
   buildShadowPolygons,
   createBuildingShadows,

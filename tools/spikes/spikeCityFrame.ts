@@ -18,8 +18,9 @@ import { chromium, type Page } from '@playwright/test';
 import { Vector3 } from 'three';
 import { createServer } from 'vite';
 import { createCameraRig } from '../../src/render/camera.ts';
-import { FACADE_ELEMENT_RAMPS, FacadeVariant, GROUND_COLOURS } from '../../src/render/cityMesh.ts';
+import { FacadeVariant } from '../../src/render/cityMesh.ts';
 import { KERBSIDE32, PALETTE_SIZE, paletteIndex } from '../../src/render/palettePass.ts';
+import { FACADE_ELEMENT_RAMPS, GROUND_COLOURS } from '../../src/render/placeholderCity.ts';
 import { INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
 
 const VIEWPORT = { width: 1920, height: 1080 };

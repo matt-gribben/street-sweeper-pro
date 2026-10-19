@@ -1,49 +1,86 @@
-// SSP-017: the spike city mesh. Wall-emission rules, facade variant selection, metre UVs and the placeholder
-// atlas, all on the pure geometry builders (no WebGL), plus a projection check with the real camera that a
-// block in the top half of the screen shows its south face and one on the left its east face (ART_BIBLE §4.2).
-import { Mesh, Vector3 } from 'three';
+// SSP-017, SSP-045: the city mesh. The box merge, wall emission (only toward lower or open cells, split by
+// neighbour height and facade style), lit/dark facade selection by face normal, world-metre UVs, roof variants and
+// parapet edges, the combined vertex format, all on the pure geometry builders (no WebGL), plus a projection check
+// with the real camera that a block in the top half of the screen shows its south face and one on the left its
+// east face (ART_BIBLE §4.2).
+import { Mesh, Texture, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { createCameraRig } from '../../src/render/camera.ts';
 import {
-  ATLAS_HEIGHT_PX,
-  ATLAS_WIDTH_PX,
-  AtlasTile,
-  buildCityAtlasIndices,
-  buildCityGeometryData,
+  type AtlasRect,
   CELL_M,
   type CityGeometryData,
+  CityGeometryWriter,
   type CityGrid,
+  type CityStyles,
   type CityWall,
+  cellHash,
+  cellVariant,
   createCityMesh,
+  dominantIndex,
   emitWalls,
-  FACADE_ELEMENT_RAMPS,
-  FACADE_MODULE_H_PX,
-  FACADE_MODULE_W_PX,
   FacadeVariant,
   Face,
-  facadeModuleIndices,
   facadeVariant,
   faceNormal,
-  GROUND_COLOURS,
-  GroundType,
-  groundTile,
   mergeBoxes,
-  parseCityGrid,
-  ROOF_COLOURS,
+  ROOF_PARAPET_NW,
   RoofEdge,
   roofEdges,
-  roofTileIndices,
+  roofParapetSe,
   STOREY_M,
-  TILE_PX,
-  wallTile,
+  SurfaceKind,
+  VariantSalt,
+  validateCityGrid,
+  writeBuildings,
 } from '../../src/render/cityMesh.ts';
-import { paletteIndex } from '../../src/render/palettePass.ts';
+import { KERBSIDE32, paletteIndex } from '../../src/render/palettePass.ts';
+import { buildPlaceholderCityData, parseCityGrid } from '../../src/render/placeholderCity.ts';
 import { SPIKE_CITY_ORIGIN_M, SPIKE_CITY_ROWS } from '../../src/render/spikeCity.ts';
 import { rtWidthPx } from '../../src/render/upscale.ts';
 
-const grid = (rows: readonly string[]): CityGrid => parseCityGrid(rows, 0, 0);
+/**
+ * A building grid from strings: `rows` holds storeys (`.` open, `1`–`8`), `walls` optionally a facade style digit
+ * per cell (default 1). Every building cell uses roof style 1. NW corner at the origin.
+ */
+function cityGrid(rows: readonly string[], walls?: readonly string[]): CityGrid {
+  const cols = rows[0]?.length ?? 0;
+  const n = cols * rows.length;
+  const storeys = new Uint8Array(n);
+  const wall = new Uint8Array(n);
+  const roof = new Uint8Array(n);
+  rows.forEach((line, r) => {
+    for (let c = 0; c < cols; c++) {
+      const ch = line[c] ?? '.';
+      const i = r * cols + c;
+      if (ch === '.') continue;
+      storeys[i] = Number(ch);
+      wall[i] = Number(walls?.[r]?.[c] ?? '1');
+      roof[i] = 1;
+    }
+  });
+  return { cols, rows: rows.length, originXM: 0, originYM: 0, storeys, wall, roof };
+}
 
-/** Walls lying on the vertical line x = `xM` between y0 and y1. */
+const rect = (x: number, y: number, w: number, h: number): AtlasRect => ({ x, y, w, h });
+
+/** Two facade styles (distinct rects per variant) and one roof style with two variants. */
+const STYLES: CityStyles = {
+  facades: [
+    undefined,
+    { lit: rect(0, 0, 64, 80), base: rect(64, 0, 64, 80), dark: rect(128, 0, 64, 80) },
+    { lit: rect(0, 100, 32, 80), base: rect(32, 100, 32, 80), dark: rect(64, 100, 32, 80) },
+  ],
+  roofs: [undefined, { variants: [rect(200, 0, 32, 32), rect(240, 0, 32, 32)], parapetSe: 1 }],
+};
+
+function buildingData(grid: CityGrid, styles: CityStyles = STYLES): CityGeometryData {
+  const writer = new CityGeometryWriter();
+  writeBuildings(grid, styles, writer);
+  return writer.build();
+}
+
+/** Walls lying on the vertical line x = `xM` / the horizontal line y = `yM`. */
 const wallsOnX = (walls: readonly CityWall[], xM: number): CityWall[] =>
   walls.filter((w) => w.x0M === xM && w.x1M === xM);
 const wallsOnY = (walls: readonly CityWall[], yM: number): CityWall[] =>
@@ -53,75 +90,29 @@ function vertex(data: CityGeometryData, i: number): Vector3 {
   return new Vector3(data.positions[i * 3], data.positions[i * 3 + 1], data.positions[i * 3 + 2]);
 }
 
-/** Geometric normal of triangle `t` (vertices 3t..3t+2) from its winding. */
+/** The three vertex indices of triangle `t`. */
+function triangle(data: CityGeometryData, t: number): [number, number, number] {
+  return [data.indices[t * 3] ?? -1, data.indices[t * 3 + 1] ?? -1, data.indices[t * 3 + 2] ?? -1];
+}
+
+/** Geometric normal of triangle `t` from its winding. */
 function triangleNormal(data: CityGeometryData, t: number): Vector3 {
-  const a = vertex(data, t * 3);
-  const b = vertex(data, t * 3 + 1);
-  const c = vertex(data, t * 3 + 2);
+  const [a, b, c] = triangle(data, t).map((i) => vertex(data, i)) as [Vector3, Vector3, Vector3];
   return b.sub(a).cross(c.sub(a)).normalize();
 }
 
-describe('parseCityGrid', () => {
-  it('reads storeys and ground types, row 0 north', () => {
-    const g = parseCityGrid(['.:3', '6..'], -4, 2);
-    expect([g.cols, g.rows, g.originXM, g.originYM]).toEqual([3, 2, -4, 2]);
-    expect(Array.from(g.storeys)).toEqual([0, 0, 3, 6, 0, 0]);
-    expect(Array.from(g.ground)).toEqual([
-      GroundType.Asphalt,
-      GroundType.Slab,
-      GroundType.Slab,
-      GroundType.Slab,
-      GroundType.Asphalt,
-      GroundType.Asphalt,
-    ]);
-  });
-
-  it('reads the kerb and grass swatch cells (SSP-021) and maps every ground type to its own flat tile', () => {
-    const g = parseCityGrid(['.:k,'], 0, 0);
-    expect(Array.from(g.ground)).toEqual([
-      GroundType.Asphalt,
-      GroundType.Slab,
-      GroundType.Kerb,
-      GroundType.Grass,
-    ]);
-    const data = buildCityGeometryData(g, 0);
-    // One ground quad per cell (the types differ), in order, each on its type's tile.
-    expect(data.vertexCount).toBe(24);
-    expect([0, 6, 12, 18].map((v) => data.tiles[v])).toEqual([
-      AtlasTile.GroundAsphalt,
-      AtlasTile.GroundSlab,
-      AtlasTile.GroundKerb,
-      AtlasTile.GroundGrass,
-    ]);
-    expect([0, 6, 12, 18].map((v) => groundTile(g.ground[v / 6] ?? -1))).toEqual([
-      AtlasTile.GroundAsphalt,
-      AtlasTile.GroundSlab,
-      AtlasTile.GroundKerb,
-      AtlasTile.GroundGrass,
-    ]);
-    const atlas = buildCityAtlasIndices();
-    const tileIndex = (tile: AtlasTile): number => atlas[tile * TILE_PX] ?? -1;
-    expect(tileIndex(AtlasTile.GroundKerb)).toBe(paletteIndex('kerb'));
-    expect(tileIndex(AtlasTile.GroundGrass)).toBe(paletteIndex('grass'));
-    expect(ATLAS_WIDTH_PX).toBe(8 * TILE_PX);
-  });
-
-  it('rejects ragged rows and unknown cells', () => {
-    expect(() => grid(['..', '.'])).toThrow(/expected 2/);
-    expect(() => grid(['.x'])).toThrow(/unknown cell/);
-    expect(() => grid(['9'])).toThrow(/unknown cell/);
-    expect(() => grid([])).toThrow();
-  });
-});
+/** The value of a per-vertex float attribute with `size` components, component `k`, at vertex `i`. */
+const attr = (array: Float32Array, size: number, i: number, k = 0): number =>
+  array[i * size + k] ?? Number.NaN;
 
 describe('mergeBoxes', () => {
   it('merges equal-storey cells into one box per rectangle', () => {
-    const boxes = mergeBoxes(grid(['.....', '.333.', '.333.', '.....']));
+    const boxes = mergeBoxes(cityGrid(['.....', '.333.', '.333.', '.....']));
     expect(boxes).toEqual([{ x0M: 2, y0M: 2, x1M: 8, y1M: 6, storeys: 3, heightM: 7.5 }]);
   });
 
   it('keeps different heights apart and covers every building cell exactly once', () => {
-    const g = grid(['3311', '1111', '66.6']);
+    const g = cityGrid(['3311', '1111', '66.6']);
     const boxes = mergeBoxes(g);
     const covered = new Uint8Array(g.cols * g.rows);
     for (const b of boxes) {
@@ -138,12 +129,42 @@ describe('mergeBoxes', () => {
       expect(covered[i]).toBe(s > 0 ? 1 : 0);
     });
   });
+
+  it('does not split boxes by facade style (walls split instead)', () => {
+    expect(mergeBoxes(cityGrid(['22'], ['12']))).toHaveLength(1);
+  });
 });
 
 describe('wall emission', () => {
+  it('two adjacent 2-storey cells and a 3-storey cell: only walls facing lower or open cells (acceptance)', () => {
+    const g = cityGrid(['223']);
+    const walls = emitWalls(g);
+    // The 2-storey pair is one box: N, S and W walls toward open cells, none toward the taller 3-storey cell.
+    // The 3-storey cell: N, S and E toward open cells, and W toward the lower pair from 5 m up.
+    expect(walls).toHaveLength(7);
+    expect(wallsOnX(walls, 4)).toEqual([
+      { face: Face.W, x0M: 4, y0M: 0, x1M: 4, y1M: 2, bottomM: 5, topM: 7.5, style: 1 },
+    ]);
+    expect(walls.filter((w) => w.face === Face.E && w.topM === 5)).toEqual([]);
+    expect(wallsOnY(walls, 0).map((w) => [w.face, w.x0M, w.x1M, w.topM])).toEqual([
+      [Face.N, 0, 4, 5],
+      [Face.N, 4, 6, 7.5],
+    ]);
+
+    // Geometry: 7 wall quads and 3 roof quads, 4 vertices and 2 triangles each, nothing else.
+    const data = buildingData(g);
+    expect(data.quadCount).toBe(10);
+    expect(data.vertexCount).toBe(40);
+    expect(data.indices.length).toBe(60);
+    expect([...data.kinds].filter((k) => k === SurfaceKind.Wall)).toHaveLength(7);
+    expect([...data.kinds].filter((k) => k === SurfaceKind.Roof)).toHaveLength(3);
+    expect([...data.faces].filter((f) => f === Face.E)).toHaveLength(1);
+    expect([...data.faces].filter((f) => f === Face.W)).toHaveLength(2);
+  });
+
   it('emits no wall between equal-height neighbours, even across separate boxes', () => {
     // Greedy merge splits this L into a 2-cell top box and a 1-cell bottom box; their shared edge has no wall.
-    const g = grid(['33', '3.']);
+    const g = cityGrid(['33', '3.']);
     expect(mergeBoxes(g)).toHaveLength(2);
     const walls = emitWalls(g);
     expect(wallsOnX(walls, 2).filter((w) => w.y0M < 2)).toEqual([]); // inside the top box
@@ -152,36 +173,52 @@ describe('wall emission', () => {
   });
 
   it('emits walls toward open cells from the ground and toward lower cells from their height', () => {
-    const walls = emitWalls(grid(['.31.']));
-    const east3 = wallsOnX(walls, 4);
-    // Between the 3- and the 1-storey cell: only the taller cell's wall, from 2.5 m up, facing east.
-    expect(east3).toEqual([{ face: Face.E, x0M: 4, y0M: 0, x1M: 4, y1M: 2, bottomM: 2.5, topM: 7.5 }]);
+    const walls = emitWalls(cityGrid(['.31.']));
+    expect(wallsOnX(walls, 4)).toEqual([
+      { face: Face.E, x0M: 4, y0M: 0, x1M: 4, y1M: 2, bottomM: 2.5, topM: 7.5, style: 1 },
+    ]);
     expect(wallsOnX(walls, 2)).toEqual([
-      { face: Face.W, x0M: 2, y0M: 0, x1M: 2, y1M: 2, bottomM: 0, topM: 7.5 },
+      { face: Face.W, x0M: 2, y0M: 0, x1M: 2, y1M: 2, bottomM: 0, topM: 7.5, style: 1 },
     ]);
     expect(wallsOnX(walls, 6)).toEqual([
-      { face: Face.E, x0M: 6, y0M: 0, x1M: 6, y1M: 2, bottomM: 0, topM: 2.5 },
+      { face: Face.E, x0M: 6, y0M: 0, x1M: 6, y1M: 2, bottomM: 0, topM: 2.5, style: 1 },
     ]);
     // Never a wall facing a taller neighbour: the 1-storey cell has no west wall.
     expect(walls.filter((w) => w.face === Face.W && w.topM === 2.5)).toEqual([]);
   });
 
   it('treats cells outside the grid as open', () => {
-    const walls = emitWalls(grid(['6']));
+    const walls = emitWalls(cityGrid(['6']));
     expect(walls.map((w) => w.face).sort()).toEqual([Face.N, Face.E, Face.S, Face.W].sort());
     for (const w of walls) expect([w.bottomM, w.topM]).toEqual([0, 15]);
   });
 
   it('merges a wall run along an edge and splits it where the neighbour height changes', () => {
-    const walls = emitWalls(grid(['3333', '11..']));
+    const walls = emitWalls(cityGrid(['3333', '11..']));
     expect(wallsOnY(walls, 0)).toEqual([
-      { face: Face.N, x0M: 0, y0M: 0, x1M: 8, y1M: 0, bottomM: 0, topM: 7.5 },
+      { face: Face.N, x0M: 0, y0M: 0, x1M: 8, y1M: 0, bottomM: 0, topM: 7.5, style: 1 },
     ]);
-    const south = wallsOnY(walls, 2).filter((w) => w.face === Face.S);
-    expect(south).toEqual([
-      { face: Face.S, x0M: 0, y0M: 2, x1M: 4, y1M: 2, bottomM: 2.5, topM: 7.5 },
-      { face: Face.S, x0M: 4, y0M: 2, x1M: 8, y1M: 2, bottomM: 0, topM: 7.5 },
+    expect(wallsOnY(walls, 2).filter((w) => w.face === Face.S)).toEqual([
+      { face: Face.S, x0M: 0, y0M: 2, x1M: 4, y1M: 2, bottomM: 2.5, topM: 7.5, style: 1 },
+      { face: Face.S, x0M: 4, y0M: 2, x1M: 8, y1M: 2, bottomM: 0, topM: 7.5, style: 1 },
     ]);
+  });
+
+  it('splits a wall run where the facade style of the cells behind it changes', () => {
+    const walls = emitWalls(cityGrid(['222'], ['112']));
+    expect(wallsOnY(walls, 0).map((w) => [w.x0M, w.x1M, w.style])).toEqual([
+      [0, 4, 1],
+      [4, 6, 2],
+    ]);
+    // The east wall belongs to the style-2 cell, the west wall to a style-1 cell.
+    expect(walls.find((w) => w.face === Face.E)?.style).toBe(2);
+    expect(walls.find((w) => w.face === Face.W)?.style).toBe(1);
+  });
+
+  it('rejects a building cell without a wall or roof style', () => {
+    const g = cityGrid(['2']);
+    expect(() => validateCityGrid({ ...g, wall: new Uint8Array(1) })).toThrow(/no wall or roof style/);
+    expect(() => buildingData(g, { facades: [undefined], roofs: STYLES.roofs })).toThrow(/no facade style/);
   });
 });
 
@@ -192,74 +229,72 @@ describe('facade variants and geometry', () => {
     expect(facadeVariant(Face.E)).toBe(FacadeVariant.Dark);
     expect(facadeVariant(Face.S)).toBe(FacadeVariant.Dark);
     expect(facadeVariant(Face.Up)).toBe(FacadeVariant.Base);
-    expect([wallTile(Face.N), wallTile(Face.W), wallTile(Face.E), wallTile(Face.S)]).toEqual([
-      AtlasTile.FacadeLit,
-      AtlasTile.FacadeLit,
-      AtlasTile.FacadeDark,
-      AtlasTile.FacadeDark,
-    ]);
   });
 
-  it('gives every wall vertex the lit/dark tile of its face and winds every triangle outward', () => {
-    const data = buildCityGeometryData(grid(['......', '.3361.', '.1111.', '......']));
-    expect(data.vertexCount % 6).toBe(0);
+  it('gives every wall the lit/dark bay of its own style and winds every triangle outward', () => {
+    const g = cityGrid(['......', '.3362.', '.1111.', '......'], ['......', '.1112.', '.2222.', '......']);
+    const data = buildingData(g);
+    const walls = emitWalls(g);
     const seen = new Set<number>();
-    for (let t = 0; t < data.vertexCount / 3; t++) {
-      const face = data.faces[t * 3] as Face;
-      const tile = data.tiles[t * 3];
+    for (let q = 0; q < data.quadCount; q++) {
+      const face = data.faces[q] as Face;
       seen.add(face);
       const [nx, ny, nz] = faceNormal(face);
-      const n = triangleNormal(data, t);
-      expect(n.distanceTo(new Vector3(nx, ny, nz))).toBeLessThan(1e-6);
-      if (face === Face.N || face === Face.W) expect(tile).toBe(AtlasTile.FacadeLit);
-      else if (face === Face.E || face === Face.S) expect(tile).toBe(AtlasTile.FacadeDark);
-      else if (vertex(data, t * 3).y > 0) expect(tile).toBe(AtlasTile.RoofSlate);
-      else expect([AtlasTile.GroundAsphalt, AtlasTile.GroundSlab]).toContain(tile);
+      for (const t of [q * 2, q * 2 + 1]) {
+        expect(triangleNormal(data, t).distanceTo(new Vector3(nx, ny, nz))).toBeLessThan(1e-6);
+      }
+      const v = q * 4;
+      const rx = attr(data.rects, 4, v);
+      if (data.kinds[q] === SurfaceKind.Wall) {
+        const wall = walls[q];
+        expect(wall?.face).toBe(face);
+        const style = STYLES.facades[wall?.style ?? 0];
+        const lit = face === Face.N || face === Face.W;
+        expect(rx).toBe(lit ? style?.lit.x : style?.dark.x);
+        expect(attr(data.rects, 4, v, 1)).toBe(lit ? style?.lit.y : style?.dark.y);
+        expect(attr(data.info, 4, v, 3)).toBe(0); // no grime on walls
+      } else {
+        expect(data.kinds[q]).toBe(SurfaceKind.Roof);
+        expect([200, 240]).toContain(rx);
+        expect(attr(data.info, 4, v, 3)).toBe(0); // no grime on roofs
+      }
     }
     expect([...seen].sort()).toEqual([Face.N, Face.E, Face.S, Face.W, Face.Up]);
   });
 
   it('uses world-metre UVs: a 2 m × 1-storey wall spans exactly one facade module', () => {
-    const data = buildCityGeometryData(grid(['1']), 0);
-    for (let t = 0; t < data.vertexCount / 3; t++) {
-      if (data.faces[t * 3] === Face.Up) continue;
-      const us = [0, 1, 2].map((k) => data.uvs[(t * 3 + k) * 2] ?? Number.NaN);
-      const vs = [0, 1, 2].map((k) => data.uvs[(t * 3 + k) * 2 + 1] ?? Number.NaN);
+    const data = buildingData(cityGrid(['1']));
+    for (let q = 0; q < data.quadCount; q++) {
+      if (data.kinds[q] !== SurfaceKind.Wall) continue;
+      const us = [0, 1, 2, 3].map((k) => attr(data.uvs, 2, q * 4 + k, 0));
+      const vs = [0, 1, 2, 3].map((k) => attr(data.uvs, 2, q * 4 + k, 1));
       expect(Math.max(...us) - Math.min(...us)).toBeCloseTo(CELL_M, 6);
       expect(Math.max(...vs) - Math.min(...vs)).toBeCloseTo(STOREY_M, 6);
-      // Module edges land on the 2 m grid, so modules tile across cells.
+      // Module edges land on the 2 m grid, so modules tile across cells; v is height above the ground.
       for (const u of us) expect(Math.abs(u % CELL_M)).toBeCloseTo(0, 6);
+      expect(Math.min(...vs)).toBe(0);
     }
-    expect(FACADE_MODULE_W_PX).toBe(32);
-    expect(FACADE_MODULE_H_PX).toBe(40);
   });
 
-  it('puts ground on open cells only and roofs at the box height', () => {
-    const g = grid(['.:', '6.']);
-    const data = buildCityGeometryData(g, 0);
-    let groundArea = 0;
-    let roofArea = 0;
-    for (let t = 0; t < data.vertexCount / 3; t++) {
-      if (data.faces[t * 3] !== Face.Up) continue;
-      const a = vertex(data, t * 3);
-      const b = vertex(data, t * 3 + 1);
-      const c = vertex(data, t * 3 + 2);
-      const area = b.clone().sub(a).cross(c.clone().sub(a)).length() / 2;
-      if (a.y === 0) groundArea += area;
-      else {
-        expect(a.y).toBe(15);
-        roofArea += area;
-      }
+  it('runs u left to right as seen from outside on every face', () => {
+    const data = buildingData(cityGrid(['2']));
+    for (let q = 0; q < data.quadCount; q++) {
+      if (data.kinds[q] !== SurfaceKind.Wall) continue;
+      // Corners 0 → 1 run along the bottom edge in the writer's order; seen from outside, u must grow toward
+      // the viewer's right, which is up × outward normal = (nz, 0, −nx).
+      const p0 = vertex(data, q * 4);
+      const p1 = vertex(data, q * 4 + 1);
+      const du = attr(data.uvs, 2, q * 4 + 1) - attr(data.uvs, 2, q * 4);
+      const [nx, , nz] = faceNormal(data.faces[q] as Face);
+      const right = new Vector3(nz, 0, -nx);
+      expect(Math.sign(du)).toBe(Math.sign(p1.clone().sub(p0).dot(right)));
     }
-    expect(groundArea).toBeCloseTo(3 * CELL_M * CELL_M, 6);
-    expect(roofArea).toBeCloseTo(CELL_M * CELL_M, 6);
   });
 });
 
-describe('roof parapet edges', () => {
+describe('roofs', () => {
   it('flags only the edges that drop to a lower or open neighbour, never seams between merged boxes', () => {
-    // The 1-storey L is two greedy boxes; the cells either side of their seam carry no flag on it.
-    const g = grid(['3311', '1111']);
+    const g = cityGrid(['3311', '1111']);
     expect(mergeBoxes(g).filter((b) => b.storeys === 1)).toHaveLength(2);
     const { N, E, S, W } = RoofEdge;
     expect(roofEdges(g, 0, 0)).toBe(N | S | W);
@@ -271,95 +306,99 @@ describe('roof parapet edges', () => {
     expect(roofEdges(g, 0, 1)).toBe(S | W);
   });
 
-  it('gives each roof quad its cell flags, cell corner and world-metre UVs; walls and ground get 0', () => {
-    const g = grid(['.6', '33']);
-    const data = buildCityGeometryData(g, 0);
-    let roofQuads = 0;
-    for (let q = 0; q < data.vertexCount / 6; q++) {
-      const first = q * 6;
-      if (data.tiles[first] !== AtlasTile.RoofSlate) {
-        for (let k = 0; k < 6; k++) {
-          expect(data.roofEdges[first + k]).toBe(0);
-          expect([data.roofCells[(first + k) * 2], data.roofCells[(first + k) * 2 + 1]]).toEqual([0, 0]);
-        }
-        continue;
-      }
-      roofQuads++;
+  it('gives each roof quad its height, cell corner, edge bits, hashed variant and SE parapet', () => {
+    const g = cityGrid(['.6', '33']);
+    const data = buildingData(g);
+    let roofs = 0;
+    for (let q = 0; q < data.quadCount; q++) {
+      if (data.kinds[q] !== SurfaceKind.Roof) continue;
+      roofs++;
       const centre = new Vector3();
-      for (let k = 0; k < 6; k++) {
-        const v = vertex(data, first + k);
-        expect([data.uvs[(first + k) * 2], data.uvs[(first + k) * 2 + 1]]).toEqual([v.x, v.z]);
-        centre.addScaledVector(v, 1 / 6);
-      }
+      for (let k = 0; k < 4; k++) centre.addScaledVector(vertex(data, q * 4 + k), 1 / 4);
       const col = Math.floor(centre.x / CELL_M);
       const row = Math.floor(centre.z / CELL_M);
-      for (let k = 0; k < 6; k++) {
-        expect(data.roofEdges[first + k]).toBe(roofEdges(g, col, row));
-        // The cell's NW corner, which the shader clamps the roof texel against.
-        expect([data.roofCells[(first + k) * 2], data.roofCells[(first + k) * 2 + 1]]).toEqual([
-          col * CELL_M,
-          row * CELL_M,
-        ]);
+      expect(centre.y).toBe((g.storeys[row * g.cols + col] ?? 0) * STOREY_M);
+      const variant = cellVariant(col, row, 2, VariantSalt.Roof);
+      for (let k = 0; k < 4; k++) {
+        const v = q * 4 + k;
+        const p = vertex(data, v);
+        expect([attr(data.uvs, 2, v, 0), attr(data.uvs, 2, v, 1)]).toEqual([p.x, p.z]);
+        expect([attr(data.cells, 2, v, 0), attr(data.cells, 2, v, 1)]).toEqual([col * CELL_M, row * CELL_M]);
+        expect(attr(data.info, 4, v, 0)).toBe(SurfaceKind.Roof);
+        expect(attr(data.info, 4, v, 1)).toBe(roofEdges(g, col, row));
+        expect(attr(data.info, 4, v, 2)).toBe(1);
+        expect(attr(data.rects, 4, v, 0)).toBe(STYLES.roofs[1]?.variants[variant]?.x);
       }
     }
-    expect(roofQuads).toBe(3); // one per building cell
-    expect(roofEdges(g, 1, 0)).toBe(RoofEdge.N | RoofEdge.E | RoofEdge.S | RoofEdge.W);
-    expect(roofEdges(g, 1, 1)).toBe(RoofEdge.E | RoofEdge.S);
+    expect(roofs).toBe(3); // one per building cell
+  });
+
+  it('takes the SE parapet from the roof frame: the shadow step of its dominant index', () => {
+    // A 2×2 "atlas" of index 2 with one 3: dominant 2, and slate 02's dark step is 01 (ART_BIBLE §9.3).
+    const indices = new Uint8Array([2, 2, 255, 3, 2, 255]);
+    expect(dominantIndex(indices, 3, rect(0, 0, 2, 2))).toBe(2);
+    expect(roofParapetSe(2)).toBe(1);
+    expect(roofParapetSe(5)).toBe(KERBSIDE32.shadow[5]);
+    expect(() => dominantIndex(indices, 3, rect(2, 0, 1, 2))).toThrow(/no opaque texel/);
+    expect(paletteIndex(ROOF_PARAPET_NW)).toBe(6);
   });
 });
 
-describe('placeholder atlas', () => {
-  it('builds facades, roof and ground only from the declared palette indices', () => {
-    const atlas = buildCityAtlasIndices();
-    expect(atlas.length).toBe(ATLAS_WIDTH_PX * ATLAS_HEIGHT_PX);
-    const allowed = new Set(
-      [
-        ...Object.values(FACADE_ELEMENT_RAMPS).flat(),
-        ...Object.values(ROOF_COLOURS),
-        ...Object.values(GROUND_COLOURS),
-      ].map((name) => paletteIndex(name)),
-    );
-    for (const index of atlas) expect(allowed.has(index)).toBe(true);
-  });
-
-  it('shades the module lit/base/dark as brick 11/10/09', () => {
-    const corner = (variant: FacadeVariant): number => facadeModuleIndices(variant)[0] ?? -1;
-    expect(corner(FacadeVariant.Lit)).toBe(11);
-    expect(corner(FacadeVariant.Base)).toBe(10);
-    expect(corner(FacadeVariant.Dark)).toBe(9);
-    // Glass is the only element shared by all variants; everything else steps along its ramp.
-    const lit = facadeModuleIndices(FacadeVariant.Lit);
-    const dark = facadeModuleIndices(FacadeVariant.Dark);
-    let differing = 0;
-    lit.forEach((l, i) => {
-      if (l !== dark[i]) differing++;
-    });
-    expect(differing).toBeGreaterThan((lit.length * 3) / 4);
-  });
-
-  it('uses a slate roof of 02 with 03 courses every 4 px', () => {
-    const roof = roofTileIndices();
-    expect(roof.length).toBe(TILE_PX * TILE_PX);
-    for (let row = 0; row < TILE_PX; row++) {
-      expect(roof[row * TILE_PX]).toBe(row % 4 === 3 ? 3 : 2);
+describe('cell variant hash', () => {
+  it('is deterministic, salted and uses every variant over a district', () => {
+    expect(cellHash(5, 7, 0)).toBe(cellHash(5, 7, 0));
+    expect(cellHash(5, 7, 0)).not.toBe(cellHash(5, 7, 1));
+    expect(cellHash(5, 7, 0)).not.toBe(cellHash(7, 5, 0));
+    const counts = [0, 0, 0, 0];
+    for (let y = 0; y < 48; y++) {
+      for (let x = 0; x < 64; x++) {
+        const v = cellVariant(x, y, 4, VariantSalt.Ground);
+        counts[v] = (counts[v] ?? 0) + 1;
+      }
     }
-    expect(paletteIndex(ROOF_COLOURS.parapetNw)).toBe(6);
-    expect(paletteIndex(ROOF_COLOURS.parapetSe)).toBe(1);
+    // 3072 cells over 4 variants: each within 15% of an even share.
+    for (const c of counts) expect(Math.abs(c - 768)).toBeLessThan(768 * 0.15);
+    expect(() => cellVariant(0, 0, 0, 0)).toThrow();
   });
 });
 
-describe('createCityMesh', () => {
-  it('is a single mesh with one geometry and frustum culling off (one draw call)', () => {
-    const mesh = createCityMesh(parseCityGrid(SPIKE_CITY_ROWS, ...SPIKE_CITY_ORIGIN_M));
+describe('vertex format and mesh', () => {
+  it('flags grime on ground and markings only', () => {
+    const writer = new CityGeometryWriter();
+    writer.groundQuad(0, 0, 2, 2, SurfaceKind.Ground, rect(0, 0, 32, 32));
+    writer.groundQuad(0, 0, 2, 2, SurfaceKind.Overlay, rect(32, 0, 32, 32));
+    writer.skirt(0, 0, 2, 2, 10, rect(0, 0, 32, 32));
+    const data = writer.build();
+    expect([...data.kinds]).toEqual([
+      SurfaceKind.Ground,
+      SurfaceKind.Overlay,
+      SurfaceKind.Skirt,
+      SurfaceKind.Skirt,
+      SurfaceKind.Skirt,
+      SurfaceKind.Skirt,
+    ]);
+    const grime = [0, 1, 2, 3, 4, 5].map((q) => attr(data.info, 4, q * 4, 3));
+    expect(grime).toEqual([1, 1, 0, 0, 0, 0]);
+    // Ground quads face up and clamp to their own cell.
+    expect([attr(data.cells, 2, 0, 0), attr(data.cells, 2, 0, 1)]).toEqual([0, 0]);
+    for (let t = 0; t < data.indices.length / 3; t++) {
+      expect(triangleNormal(data, t).distanceTo(new Vector3(0, 1, 0))).toBeLessThan(1e-6);
+    }
+  });
+
+  it('is a single indexed mesh with one material and frustum culling off (one draw call)', () => {
+    const data = buildPlaceholderCityData(parseCityGrid(SPIKE_CITY_ROWS, ...SPIKE_CITY_ORIGIN_M));
+    const mesh = createCityMesh(data, new Texture());
     expect(mesh).toBeInstanceOf(Mesh);
+    expect(mesh.name).toBe('cityMesh');
     expect(mesh.children).toHaveLength(0);
     expect(mesh.frustumCulled).toBe(false);
     expect(Array.isArray(mesh.material)).toBe(false);
-    expect(mesh.geometry.index).toBeNull();
+    expect(mesh.geometry.index?.count).toBe(data.indices.length);
     expect(Object.keys(mesh.geometry.attributes).sort()).toEqual([
-      'aRoofCellM',
-      'aRoofEdges',
-      'aTile',
+      'aCellM',
+      'aInfo',
+      'aRect',
       'aUvM',
       'position',
     ]);
@@ -369,12 +408,12 @@ describe('createCityMesh', () => {
 describe('building lean in the spike layout (camera over the origin, W = 480)', () => {
   const rig = createCameraRig(480);
   const width = rtWidthPx(480);
-  const data = buildCityGeometryData(parseCityGrid(SPIKE_CITY_ROWS, ...SPIKE_CITY_ORIGIN_M));
+  const data = buildPlaceholderCityData(parseCityGrid(SPIKE_CITY_ROWS, ...SPIKE_CITY_ORIGIN_M));
 
   /** Screen-space signed area of triangle t (render-target pixels, y down); > 0 means front-facing (CCW). */
   function screenTriangle(t: number): { area: number; cx: number; cy: number } {
-    const pts = [0, 1, 2].map((k) => {
-      const p = vertex(data, t * 3 + k).project(rig.camera);
+    const pts = triangle(data, t).map((i) => {
+      const p = vertex(data, i).project(rig.camera);
       return { x: ((p.x + 1) / 2) * width, y: ((1 - p.y) / 2) * 272 };
     });
     const [a, b, c] = pts as [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }];
@@ -385,8 +424,8 @@ describe('building lean in the spike layout (camera over the origin, W = 480)', 
 
   function visibleWallFaces(predicate: (cx: number, cy: number) => boolean): Set<Face> {
     const faces = new Set<Face>();
-    for (let t = 0; t < data.vertexCount / 3; t++) {
-      const face = data.faces[t * 3] as Face;
+    for (let t = 0; t < data.indices.length / 3; t++) {
+      const face = data.faces[Math.floor(t / 2)] as Face;
       if (face === Face.Up) continue;
       const { area, cx, cy } = screenTriangle(t);
       if (area > 0.5 && predicate(cx, cy)) faces.add(face);

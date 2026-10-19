@@ -11,7 +11,8 @@
 //     cells and start at 2.5 m.
 // Each block sits on a ring of slab pavement in an asphalt street.
 import { Group } from 'three';
-import { createCityMesh, mergeBoxes, parseCityGrid } from './cityMesh.ts';
+import { mergeBoxes } from './cityMesh.ts';
+import { createPlaceholderCityMesh, parseCityGrid } from './placeholderCity.ts';
 import { createBuildingShadows } from './shadows.ts';
 
 /** The spike layout, one character per 2 m cell (`.` asphalt, `:` slab, digits = storeys); row 0 is north. */
@@ -36,7 +37,7 @@ export const SPIKE_CITY_ORIGIN_M: readonly [x: number, y: number] = [-20, -12];
 /** Builds the spike city: the city mesh (render order 0), then the building shadows (render order 1). */
 export function createSpikeCity(): Group {
   const grid = parseCityGrid(SPIKE_CITY_ROWS, SPIKE_CITY_ORIGIN_M[0], SPIKE_CITY_ORIGIN_M[1]);
-  const city = createCityMesh(grid);
+  const city = createPlaceholderCityMesh(grid);
   city.renderOrder = 0;
   const shadows = createBuildingShadows(mergeBoxes(grid));
   // Shadows must follow the city so roofs and walls are already in the depth buffer.

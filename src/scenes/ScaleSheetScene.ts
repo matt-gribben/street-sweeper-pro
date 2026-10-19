@@ -19,8 +19,8 @@
 // building shadows (the shadow mesh would be empty), so none is drawn.
 import { Group } from 'three';
 import type { FrameId } from '../gen/assets.ts';
-import { createCityMesh, parseCityGrid } from '../render/cityMesh.ts';
 import { bessieBodyFrame } from '../render/headings.ts';
+import { createPlaceholderCityMesh, parseCityGrid } from '../render/placeholderCity.ts';
 import type { SpriteAtlas } from '../render/spriteAtlas.ts';
 import { DropShadowBatch, SpriteBatch } from '../render/spriteBatch.ts';
 import { DepthLayer } from '../render/worldMaterial.ts';
@@ -80,7 +80,7 @@ export class ScaleSheetScene {
 
   constructor() {
     const grid = parseCityGrid(SCALE_SHEET_ROWS, SCALE_SHEET_ORIGIN_M[0], SCALE_SHEET_ORIGIN_M[1]);
-    const city = createCityMesh(grid);
+    const city = createPlaceholderCityMesh(grid);
     city.renderOrder = 0;
     this.world = new Group();
     this.world.name = 'scaleSheet';

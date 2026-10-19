@@ -20,7 +20,8 @@ import type { EventBus } from './events.ts';
 /**
  * Every scene ID (§6.2 scene flow, plus the test scenes of §18.5). The first block is the game's flow; the
  * spike scenes are the M0 test scenes `?test=1&scene=<id>` boots (`spike_city` is the default world without a
- * scene parameter until the Boot/Title flow arrives).
+ * scene parameter until the Boot/Title flow arrives), and `level_preview` is the SSP-045 test scene that draws
+ * compiled Puddle Lane from a pinned camera.
  */
 export const SCENE_IDS = [
   'boot',
@@ -39,6 +40,7 @@ export const SCENE_IDS = [
   'lean_quadrants',
   'scale_1440',
   'scale_sheet',
+  'level_preview',
 ] as const;
 export type SceneId = (typeof SCENE_IDS)[number];
 

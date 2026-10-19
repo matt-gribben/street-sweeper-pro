@@ -1083,9 +1083,6 @@ describe('entities.json rules mirror ENTITY_CATALOG §4.2 and §5', () => {
  * full resolution test once all five placeholder issues have landed, and empties this list.
  */
 const PENDING_PLACEHOLDER_SPRITES: Readonly<Record<string, string>> = {
-  'npc.litterbug': 'SSP-098',
-  'npc.businessman': 'SSP-098',
-  'npc.market_trader': 'SSP-098',
   'npc.cat': 'SSP-099',
   'npc.pigeon': 'SSP-099',
   'veh.hatchback': 'SSP-100',
@@ -1163,7 +1160,7 @@ describe('entities.json references', () => {
 
   it('lists as pending only M3 sprites, each against the placeholder issue that adds it', () => {
     const pending = Object.keys(PENDING_PLACEHOLDER_SPRITES);
-    expect(pending).toHaveLength(42);
+    expect(pending).toHaveLength(39);
     const raw = entitiesJson as Record<string, Json>;
     for (const sprite of pending) {
       const owners = Object.entries(raw).filter(([, entry]) => entry.sprite === sprite);
@@ -1179,6 +1176,9 @@ describe('entities.json references', () => {
       'npc.dog_walker',
       'npc.mum_pushchair',
       'npc.postie',
+      'npc.litterbug',
+      'npc.businessman',
+      'npc.market_trader',
       'prop.lamp_post',
       'prop.hydrant',
       'haz.speed_bump',

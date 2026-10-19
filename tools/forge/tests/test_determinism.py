@@ -1,10 +1,11 @@
 """Determinism and acceptance checks over a real build of the committed M0 assets (SSP-009, SSP-010, SSP-014,
-SSP-020, SSP-024, SSP-040, SSP-041, SSP-051, SSP-052, SSP-068, SSP-070, SSP-101).
+SSP-020, SSP-024, SSP-040, SSP-041, SSP-051, SSP-052, SSP-068, SSP-070, SSP-097, SSP-098, SSP-101).
 
 Builds ``assets-src/manifest.json`` twice with the cache off, into two temp dirs, and checks
 that every output file has the same SHA-256 (frames, atlas PNG/JSON, ``src/gen/assets.ts``,
-``asset-hashes.json``, the font metrics); then inspects the built frames: 1,474 of them, 64x64 Bessie / 96x96
-brush / the six 24x24 SSP-097 Monday people (104 frames each: 13 per direction, SE/E/NE mirrored) / 32x32 prop.lamp_post
+``asset-hashes.json``, the font metrics); then inspects the built frames: 1,786 of them, 64x64 Bessie / 96x96
+brush / the nine 24x24 placeholder people, the SSP-097 Monday cast and the SSP-098 businessman, litterbug and
+market trader (104 frames each: 13 per direction, SE/E/NE mirrored) / 32x32 prop.lamp_post
 (4 sprite-stack slices) / the 15 16x16 litter items (SSP-051: idle x1 + wobble x2 in the
 h00/h08/h16/h24 rotations, 12 frames each, 180 in all; the banana skin is the D-07 sample) / the
 SSP-041 Puddle Lane facade sets (64x80 lit/base/dark bays) and roof surfaces (32x32 variants) /
@@ -132,8 +133,19 @@ LITTER = tuple(
     )
 )
 """The 15 litter IDs (ENTITY_CATALOG §4.1), 12 frame IDs each."""
-PEOPLE = ("npc.dog_walker", "npc.mum_pushchair", "npc.old_man_frame", "npc.old_woman", "npc.postie", "npc.shopper")
-"""The SSP-097 Monday cast (24x24 placeholder grids; Doris keeps her SSP-014 ingested idle frames)."""
+PEOPLE = (
+    "npc.businessman",
+    "npc.dog_walker",
+    "npc.litterbug",
+    "npc.market_trader",
+    "npc.mum_pushchair",
+    "npc.old_man_frame",
+    "npc.old_woman",
+    "npc.postie",
+    "npc.shopper",
+)
+"""The 24x24 placeholder people, 104 frames each: the SSP-097 Monday cast (Doris keeps her SSP-014 ingested
+idle frames) and the SSP-098 Tuesday businessman, litterbug and market trader."""
 CELLS = {
     **{f: (64, 80) for f in FACADES},
     **{r: (32, 32) for r in ROOF_VARIANTS},
@@ -151,7 +163,7 @@ CELLS = {
     "veh.sweeper": (64, 64),
     "veh.sweeper_brush": (96, 96),
 }
-FRAME_COUNT = 1474
+FRAME_COUNT = 1786
 ATLAS_OF = {
     **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES, *STAINS, *GRIME, *HAZARDS)},
     **{a: "items" for a in (*PICKUPS, *SITES, *PROPS, "prop.hydrant")},
@@ -336,8 +348,8 @@ def test_pivots_body_centre_for_vehicles_and_feet_for_people(builds: tuple[Build
 
 
 def test_old_woman_mirrors_and_feet_on_the_pivot_row(builds: tuple[BuildResult, Path, Path]) -> None:
-    """SSP-014/SSP-097: SE/E/NE are left-right flips of SW/W/NW, and every figure fits 18x22 with
-    its feet (lowest opaque row) on row 22, row 23 clear (ART_BIBLE §7.2)."""
+    """SSP-014/SSP-097/SSP-098: SE/E/NE are left-right flips of SW/W/NW, and every figure fits 18x22 with
+    its feet (lowest opaque row) on row 22 (row 21 allowed for a startle-0 hop), row 23 clear (ART_BIBLE §7.2)."""
     result, _, _ = builds
     by_id = {f.frame_id: f.indices for f in result.frames if f.asset_id in PEOPLE}
     for fid in [f for f in by_id if f.split(":")[2] in ("sw", "w", "nw")]:
@@ -346,7 +358,10 @@ def test_old_woman_mirrors_and_feet_on_the_pivot_row(builds: tuple[BuildResult, 
         np.testing.assert_array_equal(by_id[f"{aid}:{state}:{dst}:{n}"], by_id[fid][:, ::-1])
     for fid, idx in by_id.items():
         ys, xs = np.nonzero(idx != -1)
-        assert ys.max() == 22, fid
+        # SSP-098: the Tuesday cast's startle 0 is a hop that may lift the feet to row 21.
+        hop = fid.split(":")[1] == "startle" and fid.endswith(":0")
+        assert ys.max() in ((21, 22) if hop else (22,)), fid
+        assert not (idx[23] != -1).any(), fid
         assert xs.max() - xs.min() + 1 <= 18 and ys.max() - ys.min() + 1 <= 22, fid
 
 
@@ -383,7 +398,7 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
     ]
 
 
-@pytest.mark.parametrize(("name", "count"), [("world", 151), ("actors", 816), ("items", 263), ("ui", 244)])
+@pytest.mark.parametrize(("name", "count"), [("world", 151), ("actors", 1128), ("items", 263), ("ui", 244)])
 def test_atlas_holds_every_frame_at_its_rect(
     builds: tuple[BuildResult, Path, Path], name: str, count: int
 ) -> None:

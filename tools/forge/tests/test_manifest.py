@@ -79,7 +79,10 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "haz.speed_bump",
         "haz.wet_leaves",
         *LITTER_IDS,
+        "npc.businessman",
         "npc.dog_walker",
+        "npc.litterbug",
+        "npc.market_trader",
         "npc.mum_pushchair",
         "npc.old_man_frame",
         "npc.old_woman",
@@ -162,8 +165,18 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
             "outline": False,
             "swaps": [],
         }
-    for name in ("dog_walker", "mum_pushchair", "old_man_frame", "old_woman", "postie", "shopper"):
-        # SSP-097 placeholders; Doris keeps her SSP-014 ingest provenance (origin: ref.people_style).
+    for name in (
+        "businessman",
+        "dog_walker",
+        "litterbug",
+        "market_trader",
+        "mum_pushchair",
+        "old_man_frame",
+        "old_woman",
+        "postie",
+        "shopper",
+    ):
+        # SSP-097 and SSP-098 placeholders; Doris keeps her SSP-014 ingest provenance (origin: ref.people_style).
         assert by_id[f"npc.{name}"] == {
             "id": f"npc.{name}",
             "class": "npc",
@@ -211,8 +224,9 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     # + 200 SSP-068 font frames + the 3 SSP-285 placeholder 9-slice panels + the SSP-070 HUD bar fill (1) and
     # dump ring (9) + the SSP-299 Brush-o-meter (3), needle (1), brush state (11) and off-screen arrows (16)
     # + SSP-101: 60 prop placeholder frames, 10 power-up bob frames, 11 hazard frames and 4 cobble tiles
-    # + SSP-097: 616 frames for the six Monday people (104 each, replacing old_woman's 8 idle frames).
-    assert sum(len(e.frame_ids()) for e in entries) == 1474
+    # + SSP-097: 616 frames for the six Monday people (104 each, replacing old_woman's 8 idle frames)
+    # + SSP-098: 312 frames for the businessman, litterbug and market trader (104 each).
+    assert sum(len(e.frame_ids()) for e in entries) == 1786
     assert sum(len(e.frame_ids()) for e in entries if e.asset_class == "litter") == 180
     for e in raw["assets"]:
         assert list(e) == list(FIELDS) + [k for k in OPTIONAL_FIELDS if k in e], "fields in the documented order"

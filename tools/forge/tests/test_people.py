@@ -1,4 +1,4 @@
-"""Acceptance checks over the committed Monday people grids (SSP-097; ART_BIBLE §5.6, §7.1-7.3, §8.3).
+"""Acceptance checks over the committed human grids (SSP-097, SSP-098; ART_BIBLE §5.6, §7.1-7.3, §8.3, §10.2).
 
 Six ``npc.*`` placeholder grids, 24x24, with walk 4, idle 2, startle 2, fall 3 and angry 2 per
 direction (S, SW, W, NW, N authored, SE/E/NE mirrored): 65 authored frames and 104 built ones each.
@@ -6,6 +6,12 @@ direction (S, SW, W, NW, N authored, SE/E/NE mirrored): 65 authored frames and 1
 fits 18x22 with its lowest pixel on the pivot row 22 and row 23 clear, the grid draws its own
 complete ink outline, the shopper's garments stay in the swap keys, and Doris keeps her ingested
 idle frames.
+
+SSP-098 adds the Tuesday cast (businessman, litterbug, market trader) and size-sheet checks over every
+24x24 ``npc.*`` grid in the manifest: each built frame fits 18x22 px including its ink outline, the feet
+sit on the pivot row 22 (the startle hop, frame 0, may lift them to row 21), row 23 stays clear, and
+SE/E/NE are exact left-right flips of SW/W/NW. The placeholders carry the full 13-frames-per-direction
+set under the final frame IDs, so M4 can swap the art without code changes.
 """
 
 from __future__ import annotations
@@ -149,3 +155,54 @@ def test_doris_keeps_her_ingested_idle_frames_and_provenance() -> None:
 
 SPIKE_IDLE_SHA256 = "1d75aab7e3a529aefd08b9cacea43f81afa21852e7b76f6b379a0beb442892b5"
 """The five ``idle:<dir>:0`` frames as committed by SSP-014 (little-endian int16, S SW W NW N)."""
+
+
+# --------------------------------------------------------------------------------------------
+# SSP-098: the Tuesday cast and size-sheet checks over every 24x24 person grid.
+
+PEOPLE = [e for e in load_manifest() if e.asset_class == "npc" and tuple(e.cell) == (24, 24)]
+TUESDAY = ("npc.businessman", "npc.litterbug", "npc.market_trader")
+
+
+def _frames(entry_id: str) -> dict[str, np.ndarray]:
+    entry = next(e for e in PEOPLE if e.id == entry_id)
+    return {f.frame_id: f.indices for f in build_asset(entry).frames}
+
+
+def test_the_tuesday_cast_is_in_the_manifest_as_placeholders() -> None:
+    by_id = {e.id: e for e in PEOPLE}
+    for aid in TUESDAY:
+        entry = by_id[aid]
+        assert entry.source == f"assets-src/sprites/npc/{aid.removeprefix('npc.')}.sprite.txt"
+        assert entry.technique == "grid" and entry.placeholder, aid
+        assert entry.atlas == "actors" and not entry.outline, aid
+        assert dict(entry.frames) == STATES, aid
+
+
+@pytest.mark.parametrize("entry_id", [e.id for e in PEOPLE])
+def test_people_fit_the_size_sheet_with_feet_on_the_pivot_row(entry_id: str) -> None:
+    frames = _frames(entry_id)
+    for fid, idx in frames.items():
+        ys, xs = np.nonzero(idx != TRANSPARENT)
+        w, h = int(xs.max() - xs.min() + 1), int(ys.max() - ys.min() + 1)
+        assert w <= 18 and h <= 22, f"{fid}: {w}x{h}"
+        hop = fid.split(":")[1] == "startle" and fid.endswith(":0")
+        assert int(ys.max()) in ((21, 22) if hop else (22,)), f"{fid}: feet on row {ys.max()}"
+        assert not (idx[23] != TRANSPARENT).any(), f"{fid}: row 23 must stay clear"
+
+
+@pytest.mark.parametrize("entry_id", [e.id for e in PEOPLE])
+def test_people_mirror_se_e_ne_from_sw_w_nw(entry_id: str) -> None:
+    frames = _frames(entry_id)
+    for fid, idx in frames.items():
+        _, state, d, n = fid.split(":")
+        src = {"se": "sw", "e": "w", "ne": "nw"}.get(d)
+        if src is not None:
+            np.testing.assert_array_equal(idx, frames[f"{entry_id}:{state}:{src}:{n}"][:, ::-1], err_msg=fid)
+
+
+@pytest.mark.parametrize("entry_id", TUESDAY)
+def test_placeholder_people_have_all_104_frame_ids(entry_id: str) -> None:
+    expected = {f"{entry_id}:{s}:{d}:{n}" for s, count in STATES.items() for d in ALL_DIRS for n in range(count)}
+    assert set(_frames(entry_id)) == expected
+    assert len(expected) == 104

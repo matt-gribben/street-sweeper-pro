@@ -32,7 +32,7 @@ const read = (rel: string): string => readFileSync(`${REPO_ROOT}${rel}`, 'utf8')
 
 const atlasFiles = new Map<AtlasName, { json: unknown; image: RgbaImage }>();
 beforeAll(() => {
-  for (const name of ['world', 'actors', 'ui'] as const) {
+  for (const name of ['world', 'actors', 'items', 'ui'] as const) {
     atlasFiles.set(name, {
       json: JSON.parse(read(`public/assets/atlas/${name}.json`)),
       image: decodePng(readFileSync(`${REPO_ROOT}public/assets/atlas/${name}.png`)),
@@ -54,9 +54,14 @@ function harness(levelGate: Promise<void> = Promise.resolve()) {
   const ends: number[] = [];
   bus.on(EV.ShiftEnd, (event) => ends.push(event.reason));
   const ctx: SceneContext = {
-    renderer: { rig: { snappedZ: 0, internalWidth: 480 } } as unknown as Renderer,
+    // The rig at the sweep height (the items batch takes its cull rect from it) and a no-op grime uploader.
+    renderer: {
+      rig: { snappedX: 0, snappedZ: 0, height: { value: 31.5, velocity: 0 }, internalWidth: 480 },
+      webgl: { copyTextureToTexture: () => {} },
+    } as unknown as Renderer,
     root: new Group(),
     ui: new Group(),
+    events: bus,
     loadAtlas: async (name) => {
       const files = atlasFiles.get(name);
       if (files === undefined) throw new Error(`test serves no '${name}' atlas`);
@@ -79,7 +84,7 @@ function harness(levelGate: Promise<void> = Promise.resolve()) {
     events: bus,
     factory: {
       intro: (options) => new ShiftIntroScene(ctx, { ...options, levelSource, fontSource }),
-      shift: (options) => new ShiftScene(ctx, { ...options, levelSource }),
+      shift: (options) => new ShiftScene(ctx, { ...options, levelSource, fontSource }),
       tally: (options) => new TallyScene(ctx, { ...options, fontSource }),
     },
     menu: actions,
@@ -173,8 +178,9 @@ describe('ShiftFlow', () => {
     h.frame();
     expect(intro.hasStarted).toBe(true);
     await h.topIs('shift');
-    expect(h.ctx.ui.children).toHaveLength(0); // the intro released its UI batch
     const first = h.scenes.top as ShiftScene;
+    // The intro released its UI batch: the UI pass holds only the shift's HUD (SSP-070).
+    expect(h.ctx.ui.children).toEqual([first.uiBatch?.mesh]);
     expect(first.level).toBe(intro.level);
     expect(h.levelFetches).toHaveLength(1); // the shift took the preloaded level
     const start = first.snapshot();

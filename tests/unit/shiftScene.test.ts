@@ -448,11 +448,12 @@ describe('ShiftScene', () => {
       levelSource: async () => {
         throw new Error('fetched the level');
       },
+      fontSource: checkoutFonts,
     });
     await shift.enter({ seed: 4, district: DEFAULT_DISTRICT });
     expect(shift.level).toBe(level);
-    expect(c.loaded.sort()).toEqual(['actors', 'world']);
-    const other = new ShiftScene(context().ctx, { level });
+    expect(c.loaded.sort()).toEqual(['actors', 'items', 'ui', 'world']);
+    const other = new ShiftScene(context().ctx, { level, fontSource: checkoutFonts });
     await expect(other.enter({ seed: 4, district: 'district.high_street' })).rejects.toThrow(
       /holds 'district.puddle_lane'/,
     );

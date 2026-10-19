@@ -43,6 +43,7 @@ function snapshot(overrides: Partial<SimSnapshot> = {}): SimSnapshot {
     litter: { spawned: 130, collected: 12 },
     grime: { initial: 9000, cleaned: 300 },
     frontages: [],
+    npcs: [],
     shift: { phase: 'ended', ticksRemaining: 0, endReason: 'time_up', endTick: 14_580 },
     ...overrides,
   };

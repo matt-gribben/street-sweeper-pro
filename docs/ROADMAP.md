@@ -407,7 +407,7 @@ Each milestone has the same shape:
 | Dumping | Depot: speed < 0.5 m/s, hold 1.0 s, drain 2.0 s, water refilled to full. Skip: hold 1.0 s, drain 3.0 s, no tipping fee. |
 | Water | 100 units; spray uses 6/s; hydrant refills 25/s when adjacent; required to clear `stain.*`. |
 | Combo | Chain timer 2.0 s; tier thresholds 10/25/50/100; any penalty resets the chain (hook only; penalties arrive in M3). |
-| Full shift | `tests/e2e/smoke.spec.ts`: a 60 s scripted run with no console errors, score > 0 and the hopper filled. A replay of a full 240 s shift ends on the tally scene. |
+| Full shift | `tests/e2e/smoke.spec.ts`: a 60 s scripted run with no console errors, score > 0 and the hopper filled. A replay of a full 240 s shift ends on the tally scene. *(Replay part, SSP-072: `m2_full_shift_puddle_lane.json` runs 14,600 ticks, past the 14,400-tick timer and the knock-off roll to rest, and asserts the invariant `shiftEnded: "TimeUp"` (one EV.ShiftEnd TIME_UP); the runner honours each file's own `ticks` ([TECHNICAL_DESIGN §18.3](TECHNICAL_DESIGN.md#183-deterministic-replay-tests)). That the shift then lands on the tally scene is checked in e2e, SSP-073.)* |
 | Budget | LitterField stress test: 2,000 items, zero allocations per tick in the sim hot path (measured with a heap-delta test in Vitest). |
 
 **Task checklist.**
@@ -422,7 +422,7 @@ Each milestone has the same shape:
 - [x] Depot and skip dumping in `src/sim/shift.ts`, plus the 240 s timer and end-of-shift event. *(SSP-062: phase 10 runs `stepShift` (TOWED, the rollout start at first throttle or tick 180, the dump FSM, the 14,400-tick countdown, the knock-off roll to rest under a half brake, `EV.ShiftEnd` TIME_UP/TOWED, `EV.DumpStart`/`EV.DumpEnd`); bay "inside" and skip "adjacent" defined in GDD §8.7; LEVEL_DESIGN §13 Q3 and GDD §20 Q4/Q10 resolved; see [TECHNICAL_DESIGN §10.5](TECHNICAL_DESIGN.md#105-hopper-and-dumping-srcsimhopperts).)*
 - [x] `src/sim/scoring.ts` and `combo.ts`: item points × multiplier, grime 1 pt per cell (2 for gutter grime), Kerb Hugger +50 per 3 s, Clean Sweep frontage +100 (the frontage segments come from `level.json`). *(SSP-063: points, the combo (2.0 s chain timer, ×2..×5 at 10/25/50/100, multiplier after the increment, frozen while a dump drains, penalty reset, `EV.ComboTier`, the `pwr.flask_of_tea` timer hook), grime and Kerb Hugger, with the bonus and penalty APIs; GDD §20 Q3 and ENTITY_CATALOG §17 Q5 resolved; see [TECHNICAL_DESIGN §10.6](TECHNICAL_DESIGN.md#106-scoring-and-combo-srcsimscoringts-srcsimcombots). Clean Sweep is SSP-064 through the bonus API; the World calls phase 9 with SSP-065.)* *(SSP-064: `src/sim/tidy.ts` computes Tidy %, per-frontage clean % (litter counted by spawn tile, empty zones never eligible; GDD §9.3), the would-be stars and Clean Sweep +100 once per frontage per shift, from incremental per-zone counters (`src/sim/zoneTally.ts`) that `dirt.ts` and `litter.ts` keep current; see [TECHNICAL_DESIGN §10.3](TECHNICAL_DESIGN.md#103-grime-mask-srcsimdirtts). The World calls `stepTidy` in phase 9 with SSP-065.)*
 - [x] Fill in tick order steps 5, 6, 9 and 10. *(SSP-065: brush/litter/water, dirt, scoring/Tidy and the shift timer in canonical order, shift setup in `createWorld`, the M2 state in the replay hash, the M1 replay re-generated; the 2,000-litter heap-delta check is `tests/unit/simAlloc.test.ts`, [TECHNICAL_DESIGN §17](TECHNICAL_DESIGN.md#17-performance-budgets).)*
-- [ ] Replays: `m2_full_shift_puddle_lane.json` (3,600 ticks) and a dump-cycle replay. Commit their hashes.
+- [x] Replays: `m2_full_shift_puddle_lane.json` (3,600 ticks) and a dump-cycle replay. Commit their hashes. *(SSP-072: the full shift runs 14,600 ticks, to EV.ShiftEnd TIME_UP, final hash `b2b24f6b`; `m2_dump_cycle_puddle_lane.json` (7,200 ticks) sweeps a lap, sprays, and dumps at a depot bay (16.5 LU, tank refilled), final hash `4b89c5b1`. Both come from `node tests/replay/scripts/build-m2-replays.ts` on the M1 generator's driver, now shared (`tools/replays/routeDriver.ts`). New invariants `shiftEnded`, `minLuDumped`, `minDumpsCompleted`, `emptyAfterDump`; the heap check measures a long replay's last 4,200 ticks too. See [TECHNICAL_DESIGN §18.3](TECHNICAL_DESIGN.md#183-deterministic-replay-tests).)*
 
 *Content*
 
@@ -853,7 +853,7 @@ Key: **P** = placeholder under the final ID, **S** = spike sample (M0 only), **R
 |---|---|---|
 | Unit (Vitest), `simPurity`, `ipHygiene` | M0 | Every milestone |
 | Property (fast-check) | M1 (collision) | M2 (fling), M3 (determinism) |
-| Replays (3,600 ticks) | M1 (first hash) | One or more per milestone; one per district in M6 |
+| Replays (3,600 ticks standard; each file runs its own `ticks`, SSP-072) | M1 (first hash) | One or more per milestone (M2: a 14,600-tick full shift and a dump cycle); one per district in M6 |
 | Visual goldens | M0 (`lean_quadrants`, `scale_1440`) | M4 (`zoo`, `hud_specimen`), M6 (`night_kebab_mile`, `mercury_tally`) |
 | e2e smoke | M2 | M6 (`week.spec.ts`) |
 | e2e perf | M0 (baseline, D-08) | Enforced as a gate at the vertical slice and M7 |

@@ -20,7 +20,7 @@
 
 import { decodeBase64, encodeBase64 } from './base64.ts';
 import { SHIFT_TICKS } from './constants.ts';
-import { EV } from './eventQueue.ts';
+import { EV, ShiftEndReason } from './eventQueue.ts';
 import { BRAKE_MAX, createInputFrame, type InputFrame, STEER_MAX, THROTTLE_MAX } from './inputFrame.ts';
 import type { Level } from './map.ts';
 import { FNV1A32_OFFSET, FNV1A32_PRIME } from './rng.ts';
@@ -872,6 +872,12 @@ export const EVENT_NAMES = Object.keys(EV) as EventName[];
  * - maxSolidOverlapM: Bessie's body OBB never penetrates a merged solid rect, or the map boundary, deeper
  *   than this many metres at the end of any tick (0.001 is the M1 value: resolution leaves a hairline).
  * - minEvents: per EV name, at least this many events over the whole replay.
+ * - shiftEnded (SSP-072): the shift ended inside the replay with this reason (a ShiftEndReason name): exactly
+ *   one EV.ShiftEnd, whose reason is this one. The full-shift replay asserts 'TimeUp'.
+ * - minLuDumped (SSP-072): LU dumped over the replay (hopper.luDumpedTotal at the end) is at least the value.
+ * - minDumpsCompleted (SSP-072): at least this many dumps drained to the end (EV.DumpEnd with c = 1).
+ * - emptyAfterDump (SSP-072): every completed dump leaves the hopper at exactly 0 LU and, at a depot bay, the
+ *   tank full (water = water.tankUnits) at the end of its DumpEnd tick.
  */
 export type ReplayInvariants = {
   minScore?: number;
@@ -879,7 +885,16 @@ export type ReplayInvariants = {
   hpMin?: number;
   maxSolidOverlapM?: number;
   minEvents?: { [name in EventName]?: number };
+  shiftEnded?: ShiftEndReasonName;
+  minLuDumped?: number;
+  minDumpsCompleted?: number;
+  emptyAfterDump?: true;
 };
+
+/** Names usable in `invariants.shiftEnded`: the keys of ShiftEndReason. */
+export type ShiftEndReasonName = keyof typeof ShiftEndReason;
+
+export const SHIFT_END_REASON_NAMES = Object.keys(ShiftEndReason) as ShiftEndReasonName[];
 
 /** A replay file (tests/replay/replays/<name>.json). */
 export type ReplayFile = {
@@ -896,7 +911,17 @@ export type ReplayFile = {
 };
 
 const FILE_KEYS = ['format', 'version', 'district', 'seed', 'ticks', 'inputs', 'checkpoints', 'invariants'];
-const INVARIANT_KEYS = ['minScore', 'minLitterCollected', 'hpMin', 'maxSolidOverlapM', 'minEvents'];
+const INVARIANT_KEYS = [
+  'minScore',
+  'minLitterCollected',
+  'hpMin',
+  'maxSolidOverlapM',
+  'minEvents',
+  'shiftEnded',
+  'minLuDumped',
+  'minDumpsCompleted',
+  'emptyAfterDump',
+];
 
 function failFile(path: string, message: string): never {
   throw new Error(`replay: ${path} ${message}`);
@@ -951,6 +976,24 @@ function parseInvariants(value: unknown): ReplayInvariants {
         minEvents[name] = nonNegativeInt(events[name], `invariants.minEvents.${name}`);
     }
     out.minEvents = minEvents;
+  }
+  if (raw.shiftEnded !== undefined) {
+    const reason = raw.shiftEnded;
+    if (typeof reason !== 'string' || !(SHIFT_END_REASON_NAMES as readonly string[]).includes(reason)) {
+      failFile(
+        'invariants.shiftEnded',
+        `must be one of ${SHIFT_END_REASON_NAMES.map((n) => JSON.stringify(n)).join(', ')}, got ${JSON.stringify(reason)}`,
+      );
+    }
+    out.shiftEnded = reason as ShiftEndReasonName;
+  }
+  if (raw.minLuDumped !== undefined)
+    out.minLuDumped = finiteNumber(raw.minLuDumped, 'invariants.minLuDumped', 0);
+  if (raw.minDumpsCompleted !== undefined)
+    out.minDumpsCompleted = nonNegativeInt(raw.minDumpsCompleted, 'invariants.minDumpsCompleted');
+  if (raw.emptyAfterDump !== undefined) {
+    if (raw.emptyAfterDump !== true) failFile('invariants.emptyAfterDump', 'must be true (or left out)');
+    out.emptyAfterDump = true;
   }
   return out;
 }

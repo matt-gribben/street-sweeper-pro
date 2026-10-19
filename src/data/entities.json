@@ -532,7 +532,7 @@
     "sprite": "veh.taxi",
     "sfx": { "horn": "horn" },
     "districts": ["district.high_street", "district.kebab_mile", "district.civic_quarter"],
-    "rules": {},
+    "rules": { "fareStopMinM": 30, "fareStopMaxM": 90, "fareStopDecelMps2": 6, "fareStopDwellS": 3 },
     "milestone": "M3"
   },
   "veh.van_white": {
@@ -575,12 +575,12 @@
     "behaviour": "bicycle",
     "collision": "actor",
     "body": { "widthM": 0.5, "lengthM": 1.63 },
-    "speed": null,
+    "speed": 8,
     "hit": { "pts": -250, "complaints": 1, "drops": {} },
     "sprite": "veh.bicycle",
     "sfx": { "hit": "ped_oi" },
     "districts": ["district.high_street", "district.kebab_mile", "district.civic_quarter"],
-    "rules": {},
+    "rules": { "filterOffsetM": 1.5, "filterBelowMps": 5, "filterLateralMps": 1.5 },
     "milestone": "M3"
   },
   "veh.mobility_scooter": {
@@ -594,7 +594,7 @@
     "sprite": "veh.mobility_scooter",
     "sfx": { "hit": "granny_harrumph" },
     "districts": ["district.puddle_lane", "district.promenade", "district.civic_quarter"],
-    "rules": {},
+    "rules": { "turnRoundS": 3 },
     "milestone": "M3"
   },
   "veh.hatchback_parked": {

@@ -454,6 +454,9 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *   I traffic.dents, contactStops, then per vehicle: I paint, touchClear, dented, dents, roofPerch
  *   SSP-086 appends the behaviours' own words: per NPC I dueTick, routeAt (none without NPCs, so a run with an
  *     empty store hashes as before)
+ *   SSP-091 appends the special traffic kinds (traffic.ts), only with a vehicle in the store (so a run without
+ *     traffic hashes as before): I traffic.fareStops, actorHits, actorBumps, then per vehicle F lateral,
+ *     fareLeftM; I contactIgnore, navFrom, navTo
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -516,6 +519,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbZebraOffences(hasher, world);
   absorbVehicleContacts(hasher, world);
   absorbBehaviourWords(hasher, world);
+  absorbSpecialTraffic(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -1164,6 +1168,36 @@ function absorbBehaviourWords(hasher: StateHasher, world: World): void {
     w[k] = (npc.dueTick[i] as number) | 0;
     w[k + 1] = (npc.routeAt[i] as number) | 0;
     k += 2;
+  }
+  mixWords(hasher, k);
+}
+
+/**
+ * SSP-091: the special traffic kinds (traffic.ts): with any vehicle in the store, I traffic.fareStops, actorHits,
+ * actorBumps, then per vehicle F lateral, fareLeftM; I contactIgnore, navFrom, navTo. Nothing without vehicles, so
+ * a run with an empty store hashes as before.
+ */
+function absorbSpecialTraffic(hasher: StateHasher, world: World): void {
+  const s = world.vehicles;
+  if (s.count === 0) return;
+  const w = hasher.words;
+  const q = HASH_QUANTUM;
+  const t = world.traffic;
+  w[0] = t.fareStops | 0;
+  w[1] = t.actorHits | 0;
+  w[2] = t.actorBumps | 0;
+  let k = 3;
+  for (let i = 0; i < s.count; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = Math.round((s.lateral[i] as number) * q) | 0;
+    w[k + 1] = Math.round((s.fareLeftM[i] as number) * q) | 0;
+    w[k + 2] = (s.contactIgnore[i] as number) | 0;
+    w[k + 3] = (s.navFrom[i] as number) | 0;
+    w[k + 4] = (s.navTo[i] as number) | 0;
+    k += 5;
   }
   mixWords(hasher, k);
 }

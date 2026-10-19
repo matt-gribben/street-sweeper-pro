@@ -325,6 +325,15 @@ describe('state hash', () => {
     world.vehicles.dented[v] = 1;
     world.vehicles.dents[v] = 1;
     world.traffic.dents = 1;
+    // SSP-091: a filtering offset, a fare distance, an actor contact window, a nav edge and the counters.
+    world.vehicles.lateral[v] = 0.375;
+    world.vehicles.fareLeftM[v] = 12.5;
+    world.vehicles.contactIgnore[v] = 4;
+    world.vehicles.navFrom[v] = 2;
+    world.vehicles.navTo[v] = 3;
+    world.traffic.fareStops = 1;
+    world.traffic.actorHits = 1;
+    world.traffic.actorBumps = 2;
     return world;
   }
 
@@ -359,6 +368,15 @@ describe('state hash', () => {
       ['roofPerch', (w) => (w.vehicles.roofPerch[0] = 3)],
       ['traffic.dents', (w) => (w.traffic.dents = 2)],
       ['traffic.contactStops', (w) => (w.traffic.contactStops = 1)],
+      // SSP-091: the special kinds' columns and counters.
+      ['lateral', (w) => (w.vehicles.lateral[0] = 0.5)],
+      ['fareLeftM', (w) => (w.vehicles.fareLeftM[0] = 12.25)],
+      ['contactIgnore', (w) => (w.vehicles.contactIgnore[0] = 5)],
+      ['navFrom', (w) => (w.vehicles.navFrom[0] = 1)],
+      ['navTo', (w) => (w.vehicles.navTo[0] = 4)],
+      ['traffic.fareStops', (w) => (w.traffic.fareStops = 2)],
+      ['traffic.actorHits', (w) => (w.traffic.actorHits = 2)],
+      ['traffic.actorBumps', (w) => (w.traffic.actorBumps = 3)],
     ];
     for (const [name, edit] of edits) {
       const w = handSetWorld();
@@ -1501,8 +1519,11 @@ describe('state hash', () => {
  * SSP-086 appended the behaviours' own per-NPC words (dueTick, routeAt) after the vehicle contacts, and gave the
  * hand-set NPC a due tick and a route place: ef821327 → ee810692 (82d0b612 on its branch, before SSP-083, SSP-084,
  * SSP-085 and SSP-090 merged).
+ * SSP-091 appended the special traffic kinds' words (the fare-stop and actor counters, then per vehicle its
+ * filtering offset, fare distance, contact window and nav edge; nothing without a vehicle) after the behaviours'
+ * words, and gave the hand-set vehicle all five and the traffic the three counters: ee810692 → 2c5c0e38.
  */
-const GOLDEN_HAND_SET_HASH = 'ee810692';
+const GOLDEN_HAND_SET_HASH = '2c5c0e38';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

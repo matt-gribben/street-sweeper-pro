@@ -24,6 +24,8 @@ export type TownTraffic = {
   /** Parked cars (SSP-090): 0 and none unless given. */
   parkedFill?: number;
   parkedMix?: Record<string, number>;
+  /** Pavement vehicles out at once (SSP-091): none unless given. */
+  pavement?: Record<string, number>;
 };
 
 /**
@@ -104,6 +106,39 @@ export const PARKING_CROSSROADS: readonly string[] = (() => {
   for (let y = 22; y <= 27; y += 1) set(20, y);
   return rows.map((r) => r.join(''));
 })();
+
+/**
+ * The half-on-pavement street (SSP-091), 64 × 8 tiles (128 × 16 m): terraces (rows 0 and 7), a 2-tile pavement on
+ * the north side (rows 1–2) and a 1-tile one on the south (row 6), and a 3-tile two-way road (rows 3–5) running off
+ * the map at both ends, with a 10-cell run of bays on its north row (columns 10–19, the eastbound lane's kerb row,
+ * beside the 2-tile pavement) and another on its south row (columns 36–45, the westbound lane's, beside the 1-tile
+ * pavement): 5 bays each. Bessie's start is mid-road at column 30.
+ */
+export const HALF_ON_STREET: readonly string[] = [
+  'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  '................................................................',
+  '................................................................',
+  '##########pppppppppp############################################',
+  '##############################@#################################',
+  '####################################pppppppppp##################',
+  '................................................................',
+  'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+];
+
+/**
+ * The long street (SSP-091), 90 × 7 tiles (180 × 14 m): PARKING_STREET's cross-section (terraces, 1-tile pavements,
+ * a 3-tile two-way road whose lanes are 3 m apart) with no bays, for the bicycle filtering past a queue.
+ * Bessie's start is mid-road at column 45.
+ */
+export const LONG_STREET: readonly string[] = [
+  'A'.repeat(90),
+  '.'.repeat(90),
+  '#'.repeat(90),
+  `${'#'.repeat(45)}@${'#'.repeat(44)}`,
+  '#'.repeat(90),
+  '.'.repeat(90),
+  'B'.repeat(90),
+];
 
 /** Compile `rows` with the `traffic` block and decode it, as the game loads it. Throws on a diagnostic error. */
 export function compileTrafficTown(rows: readonly string[], traffic: TownTraffic): Level {

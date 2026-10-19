@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { EventBus, PAUSE_EV, PauseExit, PauseReason, type SimEvent } from '../../src/app/events.ts';
 import { Offence } from '../../src/sim/complaints.ts';
-import { KNOCKABLE_IDS, LITTER_IDS, NPC_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
+import { KNOCKABLE_IDS, LITTER_IDS, NPC_IDS, STAIN_IDS, VEHICLE_IDS } from '../../src/sim/entities.ts';
 import {
   createEventQueue,
   EV,
@@ -64,9 +64,10 @@ describe('EventBus', () => {
       [EV.Caught, 7, 44.5, 12.75, 100],
       [EV.Dent, 1, 61.5, 12.25, 6],
       [EV.LeadTangle, 4, 18.25, 6.5, 5],
+      [EV.VehicleHit, 3, 40.5, 7.25, VEHICLE_IDS.indexOf('veh.mobility_scooter')],
       [EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0],
     ]);
-    expect(bus.drain(queue)).toBe(23);
+    expect(bus.drain(queue)).toBe(24);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -98,6 +99,7 @@ describe('EventBus', () => {
       { type: EV.Caught, tick: 42, entity: 7, x: 44.5, y: 12.75, pts: 100 },
       { type: EV.Dent, tick: 42, entity: 1, x: 61.5, y: 12.25, vn: 6 },
       { type: EV.LeadTangle, tick: 42, entity: 4, x: 18.25, y: 6.5, dog: 5 },
+      { type: EV.VehicleHit, tick: 42, entity: 3, x: 40.5, y: 7.25, kind: 'veh.mobility_scooter' },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.TimeUp },
     ]);
   });
@@ -218,6 +220,9 @@ describe('EventBus', () => {
     expect(() => bus.drain(sealedQueue(19, [[EV.Knock, 0, 0, 0, 5]]))).toThrow(/knockable kind 5/);
     expect(() => bus.drain(sealedQueue(20, [[EV.NpcHit, 0, 0, 0, NPC_IDS.length]]))).toThrow(
       /unknown NPC kind/,
+    );
+    expect(() => bus.drain(sealedQueue(21, [[EV.VehicleHit, 0, 0, 0, VEHICLE_IDS.length]]))).toThrow(
+      /unknown vehicle kind/,
     );
   });
 

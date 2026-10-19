@@ -10,6 +10,12 @@
 // Parked-car columns (SSP-090): `paint` (the seeded paint swap slot of a hatchback or saloon, 0 otherwise),
 // the dent contact episode (`touchClear`, `dented`, `dents`) and the cat perched on the roof (`roofPerch`).
 //
+// The special kinds (SSP-091, traffic.ts): `lateral` (a filtering bicycle's offset right of its lane), `fareLeftM`
+// (a taxi's distance to its next fare stop), `contactIgnore` (an actor's contact window: the bicycle and the
+// mobility scooter are hit like pedestrians) and, for a pavement vehicle (VEHICLE_FLAG.PAVEMENT: the mobility
+// scooter, which follows the pavement nav graph instead of the lane graph and still counts in the store's 30),
+// `navFrom` and `navTo`, the nav edge it is on (`along` is then its distance from navFrom).
+//
 // Identity. An index is only good until the next removal; `uid` is a spawn serial (the store's `vehiclesAdded`
 // when the vehicle was added), unique for the shift, for the few links that must survive one (a junction box's
 // holder, traffic.ts).
@@ -66,6 +72,10 @@ export const VEHICLE_FLAG = {
   BUS_ROUTE: 2,
   /** Past its exit portal: driving out of the map until it is off the view rect, then despawned. */
   EXITING: 4,
+  /** A pavement vehicle (SSP-091, the mobility scooter): it follows the nav graph, not the lane graph. */
+  PAVEMENT: 8,
+  /** A parked white van standing half on the pavement (SSP-091, parked.ts). */
+  HALF_ON_PAVEMENT: 16,
 } as const;
 
 /** What is holding a vehicle back (`blocker`, Uint8). Hashed: append, never renumber. */
@@ -84,6 +94,12 @@ export const Blocker = {
   BusStop: 5,
   /** The end of a lane with no way on (a lane graph with a dead end and no turn-around). */
   LaneEnd: 6,
+  /** A taxi's own fare stop (SSP-091). */
+  FareStop: 7,
+  /** A pedestrian on the pavement ahead of a pavement vehicle (SSP-091). */
+  Pedestrian: 8,
+  /** A filtering bicycle's merge line: it waits there until it can rejoin its lane (SSP-091). */
+  Merge: 9,
 } as const;
 export type Blocker = (typeof Blocker)[keyof typeof Blocker];
 
@@ -162,6 +178,15 @@ export type VehicleStore = {
   readonly dents: Int32Array;
   /** The NPC handle of the cat perched on a parked car's roof, or ROOF_PERCH_FREE (parked.ts). */
   readonly roofPerch: Int32Array;
+  /** A bicycle's offset right of its lane, metres (0 in lane, rules.filterOffsetM filtering; SSP-091). */
+  readonly lateral: Float64Array;
+  /** A taxi's distance left to its next fare stop, metres (SSP-091; 0 for every other kind). */
+  readonly fareLeftM: Float64Array;
+  /** An actor's contact ignore window, ticks (streetLife.actorHit.ignoreContactS; SSP-091, as an NPC's). */
+  readonly contactIgnore: Uint8Array;
+  /** A pavement vehicle's nav edge: the node it left and the node it is heading for (−1 for lane vehicles). */
+  readonly navFrom: Int32Array;
+  readonly navTo: Int32Array;
   /** Half width and half length by VEHICLE_IDS index. */
   readonly kindHalfWidth: Float64Array;
   readonly kindHalfLength: Float64Array;
@@ -173,6 +198,13 @@ export type VehicleStore = {
    */
   readonly kindDentPts: Int32Array;
   readonly kindDentHp: Float64Array;
+  /**
+   * By VEHICLE_IDS index, an actor kind (entities.json collision `actor`: the bicycle and the mobility scooter):
+   * 1, with its hit's points (≤ 0) and complaints. Phase 3 does not resolve Bessie against an actor (SSP-091).
+   */
+  readonly kindActor: Uint8Array;
+  readonly kindHitPts: Int32Array;
+  readonly kindHitComplaints: Uint8Array;
   /** The largest half diagonal of any kind, metres (the query margin). */
   readonly maxHalfDiagonalM: number;
   /** Spatial lookup: grid size in cells, its origin (metres) and the bucket lists. */
@@ -213,6 +245,11 @@ export type VehicleStoreView = {
   readonly dented: Uint8Array;
   readonly dents: Int32Array;
   readonly roofPerch: Int32Array;
+  readonly lateral: Float64Array;
+  readonly fareLeftM: Float64Array;
+  readonly navFrom: Int32Array;
+  readonly navTo: Int32Array;
+  readonly kindActor: Uint8Array;
 };
 
 /** An empty store for `level` with room for `capacity` vehicles; body sizes from `entities`. Setup only. */
@@ -234,6 +271,11 @@ export function createVehicleStore(
   };
   const kindDentPts = Int32Array.from(VEHICLE_IDS, (id) => dentRule(id, 'dentPts'));
   const kindDentHp = Float64Array.from(VEHICLE_IDS, (id) => dentRule(id, 'dentHp'));
+  const kindActor = Uint8Array.from(VEHICLE_IDS, (id) =>
+    entities.vehicles[id].collision === 'actor' ? 1 : 0,
+  );
+  const kindHitPts = Int32Array.from(VEHICLE_IDS, (id) => entities.vehicles[id].hit?.pts ?? 0);
+  const kindHitComplaints = Uint8Array.from(VEHICLE_IDS, (id) => entities.vehicles[id].hit?.complaints ?? 0);
   let maxHalfDiagonalM = 0;
   for (let k = 0; k < VEHICLE_IDS.length; k += 1) {
     const w = kindHalfWidth[k] as number;
@@ -285,11 +327,19 @@ export function createVehicleStore(
     dented: new Uint8Array(capacity),
     dents: new Int32Array(capacity),
     roofPerch: new Int32Array(capacity).fill(ROOF_PERCH_FREE),
+    lateral: f64(),
+    fareLeftM: f64(),
+    contactIgnore: new Uint8Array(capacity),
+    navFrom: new Int32Array(capacity).fill(-1),
+    navTo: new Int32Array(capacity).fill(-1),
     kindHalfWidth,
     kindHalfLength,
     kindPainted,
     kindDentPts,
     kindDentHp,
+    kindActor,
+    kindHitPts,
+    kindHitComplaints,
     maxHalfDiagonalM,
     gridW,
     gridH,
@@ -353,6 +403,11 @@ export function addVehicle(store: VehicleStore, kind: number, flags: number): nu
   store.dented[i] = 0;
   store.dents[i] = 0;
   store.roofPerch[i] = ROOF_PERCH_FREE;
+  store.lateral[i] = 0;
+  store.fareLeftM[i] = 0;
+  store.contactIgnore[i] = 0;
+  store.navFrom[i] = -1;
+  store.navTo[i] = -1;
   store.cellNext[i] = -1;
   return i;
 }
@@ -398,6 +453,11 @@ function moveSlot(store: VehicleStore, from: number, to: number): void {
   store.dented[to] = store.dented[from] as number;
   store.dents[to] = store.dents[from] as number;
   store.roofPerch[to] = store.roofPerch[from] as number;
+  store.lateral[to] = store.lateral[from] as number;
+  store.fareLeftM[to] = store.fareLeftM[from] as number;
+  store.contactIgnore[to] = store.contactIgnore[from] as number;
+  store.navFrom[to] = store.navFrom[from] as number;
+  store.navTo[to] = store.navTo[from] as number;
 }
 
 /**

@@ -22,7 +22,8 @@ export const EVENTS_PER_TICK = 512;
  * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
  * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd, SSP-093 HazardJolt and HazardStop, SSP-063
  * ComboTier, SSP-078 Complaint and Horn, SSP-092 Knock, SSP-082 NpcHit, SSP-089 CarHorn, SSP-083
- * HandbagWhack, SSP-084 Caught, SSP-090 Dent, SSP-086 LeadTangle; later issues append the rest of the §7.2 list.
+ * HandbagWhack, SSP-084 Caught, SSP-090 Dent, SSP-086 LeadTangle, SSP-091 VehicleHit; later issues append the rest
+ * of the §7.2 list.
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036), for
@@ -89,6 +90,11 @@ export const EVENTS_PER_TICK = 512;
  *   speed vn (m/s). Phase 3 (collision/resolveStatic.ts, parked.ts, SSP-090), once per contact episode of Bessie
  *   with a parked car whose approaching vn is above collision.damageThresholdMps (2 m/s): the flat dent HP and
  *   the Offence.Dent penalty fact go with it, and no EV.Impact. Audio plays the car's sfx.dent (`crash`, M5).
+ * - VehicleHit: entity = the actor vehicle's VehicleStore index, a = x, b = y (its body centre, m), c = its kind
+ *   (VEHICLE_IDS index: veh.bicycle or veh.mobility_scooter). Phase 8 (traffic.ts stepActorVehicles, SSP-091),
+ *   once per contact episode in which Bessie's closing speed toward it is at least
+ *   streetLife.actorHit.minClosingSpeedMps (1.0 m/s); the entities.json `hit` penalty fact goes with it and the
+ *   rider falls over. Audio plays its sfx.hit (`ped_oi`, `granny_harrumph`, M5).
  */
 export const EV = {
   Impact: 1,
@@ -113,6 +119,7 @@ export const EV = {
   Caught: 20,
   Dent: 21,
   LeadTangle: 22,
+  VehicleHit: 23,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

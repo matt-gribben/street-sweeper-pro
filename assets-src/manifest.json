@@ -1336,6 +1336,27 @@
       "placeholder": true
     },
     {
+      "id": "ui.powerup_icon",
+      "class": "ui",
+      "technique": "grid",
+      "source": "assets-src/sprites/ui/powerup_icon.sprite.txt",
+      "cell": [16, 16],
+      "states": ["flask_of_tea", "bacon_butty", "hi_vis", "super_suction", "wrench", "water_can"],
+      "dirs": "-",
+      "frames": {
+        "flask_of_tea": 1,
+        "bacon_butty": 1,
+        "hi_vis": 1,
+        "super_suction": 1,
+        "wrench": 1,
+        "water_can": 1
+      },
+      "atlas": "ui",
+      "outline": false,
+      "swaps": [],
+      "placeholder": true
+    },
+    {
       "id": "veh.bicycle",
       "class": "veh",
       "technique": "blender",

@@ -59,12 +59,18 @@
 //            target meets the rect inset by the 4 px margin (the whole 11×11 arrow inside it), moved back along
 //            the same ray until it is 1 px clear of every HUD box (placeArrow), pointing along the ray rounded to
 //            the nearest 45° (so within 22.5° of the true direction).
+//   powerUp  the power-up slot (SSP-096): while a timed power-up runs, its 16×16 icon (ui.powerup_icon, by
+//            POWERUP_IDS index) and its time left as m:ss of ceil(ticks / 60) s ('0:15' on the tick after a flask
+//            of tea is collected, '0:01' on its last second), 07. With several running it shows the one collected
+//            last (pickups.ts shownPowerUp); hidden while none runs. Instant power-ups (wrench, water can) show
+//            nothing here: their gauges move.
 //
 // Per frame nothing allocates: every string comes from a table built at module load, and the model is written
 // into a preallocated object. The section between the "per-frame draw path" markers is scanned by
 // tests/unit/hud.test.ts for `new` and array literals.
 import { BrushState } from '../sim/brush.ts';
 import { DumpSite } from '../sim/hopper.ts';
+import { powerUpTicksLeft, shownPowerUp } from '../sim/pickups.ts';
 import { availableDumpSite, DumpState, dumpHoldTicksAt } from '../sim/shift.ts';
 import { TIDY_PPM } from '../sim/tidy.ts';
 import type { WorldView } from '../sim/world.ts';
@@ -375,6 +381,9 @@ export type HudSnapshot = {
   cameraXM: number;
   cameraYM: number;
   cameraPxPerM: number;
+  /** The timed power-up to show (POWERUP_IDS index, pickups.ts shownPowerUp), or −1; and its ticks left. */
+  powerUpKind: number;
+  powerUpTicksLeft: number;
 };
 
 /** One text element of the model. */
@@ -401,6 +410,9 @@ export type HudMeter = {
   highlight: boolean;
   highlightLit: boolean;
 };
+
+/** The power-up slot: the icon's POWERUP_IDS index and the 'm:ss' countdown. */
+export type HudPowerUp = { visible: boolean; kind: number; text: string; colour: number };
 
 /** The brush state icon and its spin-up ring. */
 export type HudBrush = { visible: boolean; icon: BrushIcon; ringVisible: boolean; ringStep: number };
@@ -451,6 +463,8 @@ export type HudModel = {
   /** The off-screen arrows to the depot bay and to the nearest hydrant. */
   readonly depotArrow: HudArrow;
   readonly hydrantArrow: HudArrow;
+  /** The running timed power-up (SSP-096). */
+  readonly powerUp: HudPowerUp;
 };
 
 /** One box of the complaints meter. */
@@ -511,6 +525,8 @@ export function createHudSnapshot(): HudSnapshot {
     cameraXM: 0,
     cameraYM: 0,
     cameraPxPerM: 0,
+    powerUpKind: -1,
+    powerUpTicksLeft: 0,
   };
 }
 
@@ -560,6 +576,7 @@ export function createHudModel(): HudModel {
     tidy: { visible: false, fillPx: 0, ticksPx: [0, 0, 0], value: text() },
     depotArrow: arrow(HudColour.SweeperYellow),
     hydrantArrow: arrow(HudColour.Sky),
+    powerUp: { visible: false, kind: -1, text: '', colour: HudColour.Chalk },
   };
 }
 
@@ -702,6 +719,9 @@ export function readHudSnapshot(view: WorldView, out: HudSnapshot): HudSnapshot 
   out.hydrantX = waterView.hydrantX;
   out.hydrantY = waterView.hydrantY;
   out.hydrantCount = waterView.hydrantX.length;
+  const shown = shownPowerUp(view.pickups, view.tick);
+  out.powerUpKind = shown;
+  out.powerUpTicksLeft = shown >= 0 ? powerUpTicksLeft(view.pickups, shown, view.tick) : 0;
   readShiftConstants(view, out);
   return out;
 }
@@ -1085,6 +1105,13 @@ export function hudModel(
   const waterLow = s.tankUnits > 0 && s.water / s.tankUnits < WATER_LOW_FRACTION;
   arrowTo(out.hydrantArrow, waterLow, s, s.hydrantX, s.hydrantY, s.hydrantCount, frame);
   out.hydrantArrow.colour = HudColour.Sky;
+
+  // The power-up slot.
+  const powerUp = out.powerUp;
+  powerUp.visible = s.powerUpKind >= 0 && s.powerUpTicksLeft > 0;
+  powerUp.kind = powerUp.visible ? s.powerUpKind : -1;
+  powerUp.text = powerUp.visible ? timerText(s.powerUpTicksLeft) : '';
+  powerUp.colour = HudColour.Chalk;
   return out;
 }
 // per-frame draw path: end

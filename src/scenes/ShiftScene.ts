@@ -487,7 +487,15 @@ export class ShiftScene implements Scene {
     const items = this.items;
     if (items !== null) {
       cameraGroundRect(rig, 0, this.cameraRect);
-      items.update(world.litter, world.stains, world.tick, alpha, this.cameraRect, rig.snappedZ);
+      items.update(
+        world.litter,
+        world.stains,
+        world.pickups,
+        world.tick,
+        alpha,
+        this.cameraRect,
+        rig.snappedZ,
+      );
     }
     const hud = this.hud;
     const batch = this.hudBatch;

@@ -925,6 +925,8 @@ All UI renders in the same internal pixel space as the game (base 480×270; widt
 - **Tutorial hook:** `Hud.highlightCleanZone(untilTick)` blinks the clean zone (beat 3 in §16.2, wired by SSP-290). Beat 7's "the arrow'll show you" is the depot arrow, which needs no hook.
 - **Second channel:** besides their colours (depot yellow, hydrant blue) the two arrows differ in shape (a solid arrow and a double chevron), so neither relies on colour alone (§17.2).
 
+**M3 power-up slot (SSP-096).** While a timed power-up runs, its icon and its time left as m:ss (rounded up: `0:15` just after a flask of tea, `0:01` in its last second) sit right of the brush state; with two running (a flask, then a butty) the slot shows the one collected last, then the other again when that ends. Instant power-ups (wrench, watering can) show nothing there: the Dignity or water gauge jumps instead. Placeholder icon and plain 5×7 text until SSP-156 (the `TEA 0:11` label in the sketch above is the M4 look).
+
 **M3 radio panel (SSP-289).** Pam's barks are built (`src/ui/radio.ts`; pixels and the keycap look in [ART_BIBLE §12.2–12.3](ART_BIBLE.md)), with the 4th-complaint bark (§11.3) as the first producer and SSP-290's tutorial layer as the next. Decided there, all tunable:
 
 - **One at a time.** Barks queue first in, first out and never overlap; a bark queued while nothing shows starts at once. Each page shows for **180 sim ticks (3 s)**, so barks freeze whenever the sim does (Pause, the shift's end). A producer can cancel a bark it queued: a waiting bark is dropped, a showing one goes at once (a tutorial beat the player has already performed, §16.1).

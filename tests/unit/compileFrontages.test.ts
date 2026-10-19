@@ -461,6 +461,53 @@ describe('power-ups (L040)', () => {
       expect.stringMatching(/L000 powerups\.at must be an array of \[x, y\] tile positions inside the map$/),
     ]);
   });
+
+  it('places fixed points only on reachable pavement, and no more of them than count (SSP-096)', () => {
+    const table = { 'pwr.flask_of_tea': 1 };
+    // Row 1 is pavement, rows 2–4 road; the hydrant stands on (4, 1).
+    expect(
+      messages(
+        compileFixture({
+          powerups: {
+            count: 2,
+            table,
+            at: [
+              [1.5, 1.5],
+              [9.5, 1.5],
+            ],
+          },
+        }),
+      ),
+    ).toEqual([]);
+    expect(messages(compileFixture({ powerups: { count: 1, table, at: [[1.5, 3.5]] } }))).toEqual([
+      expect.stringMatching(
+        /L040 powerups\.at\[0\] \[1\.5, 3\.5\] is not on a pavement tile \(power-ups spawn on pavements\)$/,
+      ),
+    ]);
+    expect(messages(compileFixture({ powerups: { count: 1, table, at: [[4.5, 1.5]] } }))).toEqual([
+      expect.stringMatching(
+        /L040 powerups\.at\[0\] \[4\.5, 1\.5\] is inside the footprint of the prop\.hydrant, so Bessie cannot reach it$/,
+      ),
+    ]);
+    expect(
+      messages(
+        compileFixture({
+          powerups: {
+            count: 1,
+            table,
+            at: [
+              [1.5, 1.5],
+              [9.5, 1.5],
+            ],
+          },
+        }),
+      ),
+    ).toEqual([
+      expect.stringMatching(
+        /L040 powerups\.at lists 2 points but powerups\.count is 1; the extra points are never used$/,
+      ),
+    ]);
+  });
 });
 
 describe('collectibles (L041)', () => {

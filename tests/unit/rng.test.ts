@@ -240,7 +240,7 @@ describe('hash32 (FNV-1a 32-bit over UTF-8)', () => {
 });
 
 describe('subsystem streams', () => {
-  it('lists the nine streams of TECHNICAL_DESIGN §7.3 in order', () => {
+  it('lists the ten streams of TECHNICAL_DESIGN §7.3 in order (pickups appended by SSP-096)', () => {
     expect([...RNG_STREAMS]).toEqual([
       'litter',
       'grime',
@@ -251,6 +251,7 @@ describe('subsystem streams', () => {
       'events',
       'brush',
       'weather',
+      'pickups',
     ]);
   });
 

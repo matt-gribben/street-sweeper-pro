@@ -1,6 +1,7 @@
 // The items instance batch of a shift (TECHNICAL_DESIGN §12.5, §12.7 draw #5; ART_BIBLE §7.1, §10.2; SSP-067):
-// every visible litter item, the stains and the level's static flat markers (hydrants, skips, depot bays) as ONE
-// instanced draw of the `items` atlas, which also samples the `world` atlas for the stain decals.
+// every visible litter item, the stains, the power-up pickups (SSP-096) and the level's static flat markers
+// (hydrants, skips, depot bays) as ONE instanced draw of the `items` atlas, which also samples the `world` atlas
+// for the stain decals.
 //
 // Frames, all from the typed FRAME table:
 //   litter   `litter.<name>:idle:<dir>:0`, dir = h00 | h08 | h16 | h24 from the store's `rot` 0..3 (a frame
@@ -13,14 +14,19 @@
 //            open question, decided in SSP-067: one draw, no new atlas, no city-mesh rebuild when a stain is
 //            cleaned). The variant n is a stateless hash of the stain's position in 1/16 m texels (cellHash,
 //            salt VariantSalt.Stain), a presentation choice the sim does not hold (stains.ts). Depth layer 2.
+//   pickups  `pwr.<name>:bob:-:0|1` (SSP-096), the 2-frame bob at 24 ticks per frame on the World tick (ART_BIBLE
+//            §10.2: 400 ms), the same phase for every pickup; each frame carries its own 1 px ground halo ring
+//            (16 under the icon at rest, 07 under the raised icon, §8.5), so the halo alternates with the bob.
+//            Centred on the pickup (pivot (8, 8)); pickups never move, so there is no interpolation. Depth layer
+//            3, after the litter so a pickup reads over an item lying on the same spot.
 //   markers  from the compiled level, built once: `prop.hydrant:flat:-:0` at each `prop.hydrant` prop (its rot in
 //            quarter turns), `site.skip:flat:-:0` (layer 3) and `site.depot_bay:flat:-:0` (the bay markings,
 //            layer 2) centred on their site rect, quarter-turned when the rect is the frame's footprint turned
 //            on its side. A site rect that fits neither way is a build-time error.
 //
 // Culling: the litter is found by querying the LitterField's 4 m spatial hash (queryLitterView, read-only) with
-// the camera's ground rect plus ITEMS_CULL_MARGIN_M (4 m); stains (at most 256, no hash: stains.ts) and the few
-// markers are tested against the same rect. Only visible instances are written; the instance buffer is sized to
+// the camera's ground rect plus ITEMS_CULL_MARGIN_M (4 m); stains (at most 256, no hash: stains.ts), the pickups
+// (at most 16) and the few markers are tested against the same rect. Only visible instances are written; the instance buffer is sized to
 // capacity once and published with one needsUpdate per frame.
 //
 // Shadows: the batch is made with `receiveShadows`, so its texels keep the shadow mask under them: building and
@@ -33,7 +39,7 @@
 import { FRAME, type FrameId } from '../gen/assets.ts';
 import type { Aabb } from '../sim/collision/obb.ts';
 import { PX_PER_M, TILE_M } from '../sim/constants.ts';
-import { LITTER_IDS, STAIN_IDS } from '../sim/entities.ts';
+import { LITTER_IDS, POWERUP_IDS, STAIN_IDS } from '../sim/entities.ts';
 import {
   LITTER_CAPACITY,
   LITTER_ROTATIONS,
@@ -42,6 +48,7 @@ import {
   queryLitterView,
 } from '../sim/litter.ts';
 import type { Level, LevelSite } from '../sim/map.ts';
+import { PICKUP_CAPACITY, type PickupsView } from '../sim/pickups.ts';
 import { STAIN_CAPACITY, type StainStoreView } from '../sim/stains.ts';
 import { HYDRANT_PROP_ID } from '../sim/water.ts';
 import { cellHash, VariantSalt } from './cityMesh.ts';
@@ -55,6 +62,26 @@ export const ITEMS_CULL_MARGIN_M = 4;
 
 /** Ticks per wobble frame while an item is in the suction zone (ART_BIBLE §10.2: 200 ms). */
 export const WOBBLE_TICKS_PER_FRAME = 12;
+
+/** Ticks per bob frame of a pickup (ART_BIBLE §10.2: 400 ms). */
+export const PICKUP_BOB_TICKS_PER_FRAME = 24;
+
+/** Every power-up's two bob frames: POWERUP_FRAMES[kind][n], kind the POWERUP_IDS index, n 0 or 1. */
+export const POWERUP_FRAMES = POWERUP_IDS.map(
+  (id) => [`${id}:bob:-:0`, `${id}:bob:-:1`] as const,
+) satisfies readonly (readonly FrameId[])[];
+
+/** The bob frame (0: icon down, ring 16; 1: icon up, ring 07) every pickup shows at World tick `tick`. */
+export function pickupBob(tick: number): number {
+  return Math.floor(tick / PICKUP_BOB_TICKS_PER_FRAME) & 1;
+}
+
+/** The frame of a pickup of kind `kind` (POWERUP_IDS index) at World tick `tick`. */
+export function pickupFrame(kind: number, tick: number): FrameId {
+  const frame = POWERUP_FRAMES[kind]?.[pickupBob(tick)];
+  if (frame === undefined) return rejectPowerUpKind(kind);
+  return frame;
+}
 
 /** Render order of the items draw: after the city (0), building shadows (1), Bessie's shadow (2) and sprites (3). */
 export const ITEMS_RENDER_ORDER = 4;
@@ -181,6 +208,7 @@ export function levelItemMarkers(level: Level): ItemMarker[] {
 export type ItemsBatchOptions = {
   readonly litterCapacity?: number;
   readonly stainCapacity?: number;
+  readonly pickupCapacity?: number;
 };
 
 /** The shift's items draw. Add `mesh` to the world pass and call update() once per rendered frame. */
@@ -191,6 +219,7 @@ export class ItemsBatch {
   litterDrawn = 0;
   stainsDrawn = 0;
   markersDrawn = 0;
+  pickupsDrawn = 0;
   private readonly hits: Int32Array;
   /** The cull rect of the last update(): the camera's ground rect plus ITEMS_CULL_MARGIN_M. */
   readonly cullRect: Aabb = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
@@ -210,6 +239,7 @@ export class ItemsBatch {
     if (LITTER_ROTATIONS !== LITTER_ROT_DIRS.length) throw new Error('litter rotations and frames disagree');
     const litterCapacity = options.litterCapacity ?? LITTER_CAPACITY;
     const stainCapacity = options.stainCapacity ?? STAIN_CAPACITY;
+    const pickupCapacity = options.pickupCapacity ?? PICKUP_CAPACITY;
     const markers = levelItemMarkers(level);
     this.markers = markers;
     this.markerFrames = markers.map((m) => m.frame);
@@ -218,7 +248,7 @@ export class ItemsBatch {
     this.markerLayer = Uint8Array.from(markers, (m) => m.layer);
     this.markerTurns = Uint8Array.from(markers, (m) => m.quarterTurns);
     this.hits = new Int32Array(litterCapacity);
-    this.batch = new SpriteBatch(items, litterCapacity + stainCapacity + markers.length, {
+    this.batch = new SpriteBatch(items, litterCapacity + stainCapacity + pickupCapacity + markers.length, {
       secondaryAtlas: world,
       receiveShadows: true,
     });
@@ -232,13 +262,14 @@ export class ItemsBatch {
 
   // per-frame draw path: begin
   /**
-   * Writes this frame's instances: every stain, marker and litter item inside `camera` (the camera's ground
-   * rect, cameraGroundRect with no margin) grown by ITEMS_CULL_MARGIN_M. `tick` is the World tick (wobble),
-   * `alpha` the render alpha (litter interpolation, clamped to 0..1) and `camYSimM` the camera's sim y.
+   * Writes this frame's instances: every stain, marker, litter item and pickup inside `camera` (the camera's
+   * ground rect, cameraGroundRect with no margin) grown by ITEMS_CULL_MARGIN_M. `tick` is the World tick (wobble,
+   * bob), `alpha` the render alpha (litter interpolation, clamped to 0..1) and `camYSimM` the camera's sim y.
    */
   update(
     litter: LitterFieldView,
     stains: StainStoreView,
+    pickups: PickupsView,
     tick: number,
     alpha: number,
     camera: Readonly<Aabb>,
@@ -293,10 +324,24 @@ export class ItemsBatch {
       batch.addFrom(frame, drawX, drawY, 0, DepthLayer.Litter);
     }
 
+    let pickupsDrawn = 0;
+    const kx = pickups.x;
+    const ky = pickups.y;
+    for (let i = 0; i < pickups.count; i += 1) {
+      const x = kx[i] as number;
+      const y = ky[i] as number;
+      if (x < rect.minX || x > rect.maxX || y < rect.minY || y > rect.maxY) continue;
+      drawX[0] = x;
+      drawY[0] = y;
+      batch.addFrom(pickupFrame(pickups.kind[i] as number, tick), drawX, drawY, 0, DepthLayer.Litter);
+      pickupsDrawn += 1;
+    }
+
     batch.end();
     this.stainsDrawn = stainsDrawn;
     this.markersDrawn = markersDrawn;
     this.litterDrawn = n;
+    this.pickupsDrawn = pickupsDrawn;
   }
   // per-frame draw path: end
 
@@ -309,6 +354,11 @@ export class ItemsBatch {
 /** Throws for a litter kind outside LITTER_IDS (kept out of the per-frame path, which builds no objects). */
 function rejectLitterKind(kind: number): never {
   throw new RangeError(`litter kind ${kind} is not 0..${LITTER_IDS.length - 1}`);
+}
+
+/** Throws for a power-up kind outside POWERUP_IDS (kept out of the per-frame path). */
+function rejectPowerUpKind(kind: number): never {
+  throw new RangeError(`power-up kind ${kind} is not 0..${POWERUP_IDS.length - 1}`);
 }
 
 /** Throws for a stain kind outside STAIN_IDS (kept out of the per-frame path). */

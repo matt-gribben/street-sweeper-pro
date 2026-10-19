@@ -14,10 +14,12 @@
 //   M2 (SSP-071)  shift { phase, ticksRemaining, endReason, endTick }: the tally reads why the shift ended;
 //   M3 (SSP-080)  npcs [{ id, origin, x, y, heading, state, stateTicks }];
 //   M3 (SSP-078)  complaints (the Council Complaints meter, 0..5);
-//   M3 (SSP-079)  shift.endReason 'sacked', shift { finalScore, finalStars }: the tally's figures.
+//   M3 (SSP-079)  shift.endReason 'sacked', shift { finalScore, finalStars }: the tally's figures;
+//   M3 (SSP-096)  pickups [{ id, x, y }] (the power-ups still on the street), powerUps [{ id, ticksLeft }] (the
+//                 timed power-ups running, in POWERUP_IDS order).
 //
 // Load-time / test-time code: it allocates a fresh object per call and is never called per tick.
-import { NPC_IDS } from './entities.ts';
+import { NPC_IDS, POWERUP_IDS, type PowerupId } from './entities.ts';
 import { ShiftEndReason } from './eventQueue.ts';
 import { finalShiftScore, finalShiftStars, ShiftPhase } from './shift.ts';
 import type { WorldView } from './world.ts';
@@ -86,6 +88,21 @@ export type SimNpcSnapshot = {
   readonly stateTicks: number;
 };
 
+/** A power-up waiting on the street (pickups.ts), in store index order. */
+export type SimPickupSnapshot = {
+  readonly id: PowerupId;
+  /** Centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+};
+
+/** A timed power-up whose effect runs (pickups.ts), in POWERUP_IDS order. */
+export type SimPowerUpSnapshot = {
+  readonly id: PowerupId;
+  /** Ticks of its effect left after this tick, ≥ 1. */
+  readonly ticksLeft: number;
+};
+
 /** The shift's phase (shift.ts ShiftPhase) as a JSON-friendly name. */
 export type SimShiftPhase = 'rollout' | 'running' | 'knock_off' | 'ended';
 
@@ -151,6 +168,10 @@ export type SimSnapshot = {
   readonly npcs: readonly SimNpcSnapshot[];
   /** Council Complaints this shift, 0..5 (complaints.ts): never decreases; 5 is SACKED! (SSP-079). */
   readonly complaints: number;
+  /** The power-ups still on the street (SSP-096). */
+  readonly pickups: readonly SimPickupSnapshot[];
+  /** The timed power-ups running (SSP-096). */
+  readonly powerUps: readonly SimPowerUpSnapshot[];
 };
 
 /** `value` as a JSON-safe number: −0 becomes 0; NaN and ±Infinity throw, naming `field`. */
@@ -189,6 +210,24 @@ export function snapshotWorld(world: WorldView): SimSnapshot {
       state: npc.state[i] as number,
       stateTicks: npc.stateTicks[i] as number,
     });
+  }
+  const p = world.pickups;
+  const pickups: SimPickupSnapshot[] = [];
+  for (let i = 0; i < p.count; i += 1) {
+    const id = POWERUP_IDS[p.kind[i] as number];
+    if (id === undefined) throw new Error(`SimSnapshot: pickups[${i}] has a bad kind`);
+    pickups.push({
+      id,
+      x: jsonNumber(p.x[i] as number, `pickups[${i}].x`),
+      y: jsonNumber(p.y[i] as number, `pickups[${i}].y`),
+    });
+  }
+  const powerUps: SimPowerUpSnapshot[] = [];
+  for (let k = 0; k < POWERUP_IDS.length; k += 1) {
+    const left = (p.untilTick[k] as number) - world.tick;
+    if ((p.untilTick[k] as number) > 0 && left > 0) {
+      powerUps.push({ id: POWERUP_IDS[k] as PowerupId, ticksLeft: left });
+    }
   }
   return {
     tick: jsonNumber(world.tick, 'tick'),
@@ -238,5 +277,7 @@ export function snapshotWorld(world: WorldView): SimSnapshot {
     },
     npcs,
     complaints: jsonNumber(world.complaints.count, 'complaints'),
+    pickups,
+    powerUps,
   };
 }

@@ -33,6 +33,8 @@ import {
   type LitterId,
   NPC_IDS,
   type NpcId,
+  POWERUP_IDS,
+  type PowerupId,
   STAIN_IDS,
   type StainId,
 } from '../sim/entities.ts';
@@ -311,6 +313,19 @@ export type LeadTangleEvent = SimEventBase & {
   readonly dog: number;
 };
 
+/**
+ * Bessie collected a power-up (phase 4, pickups.ts, SSP-096): once per pickup, on the tick its effect starts.
+ * sfx.powerup (M5) and the HUD's power-up slot read it.
+ */
+export type PowerUpEvent = SimEventBase & {
+  readonly type: typeof EV.PowerUp;
+  /** The pickup's centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** Which power-up. */
+  readonly kind: PowerupId;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -335,6 +350,7 @@ export type SimEventByType = {
   [EV.Caught]: CaughtEvent;
   [EV.Dent]: DentEvent;
   [EV.LeadTangle]: LeadTangleEvent;
+  [EV.PowerUp]: PowerUpEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -418,6 +434,7 @@ function createPayloads(): Payloads {
     [EV.Caught]: { type: EV.Caught, tick: 0, entity: -1, x: 0, y: 0, pts: 0 },
     [EV.Dent]: { type: EV.Dent, tick: 0, entity: -1, x: 0, y: 0, vn: 0 },
     [EV.LeadTangle]: { type: EV.LeadTangle, tick: 0, entity: -1, x: 0, y: 0, dog: -1 },
+    [EV.PowerUp]: { type: EV.PowerUp, tick: 0, entity: -1, x: 0, y: 0, kind: 'pwr.flask_of_tea' },
   };
 }
 
@@ -448,6 +465,14 @@ function npcKindOf(c: number, tick: number): NpcId {
   const id = Number.isInteger(c) ? NPC_IDS[c] : undefined;
   if (id === undefined)
     throw new Error(`EventBus: event type ${EV.NpcHit} at tick ${tick} carries unknown NPC kind ${c}`);
+  return id;
+}
+
+/** The power-up id carried in a PowerUp event's `c` (a POWERUP_IDS index); throws on anything else. */
+function powerUpKindOf(c: number, tick: number): PowerupId {
+  const id = Number.isInteger(c) ? POWERUP_IDS[c] : undefined;
+  if (id === undefined)
+    throw new Error(`EventBus: event type ${EV.PowerUp} at tick ${tick} carries unknown power-up kind ${c}`);
   return id;
 }
 
@@ -484,7 +509,8 @@ function isEventType(type: number): type is EventType {
     type === EV.HandbagWhack ||
     type === EV.Caught ||
     type === EV.Dent ||
-    type === EV.LeadTangle
+    type === EV.LeadTangle ||
+    type === EV.PowerUp
   );
 }
 
@@ -608,6 +634,7 @@ export class EventBus implements UiEventSink, PauseEventSink {
     [EV.Caught]: [],
     [EV.Dent]: [],
     [EV.LeadTangle]: [],
+    [EV.PowerUp]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -941,6 +968,16 @@ export class EventBus implements UiEventSink, PauseEventSink {
         e.y = b;
         e.dog = c;
         this.emit(EV.LeadTangle, e);
+        return;
+      }
+      case EV.PowerUp: {
+        const e = this.payloads[EV.PowerUp];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.kind = powerUpKindOf(c, tick);
+        this.emit(EV.PowerUp, e);
         return;
       }
     }

@@ -1,0 +1,35 @@
+id: ui.brush_meter
+cell: 64x6
+palette: kerbside32
+# SSP-299 placeholder (ART_BIBLE §12.2): the Brush-o-meter zone patterns, one 64x6 frame per zone. src/ui/hud.ts
+# draws each zone as a sub-rectangle of its frame (cut at the same x, so the pattern stays phase-locked to the
+# bar) inside a 1 px 00 frame. The three zones differ in pattern as well as colour (GDD §17.2):
+#   clean   solid 23 grass_lt;
+#   fling   hatched 17 hivis_orange / 03 asphalt_lt: 17 where (x + y) mod 4 < 2 (2 px diagonal stripes);
+#   transit dotted 26 council_blue / 03: 2x2 dots of 26 on a 3 px lattice (x mod 3 != 2 and y mod 3 != 2).
+# src/ui/hudModel.ts meterPatternIndex is the same function; tests/unit/hud.test.ts checks the frames against it.
+# SSP-156 (M4) replaces it with final art.
+
+frame clean:-:0
+nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+
+frame fling:-:0
+hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33
+h33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33h
+33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh
+3hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh3
+hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33
+h33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33hh33h
+
+frame transit:-:0
+qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3q
+qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3q
+3333333333333333333333333333333333333333333333333333333333333333
+qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3q
+qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3qq3q
+3333333333333333333333333333333333333333333333333333333333333333

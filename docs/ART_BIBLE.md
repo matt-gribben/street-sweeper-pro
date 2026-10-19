@@ -813,11 +813,12 @@ x=4                                                                   x=W-4
 | Hopper gauge | bottom-left, 16×16 icon + 64×6 bar | Fill 15, 17 at ≥ 80%, flashing 18 when full |
 | Water gauge | beside the hopper gauge | Fill 27 with 28 top pixel row; hydrant icon pulses below 20% |
 | Dignity (HP) | beside the water gauge, 16×16 spanner icon + 64×6 bar | 23 above 60 HP, 15 from 40 to 60 HP, 18 below 40 HP (the dented-sprite threshold) |
-| Brush-o-meter | bottom-left, below the gauges, 64×8 | Three patterned zones so it never relies on colour alone: clean (solid 23), fling (hatched 17/03), transit (dotted 26/03). Needle 07 with ink outline; speed in 5×7 beside it (mph by default) |
+| Brush-o-meter | bottom-left, below the gauges, 64×8 (as built: the row above them, below) | Three patterned zones so it never relies on colour alone: clean (solid 23), fling (hatched 17/03), transit (dotted 26/03). Needle 07 with ink outline; speed in 5×7 beside it (mph by default) |
 | Brush state | right of the Brush-o-meter, 16×16 | ▲ raised / ▼ lowered icon, with a 15 spin-up ring |
 | Power-up | right of the brush state, 16×16 | Power-up icon plus countdown in 5×7 |
 | Minimap | bottom-right, 64×64 *(proposed)*, rendered at runtime from map data | Roads 03, pavement 05, buildings 01, grime 08, clean frontages 23, dirty 18, Bessie arrow 15 with ink outline |
 | Dump prompt | bottom-centre, above the gauges (as built, below) | The interact key label (`E` in 5×7, 07) on a 26 disc inside `ui.dump_ring`, whose ring fills in 15 over the 60-tick hold (GDD §6.2, §8.7) |
+| Off-screen arrows | screen edge, inside the 4 px margin, clear of every HUD box (as built, below) | 11×11, 8 directions as separate frames (never rotated, §12.1): depot bay a solid arrow in 15, hydrant a double chevron in 27, both with a 00 outline |
 
 Safe margin: 4 px from every edge at all widths (432–640).
 
@@ -836,7 +837,22 @@ Safe margin: 4 px from every edge at all widths (432–640).
 | Water gauge | label `WATER` and bar, 6 px right of the hopper's box (x = 107) | Fill 27 with its top pixel row 28, on 03 |
 | Dignity (HP) | label `DIGNITY` and bar, 6 px right of the water's box (x = 179) | 23 above 60 HP, 15 from 40 to 60, 18 below 40, on 03 |
 
-The text labels stand in for the 16×16 icons until SSP-156 (M4), and the bars are cut from one solid placeholder frame, `ui.bar_fill` (66×8 of 07, recoloured per quad). The dump prompt sits above the gauges rather than on their row because at W = 432 the three gauges reach x = 245, past W/2; it only shows while Bessie is stopped, when the look-ahead zone is empty. Later M3/M4 elements (district and Tidy % bar, radio panel, Brush-o-meter, minimap) keep the proposed positions above and must stay clear of these boxes; the complaints meter (SSP-078) moved from the top row to y = 16 for that reason.
+The text labels stand in for the 16×16 icons until SSP-156 (M4), and the bars are cut from one solid placeholder frame, `ui.bar_fill` (66×8 of 07, recoloured per quad). The dump prompt sits above the gauges rather than on their row because at W = 432 the three gauges reach x = 245, past W/2; it only shows while Bessie is stopped, when the look-ahead zone is empty. Later M3/M4 elements (district and Tidy % bar, radio panel, Brush-o-meter, minimap) keep the proposed positions above and must stay clear of these boxes (the Brush-o-meter row could not: see below); the complaints meter (SSP-078) moved from the top row to y = 16 for that reason.
+
+**As built for M3 (SSP-299, `src/ui/hud.ts`, `src/ui/hudModel.ts`; checked at every even W = 432..640).** Same conventions as the M2 table; every box is inside the margin and overlaps no other, and the off-screen arrows stay 1 px clear of all of them (`tests/unit/hud.test.ts`). Placeholder frames: `ui.brush_meter`, `ui.brush_needle`, `ui.brush_state` and `ui.offscreen_arrow` (`"placeholder": true`, replaced by SSP-144/SSP-156).
+
+| Element | Box | Art (M3 placeholder) |
+|---|---|---|
+| District name | (4, 16), 140×9 (20 characters) | The compiled level's display name (`name`, copied from level.json), upper-cased, outlined, 07 |
+| Tidy % bar | (4, 25), 96×9: the 64×4 fill in a 1 px 00 frame (66×6 at y = 26), value box at x = 72 | Fill 23 on 03, floor(Tidy × 64) px; 07 tick columns over the frame's full 6 px height at x = 5 + floor(threshold × 64) = 43, 56, 63 (thresholds 60/80/92%, from `tuning.json` stars); value floor(Tidy × 100) + `%`, outlined 07 |
+| Brush-o-meter | (4, 233), 110×10: the 64×6 zones in a 1 px 00 frame (66×8 at y = 234), the 3×10 needle, the speed box at x = 72 | **Needle scale:** brush lowering or down, 0 .. the brush-down top speed (6.0 m/s); raising or raised, 0 .. the transit top speed (11.0 m/s); column floor(speed / top × 64), clamped to 0..63 and kept inside its zone's part of the bar. Brush down, the clean zone (solid 23) is the first floor(t0 / top × 64) px (42 at t0 = 4.0; all 64 under `pwr.super_suction`'s 6.0) and fling (hatched 17/03: 17 where (x + y) mod 4 < 2) the rest; brush up, the whole bar is transit (dotted 26/03: 2×2 dots of 26 on a 3 px lattice). Each zone is a sub-rectangle of its frame cut at the same x, so the pattern is phase-locked to the bar. Needle 07 in a 00 outline, 1 px proud of the frame top and bottom. Speed `n mph` (round(|vLong| × 2.237), ≤ 99), outlined 07. While the tutorial highlight is on, the clean zone blinks 23 → 24 every 8 ticks with its frame in 16 |
+| Brush state | 16×16, 4 px right of the Brush-o-meter's box (x = 118, y = 230) | A 26 badge (8 px disc, 00 edge) with a 07 ▲ (Raised, Raising) or ▼ (Lowering..Bulldozing); over it, from Lowering through Bulldozing, the spin-up ring: a 2 px 03 track between 00 edges in **8 steps** (`ring:-:0..8`, n eighths filled in 15 clockwise from 12 o'clock): floor(rpm × 8) while Lowering and SpinningUp, full while Collecting and Bulldozing |
+| Power-up slot | 16×16 + 2 + `0:00`, 4 px right of the brush state (x = 138), 46×16 | Reserved for SSP-096; nothing drawn yet |
+| Radio panel slot | (4, 206), 200×22 | Reserved for SSP-289: above the brush row and left of the dump prompt at W = 432 |
+| Minimap slot | (W − 68, 202), 64×64 | Reserved for SSP-291 |
+| Off-screen arrows | 11×11 centred on the arrow's point | Placed where the ray from Bessie's screen position to the projected target meets the frame inset by the margin (the whole arrow inside it), then moved back along the same ray until it is 1 px clear of every box above (all reserved boxes, including the slots); the frame is the ray's direction rounded to the nearest 45°. Hidden while the target is on screen |
+
+The brush row sits **above** the gauges (y = 230..245), not below them as drawn in the proposal: the SSP-070 gauges already end on the bottom margin (y = 266), and moving them and the dump prompt up a row would have reopened every M2 position for no gain. Lead call (delegated by the owner, SSP-299): keep the M2 boxes and put the Brush-o-meter, brush state and power-up slot on the row above; at W = 432 the row ends at x = 183, clear of the dump prompt (x = 206). The radio panel slot (SSP-289) then sits above the brush row.
 
 ### 12.3 Panels, buttons and icons
 

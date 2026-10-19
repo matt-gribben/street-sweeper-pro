@@ -101,7 +101,11 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "tile.setts",
         "tile.zebra",
         "ui.bar_fill",
+        "ui.brush_meter",
+        "ui.brush_needle",
+        "ui.brush_state",
         "ui.dump_ring",
+        "ui.offscreen_arrow",
         "ui.panel_council",
         "ui.panel_dark",
         "ui.panel_paper",
@@ -170,8 +174,8 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     # skin's 1 frame becomes 12 and 14 more litter IDs add 12 each (180 litter frames in all); SSP-052 adds 12
     # stain variants, 12 grime overlay variants, 3 pickups x 2 bob frames and 3 flat placeholders (33 frames);
     # + 200 SSP-068 font frames + the 3 SSP-285 placeholder 9-slice panels + the SSP-070 HUD bar fill (1) and
-    # dump ring (9).
-    assert sum(len(e.frame_ids()) for e in entries) == 742
+    # dump ring (9) + the SSP-299 Brush-o-meter (3), needle (1), brush state (11) and off-screen arrows (16).
+    assert sum(len(e.frame_ids()) for e in entries) == 773
     assert sum(len(e.frame_ids()) for e in entries if e.asset_class == "litter") == 180
     for e in raw["assets"]:
         assert list(e) == list(FIELDS) + [k for k in OPTIONAL_FIELDS if k in e], "fields in the documented order"

@@ -2,7 +2,7 @@
 id: SSP-299
 title: "Add the Brush-o-meter, brush state ring, district name with Tidy % bar, and off-screen depot/hydrant arrows to the HUD"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:ui, area:gameplay, area:render, area:test, size:L, vertical-slice]

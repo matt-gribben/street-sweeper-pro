@@ -1,7 +1,9 @@
 // Zero allocation per frame for the HUD (SSP-070; TECHNICAL_DESIGN §17 procedure, tests/support/heapDelta.ts):
 // UiSpriteBatch.begin, Hud.tick and Hud.draw from a live World view, then Hud.drawModel over a snapshot whose every
 // field moves frame by frame (timer, score digits and sign, combo tiers, the chain bar, tier popups, hopper, water,
-// Dignity, the dump ring and the complaints meter's stamps and shakes), end.
+// Dignity, the dump ring and the complaints meter's stamps and shakes; since SSP-299 the Brush-o-meter's zones,
+// needle and mph, the brush state and its ring, the clean-zone highlight, Tidy %, and both off-screen arrows
+// sweeping round the frame), end.
 //
 // A file of its own, like bitmapTextHeap.test.ts: Vitest runs each file in a fresh process, so the JIT sees only the
 // UiSpriteBatch sink, as the game does.
@@ -11,6 +13,7 @@ import { expect, it } from 'vitest';
 import { loadAtlas, type RgbaImage } from '../../src/render/spriteAtlas.ts';
 import { UiSpriteBatch } from '../../src/render/spriteBatch.ts';
 import { HUD_CAPACITY, HUD_FONT } from '../../src/scenes/ShiftScene.ts';
+import { BrushState } from '../../src/sim/brush.ts';
 import { createInputFrame } from '../../src/sim/inputFrame.ts';
 import { decodeLevel } from '../../src/sim/map.ts';
 import { DumpState } from '../../src/sim/shift.ts';
@@ -47,6 +50,25 @@ it('allocates nothing per frame: tick, draw from the World, and a model whose ev
   snapshot.dentedBelowHp = 40;
   snapshot.dumpHoldTotalTicks = 60;
   snapshot.chainRefreshTicks = 120;
+  snapshot.districtName = 'PUDDLE LANE';
+  snapshot.cameraPxPerM = 16;
+  snapshot.depotCount = 2;
+  snapshot.depotX = Float64Array.of(-100, 40);
+  snapshot.depotY = Float64Array.of(60, -90);
+  snapshot.hydrantCount = 2;
+  snapshot.hydrantX = Float64Array.of(70, -80);
+  snapshot.hydrantY = Float64Array.of(-50, -20);
+  const camera = { xM: world.vehicle.xM, yM: world.vehicle.yM, pxPerM: 16 };
+  const brushStates = [
+    BrushState.Raised,
+    BrushState.Lowering,
+    BrushState.SpinningUp,
+    BrushState.Collecting,
+    BrushState.Bulldozing,
+    BrushState.Raising,
+  ] as const;
+  const frame = hud.layout(480).arrowFrame;
+  hud.highlightCleanZone(1_000_000_000);
   const model = createHudModel();
   let maxQuads = 0;
   const delta = measureHeapDelta(
@@ -67,10 +89,18 @@ it('allocates nothing per frame: tick, draw from the World, and a model whose ev
       snapshot.complaints = Math.floor(tick / 40) % 6;
       snapshot.complaintStampTicks[snapshot.complaints > 0 ? snapshot.complaints - 1 : 0] =
         tick - (tick % 40);
+      snapshot.speedMps = (tick % 120) / 10;
+      snapshot.brushState = brushStates[Math.floor(tick / 40) % brushStates.length] ?? BrushState.Raised;
+      snapshot.rpm = (tick % 37) / 36;
+      snapshot.flingThresholdMps = (tick & 256) !== 0 ? 6 : 4;
+      snapshot.cleanHighlightUntilTick = (tick & 512) !== 0 ? tick + 10 : -1;
+      snapshot.tidyPpm = (tick * 997) % 1_000_001;
+      snapshot.cameraXM = 20 * Math.cos(tick / 50);
+      snapshot.cameraYM = 20 * Math.sin(tick / 70);
       batch.begin();
       hud.tick(world);
-      hud.draw(world, 480);
-      hud.drawModel(hudModel(snapshot, tick, model), 480);
+      hud.draw(world, 480, camera);
+      hud.drawModel(hudModel(snapshot, tick, model, frame), 480);
       if (batch.count > maxQuads) maxQuads = batch.count;
       batch.end();
     },

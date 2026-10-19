@@ -112,6 +112,10 @@ export type TidyView = {
   readonly stars: number;
   readonly cleanSweeps: number;
   readonly pledgesMet: number;
+  /** The star thresholds in ppm (stars.star1..3MinTidy; SSP-299: the HUD's Tidy % bar ticks). */
+  readonly star1Ppm: number;
+  readonly star2Ppm: number;
+  readonly star3Ppm: number;
 };
 
 /** A fraction in [0, 1] as clamped parts per million. */

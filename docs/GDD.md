@@ -902,11 +902,19 @@ All UI renders in the same internal pixel space as the game (base 480×270; widt
 | Power-up | Bottom-left | Icon and countdown |
 | Minimap | Bottom-right | Rendered at runtime from map data: roads, Bessie's arrow, depot bay, skips, hydrants, pledge frontages (green/red). Grime shown as a coarse heat tint. |
 | Score popups | World space | Points float up from the pickup; tier words big and centred |
-| Off-screen arrows | Screen edge | Point to depot bay when hopper ≥ 80% and to the nearest hydrant when water < 20% (proposed) |
+| Off-screen arrows | Screen edge | Point to the nearest depot bay while the hopper is ≥ 80% full (the fill fraction, so a bigger hopper still works; this is also the hopper row's dump-site arrow at 100%) and to the nearest hydrant while water is < 20% (proposed). Nearest is the straight-line distance from Bessie to the site's centre, ties to the first in level order. **An arrow is hidden while its target is inside the visible frame** (decided in SSP-299) |
 
 **M2 HUD (SSP-070).** The timer, score with its roll, combo with the chain bar and tier popups, the hopper, water and Dignity gauges, and the dump prompt are built (positions and colours in [ART_BIBLE §12.2](ART_BIBLE.md)). Until the M4 icons the gauges carry text labels (HOPPER, WATER, DIGNITY) and all HUD text is outlined Kerbside 5×7.
 
 **M3 complaints meter (SSP-078).** Five boxes top-right, just under the top row (the widest combo leaves no room beside it at 432 and 480 px). Each `EV.Complaint` slams a stamp into the next box over 3 frames of 3 ticks (the solid stamp face, then the stamp, then rest) with the 2-frame shake (1 px right, then 1 px left). From 4 complaints the whole meter shakes in a 12-tick burst every second. Placeholder art (an outline form, a red ring-and-block stamp) until SSP-156 (M4).
+
+**M3 HUD (SSP-299).** The Brush-o-meter, the brush state icon with its spin-up ring, the district name with the Tidy % bar, and the off-screen arrows are built with placeholder art (pixel rules in [ART_BIBLE §12.2](ART_BIBLE.md)). Decided there, all tunable:
+
+- **Brush-o-meter zones follow the live fling threshold.** With the brush lowering or down the bar spans 0 to the brush-down top speed and splits at the fling threshold (4.0 m/s, or 6.0 m/s under `pwr.super_suction`, when the whole bar reads clean); clean is speed ≤ the threshold, fling above it. With the brush raising or raised the whole bar is transit and spans 0 to the transit top speed. The speed beside it is round(|speed| × 2.237) mph.
+- **Spin-up ring:** shown from Lowering through Bulldozing; it fills with the RPM (8 steps) while lowering and spinning up and is full once the brush is collecting (or bulldozing), so a full ring means "sweeping now". Raised and Raising show ▲ with no ring.
+- **Tidy %** text and fill round down, so the HUD never shows a star threshold before it is reached.
+- **Tutorial hook:** `Hud.highlightCleanZone(untilTick)` blinks the clean zone (beat 3 in §16.2, wired by SSP-290). Beat 7's "the arrow'll show you" is the depot arrow, which needs no hook.
+- **Second channel:** besides their colours (depot yellow, hydrant blue) the two arrows differ in shape (a solid arrow and a double chevron), so neither relies on colour alone (§17.2).
 
 **HUD principles:**
 

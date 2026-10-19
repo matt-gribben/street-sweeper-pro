@@ -25,8 +25,10 @@
 //
 // HUD (SSP-070, src/ui/hud.ts): enter() also loads the `ui` atlas and Kerbside 5×7 and builds the HUD over one
 // UiSpriteBatch on the UI pass (SceneContext.ui); it subscribes to EV.ComboTier on the event bus for the tier
-// popups and to EV.Complaint for the complaints meter's stamps (SSP-078; both unsubscribed in exit()). fixedUpdate() rolls the HUD's shown score after each World tick, and render()
-// draws the HUD from the WorldView at the current internal width. The HUD only reads the World.
+// popups and to EV.Complaint for the complaints meter's stamps (SSP-078; both unsubscribed in exit()).
+// fixedUpdate() rolls the HUD's shown score after each World tick, and render() draws the HUD from the WorldView
+// at the current internal width, with the camera's snapped ground centre and scale for the off-screen arrows
+// (SSP-299). The HUD only reads the World.
 //
 // The camera (SSP-047, src/render/camera.ts) follows Bessie's interpolated body centre, leads it by up to 3.0 m
 // along her velocity (forward·vLong + right·vLat at the drawn heading) and takes its speed-zoom height from her
@@ -50,7 +52,7 @@ import { type LevelSource, loadLevel } from '../app/levelLoader.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
 import { type BessieSprite, createBessieSprite } from '../render/bessieSprite.ts';
 import { brushSpinFrameAt, createBrushSpin } from '../render/brushSpin.ts';
-import { cameraGroundRect } from '../render/camera.ts';
+import { cameraGroundRect, groundPxPerMetre } from '../render/camera.ts';
 import { bodyVelocity, createPose, createVelocity, interpolatePose } from '../render/interpolate.ts';
 import { ItemsBatch } from '../render/itemsBatch.ts';
 import { createLevelCity, type LevelCity } from '../render/levelCity.ts';
@@ -68,6 +70,7 @@ import { DEFAULT_TUNING, type Tuning, tuningsEqual } from '../sim/tuning.ts';
 import { createWorld, setWorldTuning, viewWorld, type World, type WorldView } from '../sim/world.ts';
 import { type BitmapFont, type FontJsonSource, loadBitmapFont } from '../ui/bitmapText.ts';
 import { Hud } from '../ui/hud.ts';
+import type { HudCamera } from '../ui/hudModel.ts';
 
 /** The HUD's font (`public/assets/fonts/kerbside5x7.json`). */
 export const HUD_FONT = 'kerbside5x7';
@@ -138,6 +141,8 @@ export class ShiftScene implements Scene {
   private readonly brushSpin = createBrushSpin();
   /** The camera's ground rect this frame (the items batch's cull rect before its margin), reused every frame. */
   private readonly cameraRect: Aabb = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  /** Where the camera looks this frame, for the HUD's off-screen arrows (SSP-299), reused every frame. */
+  private readonly hudCamera: HudCamera = { xM: 0, yM: 0, pxPerM: 0 };
   private log: InputLog | null = null;
   private districtId: string | null = null;
   /** The pose drawn this frame, reused every frame. */
@@ -410,8 +415,12 @@ export class ShiftScene implements Scene {
     const hud = this.hud;
     const batch = this.hudBatch;
     if (hud !== null && batch !== null) {
+      const camera = this.hudCamera;
+      camera.xM = rig.snappedX;
+      camera.yM = rig.snappedZ;
+      camera.pxPerM = groundPxPerMetre(rig.height.value);
       batch.begin();
-      hud.draw(world, rig.internalWidth);
+      hud.draw(world, rig.internalWidth, camera);
       batch.end();
     }
     this.frames += 1;

@@ -14,15 +14,30 @@
 // - the hold-to-dump prompt, driven for real (W = 480): Bessie backs out of the depot start, turns into a depot
 //   bay and stops; spraying for half a second leaves the tank below full, so the bay offers a dump and the prompt
 //   appears with an empty ring; holding E for 30 ticks fills the ring to step 4 of 8; at 60 the drain starts and
-//   the prompt disappears.
+//   the prompt disappears;
+// - SSP-299: the sample shows the Brush-o-meter (fling zone), the brush state ring, the district name over the
+//   Tidy % bar and both off-screen arrows at every width (every arrow pixel inside its 11×11 box, which the unit
+//   tests keep 1 px clear of every reserved box), and the shift's first frame shows them at rest (transit
+//   pattern, 0 mph, ▲, PUDDLE LANE, 0%); spraying parked at the depot start until the tank is below 20% brings up
+//   the hydrant arrow, pointing at the nearer Puddle Lane hydrant.
 import { expect, type Page, type TestInfo, test } from '@playwright/test';
 import type { ShiftTestState, TestState } from '../../src/debug/testHooks.ts';
+import { groundPxPerMetre, snapToTexelM } from '../../src/render/camera.ts';
 import { KERBSIDE32 } from '../../src/render/palettePass.ts';
 import { INTERNAL_HEIGHT_PX } from '../../src/render/upscale.ts';
 import { hudSampleModel } from '../../src/scenes/HudSampleScene.ts';
 import { HUD_FONT } from '../../src/scenes/ShiftScene.ts';
 import { HUD_MARGIN_PX, Hud, type HudRect, hudLayout } from '../../src/ui/hud.ts';
-import { createHudSnapshot, type HudModel, hudModel } from '../../src/ui/hudModel.ts';
+import {
+  ARROW_DIRS,
+  ARROW_HALF_PX,
+  createHudModel,
+  createHudSnapshot,
+  type HudArrow,
+  type HudModel,
+  type HudSnapshot,
+  hudModel,
+} from '../../src/ui/hudModel.ts';
 import { readBitmapFont, readIndexedAtlas, TextRaster } from '../support/textRaster.ts';
 import { collectPageErrors, openTestScene, type RgbaFrame, readTestFrame } from '../support/visualGolden.ts';
 import { saveFrame } from './helpers/saveFrame.ts';
@@ -117,8 +132,20 @@ async function step(page: Page, n = 1): Promise<ShiftTestState> {
   return shiftState(page);
 }
 
-/** The model of the shift's first frame: the timer not yet started, nothing collected, full tank and Dignity. */
-function shiftStartModel(): HudModel {
+/** Puddle Lane's hydrants (public/assets/levels/puddle_lane.json props), metres. */
+const HYDRANTS = { x: [77, 51], y: [7, 15] } as const;
+
+/** The 11×11 box of an arrow. */
+function arrowBox(a: HudArrow): HudRect {
+  const size = 2 * ARROW_HALF_PX + 1;
+  return { x: a.xPx - ARROW_HALF_PX, y: a.yPx - ARROW_HALF_PX, w: size, h: size };
+}
+
+/**
+ * The snapshot of the shift's first frame: the timer not yet started, nothing collected, full tank and Dignity,
+ * the brush raised and Bessie parked (SSP-299: PUDDLE LANE at 0%, the transit meter at 0 mph, ▲).
+ */
+function shiftStartSnapshot(): HudSnapshot {
   const s = createHudSnapshot();
   s.ticksRemaining = 14_400;
   s.hopperCapacityLu = 100;
@@ -128,7 +155,12 @@ function shiftStartModel(): HudModel {
   s.hp = 100;
   s.maxHp = 100;
   s.dentedBelowHp = 40;
-  return hudModel(s, 0);
+  s.districtName = 'PUDDLE LANE';
+  return s;
+}
+
+function shiftStartModel(): HudModel {
+  return hudModel(shiftStartSnapshot(), 0);
 }
 
 /** The dump prompt alone (the rest of the model is whatever shiftStartModel holds). */
@@ -153,14 +185,20 @@ for (const viewport of VIEWPORTS) {
     await saveFrame(testInfo, `hud_sample_w${w}.png`, frame);
     expect([frame.width, frame.height]).toEqual([w, INTERNAL_HEIGHT_PX]);
 
-    const raster = rasterise(hudSampleModel(), w);
+    const sample = hudSampleModel(createHudModel(), hudLayout(font, w).arrowFrame);
+    expect([sample.depotArrow.visible, sample.hydrantArrow.visible]).toEqual([true, true]);
+    const raster = rasterise(sample, w);
     expect(raster.covered, 'the sample draws thousands of HUD pixels').toBeGreaterThan(3_000);
     const mismatches = uiMismatches(raster, frame);
     expect(mismatches.first).toEqual([]);
     expect(mismatches.count).toBe(0);
 
     // Inside the 4 px margin, and inside the union of the reserved boxes (which the unit test proves disjoint).
-    const boxes = Object.values(hudLayout(font, w).reserved);
+    const boxes = [
+      ...Object.values(hudLayout(font, w).reserved),
+      arrowBox(sample.depotArrow),
+      arrowBox(sample.hydrantArrow),
+    ];
     const outside: string[] = [];
     for (let y = 0; y < raster.height; y++) {
       for (let x = 0; x < raster.width; x++) {
@@ -274,5 +312,50 @@ test('the hold-to-dump prompt appears in a depot bay, fills over the hold and go
     }
   }
   expect(changed, 'the prompt has gone: the street shows through again').toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('spraying the tank below 20% brings up the hydrant arrow, pointing at the nearer hydrant', async ({
+  page,
+}, testInfo) => {
+  const errors = collectPageErrors(page);
+  await openTestScene(page, SHIFT_URL);
+  let state = await shiftState(page);
+  const start = { x: state.bessie.x, y: state.bessie.y };
+  await page.keyboard.down('ShiftLeft');
+  // 6 units/s from 100: 20.0 is left after 800 ticks, under 20 from the next.
+  state = await step(page, 799);
+  expect(state.water.units).toBeGreaterThan(20);
+  const before = await readTestFrame(page);
+  state = await step(page, 3);
+  await page.keyboard.up('ShiftLeft');
+  state = await step(page, 1);
+  expect(state.water.units).toBeLessThan(20);
+  expect([state.bessie.x, state.bessie.y]).toEqual([start.x, start.y]);
+  const frame = await readTestFrame(page);
+  await saveFrame(testInfo, 'hud_hydrant_arrow.png', frame);
+
+  // The model at this frame: the shift start plus the water, Bessie, the hydrants and the camera.
+  const s = shiftStartSnapshot();
+  s.water = state.water.units;
+  s.tidyPpm = Math.round(state.tidy * 1_000_000);
+  s.bessieXM = state.bessie.x;
+  s.bessieYM = state.bessie.y;
+  s.hydrantCount = 2;
+  s.hydrantX = HYDRANTS.x;
+  s.hydrantY = HYDRANTS.y;
+  s.cameraXM = snapToTexelM(state.camera.x);
+  s.cameraYM = snapToTexelM(state.camera.y);
+  s.cameraPxPerM = groundPxPerMetre(state.camera.h);
+  const model = hudModel(s, state.tick, createHudModel(), hudLayout(font, 480).arrowFrame);
+  const arrow = model.hydrantArrow;
+  expect(arrow.visible).toBe(true);
+  expect(arrow.target, 'the hydrant at (51, 15) m is nearer than (77, 7) m').toBe(1);
+  expect(ARROW_DIRS[arrow.dir]).toBe('ne');
+  const box = arrowBox(arrow);
+  const m = uiMismatches(rasterise(model, 480), frame, box);
+  expect(m.first, 'the hydrant arrow, pixel-exact in its box').toEqual([]);
+  // It was not there before the tank went below 20%.
+  expect(uiMismatches(rasterise(model, 480), before, box).count).toBeGreaterThan(20);
   expect(errors).toEqual([]);
 });

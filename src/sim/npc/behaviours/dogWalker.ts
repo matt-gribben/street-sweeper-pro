@@ -191,8 +191,12 @@ export function segmentOverlapsObb(
       p = dv;
       q = hl - v0;
     }
+    // Compared on every pass, not only inside the rare case below (the lead exactly parallel to a box edge, or
+    // of zero length): a compare first reached late in a run deoptimised this hot path for want of type
+    // feedback and boxed doubles until it was re-optimised, failing the npcAlloc heap check (SSP-095 merge).
+    const outside = q < 0;
     if (p === 0) {
-      if (q < 0) return false;
+      if (outside) return false;
       continue;
     }
     const r = q / p;

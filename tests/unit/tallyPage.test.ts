@@ -45,6 +45,7 @@ function snapshot(overrides: Partial<SimSnapshot> = {}): SimSnapshot {
     frontages: [],
     npcs: [],
     shift: { phase: 'ended', ticksRemaining: 0, endReason: 'time_up', endTick: 14_580 },
+    complaints: 0,
     ...overrides,
   };
 }

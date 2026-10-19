@@ -2,7 +2,7 @@
 id: SSP-067
 title: "Render litter, stains and site markers via the items instance batch"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:render, area:perf, size:M, vertical-slice]

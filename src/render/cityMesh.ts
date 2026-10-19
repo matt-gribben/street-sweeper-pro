@@ -369,9 +369,10 @@ export function cellVariant(x: number, y: number, count: number, salt: number): 
 
 /**
  * Hash salts, so the variants of the same cell are independent: ground and roof tiles (SSP-045), the grime
- * pattern variant of a tile (`Grime`) and the per-texel grime rank (`GrimeRank`, SSP-066).
+ * pattern variant of a tile (`Grime`) and the per-texel grime rank (`GrimeRank`, SSP-066). `Stain` picks a stain
+ * decal's variant from its position in 1/16 m texels (itemsBatch.ts, SSP-067).
  */
-export const VariantSalt = { Ground: 0, Roof: 1, Grime: 2, GrimeRank: 3 } as const;
+export const VariantSalt = { Ground: 0, Roof: 1, Grime: 2, GrimeRank: 3, Stain: 4 } as const;
 export type VariantSalt = (typeof VariantSalt)[keyof typeof VariantSalt];
 
 // ---------------------------------------------------------------------------------------------------------

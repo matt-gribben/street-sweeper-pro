@@ -9,7 +9,6 @@ import {
   bessieBodyFrameFor,
   bessieBrushFrameFor,
   createBessieSprite,
-  M1_BRUSH_SPIN_FRAME,
 } from '../../src/render/bessieSprite.ts';
 import {
   BESSIE_DENTED_FRAMES,
@@ -59,7 +58,10 @@ describe('Bessie frame selection', () => {
           const theta = i * HEADING_STEP_RAD + turns * 2 * Math.PI + (offsetDeg * Math.PI) / 180;
           expect(bessieBodyFrameFor(theta, 100, DENTED_BELOW_HP)).toBe(`veh.sweeper:body:${h}:0`);
           expect(bessieBodyFrameFor(theta, 10, DENTED_BELOW_HP)).toBe(`veh.sweeper:dented:${h}:0`);
-          expect(bessieBrushFrameFor(theta)).toBe(`veh.sweeper_brush:brush:${h}:${M1_BRUSH_SPIN_FRAME}`);
+          expect(bessieBrushFrameFor(theta)).toBe(`veh.sweeper_brush:brush:${h}:0`);
+          for (let spin = 0; spin < 4; spin++) {
+            expect(bessieBrushFrameFor(theta, spin)).toBe(`veh.sweeper_brush:brush:${h}:${spin}`);
+          }
         }
       }
     }
@@ -86,16 +88,19 @@ describe('createBessieSprite', () => {
     expect(bessie.sprites.mesh.renderOrder).toBe(3);
     expect(bessie.bodyFrame).toBeNull();
 
-    bessie.update({ xM: 7, yM: 89, headingRad: 0 }, 100, false, 89);
+    bessie.update({ xM: 7, yM: 89, headingRad: 0 }, 100, false, 2, 89);
     expect(bessie.bodyFrame).toBe('veh.sweeper:body:h00:0');
     expect(bessie.brushFrame).toBeNull();
     expect(bessie.sprites.count).toBe(1);
     expect(bessie.shadows.count).toBe(1);
     expect(bessie.sprites.mesh.count).toBe(1);
 
-    bessie.update({ xM: 7, yM: 89, headingRad: Math.PI / 2 }, 30, true, 89);
+    bessie.update({ xM: 7, yM: 89, headingRad: Math.PI / 2 }, 30, true, 0, 89);
     expect(bessie.bodyFrame).toBe('veh.sweeper:dented:h08:0');
     expect(bessie.brushFrame).toBe('veh.sweeper_brush:brush:h08:0');
+    // The overlay draws the spin frame it is given (brushSpin.ts derives it from the RPM, SSP-067).
+    bessie.update({ xM: 7, yM: 89, headingRad: Math.PI / 2 }, 100, true, 3, 89);
+    expect(bessie.brushFrame).toBe('veh.sweeper_brush:brush:h08:3');
     expect(bessie.sprites.count).toBe(2);
     expect(bessie.shadows.count).toBe(1);
 

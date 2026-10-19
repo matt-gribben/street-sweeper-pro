@@ -8,8 +8,9 @@
 //                  between two neighbouring frames until it is decided;
 //   body           `veh.sweeper:body:hNN:0`, or `veh.sweeper:dented:hNN:0` while hp < health.dentedBelowHp
 //                  (40 HP, tuning.json);
-//   brush overlay  `veh.sweeper_brush:brush:hNN:0` while brushDown. The spin (frames 0..3 by rpm) is M2's
-//                  brush animation; M1 draws spin frame 0.
+//   brush overlay  `veh.sweeper_brush:brush:hNN:S` while brushDown, S the spin frame 0..3 the caller passes:
+//                  brushSpin.ts turns the sim's RPM into it (3 ticks per frame at 100% RPM, scaled by 1/RPM,
+//                  frozen on 0 below 10%; ART_BIBLE §10.2, SSP-067).
 //
 // The pose drawn is the interpolated one (src/render/interpolate.ts); the caller passes it in. update() creates no
 // objects, arrays or closures: the frame IDs come from preallocated tables and the batches write into
@@ -22,9 +23,6 @@ import type { Pose } from './interpolate.ts';
 import type { SpriteAtlas } from './spriteAtlas.ts';
 import { DropShadowBatch, SpriteBatch } from './spriteBatch.ts';
 import { DepthLayer } from './worldMaterial.ts';
-
-/** The brush spin frame M1 draws (the spin animation is M2). */
-export const M1_BRUSH_SPIN_FRAME = 0;
 
 /** Sprites Bessie adds per frame: body and brush overlay. */
 const SPRITE_CAPACITY = 2;
@@ -41,9 +39,9 @@ export function bessieBodyFrameFor(headingRad: number, hp: number, dentedBelowHp
   return hp < dentedBelowHp ? bessieDentedFrame(heading) : bessieBodyFrame(heading);
 }
 
-/** Bessie's brush-overlay frame for heading θ radians (spin frame 0 in M1). */
-export function bessieBrushFrameFor(headingRad: number): FrameId {
-  return bessieBrushFrame(headingIndex(headingRad), M1_BRUSH_SPIN_FRAME);
+/** Bessie's brush-overlay frame for heading θ radians and spin frame 0..3 (brushSpin.ts). */
+export function bessieBrushFrameFor(headingRad: number, spinFrame = 0): FrameId {
+  return bessieBrushFrame(headingIndex(headingRad), spinFrame);
 }
 
 /** Bessie's sprites: add `group` to the world pass and call update() once per rendered frame. */
@@ -55,8 +53,11 @@ export type BessieSprite = {
   readonly bodyFrame: FrameId | null;
   /** The brush frame drawn by the last update(), or null when the brush was up. */
   readonly brushFrame: FrameId | null;
-  /** Poses Bessie at `pose`; `camYSimM` is the camera's sim y (in-layer sort bias). */
-  update(pose: Readonly<Pose>, hp: number, brushDown: boolean, camYSimM: number): void;
+  /**
+   * Poses Bessie at `pose`, the brush overlay (while `brushDown`) on spin frame `spinFrame` 0..3 (brushSpin.ts);
+   * `camYSimM` is the camera's sim y (in-layer sort bias).
+   */
+  update(pose: Readonly<Pose>, hp: number, brushDown: boolean, spinFrame: number, camYSimM: number): void;
   /** Releases the batches' GPU resources (not the shared atlas textures). */
   dispose(): void;
 };
@@ -97,11 +98,11 @@ export function createBessieSprite(actors: SpriteAtlas, dentedBelowHp: number): 
     get brushFrame(): FrameId | null {
       return brushFrame;
     },
-    update(pose: Readonly<Pose>, hp: number, brushDown: boolean, camYSimM: number): void {
+    update(pose: Readonly<Pose>, hp: number, brushDown: boolean, spinFrame: number, camYSimM: number): void {
       const x = pose.xM;
       const y = pose.yM;
       bodyFrame = bessieBodyFrameFor(pose.headingRad, hp, dentedBelowHp);
-      brushFrame = brushDown ? bessieBrushFrameFor(pose.headingRad) : null;
+      brushFrame = brushDown ? bessieBrushFrameFor(pose.headingRad, spinFrame) : null;
       sprites.begin(camYSimM);
       sprites.add(bodyFrame, x, y, DepthLayer.Bessie);
       if (brushFrame !== null) sprites.add(brushFrame, x, y, DepthLayer.Brush);

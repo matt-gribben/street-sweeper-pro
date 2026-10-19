@@ -10,12 +10,15 @@
 //   fixedUpdate(input)  world.step(input): one tick of the canonical tick order (§5.2), then merges the tick's
 //                       grime dirty rectangle into the city's GroundGrime (SSP-066);
 //   render(alpha)       lerps Bessie's pose between the last two ticks (shortest arc for the heading), points the
-//                       follow camera at it with her velocity and speed, poses her sprites and uploads the frame's
-//                       union of grime dirty rectangles (one sub-rectangle, groundLayer.ts). It reads the World,
-//                       never writes it.
+//                       follow camera at it with her velocity and speed and poses her sprites (the brush overlay's
+//                       spin frame from the World's RPM, brushSpin.ts), uploads the frame's union of grime dirty
+//                       rectangles (one sub-rectangle, groundLayer.ts), then writes the items batch: the litter,
+//                       stains, hydrants, skip and depot bays inside the camera's ground rect plus 4 m
+//                       (itemsBatch.ts, SSP-067). It reads the World, never writes it.
 //
-// Draw calls: city (1) + building shadows (1) + Bessie's drop shadow (1) + actors batch (1), then the palette
-// pass and the blit: 6 of the 10 budgeted (§12.7).
+// Draw calls: city (1) + building shadows (1) + Bessie's drop shadow (1) + actors batch (1) + items batch (1),
+// then the palette pass and the blit: 7 of the 10 budgeted (§12.7). The items draw is skipped (6) only when no
+// item is in view.
 //
 // The camera (SSP-047, src/render/camera.ts) follows Bessie's interpolated body centre, leads it by up to 3.0 m
 // along her velocity (forward·vLong + right·vLat at the drawn heading) and takes its speed-zoom height from her
@@ -32,14 +35,18 @@
 // remembers whether any recorded tick ran on a tuning that differs from tuning.json (`logMatchesCommittedTuning`);
 // the dev panel's Save replay refuses (or asks twice) when it does.
 //
-// No HUD, timer or shift end (M2), no audio (M5).
+// No HUD, timer or shift end yet (M2), no audio (M5).
 import type { SceneContext } from '../app/Game.ts';
 import { type LevelSource, loadLevel } from '../app/levelLoader.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
 import { type BessieSprite, createBessieSprite } from '../render/bessieSprite.ts';
+import { brushSpinFrameAt, createBrushSpin } from '../render/brushSpin.ts';
+import { cameraGroundRect } from '../render/camera.ts';
 import { bodyVelocity, createPose, createVelocity, interpolatePose } from '../render/interpolate.ts';
+import { ItemsBatch } from '../render/itemsBatch.ts';
 import { createLevelCity, type LevelCity } from '../render/levelCity.ts';
 import type { SpriteAtlas } from '../render/spriteAtlas.ts';
+import type { Aabb } from '../sim/collision/obb.ts';
 import { viewDirt } from '../sim/dirt.ts';
 import type { ReadonlyEventQueue } from '../sim/eventQueue.ts';
 import type { InputFrame } from '../sim/inputFrame.ts';
@@ -70,7 +77,12 @@ export function districtLevelName(district: string): string {
 }
 
 /** What enter() builds once the level and atlases are in. */
-type Built = { readonly sim: World; readonly city: LevelCity; readonly bessie: BessieSprite };
+type Built = {
+  readonly sim: World;
+  readonly city: LevelCity;
+  readonly bessie: BessieSprite;
+  readonly items: ItemsBatch;
+};
 
 /** The drive-only shift: one World, its level city and Bessie. */
 export class ShiftScene implements Scene {
@@ -87,7 +99,12 @@ export class ShiftScene implements Scene {
   private world: World | null = null;
   private city: LevelCity | null = null;
   private bessie: BessieSprite | null = null;
+  private items: ItemsBatch | null = null;
   private atlases: SpriteAtlas[] = [];
+  /** The brush overlay's spin phase (render-side, brushSpin.ts). */
+  private readonly brushSpin = createBrushSpin();
+  /** The camera's ground rect this frame (the items batch's cull rect before its margin), reused every frame. */
+  private readonly cameraRect: Aabb = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
   private log: InputLog | null = null;
   private districtId: string | null = null;
   /** The pose drawn this frame, reused every frame. */
@@ -132,6 +149,11 @@ export class ShiftScene implements Scene {
   /** Bessie's sprites (null before enter() resolves). */
   get bessieSprite(): BessieSprite | null {
     return this.bessie;
+  }
+
+  /** The items batch: litter, stains and the level's flat markers (null before enter() resolves). */
+  get itemsBatch(): ItemsBatch | null {
+    return this.items;
   }
 
   /** Frames this scene has posed (render() calls). */
@@ -187,23 +209,25 @@ export class ShiftScene implements Scene {
     const district = params.district;
     if (district === undefined) throw new Error('ShiftScene: entered without a district');
     const levelName = districtLevelName(district);
-    const [level, world, actors] = await Promise.all([
+    const [level, world, actors, items] = await Promise.all([
       loadLevel(levelName, this.levelSource),
       this.context.loadAtlas('world'),
       this.context.loadAtlas('actors'),
+      this.context.loadAtlas('items'),
     ]);
-    const atlases = [world, actors];
+    const atlases = [world, actors, items];
     let built: Built;
     try {
       if (level.id !== district) {
         throw new Error(`ShiftScene: ${levelName}.json holds '${level.id}', not '${district}'`);
       }
-      built = this.build(level, params.seed, world, actors);
+      built = this.build(level, params.seed, world, actors, items);
     } catch (error: unknown) {
       for (const atlas of atlases) disposeAtlas(atlas);
       throw error;
     }
     const { sim, city, bessie } = built;
+    this.items = built.items;
     if (this.recordInputs) {
       const log = createInputLog();
       // Like attachInputLog (replay.ts), but stops at the log's capacity instead of throwing: M1 never ends.
@@ -217,21 +241,37 @@ export class ShiftScene implements Scene {
     this.bessie = bessie;
     this.atlases = atlases;
     this.districtId = district;
-    this.context.root.add(city.group, bessie.group);
+    this.context.root.add(city.group, bessie.group, built.items.mesh);
+    this.brushSpin.lastTick = -1;
     // Place the camera over Bessie before the first frame (no render time passes, so no spring moves).
     const v = sim.vehicle;
     bodyVelocity(v.headingRad, v.vLongMps, v.vLatMps, this.velocity);
     this.context.followCamera(v.xM, v.yM, this.velocity.xMps, this.velocity.yMps, v.vLongMps);
   }
 
-  /** The World, the level city and Bessie's sprites; releases whatever it built if a later step throws. */
-  private build(level: Level, seed: number, world: SpriteAtlas, actors: SpriteAtlas): Built {
+  /**
+   * The World, the level city, Bessie's sprites and the items batch; releases whatever it built if a later step
+   * throws.
+   */
+  private build(
+    level: Level,
+    seed: number,
+    world: SpriteAtlas,
+    actors: SpriteAtlas,
+    items: SpriteAtlas,
+  ): Built {
     const sim = createWorld(level, seed, this.currentTuning);
     const city = createLevelCity(level, world, undefined, viewDirt(sim.dirt));
+    let bessie: BessieSprite | null = null;
     try {
-      const bessie = createBessieSprite(actors, this.currentTuning.vehicle.sweeper.health.dentedBelowHp);
-      return { sim, city, bessie };
+      bessie = createBessieSprite(actors, this.currentTuning.vehicle.sweeper.health.dentedBelowHp);
+      const itemsBatch = new ItemsBatch(items, world, level, {
+        litterCapacity: sim.litter.capacity,
+        stainCapacity: sim.stains.capacity,
+      });
+      return { sim, city, bessie, items: itemsBatch };
     } catch (error: unknown) {
+      bessie?.dispose();
       city.dispose();
       throw error;
     }
@@ -247,6 +287,11 @@ export class ShiftScene implements Scene {
       this.context.root.remove(this.bessie.group);
       this.bessie.dispose();
       this.bessie = null;
+    }
+    if (this.items !== null) {
+      this.context.root.remove(this.items.mesh);
+      this.items.dispose();
+      this.items = null;
     }
     for (const atlas of this.atlases) disposeAtlas(atlas);
     this.atlases = [];
@@ -274,8 +319,15 @@ export class ShiftScene implements Scene {
     const velocity = this.velocity;
     bodyVelocity(pose.headingRad, v.vLongMps, v.vLatMps, velocity);
     this.context.followCamera(pose.xM, pose.yM, velocity.xMps, velocity.yMps, v.vLongMps);
-    bessie.update(pose, v.hp, v.brushDown, this.context.renderer.rig.snappedZ);
+    const rig = this.context.renderer.rig;
+    const spinFrame = brushSpinFrameAt(this.brushSpin, world.tick, v.rpm);
+    bessie.update(pose, v.hp, v.brushDown, spinFrame, rig.snappedZ);
     this.city?.grime?.upload(this.context.renderer.webgl);
+    const items = this.items;
+    if (items !== null) {
+      cameraGroundRect(rig, 0, this.cameraRect);
+      items.update(world.litter, world.stains, world.tick, alpha, this.cameraRect, rig.snappedZ);
+    }
     this.frames += 1;
   }
 }

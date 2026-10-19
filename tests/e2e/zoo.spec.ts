@@ -188,6 +188,27 @@ test('tick=<n> steps animations at 10 fps: the brush overlay spins one frame per
   expect(errors).toEqual([]);
 });
 
+// SSP-099: the placeholder animal grids (cat 88, pigeon 20, dog_loose 64 frames), every frame of each on its
+// pages, exactly as the atlas holds them. The captures are the batch review the issue asks for (build/zoo/).
+for (const asset of ['npc.cat', 'npc.pigeon', 'npc.dog_loose'] as const) {
+  test(`asset=${asset} shows every placeholder animal frame exactly`, async ({ page }, testInfo) => {
+    const errors = collectPageErrors(page);
+    const { pageCount } = zooLayout(FRAME_IDS, { asset });
+    for (let n = 0; n < pageCount; n++) {
+      await openTestScene(page, `/?test=1&seed=1&scene=zoo&freeze=1&asset=${asset}&page=${n}`);
+      const frame = await readTestFrame(page);
+      expect([frame.width, frame.height]).toEqual([480, 270]);
+      await capture(testInfo, `zoo_${asset}_p${n}.png`, frame);
+      const layout = zooLayout(FRAME_IDS, { asset, page: n });
+      const placed = layout.cells.filter((c) => c.frame.startsWith(`${asset}:`)).length;
+      expect(placed, `page ${n} places frames of ${asset}`).toBeGreaterThan(0);
+      const diff = mismatches(referenceFrame(layout, 0), frame);
+      expect(diff.count, `page ${n}: first mismatches ${diff.first.join(' ')}`).toBe(0);
+    }
+    expect(errors).toEqual([]);
+  });
+}
+
 test('an unknown asset logs one console error naming it and falls back to the default view', async ({
   page,
 }) => {

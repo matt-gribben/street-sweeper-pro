@@ -7,6 +7,7 @@
 // the focus is snapped to the 1/16 m texel grid (the remainder goes to the blit); the height follows the speed-zoom
 // target. Both springs are critically damped and stepped in closed form, so they are frame-rate independent.
 import { PerspectiveCamera } from 'three';
+import type { Aabb } from '../sim/collision/obb.ts';
 import { PX_PER_M } from '../sim/constants.ts';
 import { INTERNAL_HEIGHT_PX, RT_HEIGHT_PX, RT_MARGIN_PX, rtWidthPx } from './upscale.ts';
 
@@ -349,6 +350,22 @@ export function pinCameraRig(rig: CameraRig, focusX: number, focusZ: number, hei
   rig.height.value = heightM;
   rig.height.velocity = 0;
   placeCamera(rig);
+}
+
+/**
+ * Writes into `out` the ground rectangle (sim metres: x east, y south) the camera's whole (W+2)×272 render
+ * target sees at y = 0, grown by `marginM` on every side, and returns it: the culling rect of the instance
+ * batches (TECHNICAL_DESIGN §12.5, a 4 m margin for leaning stacks and sprite extents). Allocation-free.
+ */
+export function cameraGroundRect(rig: Readonly<CameraRig>, marginM: number, out: Aabb): Aabb {
+  const pxPerM = groundPxPerMetre(rig.height.value);
+  const halfW = (0.5 * rtWidthPx(rig.internalWidth)) / pxPerM + marginM;
+  const halfH = (0.5 * RT_HEIGHT_PX) / pxPerM + marginM;
+  out.minX = rig.snappedX - halfW;
+  out.maxX = rig.snappedX + halfW;
+  out.minY = rig.snappedZ - halfH;
+  out.maxY = rig.snappedZ + halfH;
+  return out;
 }
 
 function placeCamera(rig: CameraRig): void {

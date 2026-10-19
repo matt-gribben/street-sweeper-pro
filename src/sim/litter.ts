@@ -31,7 +31,8 @@
 // it is collected (GDD §9.3, decided in SSP-064). When tidy.ts has attached a ZoneTally (attachLitterZones),
 // addLitter and collectLitter bump the spawned / collected counters of the frontage zones holding that tile.
 //
-// Hot path: stepLitter, beginLitterTick, queryLitter, updateLitterCell, flingLitter, collectLitter and
+// Hot path: stepLitter, beginLitterTick, queryLitter (and queryLitterView, the renderer's culling query on the
+// read-only view), updateLitterCell, flingLitter, collectLitter and
 // removeLitter allocate nothing (§17): no `new`, literals, closures or map/filter. They take objects and small
 // integers rather than metre doubles where a call might not be inlined. createLitterField, createLitterKinds
 // and spawnInitialLitter run at shift start and may allocate.
@@ -302,15 +303,18 @@ export function attachLitterZones(field: LitterField, zones: ZoneTally | null): 
 // Spatial hash
 // ---------------------------------------------------------------------------------------------------------
 
+/** The spatial hash's size in cells: the store and its read-only view both carry it. */
+type HashGrid = { readonly hashCols: number; readonly hashRows: number };
+
 /** Hash column of a world x (metres), clamped to the grid. */
-function hashCol(field: LitterField, xM: number): number {
+function hashCol(field: HashGrid, xM: number): number {
   const c = Math.floor(xM / LITTER_HASH_CELL_M);
   if (!(c > 0)) return 0; // also catches NaN
   return c >= field.hashCols ? field.hashCols - 1 : c;
 }
 
 /** Hash row of a world y (metres), clamped to the grid. */
-function hashRow(field: LitterField, yM: number): number {
+function hashRow(field: HashGrid, yM: number): number {
   const r = Math.floor(yM / LITTER_HASH_CELL_M);
   if (!(r > 0)) return 0;
   return r >= field.hashRows ? field.hashRows - 1 : r;
@@ -356,26 +360,42 @@ export function updateLitterCell(field: LitterField, i: number): boolean {
  * Write into `out` the indices of every item whose position lies inside `box` (edges inclusive), visiting only
  * the hash cells the box overlaps, and return how many were written. The order is deterministic: cells in
  * row-major order, then each cell's list order. `out` must hold at least `field.count` entries (a buffer of
- * `capacity`, made once, always does). An empty or NaN box finds nothing.
+ * `capacity`, made once, always does). An empty or NaN box finds nothing. Records the cells visited in
+ * `lastQueryCells`; queryLitterView is the same query on the read-only view.
  */
 export function queryLitter(field: LitterField, box: Readonly<Aabb>, out: Int32Array): number {
-  field.lastQueryCells = 0;
+  field.lastQueryCells = litterQueryCells(field, box);
+  return queryLitterView(field, box, out);
+}
+
+/** Hash cells a query of `box` visits (0 for an empty or NaN box). */
+function litterQueryCells(grid: HashGrid, box: Readonly<Aabb>): number {
+  if (!(box.minX <= box.maxX && box.minY <= box.maxY)) return 0;
+  const cols = hashCol(grid, box.maxX) - hashCol(grid, box.minX) + 1;
+  const rows = hashRow(grid, box.maxY) - hashRow(grid, box.minY) + 1;
+  return cols * rows;
+}
+
+/**
+ * queryLitter on the read-only view, for render culling (TECHNICAL_DESIGN §12.5): the same items in the same
+ * order, writing nothing to the store (not even `lastQueryCells`). Allocation-free.
+ */
+export function queryLitterView(view: LitterFieldView, box: Readonly<Aabb>, out: Int32Array): number {
   const minX = box.minX;
   const minY = box.minY;
   const maxX = box.maxX;
   const maxY = box.maxY;
   if (!(minX <= maxX && minY <= maxY)) return 0;
-  const c0 = hashCol(field, minX);
-  const c1 = hashCol(field, maxX);
-  const r0 = hashRow(field, minY);
-  const r1 = hashRow(field, maxY);
-  const xs = field.x;
-  const ys = field.y;
+  const c0 = hashCol(view, minX);
+  const c1 = hashCol(view, maxX);
+  const r0 = hashRow(view, minY);
+  const r1 = hashRow(view, maxY);
+  const xs = view.x;
+  const ys = view.y;
   let n = 0;
   for (let r = r0; r <= r1; r += 1) {
     for (let c = c0; c <= c1; c += 1) {
-      field.lastQueryCells += 1;
-      let i = field.cellHead[r * field.hashCols + c] as number;
+      let i = view.cellHead[r * view.hashCols + c] as number;
       while (i >= 0) {
         const x = xs[i] as number;
         const y = ys[i] as number;
@@ -384,7 +404,7 @@ export function queryLitter(field: LitterField, box: Readonly<Aabb>, out: Int32A
           out[n] = i;
           n += 1;
         }
-        i = field.cellNext[i] as number;
+        i = view.cellNext[i] as number;
       }
     }
   }

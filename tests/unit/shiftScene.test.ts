@@ -1,5 +1,5 @@
-// SSP-046: the drive-only ShiftScene, driven without WebGL. It loads compiled Puddle Lane and the world and actors
-// atlases, creates a seeded World with Bessie at the depot start facing north, steps it once per loop tick from
+// SSP-046: the drive-only ShiftScene, driven without WebGL. It loads compiled Puddle Lane and the world, actors and
+// items atlases (the items batch: litter, stains and the level's markers, SSP-067), creates a seeded World with Bessie at the depot start facing north, steps it once per loop tick from
 // real input devices (keyboard and gamepad through src/input/actions.ts), draws the interpolated pose and points
 // the follow camera at it, records the input log in dev builds, and binds `__ssp.step(n)` / `__ssp.state()` to
 // the World (exactly n ticks, exactly one render, JSON-safe SimSnapshot).
@@ -45,7 +45,7 @@ const checkoutLevels = async (url: string): Promise<string> => read(`public/${ur
 const atlasFiles = new Map<AtlasName, { json: unknown; image: RgbaImage }>();
 
 beforeAll(() => {
-  for (const name of ['world', 'actors'] as const) {
+  for (const name of ['world', 'actors', 'items'] as const) {
     atlasFiles.set(name, {
       json: JSON.parse(read(`public/assets/atlas/${name}.json`)),
       image: decodePng(readFileSync(`${REPO_ROOT}public/assets/atlas/${name}.png`)),
@@ -58,11 +58,14 @@ beforeAll(() => {
   level = decodeLevel(LEVEL_JSON);
 });
 
-/** A SceneContext over a fake renderer: records follow-camera calls and moves the rig's snapped y with them. */
+/**
+ * A SceneContext over a fake renderer: records follow-camera calls and moves the rig's snapped position with them
+ * (at the sweep height, 480 px wide, so the items batch can take its cull rect from it).
+ */
 function context() {
   const follows: [x: number, y: number, vx: number, vy: number, speed: number][] = [];
   const loaded: AtlasName[] = [];
-  const rig = { snappedZ: 0 };
+  const rig = { snappedX: 0, snappedZ: 0, height: { value: 31.5, velocity: 0 }, internalWidth: 480 };
   let released = 0;
   const ctx: SceneContext = {
     renderer: { rig } as unknown as Renderer,
@@ -79,6 +82,7 @@ function context() {
     },
     followCamera: (x, y, vx, vy, speed) => {
       follows.push([x, y, vx, vy, speed]);
+      rig.snappedX = x;
       rig.snappedZ = y;
     },
     releaseCamera: () => {
@@ -196,7 +200,7 @@ describe('ShiftScene', () => {
     expect(shift.snapshot()).toBeNull();
     expect(shift.simEvents).toBeNull();
     await shift.enter({ seed: 1, district: 'district.puddle_lane' });
-    expect(loaded.sort()).toEqual(['actors', 'world']);
+    expect(loaded.sort()).toEqual(['actors', 'items', 'world']);
     expect(shift.district).toBe('district.puddle_lane');
     const world = shift.worldView;
     if (world === null) throw new Error('no world');
@@ -218,7 +222,7 @@ describe('ShiftScene', () => {
       litter: { spawned: 130, collected: 0 },
       grime: { initial: 9000, cleaned: 0 },
     });
-    expect(ctx.root.children.map((g) => g.name)).toEqual(['levelCity', 'bessieSprite']);
+    expect(ctx.root.children.map((g) => g.name)).toEqual(['levelCity', 'bessieSprite', 'items']);
     expect(follows).toEqual([[level.player.x, level.player.y, 0, 0, 0]]);
     expect(shift.inputLog).toBeNull();
 
@@ -226,6 +230,11 @@ describe('ShiftScene', () => {
     expect(shift.bessieSprite?.bodyFrame).toBe('veh.sweeper:body:h00:0');
     expect(shift.bessieSprite?.brushFrame).toBeNull();
     expect(shift.renderCount).toBe(1);
+    // The items batch (SSP-067): the depot start's view holds both depot bays and no litter (Puddle Lane's
+    // nearest spawned item is beyond the camera rect plus 4 m).
+    const items = shift.itemsBatch;
+    expect(items?.markersDrawn).toBe(2);
+    expect(items?.batch.count).toBe((items?.markersDrawn ?? 0) + (items?.litterDrawn ?? 0));
   });
 
   it('steps the World once per fixedUpdate and draws the pose lerped by alpha', async () => {
@@ -287,6 +296,31 @@ describe('ShiftScene', () => {
     expect(shift.worldView?.vehicle.brushDown).toBe(true);
     expect(shift.bessieSprite?.brushFrame).toBe('veh.sweeper_brush:brush:h00:0');
     expect(shift.bessieSprite?.sprites.count).toBe(2);
+  });
+
+  it("spins the brush overlay by the World's RPM: frozen on frame 0 below 10%, 3 ticks per frame at 100%", async () => {
+    const { scene: shift } = scene();
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    const input = createInputFrame();
+    input.pressed = PRESSED.BRUSH;
+    shift.fixedUpdate(input);
+    input.pressed = 0;
+    const spins: { rpm: number; frame: string | null }[] = [];
+    for (let t = 0; t < 120; t++) {
+      shift.fixedUpdate(input);
+      shift.render(1);
+      spins.push({ rpm: shift.worldView?.vehicle.rpm ?? -1, frame: shift.bessieSprite?.brushFrame ?? null });
+    }
+    const spinOf = (frame: string | null): number => Number(frame?.split(':')[3]);
+    // Lowering and spinning up: frame 0 until the RPM reaches 10%.
+    for (const s of spins) if (s.rpm < 0.1) expect(spinOf(s.frame)).toBe(0);
+    // At full RPM the frame advances every 3 ticks, cycling 0..3.
+    const full = spins.filter((s) => s.rpm === 1).map((s) => spinOf(s.frame));
+    expect(full.length).toBeGreaterThan(24);
+    const changes = full.slice(1).filter((f, i) => f !== full[i]).length;
+    expect(changes).toBeGreaterThanOrEqual(Math.floor(full.length / 3) - 1);
+    expect(changes).toBeLessThanOrEqual(Math.ceil(full.length / 3) + 1);
+    expect(new Set(full)).toEqual(new Set([0, 1, 2, 3]));
   });
 
   it('draws the dented body while hp is below health.dentedBelowHp', async () => {

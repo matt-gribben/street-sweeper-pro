@@ -16,7 +16,8 @@
 //   flags            SpriteFlag bits (mirror; lit: the sprite writes G = 1, the light mask, SSP-021);
 //   layer, sortBias  the depth layer (DepthLayer) and the in-layer bias in [0, 1), computed by the batch from
 //                    the sprite's sim y and the camera y given to begin();
-//   atlas            drop shadows only: which atlas to sample (per-instance selector).
+//   atlas            which atlas to sample (per-instance selector): drop shadows, and sprite batches made with a
+//                    secondary atlas (the items batch samples `items` and the `world` stain decals, SSP-067).
 // Buffers are sized to capacity once; begin/add/end per frame allocates nothing (the bias is computed inside
 // the batch and written straight to the buffer, so no fresh float crosses a call per sprite).
 //
@@ -27,10 +28,14 @@
 // that can sample either atlas, writing R = 1 into the mask with MAX blending and vec4(0) into colour; the
 // palette pass then remaps the ground under it through shadow[32]. Sprites write mask (0, 0), so an actor
 // drawn over a drop shadow (its own included) is not darkened: only the SE fringe of the shadow shows. A sprite
-// flagged `Lit` writes (0, 1) instead: it is a light source (a lamp head), exempt from the night remap.
+// flagged `Lit` writes (0, 1) instead: it is a light source (a lamp head), exempt from the night remap. A batch
+// made with `receiveShadows` (ground-lying litter, stains and site markings, SSP-067) keeps the mask under its
+// texels instead, so the building and drop shadows drawn before it fall across them as across the ground.
 import {
+  AddEquation,
   BufferAttribute,
   BufferGeometry,
+  CustomBlending,
   DataTexture,
   DoubleSide,
   DynamicDrawUsage,
@@ -39,7 +44,11 @@ import {
   InstancedMesh,
   InterleavedBufferAttribute,
   NoBlending,
+  OneFactor,
+  OneMinusSrcAlphaFactor,
   ShaderMaterial,
+  type ShaderMaterialParameters,
+  SrcAlphaFactor,
 } from 'three';
 import { FRAME, type FrameId } from '../gen/assets.ts';
 import { PX_PER_M } from '../sim/constants.ts';
@@ -131,6 +140,12 @@ class InstanceBuffer {
     this.geometry = geometry;
   }
 
+  /**
+   * The anchor of the instance being written, (x, height, y) metres: a typed slot, so pushFrom() can hand
+   * positions over without passing fresh doubles across a call (which V8 boxes when it does not inline it).
+   */
+  readonly anchor = new Float64Array(3);
+
   /** Appends one instance; throws past capacity (size the batch for the scene). */
   push(
     frame: FrameId,
@@ -143,12 +158,49 @@ class InstanceBuffer {
     quarterTurns: number,
     atlasSlot: number,
   ): void {
+    const a = this.anchor;
+    a[0] = xM;
+    a[1] = heightM;
+    a[2] = yM;
+    this.pushAnchor(frame, layer, swap, flags, quarterTurns, atlasSlot);
+  }
+
+  /** Appends one flat instance at (xs[i], ys[i]) metres; positions never leave the typed arrays. */
+  pushFrom(
+    frame: FrameId,
+    xs: Float64Array,
+    ys: Float64Array,
+    i: number,
+    layer: number,
+    swap: number,
+    flags: number,
+    quarterTurns: number,
+    atlasSlot: number,
+  ): void {
+    const a = this.anchor;
+    a[0] = xs[i] as number;
+    a[1] = 0;
+    a[2] = ys[i] as number;
+    this.pushAnchor(frame, layer, swap, flags, quarterTurns, atlasSlot);
+  }
+
+  /** Appends one instance at `anchor`; the sortBias (see sortBias()) is computed here, from its y. */
+  private pushAnchor(
+    frame: FrameId,
+    layer: number,
+    swap: number,
+    flags: number,
+    quarterTurns: number,
+    atlasSlot: number,
+  ): void {
     if (this.count >= this.capacity) throw new Error(`sprite batch full (capacity ${this.capacity})`);
     const f = FRAME[frame];
     const d = this.data;
+    const a = this.anchor;
     const o = this.count * INSTANCE_STRIDE;
-    d[o + O_OFFSET] = xM;
-    d[o + O_OFFSET + 1] = heightM;
+    const yM = a[2] as number;
+    d[o + O_OFFSET] = a[0] as number;
+    d[o + O_OFFSET + 1] = a[1] as number;
     d[o + O_OFFSET + 2] = yM;
     d[o + O_ROTATION] = quarterTurns & 3;
     d[o + O_RECT] = f.x;
@@ -160,7 +212,9 @@ class InstanceBuffer {
     d[o + O_SWAP] = swap;
     d[o + O_FLAGS] = flags;
     d[o + O_LAYER] = layer;
-    d[o + O_BIAS] = sortBias(yM, this.camY[0] ?? 0);
+    // sortBias(yM, camY), written out so no fresh double crosses a call.
+    const t = 0.5 + (yM - (this.camY[0] as number)) / SORT_SPAN_M;
+    d[o + O_BIAS] = t > SORT_BIAS_MAX ? SORT_BIAS_MAX : t > 0 ? t : 0;
     d[o + O_ATLAS] = atlasSlot;
     this.count++;
   }
@@ -256,6 +310,67 @@ void main() {
 }
 `;
 
+// The two-atlas, ground-lying variant (SpriteBatchOptions.secondaryAtlas / receiveShadows; the items batch,
+// SSP-067). The per-instance `atlas` selector picks the atlas and its swap texture (GLSL ES 3.0 cannot index a
+// sampler array with a non-constant, as for drop shadows). With receiveShadows the mask output's alpha carries
+// the write: the material blends SRC_ALPHA / ONE_MINUS_SRC_ALPHA, so colour (alpha 1) is replaced while the mask
+// (alpha 0) keeps what the building and drop shadows wrote under the sprite; a Lit sprite writes mask alpha 1,
+// i.e. (0, 1), like any lit sprite.
+const SPRITE_VERTEX_DUAL = /* glsl */ `
+${SPRITE_VERTEX_COMMON}
+in float swap;
+in float atlas;
+flat out int vSwap;
+flat out float vLit;
+flat out int vAtlas;
+void main() {
+  placeSprite(vec2(0.0));
+  vSwap = int(swap);
+  vLit = (int(flags) & ${SpriteFlag.Lit}) != 0 ? 1.0 : 0.0;
+  vAtlas = int(atlas);
+}
+`;
+
+function spriteFragmentDual(receiveShadows: boolean): string {
+  const mask = receiveShadows ? 'vec4(0.0, vLit, 0.0, vLit)' : 'vec4(0.0, vLit, 0.0, 0.0)';
+  return /* glsl */ `
+precision highp float;
+precision highp int;
+uniform highp sampler2D uAtlas;
+uniform highp sampler2D uSwap;
+uniform highp sampler2D uAtlas1;
+uniform highp sampler2D uSwap1;
+uniform highp sampler2D uPalette;
+flat in int vSwap;
+flat in float vLit;
+flat in int vAtlas;
+${SPRITE_TEXEL_GLSL}
+${WORLD_OUTPUTS_GLSL}
+void main() {
+  ivec2 texel = frameTexel();
+  int idx = vAtlas == 0 ? indexAt(uAtlas, texel) : indexAt(uAtlas1, texel);
+  if (idx == ${TRANSPARENT_INDEX}) discard;
+  ivec2 swapTexel = ivec2(idx, clamp(vSwap, 0, ${SWAP_ROWS - 1}));
+  idx = vAtlas == 0 ? indexAt(uSwap, swapTexel) : indexAt(uSwap1, swapTexel);
+  outColour = vec4(texelFetch(uPalette, ivec2(idx, 0), 0).rgb, 1.0);
+  outMask = ${mask};
+}
+`;
+}
+
+/** Blending that replaces colour (alpha 1) and keeps the mask under a texel unless its alpha says write. */
+function keepMaskBlending(): ShaderMaterialParameters {
+  return {
+    blending: CustomBlending,
+    blendEquation: AddEquation,
+    blendEquationAlpha: AddEquation,
+    blendSrc: SrcAlphaFactor,
+    blendDst: OneMinusSrcAlphaFactor,
+    blendSrcAlpha: OneFactor,
+    blendDstAlpha: OneMinusSrcAlphaFactor,
+  };
+}
+
 const SHADOW_VERTEX = /* glsl */ `
 ${SPRITE_VERTEX_COMMON}
 in float atlas;
@@ -287,27 +402,66 @@ void main() {
 }
 `;
 
+/** SpriteBatch construction options. */
+export type SpriteBatchOptions = {
+  /** Palette the batch maps indices through (default Kerbside-32). */
+  readonly palette?: Kerbside32;
+  /**
+   * A second atlas instances may sample, chosen per instance from the frame's atlas (the items batch draws the
+   * `world` atlas's stain decals beside its own frames in the same draw, SSP-067). Default: none.
+   */
+  readonly secondaryAtlas?: SpriteAtlas;
+  /**
+   * Ground-lying sprites (litter, stains, site markings): opaque texels replace colour but keep the mask, so a
+   * building or drop shadow drawn earlier still darkens them (draw the batch after the shadows). Lit sprites
+   * still write (0, 1). Default false: sprites write mask (0, 0), so actors are never darkened by a shadow under
+   * them.
+   */
+  readonly receiveShadows?: boolean;
+};
+
 /** One atlas's sprites as one instanced draw. Call begin(camY), add() per sprite, end() once per frame. */
 export class SpriteBatch {
   readonly atlas: SpriteAtlas;
+  /** The second atlas instances may sample (SpriteBatchOptions.secondaryAtlas), or null. */
+  readonly secondaryAtlas: SpriteAtlas | null;
+  readonly receiveShadows: boolean;
   readonly mesh: InstancedMesh;
   private readonly instances: InstanceBuffer;
 
-  constructor(atlas: SpriteAtlas, capacity: number, palette: Kerbside32 = KERBSIDE32) {
+  constructor(atlas: SpriteAtlas, capacity: number, options: SpriteBatchOptions = {}) {
     this.atlas = atlas;
+    const secondary = options.secondaryAtlas ?? null;
+    if (secondary !== null && secondary.name === atlas.name) {
+      throw new Error(`sprite batch: secondary atlas '${secondary.name}' is the primary atlas`);
+    }
+    this.secondaryAtlas = secondary;
+    this.receiveShadows = options.receiveShadows ?? false;
     this.instances = new InstanceBuffer(capacity);
+    const palette = createPaletteTexture(options.palette ?? KERBSIDE32);
+    // The single-atlas, mask-writing batch keeps its M0 shader text exactly (every golden draws through it).
+    const dual = secondary !== null || this.receiveShadows;
     const material = new ShaderMaterial({
+      ...(this.receiveShadows ? keepMaskBlending() : {}),
       glslVersion: GLSL3,
-      vertexShader: SPRITE_VERTEX,
-      fragmentShader: SPRITE_FRAGMENT,
+      vertexShader: dual ? SPRITE_VERTEX_DUAL : SPRITE_VERTEX,
+      fragmentShader: dual ? spriteFragmentDual(this.receiveShadows) : SPRITE_FRAGMENT,
       side: DoubleSide,
       depthTest: true,
       depthWrite: true,
-      uniforms: {
-        uAtlas: { value: atlas.texture },
-        uSwap: { value: atlas.swapTexture },
-        uPalette: { value: createPaletteTexture(palette) },
-      },
+      uniforms: dual
+        ? {
+            uAtlas: { value: atlas.texture },
+            uSwap: { value: atlas.swapTexture },
+            uAtlas1: { value: (secondary ?? atlas).texture },
+            uSwap1: { value: (secondary ?? atlas).swapTexture },
+            uPalette: { value: palette },
+          }
+        : {
+            uAtlas: { value: atlas.texture },
+            uSwap: { value: atlas.swapTexture },
+            uPalette: { value: palette },
+          },
     });
     this.mesh = new InstancedMesh(this.instances.geometry, material, capacity);
     this.mesh.name = `sprites:${atlas.name}`;
@@ -324,6 +478,12 @@ export class SpriteBatch {
     return this.instances.count;
   }
 
+  /** The instance data (INSTANCE_STRIDE floats per instance); read-only, for tests. */
+  get instanceData(): Float32Array {
+    return this.instances.data;
+  }
+
+  // per-frame draw path: begin
   /** Starts a frame: drops last frame's instances; sortBias is measured from the camera's sim y. */
   begin(camYSimM: number): void {
     this.instances.count = 0;
@@ -332,8 +492,8 @@ export class SpriteBatch {
 
   /**
    * Adds one sprite whose pivot stands at sim (xM, yM) on depth `layer`; its sortBias comes from yM. `frame`
-   * must belong to this batch's atlas. Add sprites of a layer from north to south so that pairs too close for
-   * the depth buffer to separate (sortBias) still overlap correctly.
+   * must belong to this batch's atlas or its secondary atlas. Add sprites of a layer from north to south so that
+   * pairs too close for the depth buffer to separate (sortBias) still overlap correctly.
    */
   add(
     frame: FrameId,
@@ -344,10 +504,33 @@ export class SpriteBatch {
     flags = 0,
     quarterTurns = 0,
   ): void {
+    this.instances.push(frame, xM, yM, 0, layer, swap, flags, quarterTurns, this.atlasSlot(frame));
+  }
+
+  /**
+   * add() with the pivot at sim (xs[i], ys[i]): for callers drawing many sprites from struct-of-arrays stores
+   * (the items batch), so no position crosses a call as a fresh double, which V8 boxes when it does not inline
+   * the call (TECHNICAL_DESIGN §17).
+   */
+  addFrom(
+    frame: FrameId,
+    xs: Float64Array,
+    ys: Float64Array,
+    i: number,
+    layer: DepthLayer,
+    swap = 0,
+    flags = 0,
+    quarterTurns = 0,
+  ): void {
+    this.instances.pushFrom(frame, xs, ys, i, layer, swap, flags, quarterTurns, this.atlasSlot(frame));
+  }
+
+  /** 0 for a frame of the primary atlas, 1 for the secondary; throws for any other atlas. */
+  private atlasSlot(frame: FrameId): number {
     const atlas = FRAME[frame].atlas;
-    if (atlas !== this.atlas.name)
-      throw new Error(`frame ${frame} is in atlas '${atlas}', not '${this.atlas.name}'`);
-    this.instances.push(frame, xM, yM, 0, layer, swap, flags, quarterTurns, 0);
+    if (atlas === this.atlas.name) return 0;
+    if (this.secondaryAtlas !== null && atlas === this.secondaryAtlas.name) return 1;
+    return rejectSpriteAtlas(this, frame);
   }
 
   /**
@@ -359,16 +542,46 @@ export class SpriteBatch {
    * passes `Lit`).
    */
   addAtHeight(frame: FrameId, xM: number, yM: number, heightM: number, layer: DepthLayer, flags = 0): void {
-    const atlas = FRAME[frame].atlas;
-    if (atlas !== this.atlas.name)
-      throw new Error(`frame ${frame} is in atlas '${atlas}', not '${this.atlas.name}'`);
-    if (!(heightM >= 0)) throw new RangeError(`sprite height ${heightM} m must be >= 0`);
-    this.instances.push(frame, xM, yM, heightM, layer, 0, flags, 0, 0);
+    const slot = this.atlasSlot(frame);
+    if (!(heightM >= 0)) rejectSpriteHeight(heightM);
+    this.instances.push(frame, xM, yM, heightM, layer, 0, flags, 0, slot);
   }
 
   /** Ends the frame: sets the draw count and flags the instance buffer for upload (one needsUpdate). */
   end(): void {
     this.instances.publish(this.mesh);
+  }
+  // per-frame draw path: end
+
+  /** Releases the GPU buffers, the material and its palette texture (not the atlases, which their loader owns). */
+  dispose(): void {
+    disposeSpriteMesh(this.mesh);
+  }
+}
+
+/** Throws for a frame from neither of the batch's atlases (kept out of the per-frame path, which builds no objects). */
+function rejectSpriteAtlas(batch: SpriteBatch, frame: FrameId): never {
+  const atlas = FRAME[frame].atlas;
+  const names =
+    batch.secondaryAtlas === null
+      ? `'${batch.atlas.name}'`
+      : `'${batch.atlas.name}' or '${batch.secondaryAtlas.name}'`;
+  throw new Error(`frame ${frame} is in atlas '${atlas}', not ${names}`);
+}
+
+/** Throws for a negative or NaN sprite height (kept out of the per-frame path). */
+function rejectSpriteHeight(heightM: number): never {
+  throw new RangeError(`sprite height ${heightM} m must be >= 0`);
+}
+
+/** Disposes a sprite mesh's geometry, material and the palette texture the batch made (never the atlases). */
+function disposeSpriteMesh(mesh: InstancedMesh): void {
+  mesh.geometry.dispose();
+  const material = mesh.material;
+  if (material instanceof ShaderMaterial) {
+    const palette: unknown = material.uniforms.uPalette?.value;
+    if (palette instanceof DataTexture) palette.dispose();
+    material.dispose();
   }
 }
 

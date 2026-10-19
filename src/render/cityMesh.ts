@@ -353,8 +353,11 @@ export function cellVariant(x: number, y: number, count: number, salt: number): 
   return cellHash(x, y, salt) % count;
 }
 
-/** Hash salts, so ground and roof variants of the same cell are independent. */
-export const VariantSalt = { Ground: 0, Roof: 1 } as const;
+/**
+ * Hash salts, so ground and roof variants of the same cell are independent. `Stain` picks a stain decal's
+ * variant from its position in 1/16 m texels (itemsBatch.ts, SSP-067).
+ */
+export const VariantSalt = { Ground: 0, Roof: 1, Stain: 2 } as const;
 export type VariantSalt = (typeof VariantSalt)[keyof typeof VariantSalt];
 
 /**

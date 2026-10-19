@@ -259,6 +259,12 @@ describe('state hash', () => {
     world.npcAi.stimuli.x[k] = 3.25;
     world.npcAi.stimuli.y[k] = 4.5;
     world.npcAi.stimuli.radiusM[k] = 8;
+    // Two complaints and one honk in the horn-spam window, so the complaints section's ring is in the stream
+    // (SSP-078).
+    world.complaints.count = 2;
+    world.complaints.honks = 1;
+    world.complaints.honkTicks[0] = 3;
+    world.complaints.honkCount = 1;
     return world;
   }
 
@@ -1044,6 +1050,117 @@ describe('state hash', () => {
     }
   });
 
+  it('covers the M3 complaints meter, the horn window and the penalty log (SSP-078)', () => {
+    const base = hashOf(handSetWorld());
+    const mutations: [string, (w: World) => void][] = [
+      [
+        'complaints.count',
+        (w) => {
+          w.complaints.count += 1;
+        },
+      ],
+      [
+        'complaints.max',
+        (w) => {
+          w.complaints.max += 1;
+        },
+      ],
+      [
+        'complaints.twoToneHorn',
+        (w) => {
+          w.complaints.twoToneHorn = true;
+        },
+      ],
+      [
+        'complaints.hornRadiusM',
+        (w) => {
+          w.complaints.hornRadiusM += 0.001;
+        },
+      ],
+      [
+        'complaints.maxHonks',
+        (w) => {
+          w.complaints.maxHonks += 1;
+        },
+      ],
+      [
+        'complaints.windowTicks',
+        (w) => {
+          w.complaints.windowTicks += 1;
+        },
+      ],
+      [
+        'complaints.noiseComplaints',
+        (w) => {
+          w.complaints.noiseComplaints += 1;
+        },
+      ],
+      [
+        'complaints.hornThisTick',
+        (w) => {
+          w.complaints.hornThisTick = true;
+        },
+      ],
+      [
+        'complaints.hornCaught',
+        (w) => {
+          w.complaints.hornCaught = true;
+        },
+      ],
+      [
+        'complaints.honks',
+        (w) => {
+          w.complaints.honks += 1;
+        },
+      ],
+      [
+        'complaints.honksCaught',
+        (w) => {
+          w.complaints.honksCaught += 1;
+        },
+      ],
+      [
+        'complaints.noiseOffences',
+        (w) => {
+          w.complaints.noiseOffences += 1;
+        },
+      ],
+      [
+        'complaints.honkCount',
+        (w) => {
+          w.complaints.honkCount += 1;
+        },
+      ],
+      [
+        'complaints.honkTicks (in the window)',
+        (w) => {
+          w.complaints.honkTicks[0] = 4;
+        },
+      ],
+      [
+        'penalties.count',
+        (w) => {
+          w.penalties.count += 1;
+        },
+      ],
+      [
+        'penalties.applied',
+        (w) => {
+          w.penalties.applied += 1;
+        },
+      ],
+    ];
+    for (const [name, mutate] of mutations) {
+      const world = handSetWorld();
+      mutate(world);
+      expect(hashOf(world), name).not.toBe(base);
+    }
+    // A honk tick outside the window (beyond honkCount) is not state: it never changes the hash.
+    const stale = handSetWorld();
+    stale.complaints.honkTicks[3] = 99;
+    expect(hashOf(stale)).toBe(base);
+  });
+
   it('absorbs the whole grime mask once per hasher, then the dirty rectangle every tick', () => {
     const world = handSetWorld();
     // An empty dirty rectangle: only the first absorb sees a change outside it.
@@ -1122,8 +1239,10 @@ describe('state hash', () => {
  * rest of the litter store and the M2 state (brush, hopper, water, stains, grime mask, scoring, Tidy, shift),
  * and gave the hand-set World a frontage, a stain and a grime cell: 648c18d0 → ada67916. SSP-080 appended the
  * NPC state (store, handles, npc stream, stimuli, spawner) and gave it an NPC and a Horn: ada67916 → 0449a66a.
+ * SSP-078 appended the complaints meter, the horn window and the penalty log, and gave the hand-set World two
+ * complaints and a honk in the window: 0449a66a → b25f1a0a (2cab5426 on its branch, before SSP-080 merged).
  */
-const GOLDEN_HAND_SET_HASH = '0449a66a';
+const GOLDEN_HAND_SET_HASH = 'b25f1a0a';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

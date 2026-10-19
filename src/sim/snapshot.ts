@@ -13,7 +13,7 @@
 //                 grime { initial, cleaned }, frontages [{ id, clean, cleanSwept }];
 //   M2 (SSP-071)  shift { phase, ticksRemaining, endReason, endTick }: the tally reads why the shift ended;
 //   M3 (SSP-080)  npcs [{ id, origin, x, y, heading, state, stateTicks }];
-//   M3 (SSP-078)  complaints.
+//   M3 (SSP-078)  complaints (the Council Complaints meter, 0..5).
 //
 // Load-time / test-time code: it allocates a fresh object per call and is never called per tick.
 import { NPC_IDS } from './entities.ts';
@@ -116,7 +116,7 @@ const SHIFT_END_REASON_NAMES: { readonly [R in ShiftEndReason]: SimShiftEndReaso
   [ShiftEndReason.Towed]: 'towed',
 };
 
-/** What `__ssp.state()` reports about the sim: M1 fields, then the M2 sweeping state (SSP-065). */
+/** What `__ssp.state()` reports about the sim: M1 fields, the M2 sweeping state (SSP-065), then M3's. */
 export type SimSnapshot = {
   /** Ticks completed since shift start (World.tick). */
   readonly tick: number;
@@ -140,6 +140,8 @@ export type SimSnapshot = {
   readonly shift: SimShiftSnapshot;
   /** Every live NPC, in store index order (SSP-080). */
   readonly npcs: readonly SimNpcSnapshot[];
+  /** Council Complaints this shift, 0..5 (complaints.ts): never decreases; 5 is SACKED! (SSP-079). */
+  readonly complaints: number;
 };
 
 /** `value` as a JSON-safe number: −0 becomes 0; NaN and ±Infinity throw, naming `field`. */
@@ -221,5 +223,6 @@ export function snapshotWorld(world: WorldView): SimSnapshot {
       endTick: jsonNumber(world.shift.endTick, 'shift.endTick'),
     },
     npcs,
+    complaints: jsonNumber(world.complaints.count, 'complaints'),
   };
 }

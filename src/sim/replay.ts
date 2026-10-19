@@ -425,6 +425,10 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     target; F x, y, radiusM
  *   I spawner.perchPending, flocksPlaced, ambientSpawned, ambientRetired, ambientCount, then namedRemaining
  *     per named NPC, flockRemaining per flock spec and perchUsed per wall perch
+ *   SSP-078 appends the complaints and the penalty log:
+ *   I complaints.count, max; B complaints.twoToneHorn; F complaints.hornRadiusM; I complaints.maxHonks,
+ *     windowTicks, noiseComplaints; B complaints.hornThisTick, hornCaught; I complaints.honks, honksCaught,
+ *     noiseOffences, honkCount, then the window's honk ticks oldest first; I penalties.count, penalties.applied
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -479,6 +483,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbScoring(hasher, world);
   absorbShift(hasher, world);
   absorbNpcs(hasher, world);
+  absorbComplaints(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -872,6 +877,39 @@ function absorbNpcs(hasher: StateHasher, world: World): void {
     k += 1;
   }
   mixWords(hasher, k);
+}
+
+function absorbComplaints(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const c = world.complaints;
+  const p = world.penalties;
+  w[0] = c.count | 0;
+  w[1] = c.max | 0;
+  w[2] = c.twoToneHorn ? 1 : 0;
+  w[3] = Math.round(c.hornRadiusM * HASH_QUANTUM) | 0;
+  w[4] = c.maxHonks | 0;
+  w[5] = c.windowTicks | 0;
+  w[6] = c.noiseComplaints | 0;
+  w[7] = c.hornThisTick ? 1 : 0;
+  w[8] = c.hornCaught ? 1 : 0;
+  w[9] = c.honks | 0;
+  w[10] = c.honksCaught | 0;
+  w[11] = c.noiseOffences | 0;
+  w[12] = c.honkCount | 0;
+  let k = 13;
+  const ring = c.honkTicks;
+  const n = c.honkCount;
+  for (let i = 0; i < n; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (ring[(c.honkHead + i) % ring.length] as number) | 0;
+    k += 1;
+  }
+  w[k] = p.count | 0;
+  w[k + 1] = p.applied | 0;
+  mixWords(hasher, k + 2);
 }
 
 /** The hasher's current value as a uint32. */

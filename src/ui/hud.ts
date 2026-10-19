@@ -21,6 +21,12 @@
 //               ink frame (66×8 at y = 258) on a 03 track: HOPPER at x = 4 with its percentage, 'FULL' or '!'
 //               to the right of the bar (x = 72), then WATER and DIGNITY, 6 px apart. The labels stand in for the
 //               16×16 icons until M4 (SSP-156).
+//   complaints  top-right (SSP-078): five 16×16 boxes 2 px apart (88×16), right-aligned 1 px inside the margin
+//               at y = 16, under the top row (at W = 432 and 480 the widest combo reaches past W − 92, so the
+//               meter cannot share the row), in a 90×16 box that holds the ±1 px shakes. Placeholder art until
+//               M4 (SSP-156): an empty box is a 06 outline form (8×10, two lines) on 25 inside a 1 px 00 border;
+//               a stamped box adds an 18 stamp (a 2 px ring and a 6×6 centre block, the GDD's ▣); the slam's
+//               first frame is the solid 14×14 18 stamp face.
 // Bars are sub-rectangles of the solid ui.bar_fill frame recoloured 07 → the wanted index (addRegion), so they need
 // no frame per length and cost no extra draw call.
 //
@@ -31,7 +37,7 @@
 // sections between the "per-frame draw path" markers are scanned by tests/unit/hud.test.ts for `new` and array
 // literals, and tests/unit/hudHeap.test.ts measures the heap.
 import type { EventBus, Unsubscribe } from '../app/events.ts';
-import type { FrameId } from '../gen/assets.ts';
+import { FRAME, type FrameId } from '../gen/assets.ts';
 import { EV } from '../sim/eventQueue.ts';
 import type { WorldView } from '../sim/world.ts';
 import { type BitmapFont, TextVariant } from './bitmapText.ts';
@@ -39,6 +45,8 @@ import {
   CHAIN_BAR_H_PX,
   CHAIN_BAR_PX,
   COMBO_TEXTS,
+  COMPLAINT_SLOTS,
+  ComplaintSlotState,
   createHudModel,
   createHudSnapshot,
   DUMP_KEY_TEXT,
@@ -58,6 +66,8 @@ import { BUTTON_NO_RECOLOUR, type PanelSink } from './panels.ts';
 
 /** The solid frame every bar is cut from, and its size. */
 export const BAR_FRAME: FrameId = 'ui.bar_fill:bar:-:0';
+/** Rows of the bar frame (66×8): a taller box takes one quad per this many rows. */
+const BAR_FRAME_H_PX = FRAME[BAR_FRAME].h;
 const BAR_FRAME_INK = HudColour.Chalk;
 
 /** The hold-to-dump ring frames, by fill step 0..8. */
@@ -109,6 +119,14 @@ export const HOPPER_WARN_GAP_PX = 1;
 export const GAUGE_GAP_PX = 6;
 /** The gauge labels (placeholders for the M4 icons). */
 export const GAUGE_LABELS = Object.freeze({ hopper: 'HOPPER', water: 'WATER', dignity: 'DIGNITY' });
+/** Complaints meter (ART_BIBLE §12.2): box size, gap, row and the shake room on each side. */
+export const COMPLAINT_BOX_PX = 16;
+export const COMPLAINT_GAP_PX = 2;
+export const COMPLAINTS_Y = 16;
+export const COMPLAINT_SHAKE_PX = 1;
+/** The five boxes at rest: 5 × 16 + 4 × 2 = 88 px. */
+export const COMPLAINT_METER_W_PX =
+  COMPLAINT_SLOTS * COMPLAINT_BOX_PX + (COMPLAINT_SLOTS - 1) * COMPLAINT_GAP_PX;
 
 /** The widest score: a sign and seven digits with two commas. */
 export const SCORE_MAX = 9_999_999;
@@ -135,6 +153,8 @@ export type HudLayout = {
   };
   /** x of the hopper's side text box. */
   readonly hopperTextX: number;
+  /** x of the first complaints box at rest (the meter's reserved box starts 1 px left of it). */
+  readonly complaintsX: number;
   /**
    * Reserved boxes by element. The score and the combo share one (`scoreCombo`): the combo follows the score's
    * right edge, so their boxes would overlap; tests check that their pixels never touch.
@@ -149,6 +169,7 @@ export type HudElement =
   | 'chainBar'
   | 'popup'
   | 'dump'
+  | 'complaints'
   | 'hopper'
   | 'water'
   | 'dignity';
@@ -226,13 +247,21 @@ export function hudLayout(font: BitmapFont, widthPx: number): HudLayout {
     w: DUMP_RING_PX,
     h: DUMP_RING_PX,
   };
+  const complaintsX = widthPx - m - COMPLAINT_SHAKE_PX - COMPLAINT_METER_W_PX;
+  const complaints: HudRect = {
+    x: complaintsX - COMPLAINT_SHAKE_PX,
+    y: COMPLAINTS_Y,
+    w: COMPLAINT_METER_W_PX + 2 * COMPLAINT_SHAKE_PX,
+    h: COMPLAINT_BOX_PX,
+  };
   return {
     widthPx,
     centreX,
     timer,
     gauges: { hopper, water, dignity },
     hopperTextX,
-    reserved: { timer, scoreCombo, chainBar, popup, dump, hopper, water, dignity },
+    complaintsX,
+    reserved: { timer, scoreCombo, chainBar, popup, dump, complaints, hopper, water, dignity },
   };
 }
 
@@ -284,6 +313,8 @@ export class Hud {
   /** The score being shown, rolled towards the sim's each tick (GDD §15.2). */
   private shownScore = 0;
   private readonly scoreChars = new Uint8Array(16);
+  /** EV.Complaint events seen this shift: the next box to stamp. */
+  private complaintsSeen = 0;
 
   constructor(sink: PanelSink, font: BitmapFont) {
     this.sink = sink;
@@ -314,18 +345,39 @@ export class Hud {
     this.snapshot.popupMultiplier = multiplier;
   }
 
-  /** Subscribes to EV.ComboTier on `bus`; call the returned function to stop (scene exit). */
-  attach(bus: EventBus): Unsubscribe {
-    return bus.on(EV.ComboTier, (event) => {
-      this.onComboTier(event.multiplier, event.previousMultiplier, event.tick);
-    });
+  /**
+   * Records a complaint (EV.Complaint): the next box's stamp starts slamming in on the first frame after the
+   * emitting tick (World.tick = tick + 1 at age 0). How many boxes are stamped comes from the World; this only
+   * times the stamps. Complaints past the fifth box change nothing.
+   */
+  onComplaint(tick: number): void {
+    const slot = this.complaintsSeen;
+    if (slot >= COMPLAINT_SLOTS) return;
+    this.snapshot.complaintStampTicks[slot] = tick + 1;
+    this.complaintsSeen = slot + 1;
   }
 
-  /** Forgets the score roll and any popup (a new shift). */
+  /** Subscribes to EV.ComboTier and EV.Complaint on `bus`; call the returned function to stop (scene exit). */
+  attach(bus: EventBus): Unsubscribe {
+    const offTier = bus.on(EV.ComboTier, (event) => {
+      this.onComboTier(event.multiplier, event.previousMultiplier, event.tick);
+    });
+    const offComplaint = bus.on(EV.Complaint, (event) => {
+      this.onComplaint(event.tick);
+    });
+    return () => {
+      offTier();
+      offComplaint();
+    };
+  }
+
+  /** Forgets the score roll, any popup and the stamp timings (a new shift). */
   reset(): void {
     this.shownScore = 0;
     this.snapshot.popupStartTick = -1;
     this.snapshot.popupMultiplier = 1;
+    this.snapshot.complaintStampTicks.fill(-1);
+    this.complaintsSeen = 0;
   }
 
   // per-frame draw path: begin
@@ -420,6 +472,48 @@ export class Hud {
       sink.add(frame, x0 + (DUMP_RING_PX >> 1), DUMP_RING_Y + (DUMP_RING_PX >> 1), BUTTON_NO_RECOLOUR, 0);
       font.draw(sink, DUMP_KEY_TEXT, x0 + DUMP_KEY_DX, DUMP_RING_Y + DUMP_KEY_DY, HudColour.Chalk);
     }
+
+    // Complaints meter.
+    const meter = model.complaints;
+    if (meter.visible) {
+      const slots = meter.slots;
+      for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i];
+        if (slot === undefined) continue;
+        this.complaintBox(
+          layout.complaintsX + i * (COMPLAINT_BOX_PX + COMPLAINT_GAP_PX) + slot.dx,
+          slot.state,
+        );
+      }
+    }
+  }
+
+  /** One complaints box with its top-left at (x, COMPLAINTS_Y) in `state` (placeholder art, see the header). */
+  private complaintBox(x: number, state: ComplaintSlotState): void {
+    const y = COMPLAINTS_Y;
+    const n = COMPLAINT_BOX_PX;
+    this.box(x, y, n, n, HudColour.Ink);
+    if (state === ComplaintSlotState.Slam) {
+      this.box(x + 1, y + 1, n - 2, n - 2, HudColour.PostboxRed);
+      return;
+    }
+    this.box(x + 1, y + 1, n - 2, n - 2, HudColour.Navy);
+    // The form: an 8×10 outline with two text lines.
+    const fx = x + 4;
+    const fy = y + 3;
+    this.box(fx, fy, 8, 1, HudColour.Kerb);
+    this.box(fx, fy + 9, 8, 1, HudColour.Kerb);
+    this.box(fx, fy + 1, 1, 8, HudColour.Kerb);
+    this.box(fx + 7, fy + 1, 1, 8, HudColour.Kerb);
+    this.box(fx + 2, fy + 3, 4, 1, HudColour.Kerb);
+    this.box(fx + 2, fy + 6, 4, 1, HudColour.Kerb);
+    if (state !== ComplaintSlotState.Stamped) return;
+    // The stamp: a 2 px ring round the form and a 6×6 centre block.
+    this.box(x + 1, y + 1, n - 2, 2, HudColour.PostboxRed);
+    this.box(x + 1, y + n - 3, n - 2, 2, HudColour.PostboxRed);
+    this.box(x + 1, y + 3, 2, n - 6, HudColour.PostboxRed);
+    this.box(x + n - 3, y + 3, 2, n - 6, HudColour.PostboxRed);
+    this.box(x + 5, y + 5, 6, 6, HudColour.PostboxRed);
   }
 
   /** A gauge bar at (x, GAUGE_BAR_Y): ink frame, 03 track, fill, and optionally a top fill row in `topColour`. */
@@ -431,9 +525,15 @@ export class Hud {
     if (topColour >= 0) this.box(x + 1, GAUGE_BAR_Y + 1, fillPx, 1, topColour);
   }
 
-  /** A solid w × h rectangle in palette colour `colour`: a sub-rectangle of ui.bar_fill recoloured. */
+  /**
+   * A solid w × h rectangle in palette colour `colour`: sub-rectangles of ui.bar_fill recoloured, one quad per
+   * BAR_FRAME_H_PX rows (the frame is 66×8, so the complaints boxes take two).
+   */
   private box(x: number, y: number, w: number, h: number, colour: number): void {
-    this.sink.addRegion(BAR_FRAME, 0, 0, w, h, x, y, BAR_FRAME_INK, colour);
+    for (let row = 0; row < h; row += BAR_FRAME_H_PX) {
+      const rows = h - row < BAR_FRAME_H_PX ? h - row : BAR_FRAME_H_PX;
+      this.sink.addRegion(BAR_FRAME, 0, 0, w, rows, x, y + row, BAR_FRAME_INK, colour);
+    }
   }
   // per-frame draw path: end
 }

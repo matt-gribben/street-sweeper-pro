@@ -3,6 +3,7 @@
 // dispatch, and the errors for an unsealed queue or an event the bus cannot decode.
 import { describe, expect, it } from 'vitest';
 import { EventBus, type SimEvent } from '../../src/app/events.ts';
+import { Offence } from '../../src/sim/complaints.ts';
 import { LITTER_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
 import {
   createEventQueue,
@@ -54,9 +55,11 @@ describe('EventBus', () => {
       [EV.HazardJolt, 4, 22.5, 7.25, 2],
       [EV.HazardStop, 9, 61, 7, 5.5],
       [EV.ComboTier, -1, 2, 1, 10],
+      [EV.Horn, -1, 7.5, 88.25, 8],
+      [EV.Complaint, -1, 7.5, 88.25, Offence.Noise],
       [EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0],
     ]);
-    expect(bus.drain(queue)).toBe(14);
+    expect(bus.drain(queue)).toBe(16);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -79,6 +82,8 @@ describe('EventBus', () => {
       { type: EV.HazardJolt, tick: 42, entity: 4, x: 22.5, y: 7.25, spilledLU: 2 },
       { type: EV.HazardStop, tick: 42, entity: 9, x: 61, y: 7, speedMps: 5.5 },
       { type: EV.ComboTier, tick: 42, entity: -1, multiplier: 2, previousMultiplier: 1, chain: 10 },
+      { type: EV.Horn, tick: 42, entity: -1, x: 7.5, y: 88.25, radiusM: 8 },
+      { type: EV.Complaint, tick: 42, entity: -1, x: 7.5, y: 88.25, reason: Offence.Noise },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.TimeUp },
     ]);
   });
@@ -174,7 +179,7 @@ describe('EventBus', () => {
     expect(() => bus.drain(queue)).toThrow(/not sealed/);
   });
 
-  it('throws on an event type it cannot decode, an unknown ShiftEnd reason and an unknown litter kind', () => {
+  it('throws on an event type it cannot decode, an unknown ShiftEnd reason, litter kind or offence', () => {
     const bus = new EventBus();
     const unknown: ReadonlyEventQueue = {
       count: 1,
@@ -194,6 +199,8 @@ describe('EventBus', () => {
     expect(() => bus.drain(sealedQueue(14, [[EV.StainCleaned, -1, 0, 0, 10]]))).toThrow(/stain kind -1/);
     expect(() => bus.drain(sealedQueue(15, [[EV.DumpStart, 0, 3, 10, 120]]))).toThrow(/dump site 3/);
     expect(() => bus.drain(sealedQueue(16, [[EV.DumpEnd, 0, 0, 10, 1]]))).toThrow(/dump site 0/);
+    expect(() => bus.drain(sealedQueue(17, [[EV.Complaint, -1, 0, 0, 0]]))).toThrow(/unknown offence 0/);
+    expect(() => bus.drain(sealedQueue(18, [[EV.Complaint, -1, 0, 0, 99]]))).toThrow(/unknown offence 99/);
   });
 
   it('decodes every EV id the sim defines (a new EV type must be wired into the bus)', () => {
@@ -216,7 +223,8 @@ describe('EventBus', () => {
                   ? DumpSite.Depot
                   : 0,
               0,
-              0,
+              // Complaint carries its Offence code in `c`.
+              type === EV.Complaint ? Offence.Noise : 0,
             ] as const,
         ),
       ),

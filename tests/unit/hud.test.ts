@@ -11,8 +11,15 @@ import { EventBus } from '../../src/app/events.ts';
 import type { FrameId } from '../../src/gen/assets.ts';
 import { hudSampleModel } from '../../src/scenes/HudSampleScene.ts';
 import { HUD_FONT } from '../../src/scenes/ShiftScene.ts';
+import { Offence } from '../../src/sim/complaints.ts';
 import { createEventQueue, EV, emitEvent, resetEvents, sealEvents } from '../../src/sim/eventQueue.ts';
-import { BUTTON, createInputFrame, type InputFrame, THROTTLE_MAX } from '../../src/sim/inputFrame.ts';
+import {
+  BUTTON,
+  createInputFrame,
+  type InputFrame,
+  PRESSED,
+  THROTTLE_MAX,
+} from '../../src/sim/inputFrame.ts';
 import { createBlankLevel, Ground, type Level } from '../../src/sim/map.ts';
 import { availableDumpSite, DumpState, dumpHoldTicksAt, ShiftPhase } from '../../src/sim/shift.ts';
 import { snapshotWorld } from '../../src/sim/snapshot.ts';
@@ -33,12 +40,15 @@ import {
   writeScoreChars,
 } from '../../src/ui/hud.ts';
 import {
+  COMPLAINT_SLOTS,
+  ComplaintSlotState,
   createHudModel,
   createHudSnapshot,
   DUMP_RING_STEPS,
   type HudModel,
   type HudSnapshot,
   hudModel,
+  meterShakeDx,
   POPUP_LIFE_TICKS,
   popupRisePx,
   readHudSnapshot,
@@ -263,6 +273,135 @@ describe('hudModel: tier popups (ART_BIBLE §11)', () => {
     stop();
     emitTier(50, 3, 2);
     expect(hud.snapshot.popupStartTick).toBe(42);
+  });
+});
+
+describe('the complaints meter (GDD §11.3, §15.2; ART_BIBLE §12.2; SSP-078)', () => {
+  const stamps = (...ticks: number[]): Int32Array => {
+    const out = new Int32Array(COMPLAINT_SLOTS).fill(-1);
+    out.set(ticks);
+    return out;
+  };
+  const slots = (m: HudModel): [number, number][] => m.complaints.slots.map((s) => [s.state, s.dx]);
+  const { Empty, Slam, Stamped } = ComplaintSlotState;
+
+  it('shows five empty boxes at 0 complaints and the first n stamped at n', () => {
+    expect(slots(model())).toEqual([
+      [Empty, 0],
+      [Empty, 0],
+      [Empty, 0],
+      [Empty, 0],
+      [Empty, 0],
+    ]);
+    expect(model().complaints.visible).toBe(true);
+    expect(slots(model({ complaints: 2 })).map(([s]) => s)).toEqual([Stamped, Stamped, Empty, Empty, Empty]);
+    // Clamped to the five boxes.
+    expect(slots(model({ complaints: 9 })).map(([s]) => s)).toEqual([
+      Stamped,
+      Stamped,
+      Stamped,
+      Stamped,
+      Stamped,
+    ]);
+  });
+
+  it('slams a stamp in over 3 frames of 3 ticks with a 2-frame shake: face +1 px, stamp −1 px, then rest', () => {
+    const at = (tick: number): [number, number] =>
+      slots(model({ complaints: 1, complaintStampTicks: stamps(100) }, tick))[0] ?? [-1, -1];
+    expect([0, 1, 2, 3, 4, 5, 6, 60].map((a) => at(100 + a))).toEqual([
+      [Slam, 1],
+      [Slam, 1],
+      [Slam, 1],
+      [Stamped, -1],
+      [Stamped, -1],
+      [Stamped, -1],
+      [Stamped, 0],
+      [Stamped, 0],
+    ]);
+  });
+
+  it('at 4 complaints the whole meter shakes ±1 px for 12 ticks of every 60; not at 3', () => {
+    const dxAt = (n: number, tick: number): number[] =>
+      slots(model({ complaints: n, complaintStampTicks: stamps(10, 20, 30, 40) }, tick)).map(([, dx]) => dx);
+    // The 4th stamp started at 40: its own shake to 45, the meter's burst 40..51 (+1 −1 +1 −1 per 3 ticks).
+    expect(dxAt(4, 46)).toEqual([1, 1, 1, 1, 1]);
+    expect(dxAt(4, 49)).toEqual([-1, -1, -1, -1, -1]);
+    expect(dxAt(4, 52)).toEqual([0, 0, 0, 0, 0]);
+    expect(dxAt(4, 100)).toEqual([1, 1, 1, 1, 1]);
+    expect(dxAt(4, 103)).toEqual([-1, -1, -1, -1, -1]);
+    expect(meterShakeDx(12)).toBe(0);
+    expect(dxAt(3, 100)).toEqual([0, 0, 0, 0, 0]);
+    // A box mid-slam keeps its own offset during the burst.
+    expect(dxAt(4, 43)).toEqual([-1, -1, -1, -1, -1]);
+    expect(dxAt(4, 41)[3]).toBe(1);
+    expect(dxAt(4, 41)[0]).toBe(1);
+  });
+
+  it('draws the placeholder art: 00 border, 25 ground, 06 form; an 18 ring and centre; the solid 18 face', () => {
+    const w = 480;
+    const l = hudLayout(font, w);
+    const x0 = l.complaintsX;
+    const y0 = 16;
+    const raster = new TextRaster(w, HUD_HEIGHT_PX, uiAtlas);
+    const m = withoutMeter(model());
+    m.complaints.visible = true;
+    const states = [Stamped, Slam, Empty, Empty, Empty] as const;
+    m.complaints.slots.forEach((slot, i) => {
+      slot.state = states[i] ?? Empty;
+      slot.dx = 0;
+    });
+    new Hud(raster, font).drawModel(m, w);
+    const at = (slot: number, dx: number, dy: number): number => raster.at(x0 + slot * 18 + dx, y0 + dy);
+    // Stamped: ink corner, red ring, red centre, the form's corner peeping between ring and centre.
+    expect([at(0, 0, 0), at(0, 1, 1), at(0, 14, 14), at(0, 7, 7), at(0, 4, 3), at(0, 15, 15)]).toEqual([
+      0, 18, 18, 18, 6, 0,
+    ]);
+    // Slam: the solid face.
+    expect([at(1, 0, 0), at(1, 1, 1), at(1, 4, 3), at(1, 7, 7), at(1, 14, 14)]).toEqual([0, 18, 18, 18, 18]);
+    // Empty: navy ground, kerb-grey form outline and lines.
+    expect([at(2, 0, 0), at(2, 1, 1), at(2, 4, 3), at(2, 11, 12), at(2, 6, 6), at(2, 7, 7)]).toEqual([
+      0, 25, 6, 6, 6, 25,
+    ]);
+    // At rest the meter's right edge is 1 px clear of its box, which ends at the 4 px margin (shake room).
+    expect(raster.at(w - 6, y0)).toBe(0);
+    expect(raster.at(w - 5, y0)).toBe(-1);
+    expect(l.reserved.complaints).toEqual({ x: w - 94, y: 16, w: 90, h: 16 });
+  });
+
+  it('times each box’s stamp from EV.Complaint on the bus (the tick after), resets, and stops when unsubscribed', () => {
+    const bus = new EventBus();
+    const hud = new Hud(new TextRaster(480, 270, uiAtlas), font);
+    const stop = hud.attach(bus);
+    const queue = createEventQueue();
+    const emitComplaints = (tick: number, n: number): void => {
+      resetEvents(queue, tick);
+      for (let i = 0; i < n; i++) {
+        const e = emitEvent(queue, EV.Complaint, -1);
+        queue.c[e] = Offence.Hit;
+      }
+      sealEvents(queue);
+      bus.drain(queue);
+    };
+    emitComplaints(41, 2);
+    emitComplaints(90, 1);
+    expect([...hud.snapshot.complaintStampTicks]).toEqual([42, 42, 91, -1, -1]);
+    emitComplaints(95, 4);
+    expect([...hud.snapshot.complaintStampTicks]).toEqual([42, 42, 91, 96, 96]);
+    hud.reset();
+    expect([...hud.snapshot.complaintStampTicks]).toEqual([-1, -1, -1, -1, -1]);
+    stop();
+    emitComplaints(120, 1);
+    expect([...hud.snapshot.complaintStampTicks]).toEqual([-1, -1, -1, -1, -1]);
+  });
+
+  it('reads the count from the World (four quick honks: one complaint)', () => {
+    const level = createBlankLevel('test.hud_complaints', 20, 20);
+    level.layers.ground.fill(Ground.Road);
+    level.player = { x: 20, y: 20, heading: 0 };
+    const world = createWorld(level, 1, DEFAULT_TUNING);
+    const horn: InputFrame = { ...createInputFrame(), pressed: PRESSED.HORN };
+    for (let i = 0; i < 4; i++) world.step(horn);
+    expect(readHudSnapshot(world, createHudSnapshot()).complaints).toBe(1);
   });
 });
 
@@ -527,12 +666,28 @@ const WIDTHS = Array.from(
 /** Widths the pixel-level checks run at: both ends, the base width and odd-quarter steps between. */
 const PIXEL_WIDTHS = [432, 434, 446, 480, 482, 528, 574, 600, 638, 640];
 
+/** `m` with the complaints meter hidden (for checks of the top row's score and combo pixels). */
+function withoutMeter(m: HudModel): HudModel {
+  m.complaints.visible = false;
+  return m;
+}
+
 describe('layout at every width 432..640 (GDD §15.2: 4 px safe margin, anchored to the corners)', () => {
   it('reserves a box per element, inside the margin and overlapping no other', () => {
     for (const w of WIDTHS) {
       const boxes = Object.entries(hudLayout(font, w).reserved) as [HudElement, HudRect][];
       expect(boxes.map(([name]) => name).sort()).toEqual(
-        ['chainBar', 'dignity', 'dump', 'hopper', 'popup', 'scoreCombo', 'timer', 'water'].sort(),
+        [
+          'chainBar',
+          'complaints',
+          'dignity',
+          'dump',
+          'hopper',
+          'popup',
+          'scoreCombo',
+          'timer',
+          'water',
+        ].sort(),
       );
       for (const [name, r] of boxes) {
         expect(r.x, `${name} at W = ${w}`).toBeGreaterThanOrEqual(HUD_MARGIN_PX);
@@ -558,6 +713,7 @@ describe('layout at every width 432..640 (GDD §15.2: 4 px safe margin, anchored
       m.chainBar.visible = false;
       m.popup.visible = false;
       m.dump.visible = false;
+      m.complaints.visible = false;
       return m;
     };
     const toggles: [HudElement, (m: HudModel) => void][] = [
@@ -566,6 +722,7 @@ describe('layout at every width 432..640 (GDD §15.2: 4 px safe margin, anchored
       ['chainBar', (m) => (m.chainBar.visible = true)],
       ['popup', (m) => (m.popup.visible = true)],
       ['dump', (m) => (m.dump.visible = true)],
+      ['complaints', (m) => (m.complaints.visible = true)],
     ];
     for (const w of PIXEL_WIDTHS) {
       const r = hudLayout(font, w).reserved;
@@ -617,8 +774,9 @@ describe('layout at every width 432..640 (GDD §15.2: 4 px safe margin, anchored
 
   it('keeps a gap between the score and the combo beside it, whatever the score', () => {
     for (const score of [0, 7, 99, 12_450, 1_000_000, -250, -9_999_999]) {
-      const m = hudModel(snap({ multiplier: 5, score }), 0);
-      const scoreOnly = hudModel(snap({ score }), 0);
+      // The complaints meter (top-right, from y = 16) is left out: these rows are the score's and the combo's.
+      const m = withoutMeter(hudModel(snap({ multiplier: 5, score }), 0));
+      const scoreOnly = withoutMeter(hudModel(snap({ score }), 0));
       const withCombo = drawnPixels(m, 480);
       const without = keySet(drawnPixels(scoreOnly, 480));
       let scoreRight = -1;
@@ -640,7 +798,7 @@ describe('layout at every width 432..640 (GDD §15.2: 4 px safe margin, anchored
       expect([l.timer.x, l.timer.y]).toEqual([4, 4]);
       expect(l.reserved.scoreCombo.y).toBe(4);
       // The score is centred on W / 2: a symmetric one ('88') draws symmetrically about it.
-      const score = drawnPixels(hudModel(snap({ score: 88 }), 0), w);
+      const score = drawnPixels(withoutMeter(hudModel(snap({ score: 88 }), 0)), w);
       let x0 = 9_999;
       let x1 = -1;
       for (let i = 0; i < score.length; i += 2) {

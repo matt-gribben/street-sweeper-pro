@@ -638,6 +638,7 @@ describe('__ssp hooks bound to the ShiftScene', () => {
       'bessie',
       'camera',
       'combo',
+      'complaints',
       'frontages',
       'grime',
       'hopper',

@@ -25,7 +25,7 @@
 //
 // HUD (SSP-070, src/ui/hud.ts): enter() also loads the `ui` atlas and Kerbside 5×7 and builds the HUD over one
 // UiSpriteBatch on the UI pass (SceneContext.ui); it subscribes to EV.ComboTier on the event bus for the tier
-// popups (unsubscribed in exit()). fixedUpdate() rolls the HUD's shown score after each World tick, and render()
+// popups and to EV.Complaint for the complaints meter's stamps (SSP-078; both unsubscribed in exit()). fixedUpdate() rolls the HUD's shown score after each World tick, and render()
 // draws the HUD from the WorldView at the current internal width. The HUD only reads the World.
 //
 // The camera (SSP-047, src/render/camera.ts) follows Bessie's interpolated body centre, leads it by up to 3.0 m

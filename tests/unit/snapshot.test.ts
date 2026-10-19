@@ -65,6 +65,7 @@ describe('snapshotWorld', () => {
       'frontages',
       'shift',
       'npcs',
+      'complaints',
     ]);
     expect(Object.keys(snap.shift)).toEqual(['phase', 'ticksRemaining', 'endReason', 'endTick']);
     expect(Object.keys(snap.bessie)).toEqual(['x', 'y', 'heading', 'speed']);

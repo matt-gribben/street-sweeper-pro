@@ -496,8 +496,8 @@ Each milestone has the same shape:
 - [ ] `src/sim/traffic.ts`: lane graph following, stopping behind Bessie, honk after 3 s blocked, the 10 s Road Rage complaint, bus stops at `site.bus_stop` for 5 s.
 - [ ] `src/sim/bodies.ts`: knockable impulse bodies with masses and spill counts from `entities.json`.
 - [ ] Hazards in `world.ts`/`vehicle.ts`: grip overrides, jolts, LU spills behind the vehicle, the broken-glass HP drain, open-manhole hard stop. *(SSP-093: the hazard store and spawner, grip overrides, pothole and speed-bump jolts with LU spills, the open-manhole hard stop and the leaf-pile → wet-leaves hook, in `src/sim/hazards.ts`. The broken-glass HP drain is SSP-094.)*
-- [ ] `src/sim/complaints.ts`: 0–5 meter, horn-spam window, SACKED at 5.
-- [ ] Horn (8 m radius), near miss (+25), Pigeon Scatter (+25), Caught! (+100), dust coughing (−10 per pedestrian per 2 s).
+- [ ] `src/sim/complaints.ts`: 0–5 meter, horn-spam window, SACKED at 5. *(SSP-078: the meter, the horn-spam window with its re-arm rule, the penalty pipeline (`src/sim/penalties.ts`) and the HUD complaints meter. The SACKED transition is SSP-079.)*
+- [ ] Horn (8 m radius), near miss (+25), Pigeon Scatter (+25), Caught! (+100), dust coughing (−10 per pedestrian per 2 s). *(SSP-078: the HORN edge → `EV.Horn` with its 8 m radius and the Caught! hook; delivering it to NPCs is SSP-082.)*
 - [ ] Power-up spawning (1–3 per shift on pavements) and effects with durations.
 - [ ] Fill in tick order steps 4, 7 and 8. *(SSP-080: step 7, NPC AI: the NPC store, behaviour registry, stimuli, staggered perception and the population controller, in `src/sim/npc/`.)*
 - [ ] `litter.spilled_shopping` drops on knocked-over NPCs (0 points).

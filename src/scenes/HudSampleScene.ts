@@ -2,7 +2,9 @@
 // `?test=1&scene=hud_sample&freeze=1` (add `night=1` for the night remap). It draws the HUD from a fixed snapshot
 // with every element at its widest, so one frame per width shows the layout's worst case: the timer flashing red,
 // a seven-digit score, the ×5 combo with its chain-timer bar, the ×5 tier popup mid-rise, a full hopper, the water
-// tank and Dignity in their warning colours, and the hold-to-dump prompt with its ring half full. It is the HUD's
+// tank and Dignity in their warning colours, the hold-to-dump prompt with its ring half full, and the complaints
+// meter at 4 (SSP-078) shaking, with every box state: two stamped at rest, a stamp mid-shake, one slamming in
+// and an empty box. It is the HUD's
 // evidence scene until the M4 `hud_specimen` golden: tests/e2e/hud.spec.ts saves its frames at W = 480, 432 and
 // 640 to test-results/ and checks every UI pixel against a CPU rasterisation of the same model.
 //
@@ -50,7 +52,9 @@ export const HUD_SAMPLE_TICK = 600;
 
 /**
  * The sample snapshot: every element visible and at its widest (see the header). The popup started 18 ticks
- * before HUD_SAMPLE_TICK (half-way up its rise); the dump hold is at 30 of 60 ticks (ring step 4 of 8).
+ * before HUD_SAMPLE_TICK (half-way up its rise); the dump hold is at 30 of 60 ticks (ring step 4 of 8). Four
+ * complaints: the third stamp is 3 ticks old (Stamped, 1 px left), the fourth 2 ticks (Slam, 1 px right), and
+ * the meter's warning shake, 2 ticks into its burst, puts the rest 1 px right.
  */
 export const HUD_SAMPLE_SNAPSHOT: Readonly<HudSnapshot> = Object.freeze({
   ticksRemaining: 1_799,
@@ -73,6 +77,8 @@ export const HUD_SAMPLE_SNAPSHOT: Readonly<HudSnapshot> = Object.freeze({
   dumpState: DumpState.Holding,
   dumpHoldTicks: 30,
   dumpHoldTotalTicks: 60,
+  complaints: 4,
+  complaintStampTicks: Int32Array.of(120, 300, HUD_SAMPLE_TICK - 3, HUD_SAMPLE_TICK - 2, -1),
 });
 
 /** The sample's model (pure: the same every call). */

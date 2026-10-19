@@ -211,6 +211,7 @@ describe('installTestHooks with test=1', () => {
       npcs: [
         { id: 'npc.shopper', origin: 'ambient' as const, x: 3, y: 4, heading: 0, state: 0, stateTicks: 9 },
       ],
+      complaints: 1,
     };
     const host = fakeHost(() => ({
       tick: simTick,

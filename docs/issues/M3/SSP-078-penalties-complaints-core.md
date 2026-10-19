@@ -2,7 +2,7 @@
 id: SSP-078
 title: "Add complaints.ts, the penalty pipeline, horn input and the HUD complaints meter"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:gameplay, area:ui, area:test, size:M, vertical-slice]

@@ -11,6 +11,7 @@ import pytest
 from forge.manifest import (
     FIELDS,
     MANIFEST_PATH,
+    ROTATION_SPEC,
     ManifestError,
     entry_from_data,
     expand_dirs,
@@ -34,6 +35,26 @@ SWEEPER: dict[str, Any] = {
 }
 
 
+LITTER_IDS = [
+    "litter.banana_skin",
+    "litter.bin_bag",
+    "litter.chip_wrapper",
+    "litter.cigarette_butts",
+    "litter.crisp_packet",
+    "litter.dog_mess",
+    "litter.drink_can",
+    "litter.glass_bottle",
+    "litter.kebab_wrapper",
+    "litter.leaf_pile",
+    "litter.lolly_stick",
+    "litter.newspaper",
+    "litter.pizza_box",
+    "litter.plastic_bottle",
+    "litter.spilled_shopping",
+]
+"""The 15 litter IDs of ENTITY_CATALOG §4.1, sorted (SSP-051)."""
+
+
 def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     entries = load_manifest()
     ids = [e.id for e in entries]
@@ -47,7 +68,7 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "facade.terrace_brick",
         "facade.terrace_brick_bay",
         "haz.speed_bump",
-        "litter.banana_skin",
+        *LITTER_IDS,
         "npc.old_woman",
         "prop.lamp_post",
         "roof.depot",
@@ -68,19 +89,22 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     ]
     raw = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     by_id = {a["id"]: a for a in raw["assets"]}
-    assert by_id["litter.banana_skin"] == {
-        "id": "litter.banana_skin",
-        "class": "litter",
-        "technique": "ai-ingest",
-        "source": "assets-src/sprites/litter/banana_skin.sprite.txt",
-        "cell": [16, 16],
-        "states": ["idle"],
-        "dirs": ["h00"],
-        "frames": {"idle": 1},
-        "atlas": "items",
-        "outline": False,
-        "swaps": [],
-    }
+    for lid in LITTER_IDS:
+        name = lid.removeprefix("litter.")
+        # SSP-051 placeholders are hand-authored grids; the banana skin keeps its SSP-024 ingest provenance.
+        assert by_id[lid] == {
+            "id": lid,
+            "class": "litter",
+            "technique": "ai-ingest" if name == "banana_skin" else "grid",
+            "source": f"assets-src/sprites/litter/{name}.sprite.txt",
+            "cell": [16, 16],
+            "states": ["idle", "wobble"],
+            "dirs": "rot4",
+            "frames": {"idle": 1, "wobble": 2},
+            "atlas": "items",
+            "outline": False,
+            "swaps": [],
+        }
     assert by_id["npc.old_woman"] == {
         "id": "npc.old_woman",
         "class": "npc",
@@ -121,7 +145,10 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "outline": True,
         "swaps": [],
     }
-    assert sum(len(e.frame_ids()) for e in entries) == 317  # 205 M0 frames + 27 SSP-041 facade and roof frames + 85 SSP-040 ground tiles
+    # 205 M0 frames + 27 SSP-041 facade and roof frames + 85 SSP-040 ground tiles, then SSP-051: the banana
+    # skin's 1 frame becomes 12 and 14 more litter IDs add 12 each (180 litter frames in all).
+    assert sum(len(e.frame_ids()) for e in entries) == 496
+    assert sum(len(e.frame_ids()) for e in entries if e.asset_class == "litter") == 180
     for e in raw["assets"]:
         assert list(e) == list(FIELDS), "fields in the documented order"
         assert not e["id"].startswith(("concept.", "_probe")), "_probe and concept.* are never in the manifest"
@@ -138,6 +165,30 @@ def test_frame_ids_expand_states_dirs_and_frames() -> None:
     assert len(brush.frame_ids()) == 128 and "veh.sweeper_brush:brush:h07:2" in brush.frame_ids()
 
 
+def test_rot4_litter_entry_expands_to_twelve_heading_frame_ids() -> None:
+    litter = entry_from_data(
+        {
+            **SWEEPER,
+            "id": "litter.pizza_box",
+            "class": "litter",
+            "technique": "grid",
+            "source": "assets-src/sprites/litter/pizza_box.sprite.txt",
+            "cell": [16, 16],
+            "states": ["idle", "wobble"],
+            "dirs": "rot4",
+            "frames": {"idle": 1, "wobble": 2},
+            "atlas": "items",
+            "outline": False,
+        }
+    )
+    assert litter.rotated and litter.dirs_spec == "rot4"
+    assert litter.dirs == ("h00", "h08", "h16", "h24")
+    fids = litter.frame_ids()
+    assert len(fids) == 12 and "litter.pizza_box:wobble:h08:1" in fids  # ENTITY_CATALOG §1.3's example
+    assert not entry_from_data(SWEEPER).rotated
+    assert not entry_from_data({**SWEEPER, "dirs": ["h00", "h08", "h16", "h24"]}).rotated  # a list is all authored
+
+
 def test_expand_dirs() -> None:
     assert expand_dirs("h32") == tuple(f"h{i:02d}" for i in range(32))
     assert expand_dirs("h4") == ("h00", "h01", "h02", "h03")
@@ -145,7 +196,8 @@ def test_expand_dirs() -> None:
     assert expand_dirs(["s", "sw", "w"]) == ("s", "sw", "w")
     assert expand_dirs(["h00"]) == ("h00",)
     assert expand_dirs(["h00", "h08", "h16", "h24"]) == ("h00", "h08", "h16", "h24")
-    for bad in ("h8", [], ["x"], ["s", "s"], 3, ["h32"], ["h08", "h00"], ["h00", "h00"], ["h00", "s"], ["h7"]):
+    assert expand_dirs(ROTATION_SPEC) == ("h00", "h08", "h16", "h24")
+    for bad in ("h8", "rot", "rot8", [], ["x"], ["s", "s"], 3, ["h32"], ["h08", "h00"], ["h00", "h00"], ["h00", "s"], ["h7"]):
         with pytest.raises(ManifestError):
             expand_dirs(bad)
 

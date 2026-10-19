@@ -179,7 +179,7 @@ stateDiagram-v2
 
 ## 4. Rubbish (`litter.*`)
 
-**Common sprite spec:** cell **16×16**, visible body 8–14 px. Frames: `idle ×1` + `wobble ×2`, each in 4 code-generated rotations (`h00`, `h08`, `h16`, `h24`) = **12 frame IDs per item**. Technique: Codex transparent 4×2 sheet → `forge ingest` (one scale factor per sheet, largest item = 14 px) → grid (`ai-ingest`). Source: `assets-src/ai/litter.sheet_NN/` (provenance) and `assets-src/sprites/litter/<name>.sprite.txt` (truth). Atlas: `items`.
+**Common sprite spec:** cell **16×16**, visible body 8–14 px. Frames: `idle ×1` + `wobble ×2`, each in 4 code-generated rotations (`h00`, `h08`, `h16`, `h24`) = **12 frame IDs per item**. Technique: Codex transparent 4×2 sheet → `forge ingest` (one scale factor per sheet, largest item = 14 px) → grid (`ai-ingest`). Source: `assets-src/ai/litter.sheet_NN/` (provenance) and `assets-src/sprites/litter/<name>.sprite.txt` (truth). Atlas: `items`. Manifest `dirs: "rot4"` (ASSET_PIPELINE §6.1). **Until M4:** the 15 IDs ship as hand-authored placeholder grids (`technique: "grid"`, SSP-051) under these final frame IDs; `litter.banana_skin` is already `ai-ingest` (the SSP-024 scale sample). SSP-139 moves the ingested items to `ai-ingest` without changing frame IDs.
 
 ### 4.1 Stats
 

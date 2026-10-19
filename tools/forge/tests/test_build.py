@@ -18,6 +18,7 @@ from forge.build import (
     BuildError,
     asset_cache_key,
     build,
+    build_asset,
     grid_pivot,
     parse_render_name,
     reduce_render,
@@ -420,6 +421,120 @@ def test_ai_ingest_is_built_exactly_like_grid(tmp_path: Path) -> None:
     b = build(repo_root=repo2, out_root=tmp_path / "b", use_cache=False)
     for fa, fb in zip(a.frames, b.frames, strict=True):
         np.testing.assert_array_equal(fa.indices, fb.indices)
+
+
+# ---------------------------------------------------------------------------------------------
+# Litter rotations (dirs "rot4", SSP-051)
+
+LITTER_GRID = """\
+id: litter.toy
+cell: 5x5
+palette: kerbside32
+
+frame idle:h00:0
+.000.
+.0i0.
+.0ig0
+.0ii0
+.0000
+
+frame wobble:h00:0
+..000
+..0i0
+..0ig
+..0ii
+..000
+"""
+
+
+def litter_entry(**over: Any) -> dict[str, Any]:
+    e = grid_entry(
+        id="litter.toy",
+        source="assets-src/sprites/litter/toy.sprite.txt",
+        cell=[5, 5],
+        states=["idle", "wobble"],
+        dirs="rot4",
+        frames={"idle": 1, "wobble": 1},
+        atlas="items",
+        outline=False,
+    )
+    e["class"] = "litter"
+    e.update(over)
+    return e
+
+
+def add_litter_grid(repo: Path, text: str = LITTER_GRID) -> Path:
+    p = repo / "assets-src" / "sprites" / "litter" / "toy.sprite.txt"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
+def test_rot4_generates_exact_clockwise_quarter_turns(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, [litter_entry()])
+    add_litter_grid(repo)
+    result = build(repo_root=repo, out_root=tmp_path / "o", use_cache=False)
+    by_id = {f.frame_id: f for f in result.frames}
+    assert sorted(by_id) == [f"litter.toy:{s}:{d}:0" for s in ("idle", "wobble") for d in ("h00", "h08", "h16", "h24")]
+    for state in ("idle", "wobble"):
+        h00 = by_id[f"litter.toy:{state}:h00:0"].indices
+        h08 = by_id[f"litter.toy:{state}:h08:0"].indices
+        h16 = by_id[f"litter.toy:{state}:h16:0"].indices
+        h24 = by_id[f"litter.toy:{state}:h24:0"].indices
+        n = h00.shape[0]
+        for y in range(n):
+            for x in range(n):
+                # Clockwise on screen (rows run down): pixel (x, y) of h00 lands on (n-1-y, x) at h08.
+                assert h08[x, n - 1 - y] == h00[y, x]
+                assert h16[n - 1 - y, n - 1 - x] == h00[y, x]
+                assert h24[n - 1 - x, y] == h00[y, x]
+    # The lemon (16) pixel right of the centre (row 2, col 3) turns to below it (row 3, col 2) at 90° clockwise.
+    assert by_id["litter.toy:idle:h00:0"].indices[2, 3] == 16
+    assert by_id["litter.toy:idle:h08:0"].indices[3, 2] == 16
+    assert {f.pivot for f in result.frames} == {(2, 2)}
+    assert {f.atlas for f in result.frames} == {"items"}
+    # Each generated frame is written like an authored one.
+    assert (tmp_path / "o" / "frames" / "litter.toy" / "litter.toy:wobble:h24:0.png").is_file()
+
+
+@pytest.mark.parametrize(
+    ("text", "entry_over", "match"),
+    [
+        (LITTER_GRID.replace("frame wobble:h00:0", "frame wobble:h08:0"), {}, "authors h00 only"),
+        (LITTER_GRID + "\nmirror h08 from h00\n", {}, "authors h00 only"),
+        (
+            "id: litter.toy\ncell: 5x4\npalette: kerbside32\n\nframe idle:h00:0\n.000.\n.0i0.\n.0ig0\n.0000\n"
+            "\nframe wobble:h00:0\n..000\n..0i0\n..0ig\n..000\n",
+            {"cell": [5, 4]},
+            "square cell",
+        ),
+    ],
+)
+def test_rot4_rejects_authored_rotations_and_non_square_cells(
+    tmp_path: Path, text: str, entry_over: dict[str, Any], match: str
+) -> None:
+    repo = make_repo(tmp_path, [litter_entry(**entry_over)])
+    add_litter_grid(repo, text)
+    with pytest.raises(BuildError, match=match):
+        build(repo_root=repo, out_root=tmp_path / "o", use_cache=False)
+
+
+def test_committed_litter_rotations_are_pixel_exact(tmp_path: Path) -> None:
+    """Acceptance (SSP-051): every generated h08/h16/h24 litter frame is the exact 90°/180°/270°
+    clockwise rotation of its h00 frame, for all 15 litter IDs (12 frames each)."""
+    from forge.manifest import load_manifest
+    from forge.palette import REPO_ROOT
+
+    litter = [e for e in load_manifest() if e.asset_class == "litter"]
+    assert len(litter) == 15
+    for entry in litter:
+        frames = {f.frame_id: f.indices for f in build_asset(entry, REPO_ROOT, PALETTE).frames}
+        assert len(frames) == 12, entry.id
+        for state, n in (("idle", 0), ("wobble", 0), ("wobble", 1)):
+            h00 = frames[f"{entry.id}:{state}:h00:{n}"]
+            np.testing.assert_array_equal(frames[f"{entry.id}:{state}:h08:{n}"], np.rot90(h00, -1))
+            np.testing.assert_array_equal(frames[f"{entry.id}:{state}:h16:{n}"], np.rot90(h00, 2))
+            np.testing.assert_array_equal(frames[f"{entry.id}:{state}:h24:{n}"], np.rot90(h00, 1))
 
 
 @pytest.mark.parametrize(

@@ -428,7 +428,7 @@ Each milestone has the same shape:
 
 - [ ] `src/data/entities.json` seeded with every `litter.*` and `stain.*` from [ENTITY_CATALOG.md](ENTITY_CATALOG.md) (points, LU, notes).
 - [ ] Puddle Lane `level.json`: litter density, spawn tables, frontages and pledge list.
-- [ ] Placeholder `assets-src/sprites/litter/*.sprite.txt` for all 15 litter IDs (simple shapes in the right palette ramps, 16×16 cells), and placeholder `stain.*` procedural params.
+- [ ] Placeholder `assets-src/sprites/litter/*.sprite.txt` for all 15 litter IDs (simple shapes in the right palette ramps, 16×16 cells), and placeholder `stain.*` procedural params. *(Litter part done: SSP-051, 15 grids with idle + 2 wobble frames, `dirs: "rot4"` code rotations, 180 frame IDs in the `items` atlas. Stain params: SSP-052.)*
 
 *Render, UI and flow*
 

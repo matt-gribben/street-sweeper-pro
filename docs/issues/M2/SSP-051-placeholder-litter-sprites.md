@@ -2,7 +2,7 @@
 id: SSP-051
 title: "Author placeholder grids for all 15 litter IDs and add the items atlas"
 milestone: M2
-status: todo
+status: done
 type: asset
 estimate: L
 labels: [type:asset, area:assets, area:tooling, size:L, vertical-slice]

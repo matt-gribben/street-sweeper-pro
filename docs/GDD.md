@@ -527,8 +527,9 @@ Item point values are in [ENTITY_CATALOG.md](ENTITY_CATALOG.md). For calibration
 
 ### 10.2 Combo chain
 
-- Every **pickup** (litter collected, stain cleaned) refreshes a **2.0 s chain timer** and adds 1 to the chain.
-- **Any penalty resets the chain.** (This includes dust coughs; see §11.)
+- Every **pickup** (litter collected, stain cleaned) refreshes a **2.0 s chain timer** and adds 1 to the chain. The pickup scores at the multiplier *after* its own increment (the item that makes the chain 10 scores ×2; §10.4). Stain cleans take the multiplier and extend the chain like litter ([ENTITY_CATALOG](ENTITY_CATALOG.md) §17 Q5, resolved in SSP-063), and 0-point pickups (`litter.spilled_shopping`, a cleaned splat) still count.
+- With no pickup the chain expires exactly 2.0 s (120 ticks) after the last one; the timer is frozen while a dump drains (§20 Q4).
+- **Any penalty resets the chain.** (This includes dust coughs; see §11.) A tick's penalties apply after that tick's pickups, so the tick always ends at chain 0 (decided in SSP-063).
 - Grime neither builds nor breaks the chain.
 - `pwr.flask_of_tea` doubles the chain timer (to 4.0 s) for 15 s.
 
@@ -559,7 +560,7 @@ Item point values are in [ENTITY_CATALOG.md](ENTITY_CATALOG.md). For calibration
 | Lost Property | +250 | Plus £25; the owner thanks you on the tally page |
 | Golden Crisp Packet | +500 | One hidden per district |
 
-Style bonuses are **not** multiplied by the combo and do not extend the chain (proposed, M2). They exist to reward expressive driving, not to replace sweeping as the main points engine.
+Style bonuses are **not** multiplied by the combo and do not extend the chain (decided in SSP-063, §20 Q3). They exist to reward expressive driving, not to replace sweeping as the main points engine.
 
 ### 10.4 Example 10 seconds
 
@@ -1082,7 +1083,7 @@ Tracked here until resolved; resolutions go into the relevant section and data f
 |---|---|---|---|
 | 1 | **Economy total:** the facts sheet says buying everything costs £7,350, but the listed prices sum to £6,500. Raise L2 prices, add a third livery price, or correct the total? | M6 | **Deferred (owner, 2026-10-18):** a tunable gameplay number, not a design blocker. Revisit in M6 economy tuning |
 | 2 | Does a single brush pass clear a grime cell, or do some districts have "heavy" grime needing two passes? | M2 | **Resolved in M2 (SSP-060): single pass.** One tick of the footprint over a cell clears it, so the clean edge behind the brush is crisp and the Tidy % numerator is a plain count. Heavy grime would strengthen Pillar 3 but makes the reveal harder to read; it stays out of 1.0 (§9.1, [TECHNICAL_DESIGN §10.3](TECHNICAL_DESIGN.md#103-grime-mask-srcsimdirtts)) |
-| 3 | Do style bonuses (near miss, Kerb Hugger) extend or multiply the chain? | M2 | Neither (§10.3) |
+| 3 | Do style bonuses (near miss, Kerb Hugger) extend or multiply the chain? | M2 | **Resolved in M2 (SSP-063): neither.** Style bonuses (Kerb Hugger, Clean Sweep, and M3's near miss, Pigeon Scatter, Caught! and the rest) are added unmultiplied and leave the chain and its timer alone, so sweeping stays the main points engine (§10.3; `awardBonus` in `scoring.ts`, [TECHNICAL_DESIGN §10.6](TECHNICAL_DESIGN.md#106-scoring-and-combo-srcsimscoringts-srcsimcombots)) |
 | 4 | Is the chain timer frozen during a dump? | M2 | **Resolved in M2 (SSP-062): yes,** from the tick the drain starts (`EV.DumpStart`) to the tick it ends (`EV.DumpEnd`), not during the 1 s hold. `shift.ts` exposes `isShiftDraining`; `combo.ts` (SSP-063) freezes the chain timer while it holds (§8.7) |
 | 5 | Does the Shift map overlay pause? | M3 | No (§6.2); revisit if playtests show frustration |
 | 6 | Trophy threshold and exact Inspection Score formula | M6 | 0.5 × mean best Tidy % Mon–Sat + 0.5 × Inspection pass rate; Trophy at ≥ 80 (§12.8) |

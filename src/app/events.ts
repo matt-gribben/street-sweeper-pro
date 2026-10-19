@@ -134,6 +134,21 @@ export type DumpEndEvent = SimEventBase & {
   readonly completed: boolean;
 };
 
+/**
+ * The combo multiplier changed (phase 9, combo.ts, SSP-063). A rise (`multiplier` > `previousMultiplier`) is a
+ * tier reached: the HUD popup ("TIDY!" ...) and sfx.combo_tier play only then. A drop is the chain expiring or
+ * a penalty resetting it.
+ */
+export type ComboTierEvent = SimEventBase & {
+  readonly type: typeof EV.ComboTier;
+  /** The new multiplier (1..5). */
+  readonly multiplier: number;
+  /** The multiplier before the change. */
+  readonly previousMultiplier: number;
+  /** The chain length after the change (0 after an expiry or a penalty). */
+  readonly chain: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -146,6 +161,7 @@ export type SimEventByType = {
   [EV.StainCleaned]: StainCleanedEvent;
   [EV.DumpStart]: DumpStartEvent;
   [EV.DumpEnd]: DumpEndEvent;
+  [EV.ComboTier]: ComboTierEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -209,6 +225,14 @@ function createPayloads(): Payloads {
       luDumped: 0,
       completed: false,
     },
+    [EV.ComboTier]: {
+      type: EV.ComboTier,
+      tick: 0,
+      entity: -1,
+      multiplier: 1,
+      previousMultiplier: 1,
+      chain: 0,
+    },
   };
 }
 
@@ -247,7 +271,8 @@ function isEventType(type: number): type is EventType {
     type === EV.Fling ||
     type === EV.StainCleaned ||
     type === EV.DumpStart ||
-    type === EV.DumpEnd
+    type === EV.DumpEnd ||
+    type === EV.ComboTier
   );
 }
 
@@ -268,6 +293,7 @@ export class EventBus {
     [EV.StainCleaned]: [],
     [EV.DumpStart]: [],
     [EV.DumpEnd]: [],
+    [EV.ComboTier]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -427,6 +453,16 @@ export class EventBus {
         e.luDumped = b;
         e.completed = c !== 0;
         this.emit(EV.DumpEnd, e);
+        return;
+      }
+      case EV.ComboTier: {
+        const e = this.payloads[EV.ComboTier];
+        e.tick = tick;
+        e.entity = entity;
+        e.multiplier = a;
+        e.previousMultiplier = b;
+        e.chain = c;
+        this.emit(EV.ComboTier, e);
         return;
       }
     }

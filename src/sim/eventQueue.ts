@@ -20,8 +20,8 @@ export const EVENTS_PER_TICK = 512;
 /**
  * Event type ids (`type`, Uint16). 0 is never a valid type. The values are hashed into replays: append new
  * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
- * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd; later issues append the rest of the §7.2 list
- * (NpcHit, Complaint, ComboTier, Horn, ...).
+ * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd, SSP-063 ComboTier; later issues append the rest
+ * of the §7.2 list (NpcHit, Complaint, Horn, ...).
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036).
@@ -45,6 +45,9 @@ export const EVENTS_PER_TICK = 512;
  * - DumpEnd: entity = the site's index in level.sites, a = the site kind (DumpSite), b = LU this drain removed,
  *   c = 1 if the drain completed, 0 if it was cut short (Bessie left the site, the timer ran out, or TOWED).
  *   Phase 10 (shift.ts, SSP-062), once per DumpStart.
+ * - ComboTier: a = the new combo multiplier (1..5), b = the previous multiplier, c = the chain after the change;
+ *   entity −1. Phase 9 (combo.ts, SSP-063), on every multiplier change: a rise (a > b) is a tier reached (the
+ *   HUD popup and sfx.combo_tier), a drop is the chain expiring or a penalty resetting it.
  */
 export const EV = {
   Impact: 1,
@@ -57,6 +60,7 @@ export const EV = {
   StainCleaned: 8,
   DumpStart: 9,
   DumpEnd: 10,
+  ComboTier: 11,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

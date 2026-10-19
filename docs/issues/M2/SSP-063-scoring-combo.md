@@ -2,7 +2,7 @@
 id: SSP-063
 title: "Implement scoring.ts and combo.ts: item points, multiplier chain, grime, Kerb Hugger"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:gameplay, size:M, vertical-slice]
@@ -43,13 +43,13 @@ This is tick phase 9; it reads facts from this tick's EventQueue/counters, never
 
 ## Acceptance criteria
 
-- [ ] Tier thresholds at chain 10/25/50/100 give ×2..×5; the chain expires exactly 120 ticks after the last pickup
-- [ ] GDD §10.4 example reproduces 10 then 30 points and a 'TIDY!' `EV.ComboTier` at chain 10
-- [ ] A cleaned gum stain at ×2 scores 20 and extends the chain
-- [ ] A penalty resets the chain to 0 and the multiplier to ×1
-- [ ] The chain timer does not count down while `isDraining` is true
-- [ ] Grime scores 1 per cell and 2 per gutter cell; Kerb Hugger awards +50 at 180 continuous ticks and nothing at 179
-- [ ] Style bonuses are neither multiplied nor chain-extending; GDD §20 Q3 and ENTITY_CATALOG §17 Q5 are marked resolved
+- [x] Tier thresholds at chain 10/25/50/100 give ×2..×5; the chain expires exactly 120 ticks after the last pickup
+- [x] GDD §10.4 example reproduces 10 then 30 points and a 'TIDY!' `EV.ComboTier` at chain 10
+- [x] A cleaned gum stain at ×2 scores 20 and extends the chain
+- [x] A penalty resets the chain to 0 and the multiplier to ×1
+- [x] The chain timer does not count down while `isDraining` is true
+- [x] Grime scores 1 per cell and 2 per gutter cell; Kerb Hugger awards +50 at 180 continuous ticks and nothing at 179
+- [x] Style bonuses are neither multiplied nor chain-extending; GDD §20 Q3 and ENTITY_CATALOG §17 Q5 are marked resolved
 
 ## Verification
 

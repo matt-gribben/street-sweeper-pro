@@ -51,9 +51,10 @@ describe('EventBus', () => {
       [EV.StainCleaned, STAIN_IDS.indexOf('stain.milkshake'), 20.5, 6.75, 20],
       [EV.DumpStart, 6, DumpSite.Depot, 37.5, 120],
       [EV.DumpEnd, 5, DumpSite.Skip, 12.25, 0],
+      [EV.ComboTier, -1, 2, 1, 10],
       [EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0],
     ]);
-    expect(bus.drain(queue)).toBe(11);
+    expect(bus.drain(queue)).toBe(12);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -73,6 +74,7 @@ describe('EventBus', () => {
       },
       { type: EV.DumpStart, tick: 42, entity: 6, site: DumpSite.Depot, lu: 37.5, drainTicks: 120 },
       { type: EV.DumpEnd, tick: 42, entity: 5, site: DumpSite.Skip, luDumped: 12.25, completed: false },
+      { type: EV.ComboTier, tick: 42, entity: -1, multiplier: 2, previousMultiplier: 1, chain: 10 },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.TimeUp },
     ]);
   });

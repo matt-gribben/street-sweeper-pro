@@ -3,7 +3,9 @@
 import { describe, expect, it } from 'vitest';
 import { encodeBase64 } from '../../src/sim/base64.ts';
 import { EV, pushEvent } from '../../src/sim/eventQueue.ts';
+import { addHazard } from '../../src/sim/hazards.ts';
 import { BRAKE_MAX, createInputFrame, PRESSED, STEER_MAX, THROTTLE_MAX } from '../../src/sim/inputFrame.ts';
+import { addLitter } from '../../src/sim/litter.ts';
 import { createBlankLevel } from '../../src/sim/map.ts';
 import {
   absorbTick,
@@ -215,6 +217,9 @@ describe('state hash', () => {
     world.vehicle.steerRad = -0.123;
     world.events.sealed = false;
     pushEvent(world.events, EV.KerbJolt, -1, 3.5, 4.25, 4.56789);
+    addHazard(world.hazards, 2, 1, 1, 2, 3); // haz.pothole over tiles (1, 1)–(1, 2)
+    world.hazards.flags[0] = 1;
+    addLitter(world.litter, 3, 5.125, 2.75, 2);
     return world;
   }
 
@@ -230,7 +235,7 @@ describe('state hash', () => {
     expect(hashHex(hashOf(handSetWorld()))).toBe(GOLDEN_HAND_SET_HASH);
   });
 
-  it('covers every VehicleState field, the input, the tick and the events', () => {
+  it('covers every VehicleState field, the input, the tick, the events and the hazard and litter stores', () => {
     const base = hashOf(handSetWorld());
     const vehicleKeys = Object.keys(handSetWorld().vehicle) as (keyof VehicleState)[];
     expect(vehicleKeys.length).toBe(20);
@@ -257,6 +262,59 @@ describe('state hash', () => {
     const movedEvent = handSetWorld();
     movedEvent.events.c[0] = 4.5;
     expect(hashOf(movedEvent)).not.toBe(base);
+    const hazardMutations: ((w: World) => void)[] = [
+      (w) => addHazard(w.hazards, 0, 0, 0, 1, 1),
+      (w) => {
+        w.hazards.kind[0] = 1;
+      },
+      (w) => {
+        w.hazards.col0[0] = 0;
+      },
+      (w) => {
+        w.hazards.row0[0] = 0;
+      },
+      (w) => {
+        w.hazards.col1[0] = 3;
+      },
+      (w) => {
+        w.hazards.row1[0] = 4;
+      },
+      (w) => {
+        w.hazards.flags[0] = 0;
+      },
+      (w) => {
+        w.hazards.hazardsSpawned += 1;
+      },
+    ];
+    const litterMutations: ((w: World) => void)[] = [
+      (w) => addLitter(w.litter, 0, 1, 1, 0),
+      (w) => {
+        w.litter.x[0] = 5.126;
+      },
+      (w) => {
+        w.litter.y[0] = 2.751;
+      },
+      (w) => {
+        w.litter.kind[0] = 4;
+      },
+      (w) => {
+        w.litter.flags[0] = 1;
+      },
+      (w) => {
+        w.litter.rot[0] = 3;
+      },
+      (w) => {
+        w.litter.litterSpawned += 1;
+      },
+      (w) => {
+        w.litter.litterCollected += 1;
+      },
+    ];
+    for (const [i, mutate] of [...hazardMutations, ...litterMutations].entries()) {
+      const world = handSetWorld();
+      mutate(world);
+      expect(hashOf(world), `store mutation ${i}`).not.toBe(base);
+    }
     const otherSeed = handSetWorld();
     const hasher = createStateHasher(1235);
     absorbTick(hasher, otherSeed);
@@ -302,8 +360,11 @@ describe('state hash', () => {
   });
 });
 
-/** Pinned by 'keeps its canonical byte layout'. */
-const GOLDEN_HAND_SET_HASH = 'c80faedc';
+/**
+ * Pinned by 'keeps its canonical byte layout'. SSP-093 appended the hazard store and the LitterField to the
+ * hashed state (and a hazard and an item to the hand-set World): c80faedc → 648c18d0.
+ */
+const GOLDEN_HAND_SET_HASH = '648c18d0';
 
 describe('checkpoints', () => {
   it('fall every 600 ticks plus the final tick', () => {

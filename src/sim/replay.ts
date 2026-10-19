@@ -390,6 +390,9 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *   F vehicle.brushPos, rpm, hp, hopperLU, water, massKg
  *   I vehicle.reverseHoldTicks   B vehicle.reverseEngaged
  *   I events.count, then per event in emission order: I type, I entity, F a, F b, F c
+ *   I hazards.count, hazards.hazardsSpawned, then per hazard: I kind, col0, row0, col1, row1, flags (SSP-093)
+ *   I litter.count, litter.litterSpawned, litter.litterCollected, then per item: F x, y; I kind, flags, rot
+ *     (SSP-093; SSP-065 appends the rest of the litter store with the brush and the other M2 state)
  *
  * world.surface is not hashed: phase 2 resamples it from the pose every tick. Every new store field joins
  * this list, appended, in the commit that adds it (M2 adds the litter store, the grime mask and the shift
@@ -436,6 +439,30 @@ export function absorbTick(hasher: StateHasher, world: World): void {
     h = fnvInt32(h, Math.round((events.a[i] as number) * q) | 0);
     h = fnvInt32(h, Math.round((events.b[i] as number) * q) | 0);
     h = fnvInt32(h, Math.round((events.c[i] as number) * q) | 0);
+  }
+  const hz = world.hazards;
+  const nh = hz.count;
+  h = fnvInt32(h, nh | 0);
+  h = fnvInt32(h, hz.hazardsSpawned | 0);
+  for (let i = 0; i < nh; i += 1) {
+    h = fnvInt32(h, (hz.kind[i] as number) | 0);
+    h = fnvInt32(h, (hz.col0[i] as number) | 0);
+    h = fnvInt32(h, (hz.row0[i] as number) | 0);
+    h = fnvInt32(h, (hz.col1[i] as number) | 0);
+    h = fnvInt32(h, (hz.row1[i] as number) | 0);
+    h = fnvInt32(h, (hz.flags[i] as number) | 0);
+  }
+  const lf = world.litter;
+  const nl = lf.count;
+  h = fnvInt32(h, nl | 0);
+  h = fnvInt32(h, lf.litterSpawned | 0);
+  h = fnvInt32(h, lf.litterCollected | 0);
+  for (let i = 0; i < nl; i += 1) {
+    h = fnvInt32(h, Math.round((lf.x[i] as number) * q) | 0);
+    h = fnvInt32(h, Math.round((lf.y[i] as number) * q) | 0);
+    h = fnvInt32(h, (lf.kind[i] as number) | 0);
+    h = fnvInt32(h, (lf.flags[i] as number) | 0);
+    h = fnvInt32(h, (lf.rot[i] as number) | 0);
   }
   hasher.state[0] = h;
 }

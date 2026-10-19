@@ -2,7 +2,7 @@
 id: SSP-093
 title: "Implement hazard grip overrides, jolts, LU spills and the open-manhole hard stop"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:physics, area:gameplay, area:test, size:M, vertical-slice]
@@ -57,12 +57,12 @@ Puddle splash and broken glass are SSP-094.
 
 ## Acceptance criteria
 
-- [ ] Test: with Bessie's wheels on haz.oil_slick the grip k used is 1.2; on a puddle 4.0; on wet leaves 3.0.
-- [ ] Test: crossing a pothole costs exactly 2 HP and moves exactly 2 LU from the hopper into litter items behind Bessie, once per crossing.
-- [ ] Test: a speed bump at 6.5 m/s spills 3 LU; at 6.0 m/s it spills 0.
-- [ ] Test: entering an open manhole sets vLong to 0 and costs 10 HP.
-- [ ] Test: driving brush-up through a leaf pile creates one haz.wet_leaves.
-- [ ] Property test over seeds: no randomly placed hazard lies within 3 tiles of @, on a zebra, in a depot bay or next to a hydrant; hopper LU stays ≥ 0 and HP in [0, 100].
+- [x] Test: with Bessie's wheels on haz.oil_slick the grip k used is 1.2; on a puddle 4.0; on wet leaves 3.0.
+- [x] Test: crossing a pothole costs exactly 2 HP and moves exactly 2 LU from the hopper into litter items behind Bessie, once per crossing.
+- [x] Test: a speed bump at 6.5 m/s spills 3 LU; at 6.0 m/s it spills 0.
+- [x] Test: entering an open manhole sets vLong to 0 and costs 10 HP.
+- [x] Test: driving brush-up through a leaf pile creates one haz.wet_leaves.
+- [x] Property test over seeds: no randomly placed hazard lies within 3 tiles of @, on a zebra, in a depot bay or next to a hydrant; hopper LU stays ≥ 0 and HP in [0, 100].
 
 ## Verification
 

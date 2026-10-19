@@ -495,7 +495,7 @@ Each milestone has the same shape:
 - [ ] Behaviours: `shopper.ts`, `oldWoman.ts`, `oldManFrame.ts`, `mumPushchair.ts`, `postie.ts`, `dogWalker.ts` (lead as a line obstacle; Lead Tangle; the dog drops `litter.dog_mess`), `businessman.ts`, `litterbug.ts`, `marketTrader.ts`, `cat.ts`, `pigeon.ts`. Traffic kinds in `traffic.ts`: taxi (abrupt fare stops), white van (parks half on the pavement), bicycle (filters between lanes), mobility scooter (1.5 m/s on pavements).
 - [ ] `src/sim/traffic.ts`: lane graph following, stopping behind Bessie, honk after 3 s blocked, the 10 s Road Rage complaint, bus stops at `site.bus_stop` for 5 s.
 - [ ] `src/sim/bodies.ts`: knockable impulse bodies with masses and spill counts from `entities.json`.
-- [ ] Hazards in `world.ts`/`vehicle.ts`: grip overrides, jolts, LU spills behind the vehicle, the broken-glass HP drain, open-manhole hard stop.
+- [ ] Hazards in `world.ts`/`vehicle.ts`: grip overrides, jolts, LU spills behind the vehicle, the broken-glass HP drain, open-manhole hard stop. *(SSP-093: the hazard store and spawner, grip overrides, pothole and speed-bump jolts with LU spills, the open-manhole hard stop and the leaf-pile → wet-leaves hook, in `src/sim/hazards.ts`. The broken-glass HP drain is SSP-094.)*
 - [ ] `src/sim/complaints.ts`: 0–5 meter, horn-spam window, SACKED at 5.
 - [ ] Horn (8 m radius), near miss (+25), Pigeon Scatter (+25), Caught! (+100), dust coughing (−10 per pedestrian per 2 s).
 - [ ] Power-up spawning (1–3 per shift on pavements) and effects with durations.

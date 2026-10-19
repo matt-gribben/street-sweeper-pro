@@ -78,6 +78,7 @@ const walker: Behaviour = {
 
 const HOPS = new Float64Array([48, 48, 144, 48, 144, 144, 48, 144]);
 const DORIS_KIND = NPC_IDS.indexOf('npc.old_woman');
+const LITTERBUG_KIND = NPC_IDS.indexOf('npc.litterbug');
 /** Where the Doris rig puts her: 2 m ahead of Bessie's front bumper, from her body centre, metres. */
 const AHEAD_M = 1.625 + 2;
 /** Bessie is only aimed at NPCs at least this far inside the map, metres. */
@@ -98,7 +99,7 @@ function npcRig(generic = false, doris = false): { world: World; step: (t: numbe
       { id: 'npc.businessman', weight: 15 },
       { id: 'npc.dog_walker', weight: 20 },
       ...(doris ? [{ id: 'npc.old_woman' as const, weight: 40 }] : []),
-      { id: 'npc.litterbug', weight: 10 },
+      { id: 'npc.litterbug', weight: 20 },
       { id: 'npc.mum_pushchair', weight: 10 },
       { id: 'npc.old_man_frame', weight: 10 },
       { id: 'npc.postie', weight: 20 },
@@ -142,6 +143,8 @@ function npcRig(generic = false, doris = false): { world: World; step: (t: numbe
       const npc = world.npc;
       for (let k = 0; k < npc.count; k++) {
         const j = (t / 600 + k) % npc.count;
+        // Not at a litterbug: the horn would catch him (SSP-084), and the rig needs them dropping.
+        if (npc.kind[j] === LITTERBUG_KIND) continue;
         const x = npc.x[j] as number;
         const y = npc.y[j] as number;
         if (x < AIM_MARGIN_M || y < AIM_MARGIN_M || x > SIZE_M - AIM_MARGIN_M || y > SIZE_M - AIM_MARGIN_M)

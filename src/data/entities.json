@@ -300,11 +300,806 @@
     "rules": {},
     "milestone": "M2"
   },
+  "npc.shopper": {
+    "class": "npc",
+    "name": "Shopper",
+    "speed": 1.3,
+    "behaviour": "shopper",
+    "yields": true,
+    "hit": { "pts": -250, "complaints": 1, "drops": {} },
+    "sprite": "npc.shopper",
+    "sfx": { "hit": "ped_oi" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.civic_quarter"
+    ],
+    "rules": { "sidestepM": 4 },
+    "milestone": "M3"
+  },
+  "npc.old_woman": {
+    "class": "npc",
+    "name": "Doris",
+    "speed": 0.6,
+    "behaviour": "old_woman",
+    "yields": false,
+    "hit": { "pts": -500, "complaints": 2, "drops": { "litter.spilled_shopping": 6 } },
+    "sprite": "npc.old_woman",
+    "sfx": { "hit": "granny_harrumph", "horn": "granny_harrumph" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.conker_hill",
+      "district.civic_quarter"
+    ],
+    "rules": {
+      "chaseSpeedMps": 1.2,
+      "handbagHitHp": 2,
+      "whackEveryS": 1.0,
+      "chaseGiveUpM": 8,
+      "hornSlowSpeedMps": 0.4
+    },
+    "milestone": "M3"
+  },
+  "npc.old_man_frame": {
+    "class": "npc",
+    "name": "Old man with walking frame",
+    "speed": 0.4,
+    "behaviour": "old_man_frame",
+    "yields": true,
+    "hit": { "pts": -500, "complaints": 2, "drops": {} },
+    "sprite": "npc.old_man_frame",
+    "sfx": { "hit": "ped_oi" },
+    "districts": ["district.puddle_lane", "district.high_street", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M3"
+  },
+  "npc.dog_walker": {
+    "class": "npc",
+    "name": "Dog walker",
+    "speed": 1.2,
+    "behaviour": "dog_walker",
+    "yields": true,
+    "hit": { "pts": -300, "complaints": 1, "drops": {} },
+    "sprite": "npc.dog_walker",
+    "sfx": { "hit": "ped_oi", "tangle": "dog_bark" },
+    "districts": ["district.puddle_lane", "district.conker_hill", "district.civic_quarter"],
+    "rules": {
+      "leadMaxM": 5,
+      "messEveryMinS": 40,
+      "messEveryMaxS": 60,
+      "tanglePts": -150,
+      "tangleComplaints": 1
+    },
+    "milestone": "M3"
+  },
+  "npc.litterbug": {
+    "class": "npc",
+    "name": "Litterbug teen",
+    "speed": 1.4,
+    "behaviour": "litterbug",
+    "yields": true,
+    "hit": { "pts": -250, "complaints": 1, "drops": {} },
+    "sprite": "npc.litterbug",
+    "sfx": { "hit": "ped_oi" },
+    "districts": ["district.high_street", "district.gasworks", "district.civic_quarter"],
+    "rules": { "dropEveryMinS": 3, "dropEveryMaxS": 5, "caughtRadiusM": 6, "caughtPts": 100 },
+    "milestone": "M3"
+  },
+  "npc.businessman": {
+    "class": "npc",
+    "name": "Businessman on phone",
+    "speed": 1.4,
+    "behaviour": "businessman",
+    "yields": false,
+    "hit": { "pts": -250, "complaints": 1, "drops": {} },
+    "sprite": "npc.businessman",
+    "sfx": { "hit": "ped_oi" },
+    "districts": ["district.high_street", "district.civic_quarter"],
+    "rules": { "noticeM": 2 },
+    "milestone": "M3"
+  },
+  "npc.mum_pushchair": {
+    "class": "npc",
+    "name": "Parent with pushchair",
+    "speed": 1.1,
+    "behaviour": "mum_pushchair",
+    "yields": true,
+    "hit": { "pts": -500, "complaints": 2, "drops": {} },
+    "sprite": "npc.mum_pushchair",
+    "sfx": { "hit": "ped_oi" },
+    "districts": ["district.puddle_lane", "district.conker_hill", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M3"
+  },
+  "npc.postie": {
+    "class": "npc",
+    "name": "Postie with trolley",
+    "speed": 1.2,
+    "behaviour": "postie",
+    "yields": true,
+    "hit": { "pts": -250, "complaints": 1, "drops": {} },
+    "sprite": "npc.postie",
+    "sfx": { "hit": "ped_oi" },
+    "districts": ["district.puddle_lane", "district.conker_hill", "district.civic_quarter"],
+    "rules": { "doorStopS": 3 },
+    "milestone": "M3"
+  },
+  "npc.market_trader": {
+    "class": "npc",
+    "name": "Market trader",
+    "speed": 0,
+    "behaviour": "market_trader",
+    "yields": false,
+    "hit": { "pts": -250, "complaints": 1, "drops": {} },
+    "sprite": "npc.market_trader",
+    "sfx": { "hit": "ped_oi" },
+    "districts": ["district.high_street", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M3"
+  },
+  "npc.cat": {
+    "class": "npc",
+    "name": "Cat",
+    "speed": 6.0,
+    "behaviour": "cat",
+    "yields": false,
+    "hit": { "pts": -300, "complaints": 1, "drops": {} },
+    "sprite": "npc.cat",
+    "sfx": { "hit": "cat_yowl" },
+    "districts": [
+      "district.puddle_lane",
+      "district.conker_hill",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": { "dartMinM": 6, "dartMaxM": 10, "dartChance": 0.4, "rideS": 3 },
+    "milestone": "M3"
+  },
+  "npc.pigeon": {
+    "class": "npc",
+    "name": "Pigeon",
+    "speed": 0,
+    "behaviour": "pigeon",
+    "yields": false,
+    "hit": null,
+    "sprite": "npc.pigeon",
+    "sfx": { "scatter": "pigeon_flap" },
+    "districts": ["district.high_street", "district.promenade", "district.civic_quarter"],
+    "rules": { "flockMin": 6, "flockMax": 12, "scatterM": 4, "landM": 10, "scatterPts": 25 },
+    "milestone": "M3"
+  },
+  "veh.hatchback": {
+    "class": "veh",
+    "name": "Hatchback",
+    "behaviour": "traffic",
+    "collision": "solid",
+    "speed": null,
+    "hit": null,
+    "sprite": "veh.hatchback",
+    "sfx": { "horn": "horn" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": {},
+    "milestone": "M3"
+  },
+  "veh.saloon": {
+    "class": "veh",
+    "name": "Saloon",
+    "behaviour": "traffic",
+    "collision": "solid",
+    "speed": null,
+    "hit": null,
+    "sprite": "veh.saloon",
+    "sfx": { "horn": "horn" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": {},
+    "milestone": "M3"
+  },
+  "veh.taxi": {
+    "class": "veh",
+    "name": "Taxi",
+    "behaviour": "taxi",
+    "collision": "solid",
+    "speed": null,
+    "hit": null,
+    "sprite": "veh.taxi",
+    "sfx": { "horn": "horn" },
+    "districts": ["district.high_street", "district.kebab_mile", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M3"
+  },
+  "veh.van_white": {
+    "class": "veh",
+    "name": "White van",
+    "behaviour": "van_white",
+    "collision": "solid",
+    "speed": null,
+    "hit": null,
+    "sprite": "veh.van_white",
+    "sfx": { "horn": "horn" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.civic_quarter"
+    ],
+    "rules": {},
+    "milestone": "M3"
+  },
+  "veh.bus": {
+    "class": "veh",
+    "name": "Bus",
+    "behaviour": "bus",
+    "collision": "solid",
+    "speed": null,
+    "hit": null,
+    "sprite": "veh.bus",
+    "sfx": { "horn": "horn" },
+    "districts": ["district.high_street", "district.promenade", "district.civic_quarter"],
+    "rules": { "stopDwellS": 5 },
+    "milestone": "M3"
+  },
+  "veh.bicycle": {
+    "class": "veh",
+    "name": "Cycle courier",
+    "behaviour": "bicycle",
+    "collision": "actor",
+    "speed": null,
+    "hit": { "pts": -250, "complaints": 1, "drops": {} },
+    "sprite": "veh.bicycle",
+    "sfx": { "hit": "ped_oi" },
+    "districts": ["district.high_street", "district.kebab_mile", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M3"
+  },
+  "veh.mobility_scooter": {
+    "class": "veh",
+    "name": "Mobility scooter",
+    "behaviour": "mobility_scooter",
+    "collision": "actor",
+    "speed": 1.5,
+    "hit": { "pts": -500, "complaints": 2, "drops": {} },
+    "sprite": "veh.mobility_scooter",
+    "sfx": { "hit": "granny_harrumph" },
+    "districts": ["district.puddle_lane", "district.promenade", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M3"
+  },
+  "veh.hatchback_parked": {
+    "class": "veh",
+    "name": "Parked hatchback",
+    "behaviour": "parked",
+    "collision": "solid",
+    "speed": null,
+    "hit": null,
+    "sprite": "veh.hatchback_parked",
+    "sfx": { "dent": "crash" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": { "dentPts": -100, "dentHp": 5 },
+    "milestone": "M3"
+  },
+  "veh.saloon_parked": {
+    "class": "veh",
+    "name": "Parked saloon",
+    "behaviour": "parked",
+    "collision": "solid",
+    "speed": null,
+    "hit": null,
+    "sprite": "veh.saloon_parked",
+    "sfx": { "dent": "crash" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": { "dentPts": -100, "dentHp": 5 },
+    "milestone": "M3"
+  },
+  "veh.taxi_parked": {
+    "class": "veh",
+    "name": "Parked taxi",
+    "behaviour": "parked",
+    "collision": "solid",
+    "speed": null,
+    "hit": null,
+    "sprite": "veh.taxi_parked",
+    "sfx": { "dent": "crash" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": { "dentPts": -100, "dentHp": 5 },
+    "milestone": "M3"
+  },
+  "veh.van_white_parked": {
+    "class": "veh",
+    "name": "Parked white van",
+    "behaviour": "parked",
+    "collision": "solid",
+    "speed": null,
+    "hit": null,
+    "sprite": "veh.van_white_parked",
+    "sfx": { "dent": "crash" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": { "dentPts": -100, "dentHp": 5 },
+    "milestone": "M3"
+  },
+  "prop.wheelie_bin": {
+    "class": "prop",
+    "name": "Wheelie bin",
+    "collision": "knockable",
+    "massKg": 30,
+    "knock": { "pts": -50, "spills": 4 },
+    "sprite": "prop.wheelie_bin",
+    "sfx": { "knock": "bin_knock" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "prop.traffic_cone": {
+    "class": "prop",
+    "name": "Traffic cone",
+    "collision": "knockable",
+    "massKg": 2,
+    "knock": { "pts": 0, "spills": 0 },
+    "sprite": "prop.traffic_cone",
+    "sfx": { "knock": "cone_knock" },
+    "districts": ["district.gasworks", "district.civic_quarter", "district.depot_yard"],
+    "milestone": "M3"
+  },
+  "prop.a_board": {
+    "class": "prop",
+    "name": "A-board",
+    "collision": "knockable",
+    "massKg": 8,
+    "knock": { "pts": -25, "spills": 0 },
+    "sprite": "prop.a_board",
+    "sfx": { "knock": "cone_knock" },
+    "districts": ["district.high_street", "district.promenade", "district.civic_quarter"],
+    "milestone": "M3"
+  },
+  "prop.shopping_trolley": {
+    "class": "prop",
+    "name": "Shopping trolley",
+    "collision": "knockable",
+    "massKg": 15,
+    "knock": { "pts": 0, "spills": 0 },
+    "sprite": "prop.shopping_trolley",
+    "sfx": { "knock": "bin_knock" },
+    "districts": ["district.high_street", "district.gasworks", "district.kebab_mile"],
+    "milestone": "M3"
+  },
+  "prop.recycling_box": {
+    "class": "prop",
+    "name": "Recycling box",
+    "collision": "knockable",
+    "massKg": 5,
+    "knock": { "pts": -25, "spills": 2 },
+    "sprite": "prop.recycling_box",
+    "sfx": { "knock": "bin_knock" },
+    "districts": ["district.puddle_lane", "district.conker_hill", "district.civic_quarter"],
+    "milestone": "M3"
+  },
+  "prop.lamp_post": {
+    "class": "prop",
+    "name": "Lamp post",
+    "collision": "solid",
+    "sprite": "prop.lamp_post",
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter",
+      "district.depot_yard"
+    ],
+    "milestone": "M3"
+  },
+  "prop.bollard": {
+    "class": "prop",
+    "name": "Bollard",
+    "collision": "solid",
+    "sprite": "prop.bollard",
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "prop.bench": {
+    "class": "prop",
+    "name": "Bench",
+    "collision": "solid",
+    "sprite": "prop.bench",
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.promenade",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "prop.bus_shelter": {
+    "class": "prop",
+    "name": "Bus shelter",
+    "collision": "solid",
+    "sprite": "prop.bus_shelter",
+    "districts": ["district.high_street", "district.promenade", "district.civic_quarter"],
+    "milestone": "M3"
+  },
+  "prop.phone_box": {
+    "class": "prop",
+    "name": "Phone box",
+    "collision": "solid",
+    "sprite": "prop.phone_box",
+    "districts": ["district.puddle_lane", "district.high_street", "district.civic_quarter"],
+    "milestone": "M3"
+  },
+  "prop.post_box": {
+    "class": "prop",
+    "name": "Post box",
+    "collision": "solid",
+    "sprite": "prop.post_box",
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.conker_hill",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "prop.hydrant": {
+    "class": "prop",
+    "name": "Hydrant",
+    "collision": "solid",
+    "sprite": "prop.hydrant",
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter",
+      "district.depot_yard"
+    ],
+    "milestone": "M3"
+  },
+  "prop.tree": {
+    "class": "prop",
+    "name": "Tree",
+    "collision": "solid",
+    "sprite": "prop.tree",
+    "districts": ["district.puddle_lane", "district.conker_hill", "district.civic_quarter"],
+    "milestone": "M3"
+  },
+  "prop.planter": {
+    "class": "prop",
+    "name": "Planter",
+    "collision": "solid",
+    "sprite": "prop.planter",
+    "districts": ["district.high_street", "district.civic_quarter"],
+    "milestone": "M3"
+  },
+  "prop.market_stall": {
+    "class": "prop",
+    "name": "Market stall",
+    "collision": "solid",
+    "sprite": "prop.market_stall",
+    "districts": ["district.high_street", "district.civic_quarter"],
+    "milestone": "M3"
+  },
+  "prop.litter_bin": {
+    "class": "prop",
+    "name": "Litter bin",
+    "collision": "solid",
+    "sprite": "prop.litter_bin",
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "prop.roadworks_barrier": {
+    "class": "prop",
+    "name": "Roadworks barrier",
+    "collision": "solid",
+    "sprite": "prop.roadworks_barrier",
+    "districts": ["district.gasworks", "district.civic_quarter"],
+    "milestone": "M3"
+  },
+  "haz.oil_slick": {
+    "class": "haz",
+    "name": "Oil slick",
+    "effect": "grip",
+    "surface": "oil",
+    "sprite": "haz.oil_slick",
+    "sfx": {},
+    "districts": ["district.gasworks", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M3"
+  },
+  "haz.puddle": {
+    "class": "haz",
+    "name": "Puddle",
+    "effect": "grip",
+    "surface": "wet",
+    "sprite": "haz.puddle",
+    "sfx": { "splash": "splash" },
+    "districts": ["district.puddle_lane", "district.gasworks", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M3"
+  },
+  "haz.pothole": {
+    "class": "haz",
+    "name": "Pothole",
+    "effect": "jolt",
+    "surface": null,
+    "sprite": "haz.pothole",
+    "sfx": { "jolt": "bump_kerb" },
+    "districts": ["district.gasworks", "district.conker_hill", "district.civic_quarter"],
+    "rules": { "hpLoss": 2, "spillLu": 2 },
+    "milestone": "M3"
+  },
+  "haz.speed_bump": {
+    "class": "haz",
+    "name": "Speed bump",
+    "effect": "jolt",
+    "surface": null,
+    "sprite": "haz.speed_bump",
+    "sfx": { "jolt": "bump_kerb" },
+    "districts": ["district.puddle_lane", "district.conker_hill", "district.civic_quarter"],
+    "rules": { "minSpeedMps": 6, "spillLu": 3 },
+    "milestone": "M3"
+  },
+  "haz.wet_leaves": {
+    "class": "haz",
+    "name": "Wet leaves",
+    "effect": "grip",
+    "surface": "wetLeaves",
+    "sprite": "haz.wet_leaves",
+    "sfx": {},
+    "districts": ["district.conker_hill"],
+    "rules": {},
+    "milestone": "M3"
+  },
+  "haz.broken_glass": {
+    "class": "haz",
+    "name": "Broken glass",
+    "effect": "drain",
+    "surface": null,
+    "sprite": "haz.broken_glass",
+    "sfx": { "sweep": "pickup_glass" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter",
+      "district.depot_yard"
+    ],
+    "rules": { "hpPerS": 5, "sweepPts": 20 },
+    "milestone": "M3"
+  },
+  "haz.open_manhole": {
+    "class": "haz",
+    "name": "Open manhole",
+    "effect": "hardStop",
+    "surface": null,
+    "sprite": "haz.open_manhole",
+    "sfx": { "hardStop": "crash" },
+    "districts": ["district.gasworks", "district.civic_quarter"],
+    "rules": { "hpLoss": 10 },
+    "milestone": "M3"
+  },
+  "site.bus_stop": {
+    "class": "site",
+    "name": "Bus stop",
+    "sprite": null,
+    "districts": ["district.high_street", "district.promenade", "district.civic_quarter"],
+    "milestone": "M3"
+  },
+  "site.zebra": {
+    "class": "site",
+    "name": "Zebra crossing",
+    "sprite": null,
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "site.frontage": {
+    "class": "site",
+    "name": "Frontage",
+    "sprite": null,
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "site.pledge_frontage": {
+    "class": "site",
+    "name": "Tidy Pledge frontage",
+    "sprite": null,
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
   "pwr.flask_of_tea": {
     "class": "pwr",
     "name": "Flask of Tea",
     "effect": { "kind": "chainTimerMul", "mul": 2, "durationS": 15 },
     "sprite": "pwr.flask_of_tea",
+    "sfx": { "pickup": "powerup" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "pwr.bacon_butty": {
+    "class": "pwr",
+    "name": "Bacon Butty",
+    "effect": { "kind": "topSpeedMul", "mul": 1.3, "durationS": 10 },
+    "sprite": "pwr.bacon_butty",
+    "sfx": { "pickup": "powerup" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "pwr.hi_vis": {
+    "class": "pwr",
+    "name": "Hi-Vis Vest",
+    "effect": { "kind": "pedestriansYield", "durationS": 12 },
+    "sprite": "pwr.hi_vis",
+    "sfx": { "pickup": "powerup" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "pwr.super_suction": {
+    "class": "pwr",
+    "name": "Super Suction",
+    "effect": { "kind": "superSuction", "suctionMul": 2, "flingThresholdMps": 6.0, "durationS": 10 },
+    "sprite": "pwr.super_suction",
+    "sfx": { "pickup": "powerup" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "pwr.wrench": {
+    "class": "pwr",
+    "name": "Wrench",
+    "effect": { "kind": "repairHp", "hp": 25 },
+    "sprite": "pwr.wrench",
+    "sfx": { "pickup": "powerup" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "pwr.water_can": {
+    "class": "pwr",
+    "name": "Watering Can",
+    "effect": { "kind": "addWater", "units": 50 },
+    "sprite": "pwr.water_can",
     "sfx": { "pickup": "powerup" },
     "districts": [
       "district.puddle_lane",

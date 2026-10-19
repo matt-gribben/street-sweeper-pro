@@ -463,6 +463,8 @@ Each milestone has the same shape:
 | Sites | `site.zebra`, `site.bus_stop`, `site.frontage`, `site.pledge_frontage` |
 | Power-ups | All six `pwr.*` |
 
+*Frozen in `src/data/entities.json` by SSP-075 (56 entries, all `milestone: "M3"`, checked against this table by `tests/unit/entityCatalog.test.ts`), with the shared street-life rules in `tuning.json`. The placeholder sprites follow in SSP-097 to SSP-101.*
+
 **Deliverables.**
 
 - `npc/steering.ts` and one `npc/behaviours/<npc>.ts` per M3 NPC type.

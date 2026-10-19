@@ -139,5 +139,25 @@
   "tidy": {
     "grimeWeight": 0.6,
     "litterWeight": 0.4
+  },
+  "streetLife": {
+    "awareness": { "radiusM": 6, "ledBeaconRadiusM": 10 },
+    "horn": { "radiusM": 8, "twoToneRadiusM": 12 },
+    "nearMiss": { "maxGapM": 0.5, "minSpeedMps": 3, "pts": 25 },
+    "dust": { "radiusM": 3, "pts": -10, "everyS": 2 },
+    "splash": { "minSpeedMps": 3, "radiusM": 1.5, "pts": -50, "complaintEvery": 3 },
+    "actorHit": { "minClosingSpeedMps": 1.0, "ignoreContactS": 1.5 },
+    "npcRadius": { "humanM": 0.3, "catM": 0.2, "dogM": 0.25 },
+    "traffic": { "honkAfterBlockedS": 3 }
+  },
+  "complaints": {
+    "meter": { "sackedAt": 5 },
+    "hornSpam": { "maxHonks": 3, "twoToneMaxHonks": 5, "windowS": 5, "complaints": 1 },
+    "roadRage": { "afterBlockedS": 10, "complaints": 1 },
+    "zebra": { "pts": -200, "complaints": 1 },
+    "policeWitness": { "radiusM": 15, "extraComplaints": 1 }
+  },
+  "endStates": {
+    "towedScoreKeep": 0.5
   }
 }

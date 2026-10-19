@@ -664,6 +664,186 @@ describe('M2 sweeping-core sections (SSP-053) mirror GDD §8–§12 and TECHNICA
   });
 });
 
+describe('M3 street-life sections (SSP-075) mirror ENTITY_CATALOG §3, GDD §11 and TECHNICAL_DESIGN §9.4', () => {
+  const docs: Record<string, string> = {
+    catalog: readFileSync(`${REPO_ROOT}docs/ENTITY_CATALOG.md`, 'utf8'),
+    gdd: readFileSync(`${REPO_ROOT}docs/GDD.md`, 'utf8'),
+    td: readFileSync(`${REPO_ROOT}docs/TECHNICAL_DESIGN.md`, 'utf8'),
+  };
+  /** A doc number: U+2212 minus read as a sign. */
+  const num = (text: string): number => Number(text.replaceAll('−', '-'));
+
+  // [JSON path from the root, value, doc, regex whose capture `group` states the value]
+  it.each([
+    ['streetLife.awareness.radiusM', 6, 'catalog', /\((\d+) m, or (\d+) m with upg\.led_beacon\)/, 1],
+    [
+      'streetLife.awareness.ledBeaconRadiusM',
+      10,
+      'catalog',
+      /\((\d+) m, or (\d+) m with upg\.led_beacon\)/,
+      2,
+    ],
+    ['streetLife.horn.radiusM', 8, 'catalog', /\((\d+) m, or (\d+) m with upg\.two_tone_horn\)/, 1],
+    ['streetLife.horn.twoToneRadiusM', 12, 'catalog', /\((\d+) m, or (\d+) m with upg\.two_tone_horn\)/, 2],
+    ['streetLife.nearMiss.maxGapM', 0.5, 'catalog', /within (\d+\.\d+) m of a pedestrian at more than/, 1],
+    ['streetLife.nearMiss.minSpeedMps', 3, 'catalog', /at more than (\d+) m\/s without contact/, 1],
+    ['streetLife.nearMiss.pts', 25, 'catalog', /without contact = \*\*\+(\d+)\*\*/, 1],
+    ['streetLife.dust.radiusM', 3, 'catalog', /within (\d+) m of a dust cloud/, 1],
+    ['streetLife.dust.pts', -10, 'catalog', /(−\d+) pts per pedestrian per (\d+) s/, 1],
+    ['streetLife.dust.everyS', 2, 'catalog', /(−\d+) pts per pedestrian per (\d+) s/, 2],
+    ['streetLife.splash.minSpeedMps', 3, 'catalog', /above (\d+) m\/s through `haz\.puddle`/, 1],
+    ['streetLife.splash.radiusM', 1.5, 'catalog', /pedestrians within (\d+\.\d+) m: (−\d+) each/, 1],
+    ['streetLife.splash.pts', -50, 'catalog', /pedestrians within (\d+\.\d+) m: (−\d+) each/, 2],
+    ['streetLife.splash.complaintEvery', 3, 'catalog', /Every (\d)rd splash = 1 complaint/, 1],
+    [
+      'streetLife.actorHit.minClosingSpeedMps',
+      1.0,
+      'catalog',
+      /closing speed toward the actor is ≥ (\d+\.\d+) m\/s/,
+      1,
+    ],
+    ['streetLife.actorHit.ignoreContactS', 1.5, 'td', /contact is ignored for (\d+\.\d+) s/, 1],
+    [
+      'streetLife.npcRadius.humanM',
+      0.3,
+      'td',
+      /human r = (\d+\.\d+) m, cat (\d+\.\d+) m, dog (\d+\.\d+) m/,
+      1,
+    ],
+    ['streetLife.npcRadius.catM', 0.2, 'td', /human r = (\d+\.\d+) m, cat (\d+\.\d+) m, dog (\d+\.\d+) m/, 2],
+    [
+      'streetLife.npcRadius.dogM',
+      0.25,
+      'td',
+      /human r = (\d+\.\d+) m, cat (\d+\.\d+) m, dog (\d+\.\d+) m/,
+      3,
+    ],
+    ['streetLife.traffic.honkAfterBlockedS', 3, 'catalog', /Honks after (\d+) s blocked/, 1],
+    ['complaints.meter.sackedAt', 5, 'catalog', /Reaching (\d+) = \*\*SACKED!\*\*/, 1],
+    ['complaints.hornSpam.maxHonks', 3, 'catalog', /more than (\d+) honks in (\d+) s = (\d+) complaint/, 1],
+    ['complaints.hornSpam.windowS', 5, 'catalog', /more than (\d+) honks in (\d+) s = (\d+) complaint/, 2],
+    ['complaints.hornSpam.complaints', 1, 'catalog', /more than (\d+) honks in (\d+) s = (\d+) complaint/, 3],
+    [
+      'complaints.hornSpam.twoToneMaxHonks',
+      5,
+      'catalog',
+      /The threshold becomes (\d+) with `upg\.two_tone_horn`/,
+      1,
+    ],
+    [
+      'complaints.roadRage.afterBlockedS',
+      10,
+      'catalog',
+      /Blocking traffic\*\* for more than (\d+) s = (\d+) complaint/,
+      1,
+    ],
+    [
+      'complaints.roadRage.complaints',
+      1,
+      'catalog',
+      /Blocking traffic\*\* for more than (\d+) s = (\d+) complaint/,
+      2,
+    ],
+    ['complaints.zebra.pts', -200, 'catalog', /Running an occupied zebra\*\* = (−\d+) \+ (\d+) complaint/, 1],
+    [
+      'complaints.zebra.complaints',
+      1,
+      'catalog',
+      /Running an occupied zebra\*\* = (−\d+) \+ (\d+) complaint/,
+      2,
+    ],
+    [
+      'complaints.policeWitness.radiusM',
+      15,
+      'catalog',
+      /within \*\*(\d+) m\*\* of a `veh\.police` adds \*\*\+(\d+) extra/,
+      1,
+    ],
+    [
+      'complaints.policeWitness.extraComplaints',
+      1,
+      'catalog',
+      /within \*\*(\d+) m\*\* of a `veh\.police` adds \*\*\+(\d+) extra/,
+      2,
+    ],
+    ['endStates.towedScoreKeep', 0.5, 'gdd', /keeps \*\*(\d+)% of the score\*\*/, 1],
+  ] as const)('%s = %d (%s)', (path, expected, doc, pattern, group) => {
+    let value: unknown = tuningJson;
+    for (const part of path.split('.')) value = isJson(value) ? value[part] : undefined;
+    expect(value).toBe(expected);
+    const stated = pattern.exec(docs[doc] ?? '')?.[group];
+    expect(stated, `${doc} states ${path}`).toBeDefined();
+    const docValue = path === 'endStates.towedScoreKeep' ? num(stated ?? '') / 100 : num(stated ?? '');
+    expect(docValue).toBe(expected);
+  });
+
+  it('loads the sections unchanged as typed groups', () => {
+    expect(DEFAULT_TUNING.streetLife).toEqual(tuningJson.streetLife);
+    expect(DEFAULT_TUNING.complaints).toEqual(tuningJson.complaints);
+    expect(DEFAULT_TUNING.endStates).toEqual(tuningJson.endStates);
+    const horn: number = DEFAULT_TUNING.streetLife.horn.radiusM;
+    expect(horn).toBe(8);
+  });
+
+  it('does not repeat the grip values: hazards name a lateralGripPerS surface instead', () => {
+    const sections = JSON.stringify({
+      streetLife: tuningJson.streetLife,
+      complaints: tuningJson.complaints,
+      endStates: tuningJson.endStates,
+    });
+    for (const key of ['grip', 'wet', 'oil', 'wetLeaves']) expect(sections).not.toContain(`"${key}"`);
+  });
+
+  describe('rejects malformed data with an error naming the JSON path', () => {
+    it.each([
+      'streetLife.horn.radiusM',
+      'streetLife.npcRadius',
+      'complaints.hornSpam.windowS',
+      'complaints.meter.sackedAt',
+      'endStates.towedScoreKeep',
+    ])('a missing %s', (path) => {
+      expect(() => loadTuning(without(path))).toThrow(`tuning: ${path} is missing`);
+    });
+
+    it.each(['streetLife', 'complaints', 'endStates'])('a missing top-level %s', (key) => {
+      expect(() => loadTuning(without(key))).toThrow(`tuning: root.${key} is missing`);
+    });
+
+    it.each([
+      ['streetLife.dust.pts', 10, 'must be a negative integer, got 10'],
+      ['complaints.zebra.pts', -200.5, 'must be a negative integer, got -200.5'],
+      ['streetLife.nearMiss.pts', -25, 'must be an integer >= 1, got -25'],
+      ['complaints.meter.sackedAt', 0, 'must be an integer >= 1, got 0'],
+      ['endStates.towedScoreKeep', 1.5, 'must be in (0, 1]'],
+      ['streetLife.actorHit.minClosingSpeedMps', 0, 'must be > 0'],
+    ])('out-of-range %s = %s', (path, value, message) => {
+      expect(() => loadTuning(replaced(path, value))).toThrow(`tuning: ${path} ${message}`);
+    });
+
+    it('an upgraded value below its base value', () => {
+      expect(() => loadTuning(replaced('streetLife.horn.twoToneRadiusM', 6))).toThrow(
+        'tuning: streetLife.horn twoToneRadiusM (6) must not be below the base value (8)',
+      );
+      expect(() => loadTuning(replaced('streetLife.awareness.ledBeaconRadiusM', 5))).toThrow(
+        /ledBeaconRadiusM \(5\) must not be below the base value \(6\)/,
+      );
+      expect(() => loadTuning(replaced('complaints.hornSpam.twoToneMaxHonks', 2))).toThrow(
+        /twoToneMaxHonks \(2\) must not be below the base value \(3\)/,
+      );
+    });
+
+    it('an unknown key in a street-life group', () => {
+      expect(() =>
+        loadTuning(
+          editedObject('streetLife.horn', (o) => {
+            o.volumeDb = 90;
+          }),
+        ),
+      ).toThrow('tuning: streetLife.horn has unknown key "volumeDb"');
+    });
+  });
+});
+
 describe('tuning.json under Node type stripping', () => {
   it('loads through src/sim/tuning.ts in plain node (tools/check-type-strip.ts, no tsx)', () => {
     const out = execFileSync(process.execPath, ['tools/check-type-strip.ts'], {

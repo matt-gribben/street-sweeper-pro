@@ -245,8 +245,9 @@ describe('Save replay', () => {
     try {
       const replayPath = join(dir, fileName);
       writeFileSync(replayPath, text);
-      const delta = measureReplayHeapInChild({ kind: 'file', replayPath, levelPath: LEVEL_PATH });
-      assertHeapDeltaWithinThresholds(delta);
+      for (const { delta } of measureReplayHeapInChild({ kind: 'file', replayPath, levelPath: LEVEL_PATH })) {
+        assertHeapDeltaWithinThresholds(delta);
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

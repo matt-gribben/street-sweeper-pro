@@ -4,8 +4,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { encodeBase64 } from '../../src/sim/base64.ts';
-import { EV, pushEvent } from '../../src/sim/eventQueue.ts';
+import { EV, pushEvent, ShiftEndReason } from '../../src/sim/eventQueue.ts';
 import { addHazard } from '../../src/sim/hazards.ts';
+import { DumpSite } from '../../src/sim/hopper.ts';
 import {
   BRAKE_MAX,
   BUTTON,
@@ -1269,6 +1270,10 @@ describe('replay file', () => {
         hpMin: 50,
         maxSolidOverlapM: 0.001,
         minEvents: { Impact: 1, KerbJolt: 1, ReverseBeeper: 1, ShiftEnd: 0 },
+        shiftEnded: 'TimeUp',
+        minLuDumped: 10.5,
+        minDumpsCompleted: 1,
+        emptyAfterDump: true,
       },
     });
     expect(loaded.file.invariants.minEvents).toEqual({
@@ -1277,6 +1282,35 @@ describe('replay file', () => {
       ReverseBeeper: 1,
       ShiftEnd: 0,
     });
+    expect(loaded.file.invariants.shiftEnded).toBe('TimeUp');
+    expect(loaded.file.invariants.minLuDumped).toBe(10.5);
+    expect(loaded.file.invariants.minDumpsCompleted).toBe(1);
+    expect(loaded.file.invariants.emptyAfterDump).toBe(true);
+    // Serialised in the fixed key order, after the M1 keys, whatever order they were given in.
+    const text = serialiseReplay({
+      ...file,
+      invariants: { emptyAfterDump: true, shiftEnded: 'Towed', minScore: 1, minDumpsCompleted: 2 },
+    });
+    expect(Object.keys(JSON.parse(text).invariants)).toEqual([
+      'minScore',
+      'shiftEnded',
+      'minDumpsCompleted',
+      'emptyAfterDump',
+    ]);
+    expect(loadReplay(text).file.invariants.shiftEnded).toBe('Towed');
+  });
+
+  it('rejects malformed SSP-072 invariants (shift end reason, LU dumped, dumps completed, empty after dump)', () => {
+    const bad = (invariants: Record<string, unknown>): (() => void) => {
+      return () => loadReplay({ ...file, invariants });
+    };
+    expect(bad({ shiftEnded: 'Sacked' })).toThrow(/invariants\.shiftEnded must be one of "Towed", "TimeUp"/);
+    expect(bad({ shiftEnded: true })).toThrow(/invariants\.shiftEnded must be one of/);
+    expect(bad({ minLuDumped: -1 })).toThrow(/invariants\.minLuDumped must be a finite number ≥ 0/);
+    expect(bad({ minDumpsCompleted: 0.5 })).toThrow(
+      /invariants\.minDumpsCompleted must be a non-negative integer/,
+    );
+    expect(bad({ emptyAfterDump: false })).toThrow(/invariants\.emptyAfterDump must be true/);
   });
 });
 
@@ -1337,6 +1371,58 @@ describe('replay invariants', () => {
     monitor.maxSolidOverlapTick = 77;
     expect(invariantFailures({ maxSolidOverlapM: 0.001 }, monitor)).toEqual([
       'maxSolidOverlapM: Bessie overlapped solid geometry by 0.2500 m at tick 77 (limit 0.001 m)',
+    ]);
+  });
+
+  it('records the shift end and every completed dump, and checks the SSP-072 invariants', () => {
+    const level = syntheticLevel();
+    const monitor = createInvariantMonitor(level, DEFAULT_TUNING);
+    const world = createWorld(level, 1, DEFAULT_TUNING);
+    const tank = world.water.tuning.tankUnits;
+    // Nothing has happened yet: every SSP-072 invariant fails with a readable reason.
+    monitor.observe(world);
+    const all = { shiftEnded: 'TimeUp', minLuDumped: 5, minDumpsCompleted: 1, emptyAfterDump: true } as const;
+    expect(invariantFailures(all, monitor)).toEqual([
+      'shiftEnded: the shift never ended (no ShiftEnd event), expected TimeUp',
+      'minLuDumped: 0 LU dumped over the replay, expected at least 5',
+      'minDumpsCompleted: 0 dump(s) completed over the replay, expected at least 1',
+    ]);
+    const tickWith = (fill: () => void): void => {
+      world.tick += 1;
+      world.events.count = 0;
+      world.events.sealed = false;
+      fill();
+      monitor.observe(world);
+    };
+    // A completed depot dump that leaves LU behind and the tank short, then a clean skip dump; a dump cut short
+    // (c = 0) is not counted.
+    world.vehicle.hopperLU = 2;
+    world.vehicle.water = tank - 10;
+    world.hopper.luDumpedTotal = 6;
+    tickWith(() => pushEvent(world.events, EV.DumpEnd, 0, DumpSite.Depot, 6, 1));
+    world.vehicle.hopperLU = 0;
+    tickWith(() => pushEvent(world.events, EV.DumpEnd, 1, DumpSite.Skip, 3, 1));
+    tickWith(() => pushEvent(world.events, EV.DumpEnd, 1, DumpSite.Skip, 1, 0));
+    expect(monitor.dumpsCompleted).toBe(2);
+    expect(monitor.finalLuDumped).toBe(6);
+    expect(
+      invariantFailures({ minLuDumped: 6, minDumpsCompleted: 2, emptyAfterDump: true }, monitor),
+    ).toEqual([
+      `emptyAfterDump: the depot dump completed at tick 1 left 2 LU in the hopper and the tank at ${tank - 10} of ${tank}`,
+    ]);
+    expect(invariantFailures({ minDumpsCompleted: 3 }, monitor)).toEqual([
+      'minDumpsCompleted: 2 dump(s) completed over the replay, expected at least 3',
+    ]);
+    // The shift ends TOWED: the wrong reason for a TimeUp replay; a second ShiftEnd is reported as such.
+    tickWith(() => pushEvent(world.events, EV.ShiftEnd, -1, ShiftEndReason.Towed, 0, 0));
+    expect(monitor.shiftEndTick).toBe(4);
+    expect(invariantFailures({ shiftEnded: 'Towed' }, monitor)).toEqual([]);
+    expect(invariantFailures({ shiftEnded: 'TimeUp' }, monitor)).toEqual([
+      'shiftEnded: the shift ended at tick 4 with Towed, expected TimeUp',
+    ]);
+    tickWith(() => pushEvent(world.events, EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0));
+    expect(invariantFailures({ shiftEnded: 'Towed' }, monitor)).toEqual([
+      'shiftEnded: 2 ShiftEnd events, expected exactly one (Towed)',
     ]);
   });
 });

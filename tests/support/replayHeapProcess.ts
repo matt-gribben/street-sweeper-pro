@@ -1,6 +1,8 @@
 // Child-process entry point for the replay heap check (TECHNICAL_DESIGN §17, SSP-038). Run by
 // measureReplayHeapInChild (replayCheck.ts) as `node --expose-gc tests/support/replayHeapProcess.ts <args>`, on
-// Node's type stripping (no Vitest transform), and prints the HeapDelta as one JSON line on stdout.
+// Node's type stripping (no Vitest transform), and prints its results as one JSON line on stdout: an array with
+// one { window, delta } per measured window, the replay's first 4,200 ticks and, for a replay longer than that,
+// its last 4,200 too (replayHeapWindows, SSP-072).
 //
 // Why a fresh process per replay: V8's optimisation state is per process. A test worker that has already run
 // other levels and replays carries polymorphic feedback and deoptimisation history into the measured window;
@@ -40,5 +42,5 @@ if (args.includes('--synthetic')) {
   log = replay.log;
   ticks = replay.file.ticks;
 }
-const delta = measureReplayHeap(level, DEFAULT_TUNING, seed, log, ticks);
-process.stdout.write(`${JSON.stringify(delta)}\n`);
+const results = measureReplayHeap(level, DEFAULT_TUNING, seed, log, ticks);
+process.stdout.write(`${JSON.stringify(results)}\n`);

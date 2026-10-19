@@ -2,9 +2,12 @@
 //
 // For every tests/replay/replays/*.json it loads the replay (src/sim/replay.ts loadReplay), loads its district's
 // compiled level from public/assets/levels/<name>.json (district.<name>) through decodeLevel, runs the input
-// log for the replay's ticks on a World with the default tuning, and asserts every checkpoint hash (the last
-// one is the final-state hash), the invariants, and the §17 zero-allocation heap check. A built-in synthetic
-// replay (tests/replay/synthetic.ts, hand-built level) always runs too, so the project never has zero tests.
+// log for the replay's own `ticks` (3,600 is the standard length; the M2 full shift runs 14,600, to the end of
+// the shift, SSP-072) on a World with the default tuning, and asserts every checkpoint hash (the last one is
+// the final-state hash), the invariants, and the §17 zero-allocation heap check (over the replay's first 4,200
+// ticks and, for a longer replay, its last 4,200 too). It also checks that changing one input of a committed
+// replay fails it. A built-in synthetic replay (tests/replay/synthetic.ts, hand-built level) always runs too,
+// so the project never has zero tests.
 //
 // `npm run test:replay -- --update` re-records the checkpoint hashes of the committed files (vitest.config.ts
 // REPLAY_UPDATE, read here with inject). Only then does the runner write files. Re-recording is for deliberate
@@ -17,9 +20,13 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from '
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, inject, it } from 'vitest';
+import { encodeBase64 } from '../../src/sim/base64.ts';
 import { decodeLevel, type Level } from '../../src/sim/map.ts';
 import {
   compareCheckpoints,
+  decodeInputBytes,
+  encodeInputBytes,
+  encodeInputs,
   hasCheckpoints,
   inputLogsEqual,
   type LoadedReplay,
@@ -36,6 +43,7 @@ import {
   eventCountsByName,
   invariantFailures,
   measureReplayHeapInChild,
+  replayHeapWindows,
 } from '../support/replayCheck.ts';
 import { SYNTHETIC_DISTRICT, SYNTHETIC_SEED, syntheticInputLog, syntheticLevel } from './synthetic.ts';
 
@@ -92,7 +100,11 @@ function checkReplay(name: string, replay: LoadedReplay, level: Level, update: b
   const summary =
     `${name}: ${file.ticks} ticks, final ${run.finalHash}, events ${JSON.stringify(eventCountsByName(monitor))}, ` +
     `min HP ${monitor.minHp}, max solid overlap ${monitor.maxSolidOverlapM.toFixed(4)} m, ` +
-    `score ${monitor.finalScore}, litter collected ${monitor.finalLitterCollected}`;
+    `score ${monitor.finalScore}, litter collected ${monitor.finalLitterCollected}, ` +
+    `LU dumped ${monitor.finalLuDumped} in ${monitor.dumpsCompleted} completed dump(s), ` +
+    (monitor.shiftEnds > 0
+      ? `shift ended at tick ${monitor.shiftEndTick} (reason ${monitor.shiftEndReason})`
+      : 'shift running');
   return { failures, checkpoints: run.checkpoints, summary };
 }
 
@@ -135,17 +147,54 @@ describe('replay corpus', () => {
         expect(result.failures, result.failures.join('\n')).toEqual([]);
       });
 
-      it('allocates nothing per tick (TECHNICAL_DESIGN §17 heap-delta check)', {
+      it('fails when one input of the log changes (one InputFrame byte, or one byte of the encoded inputs)', () => {
+        const { replay, level } = load();
+        const { file, log } = replay;
+        // One field of one tick in the middle of the run, before any knock-off (from then on the shift replaces
+        // the driver's input in phase 1, so a change there has no effect, and the hash reads the gated frame).
+        const tick = Math.floor(Math.min(file.ticks, 14_000) / 2);
+        const throttle = log.throttle[tick] as number;
+        log.throttle[tick] = throttle === 255 ? 254 : throttle + 1;
+        const changed = checkReplay(
+          name,
+          loadReplay(serialiseReplay({ ...file, inputs: encodeInputs(log) })),
+          level,
+          false,
+        );
+        expect(changed.failures.length).toBeGreaterThan(0);
+        expect(changed.failures[0]).toContain('hash mismatch, first diverging checkpoint at tick');
+        // One byte in the middle of the encoded RLE stream: the file either no longer decodes (the decoder is
+        // strict) or no longer reproduces its hashes.
+        const bytes = encodeInputBytes(loadReplay(readFileSync(path, 'utf8')).log);
+        const i = Math.floor(bytes.length / 2);
+        bytes[i] = ((bytes[i] as number) + 1) & 0xff;
+        let failures: string[];
+        try {
+          decodeInputBytes(bytes, file.ticks);
+          const flipped = loadReplay(serialiseReplay({ ...file, inputs: encodeBase64(bytes) }));
+          failures = checkReplay(name, flipped, level, false).failures;
+        } catch (error) {
+          failures = [String(error)];
+        }
+        expect(failures.length).toBeGreaterThan(0);
+      });
+
+      it('allocates nothing per tick (TECHNICAL_DESIGN §17 heap-delta check, every window)', {
         timeout: HEAP_TEST_TIMEOUT_MS,
       }, () => {
         const { replay } = load();
-        const delta = measureReplayHeapInChild({
+        const results = measureReplayHeapInChild({
           kind: 'file',
           replayPath: path,
           levelPath: levelPathForDistrict(replay.file.district),
         });
-        console.log(`${name}: heap retained ${delta.retainedBytes} B, pre-final-GC ${delta.preGcBytes} B`);
-        assertHeapDeltaWithinThresholds(delta);
+        expect(results.map((r) => r.window)).toEqual(replayHeapWindows(replay.file.ticks));
+        for (const { window, delta } of results) {
+          console.log(
+            `${name} (${window}): heap retained ${delta.retainedBytes} B, pre-final-GC ${delta.preGcBytes} B`,
+          );
+        }
+        for (const { delta } of results) assertHeapDeltaWithinThresholds(delta);
       });
     });
   }
@@ -232,8 +281,11 @@ describe('synthetic replay (built in, hand-built level)', () => {
   it('allocates nothing per tick (TECHNICAL_DESIGN §17 heap-delta check)', {
     timeout: HEAP_TEST_TIMEOUT_MS,
   }, () => {
-    const delta = measureReplayHeapInChild({ kind: 'synthetic' });
-    console.log(`synthetic: heap retained ${delta.retainedBytes} B, pre-final-GC ${delta.preGcBytes} B`);
-    assertHeapDeltaWithinThresholds(delta);
+    const results = measureReplayHeapInChild({ kind: 'synthetic' });
+    expect(results.map((r) => r.window)).toEqual(['start']);
+    for (const { delta } of results) {
+      console.log(`synthetic: heap retained ${delta.retainedBytes} B, pre-final-GC ${delta.preGcBytes} B`);
+      assertHeapDeltaWithinThresholds(delta);
+    }
   });
 });

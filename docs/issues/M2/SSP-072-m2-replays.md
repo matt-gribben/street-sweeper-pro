@@ -2,7 +2,7 @@
 id: SSP-072
 title: "Record the M2 full-shift and dump-cycle replays and commit their hashes"
 milestone: M2
-status: todo
+status: done
 type: test
 estimate: M
 labels: [type:test, area:test, area:sim, size:M, vertical-slice]

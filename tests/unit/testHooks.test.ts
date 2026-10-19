@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   installTestHooks,
   isShiftTestState,
+  MAX_PAGE,
   MAX_SEED,
   readTestParams,
   TEST_RENDER_STEP_S,
@@ -63,6 +64,8 @@ describe('readTestParams', () => {
       freeze: false,
       night: false,
       springs: false,
+      page: 0,
+      asset: null,
     });
   });
 
@@ -75,6 +78,8 @@ describe('readTestParams', () => {
         freeze: true,
         night: true,
         springs: true,
+        page: 0,
+        asset: null,
       },
     );
     expect(readTestParams('?test=1&night=0')?.night).toBe(false);
@@ -85,6 +90,17 @@ describe('readTestParams', () => {
     });
     expect(readTestParams(`?test=1&seed=${MAX_SEED}`)?.seed).toBe(0xffff_ffff);
     expect(readTestParams('?test=1&scene=district.puddle_lane')?.scene).toBe('district.puddle_lane');
+  });
+
+  it("parses the zoo's page and asset (SSP-298)", () => {
+    expect(readTestParams('?test=1&scene=zoo&page=3&asset=veh.sweeper')).toMatchObject({
+      scene: 'zoo',
+      page: 3,
+      asset: 'veh.sweeper',
+    });
+    expect(readTestParams(`?test=1&page=${MAX_PAGE}`)?.page).toBe(MAX_PAGE);
+    // An ID the zoo has no frames for is well-formed: the zoo itself reports it and falls back.
+    expect(readTestParams('?test=1&scene=zoo&asset=npc.nobody')?.asset).toBe('npc.nobody');
   });
 
   it.each([
@@ -101,6 +117,12 @@ describe('readTestParams', () => {
     ['a scene with a slash', '?test=1&scene=../zoo'],
     ['an upper-case scene', '?test=1&scene=Zoo'],
     ['an empty scene', '?test=1&scene='],
+    ['a negative page', '?test=1&page=-1'],
+    ['a fractional page', '?test=1&page=1.5'],
+    ['a page above the maximum', `?test=1&page=${MAX_PAGE + 1}`],
+    ['an asset without a class', '?test=1&asset=sweeper'],
+    ['a frame ID as the asset', '?test=1&asset=veh.sweeper:body:h00:0'],
+    ['an empty asset', '?test=1&asset='],
   ])('throws on %s', (_label, search) => {
     expect(() => readTestParams(search)).toThrow(/\?test=1/);
   });
@@ -135,6 +157,8 @@ describe('installTestHooks with test=1', () => {
       freeze: true,
       night: false,
       springs: false,
+      page: 0,
+      asset: null,
     });
     expect(target.__ssp).toBe(hooks?.api);
     const api = target.__ssp;

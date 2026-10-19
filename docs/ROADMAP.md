@@ -524,7 +524,7 @@ Each milestone has the same shape:
 - All 5 atlases (`world`, `actors`, `items`, `ui`, `fx`) at ≤ 2048×2048, plus `public/assets/asset-hashes.json`.
 - Real assets for every class in the "M4" column of the [asset readiness matrix](#51-asset-readiness-by-milestone).
 - Final fonts (Kerbside 5×7, Kerbside Bold 8×8, auto-generated outlined variants, kerning metrics), the HUD, 9-slice panels, and portraits.
-- `ZooScene` and its golden.
+- `ZooScene` and its golden. *(A minimal, test-only ZooScene for the actors and items atlases lands in M3, SSP-298, so the M3 placeholder batches get the [§1.1](#11-definition-of-done-every-task-every-milestone) zoo review; full atlas coverage and the `zoo` golden stay here, SSP-118.)*
 
 **Exit criteria (canonical).**
 

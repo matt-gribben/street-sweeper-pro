@@ -26,6 +26,7 @@ import {
 } from './scenes/SpikeScene.ts';
 import { TallyScene } from './scenes/TallyScene.ts';
 import { TextSampleScene } from './scenes/TextSampleScene.ts';
+import { ZooScene } from './scenes/ZooScene.ts';
 
 /** An error's message, for the console and `__ssp.boot()`. */
 function errorMessage(error: unknown): string {
@@ -74,7 +75,8 @@ const game = new Game(canvas, {
 // flow straight into that district's shift, the intro card skipped; it still ends on the tally); `level_preview`
 // (compiled Puddle Lane from a pinned camera, SSP-045), `text_sample` (bitmap text over a shadowed street,
 // SSP-069), `panel_sample` (9-slice panels and button states, SSP-285), `hud_sample` (the HUD at its widest,
-// SSP-070), `spike_city` or a spike test scene. An unknown ID throws at once, before the boot; so does `tally`,
+// SSP-070), `zoo` (the test-only asset zoo, SSP-298, with `page=<n>` and `asset=<id>`), `spike_city` or a spike
+// test scene. An unknown ID throws at once, before the boot; so does `tally`,
 // which needs a finished shift (boot the flow and step to the end). Dev builds keep the M0 spike city for the spike
 // scripts: `?world=spike_city`, `?world=palette_test` (the SSP-016 palette test world for
 // tools/spikes/swiftShaderPalettePass.ts), `?world=empty` (the draw-call baseline for tools/spikes/spikeCityFrame.ts),
@@ -133,6 +135,9 @@ function testScene(id: TestSceneId | SpikeTestSceneId): Scene {
       return new HudSampleScene(context);
     case 'spike_city':
       return createSpikeCityScene(context, true, null);
+    case 'zoo':
+      // The test-only asset zoo (SSP-298): reachable only here, from `?test=1&scene=zoo`.
+      return new ZooScene(context, { page: testParams?.page ?? 0, asset: testParams?.asset ?? null });
     case 'lean_quadrants':
     case 'scale_1440':
     case 'scale_sheet':

@@ -9,7 +9,8 @@
 //               Puddle Lane, or `district.puddle_lane`, src/scenes/ShiftScene.ts), `spike_city`, `lean_quadrants`, `scale_1440`, `scale_sheet`
 //               (src/scenes/SpikeScene.ts), `level_preview` (src/scenes/LevelPreviewScene.ts), `text_sample`
 //               (src/scenes/TextSampleScene.ts, SSP-069), `panel_sample` (src/scenes/PanelSampleScene.ts,
-//               SSP-285) or `hud_sample` (src/scenes/HudSampleScene.ts, SSP-070); main.ts pushes it onto the
+//               SSP-285), `hud_sample` (src/scenes/HudSampleScene.ts, SSP-070) or `zoo` (src/scenes/ZooScene.ts,
+//               SSP-298: the test-only asset zoo, never reachable from a menu); main.ts pushes it onto the
 //               SceneManager;
 //   tick=<n>    advance n ticks synchronously after load, before `ready` turns true;
 //   freeze=1    the loop (src/app/loop.ts) keeps rendering but never steps;
@@ -17,7 +18,10 @@
 //               pools (SSP-021; `lean_quadrants` hangs one under each lamp post);
 //   springs=1   keep the follow camera's look-ahead and speed-zoom springs on (SSP-047). Off by default so frames
 //               never depend on timing; with test mode's fixed 1/60 s frames (and step(n) handing the spring n/60 s
-//               of render time) the live camera is still deterministic.
+//               of render time) the live camera is still deterministic;
+//   page=<n>    the zoo page to show (`scene=zoo`, SSP-298; 0 when absent): a non-negative integer;
+//   asset=<id>  the zoo's full-frame view of one asset (`scene=zoo`, SSP-298), an asset ID (`veh.sweeper`). An ID
+//               the zoo has no frames for is not malformed: the zoo logs an error naming it and shows its default view.
 // Malformed values throw at boot: a test must never run against a silently defaulted parameter.
 //
 // `window.__ssp`:
@@ -82,6 +86,10 @@ export type TestParams = {
   readonly night: boolean;
   /** `springs=1`: the follow camera's look-ahead and speed-zoom springs stay on (SSP-047). */
   readonly springs: boolean;
+  /** `page=<n>`: the zoo page (SSP-298; 0 when absent). */
+  readonly page: number;
+  /** `asset=<id>`: the zoo's full-frame view of one asset (SSP-298), or null for its default view. */
+  readonly asset: string | null;
 };
 
 /** Camera part of {@link TestState}: focus in sim metres, height in metres, look-ahead offset in metres. */
@@ -199,6 +207,10 @@ declare global {
 /** Scene IDs are snake_case, optionally class-prefixed like district IDs (`district.puddle_lane`). */
 const SCENE_ID = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)?$/;
 const DIGITS = /^\d+$/;
+/** Asset IDs are `<class>.<snake_name>` (CLAUDE.md §5.4). */
+const ASSET_ID = /^[a-z]+\.[a-z0-9_]+$/;
+/** Largest `page`: far more pages than any zoo view has, small enough to stay a plain integer. */
+export const MAX_PAGE = 9999;
 
 function parseCount(name: string, raw: string, max: number): number {
   const value = Number(raw);
@@ -217,7 +229,7 @@ function parseSwitch(name: string, raw: string | null): boolean {
 
 /**
  * Parses the test parameters from a `location.search` string. Returns null unless `test=1` is present (any other
- * value, or none, means test mode is off); throws on a malformed seed, scene, tick, freeze, night or springs.
+ * value, or none, means test mode is off); throws on a malformed seed, scene, tick, freeze, night, springs, page or asset.
  */
 export function readTestParams(search: string): TestParams | null {
   const query = new URLSearchParams(search);
@@ -230,6 +242,11 @@ export function readTestParams(search: string): TestParams | null {
   if (sceneRaw !== null && !SCENE_ID.test(sceneRaw)) {
     throw new Error(`?test=1: scene=${sceneRaw} is not a scene ID`);
   }
+  const pageRaw = query.get('page');
+  const assetRaw = query.get('asset');
+  if (assetRaw !== null && !ASSET_ID.test(assetRaw)) {
+    throw new Error(`?test=1: asset=${assetRaw} is not an asset ID`);
+  }
   return {
     seed: seedRaw === null ? null : parseCount('seed', seedRaw, MAX_SEED),
     scene: sceneRaw,
@@ -237,6 +254,8 @@ export function readTestParams(search: string): TestParams | null {
     freeze: parseSwitch('freeze', query.get('freeze')),
     night: parseSwitch('night', query.get('night')),
     springs: parseSwitch('springs', query.get('springs')),
+    page: pageRaw === null ? 0 : parseCount('page', pageRaw, MAX_PAGE),
+    asset: assetRaw,
   };
 }
 

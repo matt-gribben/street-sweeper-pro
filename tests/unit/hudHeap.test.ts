@@ -3,13 +3,15 @@
 // field moves frame by frame (timer, score digits and sign, combo tiers, the chain bar, tier popups, hopper, water,
 // Dignity, the dump ring and the complaints meter's stamps and shakes; since SSP-299 the Brush-o-meter's zones,
 // needle and mph, the brush state and its ring, the clean-zone highlight, Tidy %, and both off-screen arrows
-// sweeping round the frame), end.
+// sweeping round the frame; since SSP-289 Pam's radio panel with a many-page bark of keycaps paging every 180
+// ticks, drawn on both sides), end.
 //
 // A file of its own, like bitmapTextHeap.test.ts: Vitest runs each file in a fresh process, so the JIT sees only the
 // UiSpriteBatch sink, as the game does.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
+import { DEFAULT_GLYPHS } from '../../src/app/glyphBindings.ts';
 import { loadAtlas, type RgbaImage } from '../../src/render/spriteAtlas.ts';
 import { UiSpriteBatch } from '../../src/render/spriteBatch.ts';
 import { HUD_CAPACITY, HUD_FONT } from '../../src/scenes/ShiftScene.ts';
@@ -21,6 +23,7 @@ import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import { createWorld } from '../../src/sim/world.ts';
 import { Hud } from '../../src/ui/hud.ts';
 import { createHudModel, createHudSnapshot, hudModel } from '../../src/ui/hudModel.ts';
+import { BARK_PAGE_TICKS, createRadioModel, RadioSide, radioModel } from '../../src/ui/radio.ts';
 import { assertHeapDeltaWithinThresholds, measureHeapDelta } from '../support/heapDelta.ts';
 import { decodePng } from '../support/png.ts';
 import { readBitmapFont } from '../support/textRaster.ts';
@@ -37,8 +40,15 @@ it('allocates nothing per frame: tick, draw from the World, and a model whose ev
     fetchImage: async (url: string): Promise<RgbaImage> =>
       decodePng(readFileSync(`${REPO_ROOT}public${url}`)),
   });
-  const batch = new UiSpriteBatch(atlas, HUD_CAPACITY);
-  const hud = new Hud(batch, readBitmapFont(HUD_FONT));
+  // Two HUDs a frame, each with a radio panel up: room for both (one HUD's worst case is checked in radio.test.ts).
+  const batch = new UiSpriteBatch(atlas, 2 * HUD_CAPACITY);
+  const hud = new Hud(batch, readBitmapFont(HUD_FONT), DEFAULT_GLYPHS);
+  // One bark long enough to page through the warm-up and the measured window (its pages are laid out once, here).
+  const bark = 'Brush down with {brush}, toot the {horn} and hold {interact} in the bay. '.repeat(120);
+  hud.radio.enqueue(bark);
+  const pages = hud.radio.currentPages.length;
+  expect(pages * BARK_PAGE_TICKS).toBeGreaterThan(WARMUP_FRAMES + 3_600);
+  const awayRadio = createRadioModel();
   const level = decodeLevel(readFileSync(`${REPO_ROOT}public/assets/levels/puddle_lane.json`, 'utf8'));
   const world = createWorld(level, 1, DEFAULT_TUNING);
   world.step(createInputFrame());
@@ -100,15 +110,29 @@ it('allocates nothing per frame: tick, draw from the World, and a model whose ev
       batch.begin();
       hud.tick(world);
       hud.draw(world, 480, camera);
-      hud.drawModel(hudModel(snapshot, tick, model, frame), 480);
+      hud.radio.setDevice('keyboard');
+      hud.drawModel(
+        hudModel(snapshot, tick, model, frame),
+        480,
+        radioModel(
+          hud.radio.current(),
+          192,
+          (tick & 1) === 0 ? RadioSide.Away : RadioSide.Home,
+          480,
+          awayRadio,
+        ),
+      );
       if (batch.count > maxQuads) maxQuads = batch.count;
       batch.end();
     },
     { warmupTicks: WARMUP_FRAMES },
   );
   assertHeapDeltaWithinThresholds(delta);
-  // Two HUDs a frame; the busiest comfortably inside the batch.
-  expect(maxQuads).toBeGreaterThan(150);
-  expect(maxQuads).toBeLessThanOrEqual(HUD_CAPACITY);
+  // The bark was on screen, paging, the whole time.
+  expect(hud.radio.pageIndex).toBeGreaterThan(100);
+  expect(hud.radio.current()).not.toBeNull();
+  // Two HUDs a frame, each inside its own HUD_CAPACITY.
+  expect(maxQuads).toBeGreaterThan(300);
+  expect(maxQuads).toBeLessThanOrEqual(2 * HUD_CAPACITY);
   batch.dispose();
 });

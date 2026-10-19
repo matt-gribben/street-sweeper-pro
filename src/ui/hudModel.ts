@@ -359,6 +359,9 @@ export type HudSnapshot = {
   /** Bessie's body centre, sim metres. */
   bessieXM: number;
   bessieYM: number;
+  /** Bessie's ground velocity, m/s (sim axes: x east, y south), for the radio panel's look-ahead point (SSP-289). */
+  bessieVxMps: number;
+  bessieVyMps: number;
   /** Depot bay centres, sim metres, in level order (from the shift's dump sites; made once per shift). */
   depotCount: number;
   depotX: ArrayLike<number>;
@@ -496,6 +499,8 @@ export function createHudSnapshot(): HudSnapshot {
     star3Ppm: 920_000,
     bessieXM: 0,
     bessieYM: 0,
+    bessieVxMps: 0,
+    bessieVyMps: 0,
     depotCount: 0,
     depotX: NO_POINTS,
     depotY: NO_POINTS,
@@ -688,6 +693,11 @@ export function readHudSnapshot(view: WorldView, out: HudSnapshot): HudSnapshot 
   out.star3Ppm = tidy.star3Ppm;
   out.bessieXM = v.xM;
   out.bessieYM = v.yM;
+  // Body velocity on the ground: forward (sin θ, −cos θ) × vLong + right (cos θ, sin θ) × vLat (TECHNICAL_DESIGN §4).
+  const sinH = Math.sin(v.headingRad);
+  const cosH = Math.cos(v.headingRad);
+  out.bessieVxMps = sinH * v.vLongMps + cosH * v.vLatMps;
+  out.bessieVyMps = -cosH * v.vLongMps + sinH * v.vLatMps;
   const waterView = view.water;
   out.hydrantX = waterView.hydrantX;
   out.hydrantY = waterView.hydrantY;

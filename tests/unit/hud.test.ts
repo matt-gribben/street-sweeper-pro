@@ -711,7 +711,8 @@ describe('layout at every width 432..640 (GDD §15.2: 4 px safe margin, anchored
           'brushMeter',
           'brushState',
           'powerUpSlot',
-          'radioSlot',
+          'radioHome',
+          'radioAway',
           'minimapSlot',
         ].sort(),
       );

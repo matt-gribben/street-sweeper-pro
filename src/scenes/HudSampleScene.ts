@@ -6,7 +6,8 @@
 // meter at 4 (SSP-078) shaking, with every box state: two stamped at rest, a stamp mid-shake, one slamming in
 // and an empty box; since SSP-299 also the Brush-o-meter in the fling zone with a full spin-up ring, the widest
 // district name over a 59% Tidy % bar, and both off-screen arrows (placed in the layout's arrow frame at the
-// drawn width). It is the HUD's
+// drawn width); since SSP-289 Pam's radio panel at home with the first page of tutorial beat 2 (HUD_SAMPLE_BARK:
+// 'Brush down with [Space]. Takes', the keycap from the default keyboard glyphs). It is the HUD's
 // evidence scene until the M4 `hud_specimen` golden: tests/e2e/hud.spec.ts saves its frames at W = 480, 432 and
 // 640 to test-results/ and checks every UI pixel against a CPU rasterisation of the same model.
 //
@@ -18,6 +19,7 @@
 // the palette pass and the blit: 5 of the 10 allowed (TECHNICAL_DESIGN §12.7).
 import { Group } from 'three';
 import type { SceneContext } from '../app/Game.ts';
+import { DEFAULT_GLYPHS } from '../app/glyphBindings.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
 import { SWEEP_HEIGHT_M } from '../render/camera.ts';
 import { mergeBoxes } from '../render/cityMesh.ts';
@@ -38,6 +40,15 @@ import {
   type HudSnapshot,
   hudModel,
 } from '../ui/hudModel.ts';
+import {
+  createRadioModel,
+  pageBark,
+  parseBark,
+  type RadioModel,
+  type RadioPage,
+  RadioSide,
+  radioModel,
+} from '../ui/radio.ts';
 import { HUD_CAPACITY, HUD_FONT } from './ShiftScene.ts';
 
 /** One character per 2 m cell (`.` asphalt, `:` slab, `3` a 3-storey building); row 0 is north. 48 × 10 cells. */
@@ -107,6 +118,8 @@ export const HUD_SAMPLE_SNAPSHOT: Readonly<HudSnapshot> = Object.freeze({
   star3Ppm: 920_000,
   bessieXM: 0,
   bessieYM: 0,
+  bessieVxMps: 0,
+  bessieVyMps: 0,
   depotCount: 1,
   depotX: Object.freeze([-90]),
   depotY: Object.freeze([60]),
@@ -127,6 +140,29 @@ export function hudSampleModel(out: HudModel = createHudModel(), frame?: HudArro
   return hudModel(HUD_SAMPLE_SNAPSHOT, HUD_SAMPLE_TICK, out, frame);
 }
 
+/** The sample's bark: GDD §16.2 tutorial beat 2, whose first page carries the brush keycap. */
+export const HUD_SAMPLE_BARK = 'Brush down with {brush}. Takes her a second to spin up.';
+
+/** The sample bark's pages with the default keyboard glyphs and the 4.0 m/s clean speed (setup only: allocates). */
+export function hudSamplePages(font: BitmapFont): RadioPage[] {
+  return pageBark(parseBark(HUD_SAMPLE_BARK), font, {
+    glyphs: DEFAULT_GLYPHS,
+    device: 'keyboard',
+    cleanSpeedMps: 4,
+  });
+}
+
+/** The sample's radio panel at width `widthPx`: page 0 of `pages` (hudSamplePages) at home. Allocates nothing. */
+export function hudSampleRadio(
+  pages: readonly RadioPage[],
+  widthPx: number,
+  out: RadioModel = createRadioModel(),
+): RadioModel {
+  let widest = 0;
+  for (let i = 0; i < pages.length; i++) widest = Math.max(widest, pages[i]?.inkPx ?? 0);
+  return radioModel(pages[0] ?? null, widest, RadioSide.Home, widthPx, out);
+}
+
 /** The hud_sample scene. */
 export class HudSampleScene implements Scene {
   readonly id = 'hud_sample';
@@ -138,6 +174,8 @@ export class HudSampleScene implements Scene {
   private batch: UiSpriteBatch | null = null;
   private hud: Hud | null = null;
   private readonly model = createHudModel();
+  private readonly radio = createRadioModel();
+  private radioPages: readonly RadioPage[] = [];
 
   constructor(context: SceneContext) {
     this.context = context;
@@ -169,7 +207,8 @@ export class HudSampleScene implements Scene {
     this.atlas = atlas;
     const batch = new UiSpriteBatch(atlas, HUD_CAPACITY);
     this.batch = batch;
-    this.hud = new Hud(batch, font);
+    this.hud = new Hud(batch, font, DEFAULT_GLYPHS);
+    this.radioPages = hudSamplePages(font);
     this.context.root.add(this.world);
     this.context.ui.add(batch.mesh);
     this.context.pinCamera(0, 0, SWEEP_HEIGHT_M);
@@ -198,7 +237,11 @@ export class HudSampleScene implements Scene {
     if (batch === null || hud === null) return;
     const w = this.context.renderer.rig.internalWidth;
     batch.begin();
-    hud.drawModel(hudSampleModel(this.model, hud.layout(w).arrowFrame), w);
+    hud.drawModel(
+      hudSampleModel(this.model, hud.layout(w).arrowFrame),
+      w,
+      hudSampleRadio(this.radioPages, w, this.radio),
+    );
     batch.end();
   }
 }

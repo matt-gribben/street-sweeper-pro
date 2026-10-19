@@ -36,9 +36,16 @@
 //               zones in a 1 px ink frame (66×8 at (4, 234)) with the 3×10 needle at x = 5 + needle, y = 233; the
 //               speed outlined, box at (72, 233); the 16×16 brush state badge and ring 4 px right of the speed's
 //               box; then the reserved 16×16 + countdown power-up slot (SSP-096) 4 px further right;
-//   slots       reserved for later widgets, so nothing here lands on them: the one-line radio panel (SSP-289),
-//               200×22 at (4, 206), left of the dump prompt at every width; the 64×64 minimap (SSP-291) in the
+//   slots       reserved for later widgets, so nothing here lands on them: the 64×64 minimap (SSP-291) in the
 //               bottom-right corner;
+// SSP-289, Pam's radio panel (radio.ts owns the queue, paging, keycaps and side rule):
+//   radio       two 204×27 slots, the 21×10 PAM tab over a 17 px ui.panel_council of one line: home (4, 197),
+//               bottom-left above the brush row and left of the dump prompt at W = 432; away (W − 208, 173),
+//               bottom-right above the minimap slot. The panel is as wide as the bark's widest page plus 12 px
+//               (at most 204), left-aligned at home and right-aligned away. The tab is a 17 fill in a 1 px 00 border
+//               (top corners cut) with 'PAM' in 00; the line is plain 07 text 6 px in and 5 px down from the panel's
+//               top-left; a keycap is its label in 07 inside a 1 px 07 box with cut corners, 11 px tall from 3 px
+//               below the panel top, over the panel's 26 fill;
 //   arrows      the 11×11 off-screen arrows (hudModel placeArrow), kept 1 px clear of every reserved box.
 // Bars are sub-rectangles of the solid ui.bar_fill frame recoloured 07 → the wanted index (addRegion), so they need
 // no frame per length and cost no extra draw call.
@@ -54,12 +61,14 @@ import { FRAME, type FrameId } from '../gen/assets.ts';
 import { EV } from '../sim/eventQueue.ts';
 import type { WorldView } from '../sim/world.ts';
 import { type BitmapFont, TextVariant } from './bitmapText.ts';
+import { buildGlyphTable, GLYPH_ACTIONS, type GlyphBindings, type GlyphTable } from './glyphs.ts';
 import {
   BrushIcon,
   CHAIN_BAR_H_PX,
   CHAIN_BAR_PX,
   COMBO_TEXTS,
   COMPLAINT_SLOTS,
+  COMPLAINT_WARN_AT,
   ComplaintSlotState,
   createHudModel,
   createHudSnapshot,
@@ -87,7 +96,25 @@ import {
   TIDY_BAR_PX,
   TIER_WORDS,
 } from './hudModel.ts';
-import { BUTTON_NO_RECOLOUR, type PanelSink } from './panels.ts';
+import { BUTTON_NO_RECOLOUR, type PanelSink, PanelStyle, Panels } from './panels.ts';
+import {
+  COMPLAINT_WARN_BARK,
+  createRadioModel,
+  KEYCAP_H_PX,
+  KEYCAP_LABEL_INSET_PX,
+  KEYCAP_TOP_PX,
+  RADIO_PANEL_H_PX,
+  RADIO_SPEAKER,
+  RADIO_TAB_H_PX,
+  RADIO_TAB_INSET_PX,
+  RADIO_TAB_W_PX,
+  RADIO_TEXT_INSET_PX,
+  RADIO_TEXT_TOP_PX,
+  Radio,
+  type RadioModel,
+  radioLookAheadXPx,
+  radioSlots,
+} from './radio.ts';
 
 /** The solid frame every bar is cut from, and its size. */
 export const BAR_FRAME: FrameId = 'ui.bar_fill:bar:-:0';
@@ -233,8 +260,6 @@ export const ICON_PX = 16;
 export const BRUSH_ROW_GAP_PX = 4;
 /** Gap between the power-up slot's icon and its countdown. */
 export const POWER_UP_TEXT_GAP_PX = 2;
-/** The radio panel slot (SSP-289): bottom-left, above the brush row and left of the dump prompt at W = 432. */
-export const RADIO_SLOT = Object.freeze({ x: 4, y: 206, w: 200, h: 22 });
 /** The minimap slot (SSP-291): 64×64 in the bottom-right corner. */
 export const MINIMAP_PX = 64;
 
@@ -284,7 +309,8 @@ export type HudElement =
   | 'brushMeter'
   | 'brushState'
   | 'powerUpSlot'
-  | 'radioSlot'
+  | 'radioHome'
+  | 'radioAway'
   | 'minimapSlot';
 
 /** Width of outlined text: the sum of its advances (a box 1 px left of the first pen). */
@@ -396,7 +422,7 @@ export function hudLayout(font: BitmapFont, widthPx: number): HudLayout {
     w: ICON_PX + POWER_UP_TEXT_GAP_PX + outlinedWidth(font, '0:00'),
     h: ICON_PX,
   };
-  const radioSlot: HudRect = RADIO_SLOT;
+  const radio = radioSlots(widthPx);
   const minimapSlot: HudRect = {
     x: widthPx - m - MINIMAP_PX,
     y: HUD_HEIGHT_PX - m - MINIMAP_PX,
@@ -418,7 +444,8 @@ export function hudLayout(font: BitmapFont, widthPx: number): HudLayout {
     brushMeter,
     brushState,
     powerUpSlot,
-    radioSlot,
+    radioHome: radio.home,
+    radioAway: radio.away,
     minimapSlot,
   };
   return {
@@ -472,10 +499,26 @@ export function writeScoreChars(value: number, out: Uint8Array): number {
 }
 // per-frame draw path: end
 
+/** Labels when no glyph table is given: every action unbound ('?'). The game passes app/glyphBindings.ts's. */
+function unboundGlyphTable(): GlyphTable {
+  const bindings: Partial<Record<(typeof GLYPH_ACTIONS)[number], { keys: string[]; pad: number[] }>> = {};
+  for (const action of GLYPH_ACTIONS) bindings[action] = { keys: [], pad: [] };
+  return buildGlyphTable(bindings as GlyphBindings);
+}
+const UNBOUND_GLYPHS: GlyphTable = unboundGlyphTable();
+
 /** Draws the HUD into one UI batch with Kerbside 5×7. */
 export class Hud {
   readonly sink: PanelSink;
   readonly font: BitmapFont;
+  /**
+   * Pam's radio (SSP-289): the bark queue producers enqueue into (the 4th complaint here, the tutorial layer in
+   * SSP-290), aged by tick() and drawn by draw(). The scene sets its device every frame (radio.setDevice).
+   */
+  readonly radio: Radio;
+  /** What the radio panel drew last. */
+  readonly radioModel: RadioModel = createRadioModel();
+  private readonly panels: Panels;
   /** What the HUD read last (filled by draw from the WorldView). */
   readonly snapshot: HudSnapshot = createHudSnapshot();
   /** What the HUD drew last. */
@@ -487,9 +530,12 @@ export class Hud {
   /** EV.Complaint events seen this shift: the next box to stamp. */
   private complaintsSeen = 0;
 
-  constructor(sink: PanelSink, font: BitmapFont) {
+  /** `glyphs` labels the bark keycaps (app/glyphBindings.ts DEFAULT_GLYPHS in the game; '?' everywhere without). */
+  constructor(sink: PanelSink, font: BitmapFont, glyphs: GlyphTable = UNBOUND_GLYPHS) {
     this.sink = sink;
     this.font = font;
+    this.radio = new Radio(font, glyphs);
+    this.panels = new Panels(sink, font);
   }
 
   /** The layout at `widthPx` (cached; rebuilt only when the width changes). */
@@ -519,13 +565,15 @@ export class Hud {
   /**
    * Records a complaint (EV.Complaint): the next box's stamp starts slamming in on the first frame after the
    * emitting tick (World.tick = tick + 1 at age 0). How many boxes are stamped comes from the World; this only
-   * times the stamps. Complaints past the fifth box change nothing.
+   * times the stamps. Complaints past the fifth box change nothing. The 4th makes Pam bark "One more and you're
+   * off the van!" (GDD §11.3), once per shift.
    */
   onComplaint(tick: number): void {
     const slot = this.complaintsSeen;
     if (slot >= COMPLAINT_SLOTS) return;
     this.snapshot.complaintStampTicks[slot] = tick + 1;
     this.complaintsSeen = slot + 1;
+    if (this.complaintsSeen === COMPLAINT_WARN_AT) this.radio.enqueue(COMPLAINT_WARN_BARK);
   }
 
   /** Subscribes to EV.ComboTier and EV.Complaint on `bus`; call the returned function to stop (scene exit). */
@@ -550,8 +598,9 @@ export class Hud {
     this.snapshot.cleanHighlightUntilTick = untilTick;
   }
 
-  /** Forgets the score roll, any popup, the stamp timings and any clean-zone highlight (a new shift). */
+  /** Forgets the score roll, any popup, the stamp timings, any clean-zone highlight and every bark (a new shift). */
   reset(): void {
+    this.radio.clear();
     this.shownScore = 0;
     this.snapshot.popupStartTick = -1;
     this.snapshot.popupMultiplier = 1;
@@ -563,9 +612,13 @@ export class Hud {
   // per-frame draw path: begin
   /**
    * One sim tick has run (ShiftScene.fixedUpdate): roll the shown score towards the World's, closing 1/8 of the
-   * gap per tick (at least one point), so it counts up (or down after a penalty) over a fraction of a second.
+   * gap per tick (at least one point), so it counts up (or down after a penalty) over a fraction of a second; and
+   * age the radio's bark by one tick (its {cleanSpeed} from the World's tuning).
    */
   tick(view: WorldView): void {
+    const radio = this.radio;
+    radio.setCleanSpeed(view.hopper.params.tuning.brush.cleanPickupMaxMps);
+    radio.tick();
     const target = view.scoring.score;
     const gap = target - this.shownScore;
     if (gap === 0) return;
@@ -576,7 +629,8 @@ export class Hud {
   /**
    * Reads `view`, builds the model and draws it at internal width `widthPx` (one frame). `camera` is where the
    * render camera looks this frame (the off-screen arrows project their targets with it); without one the arrows
-   * stay hidden. Allocates nothing (once the shift's district name and depot list are read, on the first frame).
+   * stay hidden, and the radio panel stays where it is. Allocates nothing (once the shift's district name and depot
+   * list are read, on the first frame).
    */
   draw(view: WorldView, widthPx: number, camera: Readonly<HudCamera> | null = null): void {
     const snapshot = readHudSnapshot(view, this.snapshot);
@@ -585,11 +639,26 @@ export class Hud {
     snapshot.cameraYM = camera === null ? 0 : camera.yM;
     snapshot.cameraPxPerM = camera === null ? 0 : camera.pxPerM;
     const layout = this.layout(widthPx);
-    this.drawModel(hudModel(snapshot, view.tick, this.model, layout.arrowFrame), widthPx);
+    const radio = this.radio;
+    radio.updateSide(
+      radioLookAheadXPx(
+        snapshot.bessieXM,
+        snapshot.bessieVxMps,
+        snapshot.cameraXM,
+        snapshot.cameraPxPerM,
+        widthPx,
+      ),
+      widthPx,
+    );
+    radio.writeModel(widthPx, this.radioModel);
+    this.drawModel(hudModel(snapshot, view.tick, this.model, layout.arrowFrame), widthPx, this.radioModel);
   }
 
-  /** Draws `model` at internal width `widthPx`. Allocates nothing once the layout for the width is cached. */
-  drawModel(model: HudModel, widthPx: number): void {
+  /**
+   * Draws `model` (and the radio panel's `radio`, if any) at internal width `widthPx`. Allocates nothing once the
+   * layout for the width is cached.
+   */
+  drawModel(model: HudModel, widthPx: number, radio: RadioModel | null = null): void {
     const layout = this.layout(widthPx);
     const font = this.font;
     const sink = this.sink;
@@ -748,9 +817,53 @@ export class Hud {
         sink.add(BRUSH_RING_FRAMES[brush.ringStep] ?? BAR_FRAME, cx, cy, BUTTON_NO_RECOLOUR, 0);
     }
 
+    // Pam's radio panel.
+    if (radio?.visible === true) this.radioPanel(radio);
+
     // Off-screen arrows (last, so nothing covers them; they never overlap a HUD box).
     this.arrow(model.depotArrow, DEPOT_ARROW_FRAMES);
     this.arrow(model.hydrantArrow, HYDRANT_ARROW_FRAMES);
+  }
+
+  /** The radio panel: the council panel, the PAM tab on its top edge, then the line's text and keycaps. */
+  private radioPanel(radio: RadioModel): void {
+    const font = this.font;
+    const sink = this.sink;
+    const px = radio.panelX;
+    const py = radio.panelY;
+    this.panels.drawPanel(PanelStyle.Council, px, py, radio.panelW, RADIO_PANEL_H_PX);
+    const tx = px + RADIO_TAB_INSET_PX;
+    const ty = py - RADIO_TAB_H_PX;
+    const tw = RADIO_TAB_W_PX;
+    const th = RADIO_TAB_H_PX;
+    this.box(tx + 1, ty, tw - 2, 1, HudColour.Ink);
+    this.box(tx, ty + 1, 1, th - 1, HudColour.Ink);
+    this.box(tx + tw - 1, ty + 1, 1, th - 1, HudColour.Ink);
+    this.box(tx + 1, ty + 1, tw - 2, th - 1, HudColour.HivisOrange);
+    font.draw(sink, RADIO_SPEAKER, tx + 2, ty + 2, HudColour.Ink);
+    const lineX = px + RADIO_TEXT_INSET_PX;
+    const lineY = py + RADIO_TEXT_TOP_PX;
+    const runs = radio.runs;
+    for (let i = 0; i < runs.length; i++) {
+      const run = runs[i];
+      if (run === undefined) continue;
+      const x = lineX + run.xPx;
+      if (run.keycap) {
+        this.keycap(x, py + KEYCAP_TOP_PX, run.wPx);
+        font.draw(sink, run.text, x + KEYCAP_LABEL_INSET_PX, lineY, HudColour.Chalk);
+      } else {
+        font.draw(sink, run.text, x, lineY, HudColour.Chalk);
+      }
+    }
+  }
+
+  /** A keycap's 1 px 07 box, `w` wide and KEYCAP_H_PX tall at (x, y), its four corner pixels left out. */
+  private keycap(x: number, y: number, w: number): void {
+    const h = KEYCAP_H_PX;
+    this.box(x + 1, y, w - 2, 1, HudColour.Chalk);
+    this.box(x + 1, y + h - 1, w - 2, 1, HudColour.Chalk);
+    this.box(x, y + 1, 1, h - 2, HudColour.Chalk);
+    this.box(x + w - 1, y + 1, 1, h - 2, HudColour.Chalk);
   }
 
   /** An off-screen arrow, centred on its position, from `frames` by direction. */

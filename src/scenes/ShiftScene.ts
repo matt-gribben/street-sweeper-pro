@@ -28,7 +28,8 @@
 // popups and to EV.Complaint for the complaints meter's stamps (SSP-078; both unsubscribed in exit()).
 // fixedUpdate() rolls the HUD's shown score after each World tick, and render() draws the HUD from the WorldView
 // at the current internal width, with the camera's snapped ground centre and scale for the off-screen arrows
-// (SSP-299). The HUD only reads the World.
+// (SSP-299). The HUD only reads the World. Pam's radio panel (SSP-289) labels its keycaps from DEFAULT_GLYPHS for
+// the device the player used last (options.input, the flow's menu source), set on the HUD's radio every frame.
 //
 // The camera (SSP-047, src/render/camera.ts) follows Bessie's interpolated body centre, leads it by up to 3.0 m
 // along her velocity (forward·vLong + right·vLat at the drawn heading) and takes its speed-zoom height from her
@@ -48,8 +49,10 @@
 // The shift end's scene change (the tally) is the shift flow's (src/app/shiftFlow.ts, SSP-071); no audio (M5).
 import type { Unsubscribe } from '../app/events.ts';
 import type { SceneContext } from '../app/Game.ts';
+import { DEFAULT_GLYPHS } from '../app/glyphBindings.ts';
 import { type LevelSource, loadLevel } from '../app/levelLoader.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
+import { DEFAULT_INPUT_DEVICE, type MenuInputSource } from '../input/actions.ts';
 import { type BessieSprite, createBessieSprite } from '../render/bessieSprite.ts';
 import { brushSpinFrameAt, createBrushSpin } from '../render/brushSpin.ts';
 import { cameraGroundRect, groundPxPerMetre } from '../render/camera.ts';
@@ -95,6 +98,8 @@ export type ShiftSceneOptions = {
   readonly recordInputs?: boolean;
   /** Fetches the HUD font's metrics JSON (default: the browser's fetch, bitmapText.ts). Tests inject a reader. */
   readonly fontSource?: FontJsonSource;
+  /** Where the active input device comes from (the radio's keycaps follow it). Default: always the keyboard. */
+  readonly input?: Pick<MenuInputSource, 'activeDevice'>;
 };
 
 /** `district.<name>` → `<name>`, the compiled level's file name; throws on anything else. */
@@ -122,6 +127,7 @@ export class ShiftScene implements Scene {
   private readonly context: SceneContext;
   private readonly levelSource: LevelSource | undefined;
   private readonly fontSource: FontJsonSource | undefined;
+  private readonly input: Pick<MenuInputSource, 'activeDevice'> | null;
   private readonly preloadedLevel: Level | null;
   private currentTuning: Tuning;
   /** The tick from which the World has run on a tuning that differs from tuning.json, or null while it does not. */
@@ -155,6 +161,7 @@ export class ShiftScene implements Scene {
     this.context = context;
     this.levelSource = options.levelSource;
     this.fontSource = options.fontSource;
+    this.input = options.input ?? null;
     this.preloadedLevel = options.level ?? null;
     this.currentTuning = options.tuning ?? DEFAULT_TUNING;
     this.offTuningSinceTick = tuningsEqual(this.currentTuning, DEFAULT_TUNING) ? null : 0;
@@ -343,7 +350,8 @@ export class ShiftScene implements Scene {
         stainCapacity: sim.stains.capacity,
       });
       const hudBatch = new UiSpriteBatch(ui, HUD_CAPACITY);
-      return { sim, city, bessie, items: itemsBatch, hudBatch, hud: new Hud(hudBatch, font) };
+      const hud = new Hud(hudBatch, font, DEFAULT_GLYPHS);
+      return { sim, city, bessie, items: itemsBatch, hudBatch, hud };
     } catch (error: unknown) {
       itemsBatch?.dispose();
       bessie?.dispose();
@@ -419,6 +427,7 @@ export class ShiftScene implements Scene {
       camera.xM = rig.snappedX;
       camera.yM = rig.snappedZ;
       camera.pxPerM = groundPxPerMetre(rig.height.value);
+      hud.radio.setDevice(this.input?.activeDevice ?? DEFAULT_INPUT_DEVICE);
       batch.begin();
       hud.draw(world, rig.internalWidth, camera);
       batch.end();

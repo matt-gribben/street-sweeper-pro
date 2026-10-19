@@ -21,6 +21,7 @@ import {
   ShiftEndReason,
   type ShiftEndReason as ShiftEndReasonValue,
 } from '../sim/eventQueue.ts';
+import { DumpSite } from '../sim/hopper.ts';
 
 /** Fields every bus event carries. */
 type SimEventBase = {
@@ -58,7 +59,7 @@ export type ReverseBeeperEvent = SimEventBase & {
   readonly y: number;
 };
 
-/** The shift ended (M1: the TOWED stub, SSP-036). */
+/** The shift ended (phase 10, shift.ts, SSP-062): TOWED or TIME_UP, once per shift. */
 export type ShiftEndEvent = SimEventBase & {
   readonly type: typeof EV.ShiftEnd;
   readonly reason: ShiftEndReasonValue;
@@ -109,6 +110,30 @@ export type StainCleanedEvent = SimEventBase & {
   readonly pts: number;
 };
 
+/**
+ * A dump drain started (phase 10, SSP-062): the 1.0 s hold completed at a depot bay or skip. `entity` is the
+ * site's index in level.sites.
+ */
+export type DumpStartEvent = SimEventBase & {
+  readonly type: typeof EV.DumpStart;
+  /** Depot bay or skip. */
+  readonly site: DumpSite;
+  /** LU in the hopper as the drain starts. */
+  readonly lu: number;
+  /** The drain's length, ticks (120 at a depot bay, 180 at a skip). */
+  readonly drainTicks: number;
+};
+
+/** A dump drain ended (phase 10, SSP-062), completed or cut short. `entity` is the site's level.sites index. */
+export type DumpEndEvent = SimEventBase & {
+  readonly type: typeof EV.DumpEnd;
+  readonly site: DumpSite;
+  /** LU this drain removed from the hopper. */
+  readonly luDumped: number;
+  /** False when Bessie left the site, the timer ran out or she was TOWED before the drain finished. */
+  readonly completed: boolean;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -119,6 +144,8 @@ export type SimEventByType = {
   [EV.LitterCollected]: LitterCollectedEvent;
   [EV.Fling]: FlingEvent;
   [EV.StainCleaned]: StainCleanedEvent;
+  [EV.DumpStart]: DumpStartEvent;
+  [EV.DumpEnd]: DumpEndEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -166,7 +193,29 @@ function createPayloads(): Payloads {
       kind: 'stain.gum',
       pts: 0,
     },
+    [EV.DumpStart]: {
+      type: EV.DumpStart,
+      tick: 0,
+      entity: -1,
+      site: DumpSite.Depot,
+      lu: 0,
+      drainTicks: 0,
+    },
+    [EV.DumpEnd]: {
+      type: EV.DumpEnd,
+      tick: 0,
+      entity: -1,
+      site: DumpSite.Depot,
+      luDumped: 0,
+      completed: false,
+    },
   };
+}
+
+/** The dump site carried in a DumpStart/DumpEnd event's `a` (DumpSite); throws on anything else. */
+function dumpSiteOf(a: number, type: EventType, tick: number): DumpSite {
+  if (a === DumpSite.Depot || a === DumpSite.Skip) return a;
+  throw new Error(`EventBus: event type ${type} at tick ${tick} carries unknown dump site ${a}`);
 }
 
 /** The litter id carried in an event's `c` (a LITTER_IDS index); throws on anything else. */
@@ -196,7 +245,9 @@ function isEventType(type: number): type is EventType {
     type === EV.HopperFull ||
     type === EV.LitterCollected ||
     type === EV.Fling ||
-    type === EV.StainCleaned
+    type === EV.StainCleaned ||
+    type === EV.DumpStart ||
+    type === EV.DumpEnd
   );
 }
 
@@ -215,6 +266,8 @@ export class EventBus {
     [EV.LitterCollected]: [],
     [EV.Fling]: [],
     [EV.StainCleaned]: [],
+    [EV.DumpStart]: [],
+    [EV.DumpEnd]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -354,6 +407,26 @@ export class EventBus {
         e.kind = stainKindOf(entity, tick);
         e.pts = c;
         this.emit(EV.StainCleaned, e);
+        return;
+      }
+      case EV.DumpStart: {
+        const e = this.payloads[EV.DumpStart];
+        e.tick = tick;
+        e.entity = entity;
+        e.site = dumpSiteOf(a, type, tick);
+        e.lu = b;
+        e.drainTicks = c;
+        this.emit(EV.DumpStart, e);
+        return;
+      }
+      case EV.DumpEnd: {
+        const e = this.payloads[EV.DumpEnd];
+        e.tick = tick;
+        e.entity = entity;
+        e.site = dumpSiteOf(a, type, tick);
+        e.luDumped = b;
+        e.completed = c !== 0;
+        this.emit(EV.DumpEnd, e);
         return;
       }
     }

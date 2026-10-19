@@ -14,7 +14,7 @@
 //      {a = x, b = y, c = vn} is emitted per impact, at the contact point.
 //      A contact whose vn ≤ 0 (already separating, e.g. after a bounce) is only pushed out: no velocity change,
 //      no damage, no event. That is the answer to the "scraping emits every tick" OPEN in SSP-036 (flagged).
-//   6. The TOWED stub (HP 0 → EV.ShiftEnd once) lives in world.ts phase 10.
+//   6. TOWED (HP 0 → EV.ShiftEnd once) lives in phase 10, shift.ts (SSP-062).
 //
 // Pushing out of the deepest contact first, rather than the first one found, is what makes a flush seam
 // between two merged rects harmless: the wall the OBB is really pressed into goes first and leaves the

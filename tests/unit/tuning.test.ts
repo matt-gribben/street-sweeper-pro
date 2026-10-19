@@ -528,6 +528,8 @@ describe('M2 sweeping-core sections (SSP-053) mirror GDD §8–§12 and TECHNICA
     ['dumping.depotBay.maxSpeedMps', 0.5, 'GDD §8.7 stop inside (< 0.5 m/s)'],
     ['dumping.skip.holdS', 1.0, 'GDD §8.7 hold Dump 1.0 s'],
     ['dumping.skip.drainS', 3.0, 'GDD §8.7 skip drain 3.0 s'],
+    ['dumping.skip.maxSpeedMps', 0.5, 'GDD §8.7 stop adjacent (< 0.5 m/s, SSP-062)'],
+    ['dumping.skip.reachM', 2.0, 'GDD §8.7 adjacent: body OBB within 1 tile of the skip (SSP-062)'],
     ['combo.chainS', 2.0, 'GDD §10.2 2.0 s chain timer'],
     ['scoring.grimeCellPts', 1, 'GDD §9.1 1 pt per cell'],
     ['scoring.gutterGrimeCellPts', 2, 'GDD §9.1 2 pts for gutter grime'],
@@ -536,6 +538,7 @@ describe('M2 sweeping-core sections (SSP-053) mirror GDD §8–§12 and TECHNICA
     ['scoring.cleanSweepPts', 100, 'GDD §10.3 Clean Sweep +100'],
     ['shift.durationS', 240, 'LEVEL_DESIGN §4.1 timer starts at 240'],
     ['shift.rolloutS', 3, 'LEVEL_DESIGN §4.1 3 s rollout'],
+    ['shift.knockOffBrake', 0.5, 'GDD §5.3 knock-off: rolls to a stop under half brake (SSP-062)'],
     ['tidy.grimeWeight', 0.6, 'GDD §9.2 0.6 × grime'],
     ['tidy.litterWeight', 0.4, 'GDD §9.2 0.4 × litter'],
   ])('%s = %d (%s)', (path, expected) => {

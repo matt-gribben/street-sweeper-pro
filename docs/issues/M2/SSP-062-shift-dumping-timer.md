@@ -2,7 +2,7 @@
 id: SSP-062
 title: "Implement shift.ts dumping FSM, 240 s timer and end-of-shift event"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:gameplay, size:M, vertical-slice]
@@ -46,13 +46,13 @@ Hook shape for the first-play rule: a `firstPlay` boolean in the shift start par
 
 ## Acceptance criteria
 
-- [ ] From timer start, `ticksRemaining` reaches 0 after exactly 14,400 ticks and `EV.ShiftEnd` with reason TIME_UP is emitted on the first tick Bessie's speed is 0 afterwards
-- [ ] Timer starts on the first tick with throttle > 0, or at tick 180 with no input (unit tests for both)
-- [ ] Depot dump: stopped in a bay, holding E for 60 ticks starts a drain that empties the hopper over 120 ticks and refills water to full
-- [ ] Skip dump: 60-tick hold then a 180-tick drain, water unchanged
-- [ ] Moving above 0.5 m/s during Holding cancels; leaving the bay mid-drain stops the drain
-- [ ] HP reaching 0 ends the shift with reason TOWED
-- [ ] LEVEL_DESIGN §13 Q3 and GDD §20 Q4/Q10 are updated with the decisions
+- [x] From timer start, `ticksRemaining` reaches 0 after exactly 14,400 ticks and `EV.ShiftEnd` with reason TIME_UP is emitted on the first tick Bessie's speed is 0 afterwards
+- [x] Timer starts on the first tick with throttle > 0, or at tick 180 with no input (unit tests for both)
+- [x] Depot dump: stopped in a bay, holding E for 60 ticks starts a drain that empties the hopper over 120 ticks and refills water to full
+- [x] Skip dump: 60-tick hold then a 180-tick drain, water unchanged
+- [x] Moving above 0.5 m/s during Holding cancels; leaving the bay mid-drain stops the drain
+- [x] HP reaching 0 ends the shift with reason TOWED
+- [x] LEVEL_DESIGN §13 Q3 and GDD §20 Q4/Q10 are updated with the decisions
 
 ## Verification
 

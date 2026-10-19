@@ -293,10 +293,15 @@ const DEPOT_BAY_SPEC = {
   maxSpeedMps: 'positive',
 } as const satisfies GroupSpec;
 
-/** GDD §8.7: a skip on the route. */
+/**
+ * GDD §8.7: a skip on the route. Bessie is "stopped adjacent" below maxSpeedMps with her body OBB within reachM
+ * of the skip's rectangle (one tile; decided in SSP-062, shift.ts).
+ */
 const SKIP_SPEC = {
   holdS: 'positive',
   drainS: 'positive',
+  maxSpeedMps: 'positive',
+  reachM: 'nonNegative',
 } as const satisfies GroupSpec;
 
 /** One combo tier (GDD §10.2): a chain of at least minChain pickups scores ×multiplier. */
@@ -314,10 +319,14 @@ const SCORING_SPEC = {
   cleanSweepPts: 'positiveInteger',
 } as const satisfies GroupSpec;
 
-/** LEVEL_DESIGN §4.1: a 240 s campaign shift; the timer starts on first throttle or after rolloutS. */
+/**
+ * LEVEL_DESIGN §4.1: a 240 s campaign shift; the timer starts on first throttle or after rolloutS. Once the
+ * shift is over, knockOffBrake (a fraction of full brake) rolls Bessie to a stop (GDD §5.3, decided in SSP-062).
+ */
 const SHIFT_SPEC = {
   durationS: 'positive',
   rolloutS: 'nonNegative',
+  knockOffBrake: 'fraction',
 } as const satisfies GroupSpec;
 
 /** GDD §12.1: the minimum Tidy % (as a fraction) for each star. */
@@ -818,12 +827,22 @@ function readSweeping(raw: unknown, path: string): SweepingTuning {
   return sweeping;
 }
 
+/** The dump FSM counts integer ticks (shift.ts, SSP-062), so every hold and drain must be whole ticks. */
 function readDumping(raw: unknown, path: string): DumpingTuning {
   const obj = readObject(raw, path, ['depotBay', 'skip']);
-  return {
+  const dumping = {
     depotBay: readGroup(obj.depotBay, `${path}.depotBay`, DEPOT_BAY_SPEC),
     skip: readGroup(obj.skip, `${path}.skip`, SKIP_SPEC),
   };
+  for (const site of ['depotBay', 'skip'] as const) {
+    for (const key of ['holdS', 'drainS'] as const) {
+      const s = dumping[site][key];
+      if (!Number.isInteger(s * SIM_HZ)) {
+        fail(`${path}.${site}.${key}`, `must be a whole number of ${SIM_HZ} Hz ticks, got ${s}`);
+      }
+    }
+  }
+  return dumping;
 }
 
 /** `combo`: the chain timer and a non-empty tier list, strictly ascending in minChain and multiplier (> 1). */

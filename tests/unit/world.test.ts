@@ -34,6 +34,7 @@ import { createSurfaceTable, sampleSurface, surfaceAt } from '../../src/sim/surf
 import { DEFAULT_TUNING, loadTuning, type Tuning } from '../../src/sim/tuning.ts';
 import type { VehicleState, VehicleSurface } from '../../src/sim/vehicle.ts';
 import { createWorld, Phase, setWorldTuning, stepWorld, viewWorld, type World } from '../../src/sim/world.ts';
+import { endlessShiftTuning } from '../support/endlessShift.ts';
 import { assertHeapDeltaWithinThresholds, measureHeapDelta } from '../support/heapDelta.ts';
 
 const sweeper = DEFAULT_TUNING.vehicle.sweeper;
@@ -668,7 +669,8 @@ describe('determinism', () => {
     // minute without leaving the map, so the measured window runs surface sampling, kerb detection and event
     // emission on every lap.
     const circle = frame(150, 0, 70);
-    const world = createWorld(townLevel(), 7, DEFAULT_TUNING);
+    // An endless shift: the 240 s timer would knock off (and ignore the input) inside the pre-warm.
+    const world = createWorld(townLevel(), 7, endlessShiftTuning());
     // Pre-warm until V8 has installed optimised code for the whole tick. stepWorld's callees are large, so
     // TurboFan takes tens of thousands of calls to tier them all up (3,000 was not enough; see the note in
     // tests/unit/vehicle.test.ts). measureHeapDelta then adds its own 600-tick §17 warm-up.

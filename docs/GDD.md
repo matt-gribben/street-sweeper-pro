@@ -203,7 +203,7 @@ The **combo chain** (2.0 s timer, refreshed by every pickup) is the glue: it rew
    - Dodge and appease NPCs.
    - Spray stains; refill water at hydrants.
 3. **Dump** at the depot bay (or a skip) whenever the hopper fills.
-4. **Timer ends** ("KNOCK-OFF TIME!"): Bessie coasts to a stop. Any LU still in the hopper is *not* paid as a tipping fee (proposed, M2), which motivates a final dump run.
+4. **Timer ends** ("KNOCK-OFF TIME!"): the player's controls stop answering and Bessie rolls to a stop under a gentle automatic brake (half brake while above 0.2 m/s, then drag; about 2.3 s from 6 m/s, 3.4 s from 11 m/s: a pure coast took 15–19 s; `tuning.json` → `shift.knockOffBrake`, decided in SSP-062). The shift ends (and the tally follows) on the first tick she is at rest. Any LU still in the hopper is *not* paid as a tipping fee (decided in SSP-062, §20 Q10), and a dump still draining is cut short, which motivates a final dump run that finishes before the whistle.
 5. **The Muckleford Mercury tally:** headline, district map with frontages green or red, Tidy %, stars, score, £ earned, Lost Property thank-you.
 6. **Skip Run** (45 s, optional) → **Depot Workshop** → **Week Map**.
 
@@ -463,9 +463,22 @@ Brush down on dusty tiles without spray emits a dust cloud. Pedestrians within 3
 | Site | How | Drain time | Pays | Also |
 |---|---|---|---|---|
 | **Depot bay** (`site.depot_bay`) | Stop inside (< 0.5 m/s), hold Dump **1.0 s** | **2.0 s** | Tipping fee: **£1 per 5 LU** | Fully refills water |
-| **Skip** (`site.skip`) | Stop adjacent, hold Dump **1.0 s** | **3.0 s** | No tipping fee | — |
+| **Skip** (`site.skip`) | Stop adjacent (< 0.5 m/s), hold Dump **1.0 s** | **3.0 s** | No tipping fee | — |
 
-Design intent: the depot is the "proper" dump (faster, pays, refills water) but is usually further away; skips are the emergency option on route. A full 100 LU depot dump pays £20. During the drain, the combo chain timer is **frozen** (proposed, M2) so that a well-timed dump does not cost the player their multiplier; leaving the bay mid-drain cancels the remaining drain.
+Design intent: the depot is the "proper" dump (faster, pays, refills water) but is usually further away; skips are the emergency option on route. A full 100 LU depot dump pays £20. During the drain, the combo chain timer is **frozen** (decided in SSP-062, §20 Q4) so that a well-timed dump does not cost the player their multiplier; leaving the bay mid-drain cancels the remaining drain.
+
+**Decided in SSP-062** (`src/sim/shift.ts`; numbers in `tuning.json` → `dumping`):
+
+| Rule | Decision |
+|---|---|
+| "Inside" a depot bay | Bessie's body centre is inside the bay's rectangle (edges included). The bay is 2×3 tiles, so she may sit at any angle as long as her middle is in it. |
+| "Adjacent" to a skip | Her body (the 1.75 × 3.25 m OBB) is within **2 m (one tile)** of the skip's rectangle (`dumping.skip.reachM`): the skip's rectangle grown by 2 m on every side overlaps her body. Pulling up alongside it in the near lane qualifies. |
+| Stopped | Speed below **0.5 m/s** at both sites (the same "stopped" as a hydrant, §8.5). |
+| Something to dump | LU in the hopper. At a depot bay a tank below full also counts, so the bay can be used just to refill water (a 0 LU drain). Otherwise holding Dump does nothing. |
+| Hold | Dump (E / pad Y) held for 60 ticks while stopped at the site. Releasing it, leaving the site or reaching 0.5 m/s cancels the hold. |
+| Drain | Starts on the tick the hold completes and runs for 120 ticks (depot) or 180 (skip); the key need not stay held. LU leave linearly. A depot bay refills the water to full as the drain starts. After a drain, Dump must be released and held again for another. |
+| Leaving mid-drain | Driving inside the site does not stop the drain; leaving it (the bay: centre out of the rectangle; the skip: out of reach) stops it at once. LU already drained stay gone and count as dumped (and for the depot tipping fee); the rest stay in the hopper; a depot refill stands. |
+| Time up mid-drain | The knock-off cuts the drain short, as if Bessie had left (§5.3). |
 
 ---
 
@@ -919,7 +932,7 @@ Progress (stars, best scores, £, upgrades, liveries, collectibles, unlocks) is 
 
 - **Teach by doing, in the first real level.** There is no separate tutorial level: Monday's Puddle Lane *is* the tutorial, with a prompt layer on first play.
 - **One prompt at a time, triggered by context,** delivered as Pam radio barks with the relevant key glyph inline (glyphs update to the active input device).
-- **Never stop the world for text.** Prompts don't pause. Instead, on first play only, **the shift timer does not start until the player first lowers the brush** (proposed, M2).
+- **Never stop the world for text.** Prompts don't pause. Instead, on first play only, **the shift timer does not start until the player first lowers the brush** (decided in M2: the first BRUSH press starts it, and neither throttle nor the 3 s rollout does; `shift.ts` has the `firstPlay` hook, and SSP-186 computes it from the save in M6).
 - **Prompts disappear once performed** and never repeat once learned (tracked per save).
 
 ### 16.2 Puddle Lane first-play script (proposed, M2–M3)
@@ -1070,13 +1083,13 @@ Tracked here until resolved; resolutions go into the relevant section and data f
 | 1 | **Economy total:** the facts sheet says buying everything costs £7,350, but the listed prices sum to £6,500. Raise L2 prices, add a third livery price, or correct the total? | M6 | **Deferred (owner, 2026-10-18):** a tunable gameplay number, not a design blocker. Revisit in M6 economy tuning |
 | 2 | Does a single brush pass clear a grime cell, or do some districts have "heavy" grime needing two passes? | M2 | **Resolved in M2 (SSP-060): single pass.** One tick of the footprint over a cell clears it, so the clean edge behind the brush is crisp and the Tidy % numerator is a plain count. Heavy grime would strengthen Pillar 3 but makes the reveal harder to read; it stays out of 1.0 (§9.1, [TECHNICAL_DESIGN §10.3](TECHNICAL_DESIGN.md#103-grime-mask-srcsimdirtts)) |
 | 3 | Do style bonuses (near miss, Kerb Hugger) extend or multiply the chain? | M2 | Neither (§10.3) |
-| 4 | Is the chain timer frozen during a dump? | M2 | Yes (§8.7) |
+| 4 | Is the chain timer frozen during a dump? | M2 | **Resolved in M2 (SSP-062): yes,** from the tick the drain starts (`EV.DumpStart`) to the tick it ends (`EV.DumpEnd`), not during the 1 s hold. `shift.ts` exposes `isShiftDraining`; `combo.ts` (SSP-063) freezes the chain timer while it holds (§8.7) |
 | 5 | Does the Shift map overlay pause? | M3 | No (§6.2); revisit if playtests show frustration |
 | 6 | Trophy threshold and exact Inspection Score formula | M6 | 0.5 × mean best Tidy % Mon–Sat + 0.5 × Inspection pass rate; Trophy at ≥ 80 (§12.8) |
 | 7 | Speed zoom on or off | M0 | **Resolved in M0: On** ([ROADMAP D-01](ROADMAP.md#8-m0-spike-decision-log), SSP-024; `SPEED_ZOOM_DEFAULT = true`). Transit driving zooms out to H = 37.8 m as in §7.5. Re-judged with real driving and procedural asphalt in M1 (SSP-047): **kept on**, so [LEVEL_DESIGN §7.9](LEVEL_DESIGN.md#79-sight-lines-and-the-camera) keeps the 20 m telegraph |
 | 8 | Is dust coughing a "penalty" that resets the chain? | M2 | Yes, for consistency with "any penalty resets the chain" |
 | 9 | Free Sweep: collectibles allowed? HP floor at 1? | M6 | Yes and yes (§13.2) |
-| 10 | Undumped hopper contents at shift end: any pay-out? | M2 | None (§5.3) |
+| 10 | Undumped hopper contents at shift end: any pay-out? | M2 | **Resolved in M2 (SSP-062): none.** The tipping fee is paid only on LU drained at a depot bay (`hopper.luDumpedDepot`); a drain cut short by the knock-off counts only what had drained (§5.3, §8.7) |
 | 11 | Pedestrian yield radius 6 m (10 m with LED beacon) vs shopper sidestep at 4 m: confirm that 6 m is "aware and slowing", with per-NPC dodge distances inside it | M3 | Yes |
 | 12 | Should beating Pam's Target (§12.1) also pay a one-off £50 "Top Tipper" bonus? It would give the score layer an economic consequence, but it is not in the canonical £ sources, so it changes the economy totals. | M6 | Undecided: stamp only for now; decide in the M6 economy pass with Q1 |
 

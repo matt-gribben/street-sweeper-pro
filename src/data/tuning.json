@@ -121,7 +121,7 @@
   },
   "dumping": {
     "depotBay": { "holdS": 1.0, "drainS": 2.0, "maxSpeedMps": 0.5 },
-    "skip": { "holdS": 1.0, "drainS": 3.0 }
+    "skip": { "holdS": 1.0, "drainS": 3.0, "maxSpeedMps": 0.5, "reachM": 2.0 }
   },
   "combo": {
     "chainS": 2.0,
@@ -141,7 +141,8 @@
   },
   "shift": {
     "durationS": 240,
-    "rolloutS": 3
+    "rolloutS": 3,
+    "knockOffBrake": 0.5
   },
   "stars": {
     "star1MinTidy": 0.6,

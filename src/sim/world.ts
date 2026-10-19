@@ -24,7 +24,10 @@
 //                       (npc/, SSP-080; the behaviours steer with npc/steering.ts, SSP-081); the litterbug's
 //                       Caught! flags the tick's honk here (markHornCaught, complaints.ts, SSP-078) →
 //                       updateZebraOccupancy (world.zebras, SSP-081)
-//   8 Traffic           empty until M3 (SSP-089)
+//   8 Traffic           stepTraffic (traffic.ts, SSP-089): the bus schedule, every vehicle's drive along the
+//                       lane graph (car following behind Bessie and vehicles, zebra, junction and bus stops,
+//                       the Queue/Honk/RoadRage block timer: EV.CarHorn, the Road Rage penalty fact), despawns
+//                       and one portal spawn off world.viewRect, then the vehicle spatial lookup
 //   9 Scoring/combo/complaints stepHornSpam → applyPenalties (complaints.ts, SSP-078: the honk window, then
 //                       the tick's penalty facts: points, complaints, EV.Complaint) → stepScoring (scoring.ts,
 //                       combo.ts: pickups, then the penalties' points and the chain reset) → stepTidy (tidy.ts)
@@ -33,7 +36,7 @@
 //  11 Emit events       seal the EventQueue
 //
 // Shift setup (createWorld, SSP-065): every store is allocated once, at its §7.1 capacity (litter 2,000, stains
-// 256, hazards 64, NPCs 80, penalty facts 64 per tick), then the shift starts: the initial litter is spawned
+// 256, hazards 64, NPCs 80, vehicles 30, penalty facts 64 per tick), then the shift starts: the initial litter is spawned
 // (spawnInitialLitter), the hazards (spawnHazards, with the oil slicks' paired stains), the grime is laid
 // (initGrime), the frontage tally is counted and attached (initTidy), the tank is filled (refillWater), the
 // hopper is empty and the complaints meter is at 0; the stain store's penalty hook records into the penalty log.
@@ -122,6 +125,14 @@ import {
 import { createStainStore, type StainStore, type StainStoreView, stepBrushUpSplats } from './stains.ts';
 import { createSurfaceTable, type SurfaceTable, sampleSurface } from './surface.ts';
 import { createTidy, initTidy, setTidyTuning, stepTidy, type Tidy, type TidyView } from './tidy.ts';
+import {
+  createTraffic,
+  setTrafficTuning,
+  stepTraffic,
+  type Traffic,
+  type TrafficView,
+  trafficCrossingClear,
+} from './traffic.ts';
 import { DEFAULT_ENTITIES, type SweeperTuning, type Tuning, tuningsEqual } from './tuning.ts';
 import {
   createVehicleParams,
@@ -131,6 +142,7 @@ import {
   type VehicleState,
   type VehicleSurface,
 } from './vehicle.ts';
+import { createVehicleStore, type VehicleStore, type VehicleStoreView } from './vehicleStore.ts';
 import { createViewRect, updateViewRect, type ViewRect } from './viewRect.ts';
 import {
   cleanStainsInCone,
@@ -246,6 +258,16 @@ export type World = {
    */
   readonly zebras: Zebras;
   /**
+   * The vehicle store (vehicleStore.ts, SSP-089), capacity 30, moving and parked together; empty at shift start.
+   * Phase 8 spawns, drives and despawns the moving vehicles; parked cars are SSP-090.
+   */
+  readonly vehicles: VehicleStore;
+  /**
+   * Phase 8's other state (traffic.ts, SSP-089): the `traffic` stream, the lane edge tables, the junction boxes,
+   * the mix and portals, and the bus route and schedule.
+   */
+  readonly traffic: Traffic;
+  /**
    * The deterministic stand-in for the view (viewRect.ts, TECHNICAL_DESIGN §7.4): Bessie plus her look-ahead,
    * ±28 × ±14.2 m, margin included. Updated at the start of phase 7 from her pose after phase 3; spawning and
    * despawning test shapes against it.
@@ -294,6 +316,8 @@ export type WorldView = {
   readonly hazards: HazardStoreView;
   readonly npc: NpcStoreView;
   readonly zebras: ZebrasView;
+  readonly vehicles: VehicleStoreView;
+  readonly traffic: TrafficView;
   readonly viewRect: Readonly<ViewRect>;
   readonly surface: Readonly<VehicleSurface>;
   readonly events: ReadonlyEventQueue;
@@ -350,6 +374,10 @@ export function createWorld(
   const staticGrid = createStaticGrid(level, tuning.propFootprints);
   const zebras = createZebras(level);
   const npcAi = createNpcAi(level, seed >>> 0, tuning, entities, staticGrid, zebras, npc.capacity);
+  // Traffic enters at the lane portals from the first tick's phase 8 on; the kerb gap check reads it (SSP-089).
+  const vehicles = createVehicleStore(level, entities);
+  const traffic = createTraffic(level, seed >>> 0, tuning, entities, zebras);
+  npcAi.steering.crossingClear = trafficCrossingClear;
   const world: World = {
     level,
     tuning,
@@ -373,6 +401,8 @@ export function createWorld(
     npc,
     npcAi,
     zebras,
+    vehicles,
+    traffic,
     viewRect: createViewRect(vehicle),
     surface: { gripPerS: sweeper.lateralGripPerS.asphalt, rollMult: 1 },
     events: createEventQueue(),
@@ -432,6 +462,7 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   setNpcSpawnerTuning(world, tuning, world.npcAi.entities);
   setComplaintsTuning(world.complaints, tuning);
   setSteeringTuning(world.npcAi.steering, world.level, world.staticGrid, tuning);
+  setTrafficTuning(world.traffic, tuning);
 }
 
 /** Advance the world by one tick (DT_S) under `input`, running the 11 phases of §5.2 in order. */
@@ -574,7 +605,7 @@ function emitKerbJolt(events: EventQueue, scratch: KerbCrossings, i: number, v: 
 }
 
 // Phases 3–10 are ordered call sites. Each takes the World so the systems that fill them (named below) slot in
-// without touching stepWorld; phases 4 and 8 intentionally do nothing until M3.
+// without touching stepWorld; phase 4 intentionally does nothing until its M3 issue (SSP-092).
 
 /**
  * Phase 3 (§9.2): resolve Bessie against the static grid (merged solids, map boundary, props) with SAT/MTV,
@@ -649,9 +680,15 @@ function phaseNpc(world: World): void {
   updateZebraOccupancy(world);
 }
 
-/** Phase 8: traffic. SSP-089. */
-function phaseTraffic(_world: World): void {
-  // Filled by SSP-089.
+/**
+ * Phase 8 (traffic.ts, SSP-089): against Bessie's pose after phase 3, this tick's world.viewRect and zebra
+ * occupancy (phase 7). The bus schedule, then every vehicle's drive in index order (car following, stop lines,
+ * junction boxes, bus dwell, the block timer with EV.CarHorn and the Road Rage penalty fact, which phase 9
+ * files), then despawns past the exit portals and at most one spawn at an entry portal, both off the view
+ * rect, then the vehicle spatial lookup for collision (SSP-090) and render culling (SSP-103).
+ */
+function phaseTraffic(world: World): void {
+  stepTraffic(world);
 }
 
 /**

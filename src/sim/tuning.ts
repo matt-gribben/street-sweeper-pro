@@ -407,9 +407,25 @@ const NPC_RADIUS_SPEC = {
   dogM: 'positive',
 } as const satisfies GroupSpec;
 
-/** ENTITY_CATALOG §8.3, TECHNICAL_DESIGN §11.4: a car blocked by Bessie honks after honkAfterBlockedS. */
+/**
+ * ENTITY_CATALOG §8.3, TECHNICAL_DESIGN §11.4 (traffic.ts, SSP-089). A car blocked by Bessie honks after
+ * honkAfterBlockedS. Car following caps the speed at sqrt(2 · followDecelMps2 · (gap − followGapM)). The rest
+ * are M3 tuning (SSP-089: the docs gave no numbers, so they are starting values for owner review): accelMps2
+ * how fast traffic picks up speed towards the lane's speed limit; a vehicle counts as blocked while what is
+ * ahead holds it below blockedBelowMps, and a block is over once it has been clear for clearAfterS; a
+ * pedestrian at a kerb waits while a vehicle would reach the crossing within crossingGapS (plus followGapM);
+ * the first scheduled bus of a bus route is due at firstBusS (LEVEL_DESIGN §4.5, Tuesday: from 20 s), then one
+ * every busEveryS (the compiled level).
+ */
 const TRAFFIC_SPEC = {
   honkAfterBlockedS: 'positive',
+  accelMps2: 'positive',
+  followDecelMps2: 'positive',
+  followGapM: 'positive',
+  blockedBelowMps: 'positive',
+  clearAfterS: 'nonNegative',
+  crossingGapS: 'positive',
+  firstBusS: 'nonNegative',
 } as const satisfies GroupSpec;
 
 /**

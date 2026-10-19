@@ -1,8 +1,10 @@
-// The canonical tick order (TECHNICAL_DESIGN §5.2) as the systems are actually called (SSP-065; SSP-080 phase 7; SSP-081 zebra occupancy). The phase
+// The canonical tick order (TECHNICAL_DESIGN §5.2) as the systems are actually called (SSP-065; SSP-080 phase 7; SSP-081 zebra occupancy; SSP-089 phase 8). The phase
 // trace in tests/unit/world.test.ts proves the eleven phase slots run in order; this file wraps every system
 // function World.step calls, records each call, and checks the full per-tick sequence, so a system that moved
 // to another phase (or swapped places inside one) fails here. SSP-078 adds the horn (phase 1) and the honk window
-// and penalty facts (phase 9, before scoring). Changing this order changes replay hashes and
+// and penalty facts (phase 9, before scoring). SSP-089 fills phase 8 with stepTraffic, run on a compiled town with
+// traffic so phase 8 does real work (spawns, car following, a car queued behind Bessie, its honks and the Road
+// Rage fact that phase 9 then files). Changing this order changes replay hashes and
 // must be called out in the commit (§5.2).
 //
 // vi.mock replaces each module for everything that imports it in this test file's module graph (world.ts
@@ -15,6 +17,7 @@ import { BUTTON, createInputFrame, PRESSED } from '../../src/sim/inputFrame.ts';
 import { decodeLevel } from '../../src/sim/map.ts';
 import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import { createWorld } from '../../src/sim/world.ts';
+import { compileTrafficTown, ONE_WAY_STREET } from '../support/trafficTown.ts';
 
 const calls = vi.hoisted(() => ({ log: [] as string[], on: false }));
 
@@ -85,6 +88,7 @@ vi.mock('../../src/sim/npc/npcAi.ts', async (importOriginal) =>
 vi.mock('../../src/sim/npc/steering.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['updateZebraOccupancy']),
 );
+vi.mock('../../src/sim/traffic.ts', async (importOriginal) => wrap(await importOriginal(), ['stepTraffic']));
 vi.mock('../../src/sim/scoring.ts', async (importOriginal) => wrap(await importOriginal(), ['stepScoring']));
 vi.mock('../../src/sim/tidy.ts', async (importOriginal) => wrap(await importOriginal(), ['stepTidy']));
 vi.mock('../../src/sim/complaints.ts', async (importOriginal) =>
@@ -126,6 +130,7 @@ const ONE_TICK = [
   'tickNpcBehaviours',
   'updateZebraOccupancy',
   'phase 8',
+  'stepTraffic',
   'phase 9',
   'stepHornSpam',
   'applyPenalties',
@@ -155,6 +160,42 @@ describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078
       expect(at(name), name).toBeGreaterThan(at('phase 7'));
       expect(at(name), name).toBeLessThan(at('phase 8'));
     }
+  });
+
+  it('runs phase 8 (traffic, SSP-089) after phase 7 (NPC AI) and before phase 9 (scoring and complaints)', () => {
+    const at = (name: string): number => ONE_TICK.indexOf(name);
+    expect(at('phase 7')).toBeLessThan(at('phase 8'));
+    expect(at('updateZebraOccupancy')).toBeLessThan(at('phase 8')); // the last NPC system
+    expect(at('stepTraffic')).toBeGreaterThan(at('phase 8'));
+    expect(at('stepTraffic')).toBeLessThan(at('phase 9'));
+    expect(at('phase 9')).toBeLessThan(at('stepHornSpam'));
+    expect(at('phase 8')).toBeLessThan(at('phase 9'));
+  });
+
+  it('calls stepTraffic once per tick between phases 8 and 9 while traffic queues behind Bessie', () => {
+    const level = compileTrafficTown(ONE_WAY_STREET, { densityPerKm: 5, mix: { 'veh.hatchback': 1 } });
+    const world = createWorld(level, 89, DEFAULT_TUNING);
+    world.phaseTrace = (phase) => {
+      if (calls.on) calls.log.push(`phase ${phase}`);
+    };
+    const input = createInputFrame();
+    calls.on = true;
+    const ticks = 1500;
+    for (let t = 0; t < ticks; t++) world.step(input);
+    calls.on = false;
+    const perTick: string[] = [];
+    for (const name of calls.log) {
+      if (name === 'phase 8' || name === 'stepTraffic' || name === 'phase 9') perTick.push(name);
+    }
+    const expected: string[] = [];
+    for (let t = 0; t < ticks; t++) expected.push('phase 8', 'stepTraffic', 'phase 9');
+    expect(perTick).toEqual(expected);
+    calls.log.length = 0;
+    // Phase 8 did its work: a car came in at the portal and queued behind Bessie, honked, and phase 9 filed
+    // its Road Rage complaint.
+    expect(world.vehicles.count).toBe(1);
+    expect(world.traffic.carHorns).toBe(3);
+    expect(world.complaints.count).toBe(1);
   });
 
   it('calls every system of phases 1–11 in the documented order, every tick', () => {

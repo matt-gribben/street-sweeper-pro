@@ -21,7 +21,7 @@ export const EVENTS_PER_TICK = 512;
  * Event type ids (`type`, Uint16). 0 is never a valid type. The values are hashed into replays: append new
  * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
  * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd, SSP-093 HazardJolt and HazardStop, SSP-063
- * ComboTier, SSP-078 Complaint and Horn; later issues append the rest of the §7.2 list (NpcHit, ...).
+ * ComboTier, SSP-078 Complaint and Horn, SSP-089 CarHorn; later issues append the rest of the §7.2 list (NpcHit, ...).
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036).
@@ -59,6 +59,10 @@ export const EVENTS_PER_TICK = 512;
  * - Horn: a = x, b = y (Bessie's body centre as the tick starts, m), c = the horn radius (m: 8, or 12 with the
  *   two-tone horn); entity −1. Phase 1 (complaints.ts stepHornInput, SSP-078), on the tick whose InputFrame
  *   carries the HORN pressed edge. Phase 7 delivers it to the NPCs in range (SSP-082); sfx.horn (M5).
+ * - CarHorn: entity = the honking vehicle's VehicleStore index, a = x, b = y (its body centre, m), c = which
+ *   honk of the block it is (1, 2, 3: the rising `horn:car` honks at 3, 6 and 9 s, AUDIO_DESIGN §5.5).
+ *   Phase 8 (traffic.ts, SSP-089), from the head of a queue Bessie is blocking. It is never Bessie's horn: it
+ *   does not count towards horn spam and is never delivered to the NPCs as a Horn stimulus.
  */
 export const EV = {
   Impact: 1,
@@ -76,6 +80,7 @@ export const EV = {
   ComboTier: 13,
   Complaint: 14,
   Horn: 15,
+  CarHorn: 16,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

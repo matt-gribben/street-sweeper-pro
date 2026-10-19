@@ -202,6 +202,19 @@ export type HornEvent = SimEventBase & {
   readonly radiusM: number;
 };
 
+/**
+ * A traffic vehicle honked at Bessie for blocking it (phase 8, traffic.ts, SSP-089): the head of the queue, at
+ * 3, 6 and 9 s of the block. Audio plays the rising `horn:car` (AUDIO_DESIGN §5.5). Never Bessie's horn.
+ */
+export type CarHornEvent = SimEventBase & {
+  readonly type: typeof EV.CarHorn;
+  /** The vehicle's body centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** Which honk of this block (1, 2 or 3): each one higher. */
+  readonly honk: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -219,6 +232,7 @@ export type SimEventByType = {
   [EV.ComboTier]: ComboTierEvent;
   [EV.Complaint]: ComplaintEvent;
   [EV.Horn]: HornEvent;
+  [EV.CarHorn]: CarHornEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -295,6 +309,7 @@ function createPayloads(): Payloads {
     },
     [EV.Complaint]: { type: EV.Complaint, tick: 0, entity: -1, x: 0, y: 0, reason: Offence.Hit },
     [EV.Horn]: { type: EV.Horn, tick: 0, entity: -1, x: 0, y: 0, radiusM: 0 },
+    [EV.CarHorn]: { type: EV.CarHorn, tick: 0, entity: -1, x: 0, y: 0, honk: 1 },
   };
 }
 
@@ -338,7 +353,8 @@ function isEventType(type: number): type is EventType {
     type === EV.HazardStop ||
     type === EV.ComboTier ||
     type === EV.Complaint ||
-    type === EV.Horn
+    type === EV.Horn ||
+    type === EV.CarHorn
   );
 }
 
@@ -407,6 +423,7 @@ export class EventBus implements UiEventSink {
     [EV.ComboTier]: [],
     [EV.Complaint]: [],
     [EV.Horn]: [],
+    [EV.CarHorn]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -642,6 +659,16 @@ export class EventBus implements UiEventSink {
         e.y = b;
         e.radiusM = c;
         this.emit(EV.Horn, e);
+        return;
+      }
+      case EV.CarHorn: {
+        const e = this.payloads[EV.CarHorn];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.honk = c;
+        this.emit(EV.CarHorn, e);
         return;
       }
     }

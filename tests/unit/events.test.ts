@@ -57,9 +57,10 @@ describe('EventBus', () => {
       [EV.ComboTier, -1, 2, 1, 10],
       [EV.Horn, -1, 7.5, 88.25, 8],
       [EV.Complaint, -1, 7.5, 88.25, Offence.Noise],
+      [EV.CarHorn, 2, 30.5, 5.5, 3],
       [EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0],
     ]);
-    expect(bus.drain(queue)).toBe(16);
+    expect(bus.drain(queue)).toBe(17);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -84,6 +85,7 @@ describe('EventBus', () => {
       { type: EV.ComboTier, tick: 42, entity: -1, multiplier: 2, previousMultiplier: 1, chain: 10 },
       { type: EV.Horn, tick: 42, entity: -1, x: 7.5, y: 88.25, radiusM: 8 },
       { type: EV.Complaint, tick: 42, entity: -1, x: 7.5, y: 88.25, reason: Offence.Noise },
+      { type: EV.CarHorn, tick: 42, entity: 2, x: 30.5, y: 5.5, honk: 3 },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.TimeUp },
     ]);
   });

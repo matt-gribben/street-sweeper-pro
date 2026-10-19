@@ -403,7 +403,7 @@ Some events reuse a cue or are carried by a live synth (§6), so the canonical I
 | Lead Tangle | `dog_bark` + `ped_oi` 120 ms later |
 | Running an occupied zebra or a lollipop crossing | `ped_oi` (from the person crossing) + `complaint_stamp` |
 | Horn spam complaint ("Noise") | `complaint_stamp` |
-| Road Rage (blocking traffic over 10 s) | Rising `horn:car` honks from blockers at 3 s, 6 s and 9 s, then `complaint_stamp` |
+| Road Rage (blocking traffic over 10 s) | Rising `horn:car` honks from blockers at 3 s, 6 s and 9 s, then `complaint_stamp`. *(SSP-089: each honk is a sim `EV.CarHorn` from the head of the queue, its `honk` 1, 2 or 3 picking the step; the complaint is the `EV.Complaint` with reason RoadRage.)* |
 | Water tank empty while spraying | Spray synth "dry pump" state (§6.3) |
 | `haz.wind_gust` (Friday) | `amb.wind_leaves` gust swell (§7) |
 | Bus stopping, bin lorry working | Positional ambience sprinkles of the vehicle (§7.2) |

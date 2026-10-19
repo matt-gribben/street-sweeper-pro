@@ -374,18 +374,28 @@ const HORN_SPEC = {
   twoToneRadiusM: 'positive',
 } as const satisfies GroupSpec;
 
-/** GDD §10.3: passing within maxGapM of a pedestrian above minSpeedMps without contact scores pts. */
+/**
+ * GDD §10.3: passing within maxGapM of a pedestrian above minSpeedMps without contact scores pts. One award per
+ * pedestrian per pass: the pass re-arms once the gap exceeds rearmGapM (proposed in SSP-095, owner to review).
+ */
 const NEAR_MISS_SPEC = {
   maxGapM: 'positive',
   minSpeedMps: 'positive',
   pts: 'positiveInteger',
+  rearmGapM: 'positive',
 } as const satisfies GroupSpec;
 
-/** ENTITY_CATALOG §3.4: a pedestrian within radiusM of a dust cloud costs pts every everyS. No complaint. */
+/**
+ * ENTITY_CATALOG §3.4: a pedestrian within radiusM of a dust cloud costs pts every everyS. No complaint. Each
+ * gutter brush puffs one cloud every cloudEveryTicks (ART_BIBLE §11 fx.dust_puff) and a cloud lives for
+ * cloudLifeTicks (the puff's 6 frames × 5 ticks; proposed in SSP-095, owner to review).
+ */
 const DUST_SPEC = {
   radiusM: 'positive',
   pts: 'negativeInteger',
   everyS: 'positive',
+  cloudEveryTicks: 'positiveInteger',
+  cloudLifeTicks: 'positiveInteger',
 } as const satisfies GroupSpec;
 
 /**

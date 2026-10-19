@@ -16,8 +16,10 @@ import type { World } from '../world.ts';
  * Stimulus types (TECHNICAL_DESIGN §11.1): pushed by the sim, never polled. Horn (radius 8 m, 12 m with
  * upg.two_tone_horn), Spray, Hit, NearMiss, HiVis (pwr.hi_vis: all pedestrians yield and part) and
  * BeaconYield (pedestrians start yielding at 6 m, 10 m with upg.led_beacon). SSP-082 appends Bump: Bessie touched
- * the NPC below the actor-hit closing speed (ENTITY_CATALOG §3.2: it bumps off and startles, no penalty). Phase 7
- * pushes Horn, HiVis, BeaconYield, Hit and Bump (npc/reactions.ts). Hashed: append, never renumber.
+ * the NPC below the actor-hit closing speed (ENTITY_CATALOG §3.2: it bumps off and startles, no penalty). SSP-095
+ * appends Cough: the NPC coughs in Bessie's dust (the generic pedestrian plays its startle frames). Phase 7
+ * pushes Horn, HiVis, BeaconYield, Spray, Hit, Bump, NearMiss and Cough (npc/reactions.ts). Hashed: append, never
+ * renumber.
  */
 export const Stimulus = {
   Horn: 1,
@@ -27,11 +29,12 @@ export const Stimulus = {
   HiVis: 5,
   BeaconYield: 6,
   Bump: 7,
+  Cough: 8,
 } as const;
 export type Stimulus = (typeof Stimulus)[keyof typeof Stimulus];
 
 /** The largest Stimulus id. */
-export const STIMULUS_MAX = 7;
+export const STIMULUS_MAX = 8;
 
 /** One NPC kind's state machine. */
 export type Behaviour = {

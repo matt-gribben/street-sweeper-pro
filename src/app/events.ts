@@ -284,6 +284,47 @@ export type CaughtEvent = SimEventBase & {
   readonly pts: number;
 };
 
+/**
+ * Bessie passed a pedestrian within 0.5 m above 3 m/s without touching them (phase 7, npc/reactions.ts, SSP-095):
+ * once per pass, the tick after the closest approach. `entity` is the pedestrian's NPC store index. Phase 9 has
+ * already added its points as a style bonus. The bonus popup, sfx.combo_tier:bonus and sfx.ped_oi (M5) read it.
+ */
+export type NearMissEvent = SimEventBase & {
+  readonly type: typeof EV.NearMiss;
+  /** The pedestrian's centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The style bonus (tuning.json streetLife.nearMiss.pts, +25), unmultiplied. */
+  readonly pts: number;
+};
+
+/**
+ * A gutter brush puffed a dust cloud over dusty ground (phase 6, dirt.ts stepDust, SSP-095): one per brush every
+ * 7 ticks while it collects there and Bessie is not spraying. fx.dust_puff (SSP-102, SSP-154) reads it.
+ */
+export type DustCloudEvent = SimEventBase & {
+  readonly type: typeof EV.DustCloud;
+  /** The brush centre the cloud rises from, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** Which brush: −1 left, +1 right (the fx drifts it outwards on that side). */
+  readonly side: -1 | 1;
+};
+
+/**
+ * A pedestrian coughed in Bessie's dust (phase 7, npc/reactions.ts, SSP-095): after every 2 s in a row within 3 m
+ * of a live dust cloud. `entity` is its NPC store index; its −10 penalty is applied in phase 9. fx.cough
+ * (SSP-155) and sfx.ped_oi:cough (M5) read it.
+ */
+export type CoughEvent = SimEventBase & {
+  readonly type: typeof EV.Cough;
+  /** The pedestrian's centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** Its kind. */
+  readonly kind: NpcId;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -306,6 +347,9 @@ export type SimEventByType = {
   [EV.CarHorn]: CarHornEvent;
   [EV.HandbagWhack]: HandbagWhackEvent;
   [EV.Caught]: CaughtEvent;
+  [EV.NearMiss]: NearMissEvent;
+  [EV.DustCloud]: DustCloudEvent;
+  [EV.Cough]: CoughEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -387,6 +431,9 @@ function createPayloads(): Payloads {
     [EV.CarHorn]: { type: EV.CarHorn, tick: 0, entity: -1, x: 0, y: 0, honk: 1 },
     [EV.HandbagWhack]: { type: EV.HandbagWhack, tick: 0, entity: -1, x: 0, y: 0, hp: 0 },
     [EV.Caught]: { type: EV.Caught, tick: 0, entity: -1, x: 0, y: 0, pts: 0 },
+    [EV.NearMiss]: { type: EV.NearMiss, tick: 0, entity: -1, x: 0, y: 0, pts: 0 },
+    [EV.DustCloud]: { type: EV.DustCloud, tick: 0, entity: -1, x: 0, y: 0, side: 1 },
+    [EV.Cough]: { type: EV.Cough, tick: 0, entity: -1, x: 0, y: 0, kind: 'npc.shopper' },
   };
 }
 
@@ -412,12 +459,18 @@ function knockableKindOf(c: number, tick: number): KnockableId {
   return id;
 }
 
-/** The NPC id carried in an NpcHit event's `c` (an NPC_IDS index); throws on anything else. */
-function npcKindOf(c: number, tick: number): NpcId {
+/** The NPC id carried in an NpcHit or Cough event's `c` (an NPC_IDS index); throws on anything else. */
+function npcKindOf(c: number, tick: number, type: EventType = EV.NpcHit): NpcId {
   const id = Number.isInteger(c) ? NPC_IDS[c] : undefined;
   if (id === undefined)
-    throw new Error(`EventBus: event type ${EV.NpcHit} at tick ${tick} carries unknown NPC kind ${c}`);
+    throw new Error(`EventBus: event type ${type} at tick ${tick} carries unknown NPC kind ${c}`);
   return id;
+}
+
+/** The brush side carried in a DustCloud event's `c` (−1 or +1); throws on anything else. */
+function dustSideOf(c: number, tick: number): -1 | 1 {
+  if (c === -1 || c === 1) return c;
+  throw new Error(`EventBus: event type ${EV.DustCloud} at tick ${tick} carries unknown brush side ${c}`);
 }
 
 /** The stain id carried in a StainCleaned event's `entity` (a STAIN_IDS index); throws on anything else. */
@@ -451,7 +504,10 @@ function isEventType(type: number): type is EventType {
     type === EV.NpcHit ||
     type === EV.CarHorn ||
     type === EV.HandbagWhack ||
-    type === EV.Caught
+    type === EV.Caught ||
+    type === EV.NearMiss ||
+    type === EV.DustCloud ||
+    type === EV.Cough
   );
 }
 
@@ -573,6 +629,9 @@ export class EventBus implements UiEventSink, PauseEventSink {
     [EV.CarHorn]: [],
     [EV.HandbagWhack]: [],
     [EV.Caught]: [],
+    [EV.NearMiss]: [],
+    [EV.DustCloud]: [],
+    [EV.Cough]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -886,6 +945,36 @@ export class EventBus implements UiEventSink, PauseEventSink {
         e.y = b;
         e.pts = c;
         this.emit(EV.Caught, e);
+        return;
+      }
+      case EV.NearMiss: {
+        const e = this.payloads[EV.NearMiss];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.pts = c;
+        this.emit(EV.NearMiss, e);
+        return;
+      }
+      case EV.DustCloud: {
+        const e = this.payloads[EV.DustCloud];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.side = dustSideOf(c, tick);
+        this.emit(EV.DustCloud, e);
+        return;
+      }
+      case EV.Cough: {
+        const e = this.payloads[EV.Cough];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.kind = npcKindOf(c, tick, EV.Cough);
+        this.emit(EV.Cough, e);
         return;
       }
     }

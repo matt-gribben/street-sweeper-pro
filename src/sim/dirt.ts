@@ -43,6 +43,18 @@
 // bumps grimeCleaned for each frontage zone holding its tile (zoneTally.ts), so per-frontage clean % is as
 // incremental as the global counters.
 //
+// Dust (stepDust, tick phase 6 after stepDirt; GDD §8.6, TECHNICAL_DESIGN §10.4, ART_BIBLE §11; SSP-095). Dusty
+// ground is the `%` yard (Ground.Yard, LEVEL_DESIGN §8.3; createDust marks its tiles once; roadworks dust arrives
+// with the districts that have roadworks, SSP-204). On a tick in which the brush collects and Bessie is not
+// spraying (water.ts `spraying`: spray suppresses dust), each gutter brush whose centre is over a dusty tile puffs
+// a dust cloud at its centre, at most one per brush every streetLife.dust.cloudEveryTicks (7, fx.dust_puff's
+// rate): a brush's wait counts down by one every tick, and a puff needs it at 0 and sets it to 7, so a brush that
+// stays over dust puffs on its first tick there and every 7th after. Right brush before left. Each cloud emits
+// EV.DustCloud and lives cloudLifeTicks (30: born on tick T, live through T + 29, gone before T + 30's puffs).
+// Clouds do not move (the fx drifts them; the sim's cough radius is measured from where they rose). They are a
+// FIFO ring of DUST_CLOUD_CAPACITY (all clouds live equally long, so the oldest always expires first); a full
+// ring drops its oldest cloud. npc/reactions.ts makes the pedestrians near a live cloud cough (phase 7).
+//
 // Determinism: the selection sorts integer keys, the erase visits cells in row-major order and every branch
 // compares quantised or exactly representable values except the inside tests, which use the same IEEE
 // arithmetic on every V8. The mask and counters are in the replay hash (SSP-065).
@@ -52,8 +64,9 @@
 // createDirt, grimeNoise, grimeScores and initGrime run at shift start and may allocate.
 
 import { GRIME_CELL_M, TILE_M } from './constants.ts';
+import { EV, type EventQueue, emitEvent } from './eventQueue.ts';
 import { cos, sin } from './fmath.ts';
-import { COLLIDE, GRIME_CELL, GUTTER_CELLS_PER_TILE, type Level } from './map.ts';
+import { COLLIDE, GRIME_CELL, Ground, GUTTER_CELLS_PER_TILE, type Level } from './map.ts';
 import { createStream, nextFloat } from './rng.ts';
 import type { Tuning } from './tuning.ts';
 import { tallyGrimeCleaned, type ZoneTally } from './zoneTally.ts';
@@ -605,4 +618,189 @@ export function stepDirt(dirt: Dirt, pose: DirtPose, collecting: boolean): void 
   dirt.dirtyMinY = dMinY;
   dirt.dirtyMaxX = dMaxX;
   dirt.dirtyMaxY = dMaxY;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Phase 6: dust (SSP-095)
+// ---------------------------------------------------------------------------------------------------------
+
+/**
+ * Dust clouds the ring holds. Two brushes puffing every 7 ticks with a 30-tick life keep at most 10 alive;
+ * createDust and setDustTuning refuse a tuning that would need more.
+ */
+export const DUST_CLOUD_CAPACITY = 64;
+
+/** The district's dusty tiles and the live dust clouds. Create with createDust; only the sim writes it. */
+export type Dust = {
+  readonly tilesW: number;
+  readonly tilesH: number;
+  /** 1 per dusty tile (Ground.Yard), row-major tilesW × tilesH. */
+  readonly dusty: Uint8Array;
+  /** How many tiles are dusty. */
+  readonly dustyTiles: number;
+  readonly capacity: number;
+  /** Live clouds, oldest at `head`; cloud k (0 = oldest) is at ring slot (head + k) % capacity. */
+  count: number;
+  head: number;
+  /** Each slot's cloud: where it rose (sim metres) and the tick it was born. */
+  readonly x: Float64Array;
+  readonly y: Float64Array;
+  readonly bornTick: Int32Array;
+  /** Ticks until the left / right brush may puff again (0 = now). */
+  waitLeft: number;
+  waitRight: number;
+  /** Clouds puffed this shift. */
+  cloudsEmitted: number;
+  /** tuning.json streetLife.dust cloudEveryTicks and cloudLifeTicks. */
+  everyTicks: number;
+  lifeTicks: number;
+  /** The right gutter brush's vehicle-local centre (sweeping.gutterBrush; the left is mirrored in x). */
+  brushX: number;
+  brushY: number;
+};
+
+/** What render, audio and UI may see: the same object, typed read-only. */
+export type DustView = {
+  readonly dusty: Readonly<Uint8Array>;
+  readonly dustyTiles: number;
+  readonly capacity: number;
+  readonly count: number;
+  readonly head: number;
+  readonly x: Readonly<Float64Array>;
+  readonly y: Readonly<Float64Array>;
+  readonly bornTick: Readonly<Int32Array>;
+  readonly cloudsEmitted: number;
+  readonly lifeTicks: number;
+};
+
+function applyDustTuning(dust: Dust, tuning: Tuning): void {
+  const d = tuning.streetLife.dust;
+  const perBrush = Math.ceil(d.cloudLifeTicks / d.cloudEveryTicks);
+  if (!(2 * perBrush <= dust.capacity)) {
+    throw new Error(
+      `dust: streetLife.dust cloudLifeTicks ${d.cloudLifeTicks} / cloudEveryTicks ${d.cloudEveryTicks} keeps ` +
+        `${2 * perBrush} clouds alive; the ring holds ${dust.capacity}`,
+    );
+  }
+  dust.everyTicks = d.cloudEveryTicks;
+  dust.lifeTicks = d.cloudLifeTicks;
+  dust.brushX = tuning.sweeping.gutterBrush.centreXM;
+  dust.brushY = tuning.sweeping.gutterBrush.centreYM;
+}
+
+/**
+ * No clouds, both brushes ready, and the dusty tiles of `level` (its `%` yard tiles). Allocated once per shift.
+ * `capacity` defaults to DUST_CLOUD_CAPACITY.
+ */
+export function createDust(level: Level, tuning: Tuning, capacity: number = DUST_CLOUD_CAPACITY): Dust {
+  const tilesW = level.size[0];
+  const tilesH = level.size[1];
+  const ground = level.layers.ground;
+  if (ground.length !== tilesW * tilesH) {
+    throw new Error('createDust: the ground layer does not match the level size');
+  }
+  const dusty = new Uint8Array(tilesW * tilesH);
+  let dustyTiles = 0;
+  for (let i = 0; i < dusty.length; i += 1) {
+    if (ground[i] === Ground.Yard) {
+      dusty[i] = 1;
+      dustyTiles += 1;
+    }
+  }
+  const dust: Dust = {
+    tilesW,
+    tilesH,
+    dusty,
+    dustyTiles,
+    capacity,
+    count: 0,
+    head: 0,
+    x: new Float64Array(capacity),
+    y: new Float64Array(capacity),
+    bornTick: new Int32Array(capacity),
+    waitLeft: 0,
+    waitRight: 0,
+    cloudsEmitted: 0,
+    everyTicks: 0,
+    lifeTicks: 0,
+    // Fractional first so the fields start as doubles (TECHNICAL_DESIGN §17, deprecated maps).
+    brushX: 0.5,
+    brushY: 0.5,
+  };
+  applyDustTuning(dust, tuning);
+  return dust;
+}
+
+/** The read-only view of `dust`. No copy: it is the same object. */
+export function viewDust(dust: Dust): DustView {
+  return dust;
+}
+
+/** Hand the Dust a new tuning between ticks (setWorldTuning). Live clouds and the brushes' waits are kept. */
+export function setDustTuning(dust: Dust, tuning: Tuning): void {
+  applyDustTuning(dust, tuning);
+}
+
+/** Ring slot of live cloud `k` (0 = the oldest). */
+export function dustCloudSlot(dust: DustView, k: number): number {
+  return (dust.head + k) % dust.capacity;
+}
+
+/**
+ * Puff a cloud from the gutter brush on `side` (+1 right, −1 left) if its centre is over a dusty tile, for the
+ * pose in the Dirt's scratch fields (stepDirt wrote them this tick, because the brush collects). Returns true
+ * when it puffed.
+ */
+function puffBrush(dust: Dust, dirt: Dirt, side: number, tick: number, events: EventQueue): boolean {
+  const lx = side * dust.brushX;
+  const ly = dust.brushY;
+  const bx = dirt.poseX + lx * dirt.poseC + ly * dirt.poseS;
+  const by = dirt.poseY + lx * dirt.poseS - ly * dirt.poseC;
+  const col = Math.floor(bx / TILE_M);
+  const row = Math.floor(by / TILE_M);
+  if (!(col >= 0 && row >= 0 && col < dust.tilesW && row < dust.tilesH)) return false;
+  if (dust.dusty[row * dust.tilesW + col] !== 1) return false;
+  const cap = dust.capacity;
+  if (dust.count >= cap) {
+    dust.head = (dust.head + 1) % cap;
+    dust.count -= 1;
+  }
+  const slot = (dust.head + dust.count) % cap;
+  dust.x[slot] = bx;
+  dust.y[slot] = by;
+  dust.bornTick[slot] = tick;
+  dust.count += 1;
+  dust.cloudsEmitted += 1;
+  const e = emitEvent(events, EV.DustCloud, -1);
+  events.a[e] = bx;
+  events.b[e] = by;
+  events.c[e] = side;
+  return true;
+}
+
+/**
+ * Tick phase 6, after stepDirt (see the header): expire the clouds that have lived cloudLifeTicks, count both
+ * brushes' waits down, then, when the brush is `collecting` and Bessie is not `spraying`, puff a cloud
+ * (EV.DustCloud) from each ready brush over dusty ground, right brush first. `tick` is the tick being run (the
+ * World's tick before it is advanced). Reads the pose stepDirt left in `dirt`'s scratch fields, so it must follow
+ * stepDirt with the same `collecting`. Allocation-free.
+ */
+export function stepDust(
+  dust: Dust,
+  dirt: Dirt,
+  collecting: boolean,
+  spraying: boolean,
+  tick: number,
+  events: EventQueue,
+): void {
+  const cap = dust.capacity;
+  while (dust.count > 0 && tick - (dust.bornTick[dust.head] as number) >= dust.lifeTicks) {
+    dust.head = (dust.head + 1) % cap;
+    dust.count -= 1;
+  }
+  if (dust.waitRight > 0) dust.waitRight -= 1;
+  if (dust.waitLeft > 0) dust.waitLeft -= 1;
+  if (!collecting || spraying || dust.dustyTiles === 0) return;
+  if (dust.waitRight === 0 && puffBrush(dust, dirt, 1, tick, events)) dust.waitRight = dust.everyTicks;
+  if (dust.waitLeft === 0 && puffBrush(dust, dirt, -1, tick, events)) dust.waitLeft = dust.everyTicks;
 }

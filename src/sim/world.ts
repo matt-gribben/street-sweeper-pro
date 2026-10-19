@@ -18,12 +18,14 @@
 //                       → the brush-up rules: stepBrushUpLeaves (hazards.ts) then stepBrushUpSplats (stains.ts)
 //                       → stepLitter (arcs, pushes, drift; litter.ts) → stepWater (hydrant refill, spray;
 //                       water.ts) (SSP-065)
-//   6 Dirt              stepDirt (grime footprint erase, Kerb Hugger; dirt.ts) → cleanStainsInCone (water.ts);
-//                       dust is M3 (SSP-065)
+//   6 Dirt              stepDirt (grime footprint erase, Kerb Hugger; dirt.ts) → stepDust (dust clouds from the
+//                       brushes over dusty ground, unless spraying: EV.DustCloud; dirt.ts, SSP-095) →
+//                       cleanStainsInCone (water.ts) (SSP-065)
 //   7 NPC               beginNpcTick (prev positions) → updateViewRect (world.viewRect from Bessie's pose) →
 //                       stepNpcSpawner (named arrivals; once a second cats, flocks and the ambient population)
 //                       → stepReactions (Horn from EV.Horn, HiVis, BeaconYield; then actor hits: penalty,
-//                       EV.NpcHit, drops; bumps; npc/reactions.ts, SSP-082)
+//                       EV.NpcHit, drops; bumps; npc/reactions.ts, SSP-082; then near misses, EV.NearMiss, and
+//                       dust coughs, the Dust penalty fact and EV.Cough, SSP-095)
 //                       → deliverStimuli → perceiveNpcs (index mod 4 == tick mod 4) → tickNpcBehaviours
 //                       (npc/, SSP-080; the behaviours steer with npc/steering.ts, SSP-081); the litterbug's
 //                       Caught! emits EV.Caught and flags the tick's honk here (markHornCaught, SSP-084) →
@@ -83,7 +85,19 @@ import {
   stepHornInput,
   stepHornSpam,
 } from './complaints.ts';
-import { createDirt, type Dirt, type DirtView, initGrime, setDirtTuning, stepDirt } from './dirt.ts';
+import {
+  createDirt,
+  createDust,
+  type Dirt,
+  type DirtView,
+  type Dust,
+  type DustView,
+  initGrime,
+  setDirtTuning,
+  setDustTuning,
+  stepDirt,
+  stepDust,
+} from './dirt.ts';
 import type { Entities } from './entities.ts';
 import {
   createEventQueue,
@@ -240,6 +254,11 @@ export type World = {
   readonly water: Water;
   /** The grime mask and its counters (dirt.ts, SSP-060): laid at shift start, erased in phase 6. */
   readonly dirt: Dirt;
+  /**
+   * The dusty tiles and live dust clouds (dirt.ts, SSP-095): phase 6 puffs clouds from the brushes over dusty
+   * ground; phase 7 makes the pedestrians near them cough.
+   */
+  readonly dust: Dust;
   /** Score, combo chain and their parts (scoring.ts, combo.ts, SSP-063), stepped in phase 9. */
   readonly scoring: Scoring;
   /** Tidy %, stars and the frontages' clean % and Clean Sweeps (tidy.ts, SSP-064), stepped in phase 9. */
@@ -334,6 +353,7 @@ export type WorldView = {
   readonly stains: StainStoreView;
   readonly water: WaterView;
   readonly dirt: DirtView;
+  readonly dust: DustView;
   readonly scoring: ScoringView;
   readonly tidy: TidyView;
   readonly penalties: PenaltyLogView;
@@ -386,6 +406,7 @@ export function createWorld(
   const staticGrid = createStaticGrid(level, tuning.propFootprints);
   const bodies = createBodyStore(entities, tuning, staticGrid, hazards.spill, eventsRng);
   const dirt = createDirt(level, tuning);
+  const dust = createDust(level, tuning);
   const scoring = createScoring(tuning, entities);
   const tidy = createTidy(level, tuning);
   const water = createWater(vehicle, tuning, level);
@@ -421,6 +442,7 @@ export function createWorld(
     stains,
     water,
     dirt,
+    dust,
     scoring,
     tidy,
     penalties,
@@ -487,6 +509,7 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   setShiftTuning(world.shift, tuning);
   world.litter.flingTuning = tuning.sweeping.fling;
   setDirtTuning(world.dirt, tuning);
+  setDustTuning(world.dust, tuning);
   setScoringTuning(world.scoring, tuning);
   setTidyTuning(world.tidy, tuning, world.dirt, world.litter);
   setNpcSpawnerTuning(world, tuning, world.npcAi.entities);
@@ -702,13 +725,16 @@ function phaseBrushLitter(world: World): void {
 /**
  * Phase 6 (SSP-065): dirt. stepDirt erases the grime under the footprint (and, for a brush hugging a kerb, the
  * gutter grime under it) while the brush collects (isBrushCollecting, as phase 5 recorded it in brush.collecting), and records the tick's cleaned cells, Kerb Hugger contact
- * and dirty rectangle; then cleanStainsInCone gives every stain in this tick's spray cone one tick of spray
- * (EV.StainCleaned when one comes clean). Dust is M3.
+ * and dirty rectangle; then stepDust (SSP-095) expires the old dust clouds and, while the brush collects and
+ * Bessie is not spraying (water.spraying, phase 5), puffs one from each ready gutter brush over dusty ground
+ * (EV.DustCloud); then cleanStainsInCone gives every stain in this tick's spray cone one tick of spray
+ * (EV.StainCleaned when one comes clean).
  */
 function phaseDirt(world: World): void {
   // brush.collecting is isBrushCollecting as phase 5's brush step found it; nothing between changes it (the
   // step may switch Collecting to Bulldozing, which still collects).
   stepDirt(world.dirt, world.vehicle, world.brush.collecting);
+  stepDust(world.dust, world.dirt, world.brush.collecting, world.water.spraying, world.tick, world.events);
   cleanStainsInCone(world.water, world.stains, world.events);
 }
 
@@ -721,7 +747,9 @@ function phaseDirt(world: World): void {
  *   4. stepReactions (npc/reactions.ts, SSP-082): clear the AWARE and HI_VIS marks, queue a Horn per EV.Horn of
  *      phase 1, HiVis to everyone while pwr.hi_vis runs and BeaconYield in the awareness radius; then Bessie's
  *      OBB against the actors' circles: a hit records the penalty fact (phase 9 applies it), emits EV.NpcHit,
- *      drops the kind's litter and queues Hit; a bump queues Bump.
+ *      drops the kind's litter and queues Hit; a bump queues Bump; then (SSP-095) each pedestrian's near-miss
+ *      pass (EV.NearMiss and a NearMiss stimulus at the closest approach of a fast pass with no contact) and
+ *      dust cough (the Dust penalty fact, EV.Cough and a Cough stimulus every 120 ticks near a live cloud).
  *   5. deliverStimuli: the queued stimuli, in push order.
  *   6. perceiveNpcs: the perception query of every NPC with index mod 4 == tick mod 4.
  *   7. tickNpcBehaviours: each NPC's behaviour tick, in index order (behaviours steer with npc/steering.ts).
@@ -757,7 +785,8 @@ function phaseTraffic(world: World): void {
  * (unless phase 7 flagged it Caught!) and may record a Noise fact; applyPenalties consumes the tick's penalty
  * facts in order (their points to scoring's penalty API, their complaints to the meter with EV.Complaint each,
  * the police-witness hook); stepScoring reads this tick's facts (the chain timer, frozen while a dump drains;
- * EV.LitterCollected and EV.StainCleaned in emission order, with EV.Caught's style bonus among them, SSP-084;
+ * EV.LitterCollected and EV.StainCleaned in emission order, with the EV.Caught and EV.NearMiss style bonuses
+ * among them, SSP-084, SSP-095;
  * the Dirt's cleaned cells and Kerb Hugger contact), then applies the penalties' points and resets the chain
  * after the pickups; stepTidy recomputes the frontages whose counters moved, awards Clean Sweeps through the
  * bonus API and updates Tidy % and the stars. The drain state is read before phase 10 runs.

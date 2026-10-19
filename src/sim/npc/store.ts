@@ -143,6 +143,15 @@ export type NpcStore = {
    */
   readonly timerA: Int32Array;
   readonly timerB: Int32Array;
+  /**
+   * Street-life rules (npc/reactions.ts stepStreetLife, SSP-095): the near-miss pass state (NearMissState) and,
+   * while a pass is being tracked, the squared distance from the NPC's centre to Bessie's body box at its closest
+   * so far (m²; 0 otherwise); and the ticks in a row it has spent within the dust radius of a live dust cloud
+   * since its last cough (0 when out of range).
+   */
+  readonly nearMiss: Uint8Array;
+  readonly nearMissD2: Float64Array;
+  readonly dustTicks: Uint16Array;
   /** Handle slot of each live index. */
   readonly handleSlot: Int32Array;
   /** Live index of each handle slot, −1 while the slot is free. */
@@ -197,6 +206,9 @@ export type NpcStoreView = {
   readonly stateLimit: Uint16Array;
   readonly timerA: Int32Array;
   readonly timerB: Int32Array;
+  readonly nearMiss: Uint8Array;
+  readonly nearMissD2: Float64Array;
+  readonly dustTicks: Uint16Array;
   readonly handleSlot: Int32Array;
   readonly slotGen: Uint32Array;
 };
@@ -251,6 +263,9 @@ export function createNpcStore(level: Level, capacity: number = NPC_CAPACITY): N
     stateLimit: new Uint16Array(capacity),
     timerA: new Int32Array(capacity),
     timerB: new Int32Array(capacity),
+    nearMiss: new Uint8Array(capacity),
+    nearMissD2: new Float64Array(capacity),
+    dustTicks: new Uint16Array(capacity),
     handleSlot: new Int32Array(capacity).fill(-1),
     slotIndex: new Int32Array(capacity).fill(-1),
     slotGen: new Uint32Array(capacity),
@@ -387,7 +402,7 @@ export function queryNpcs(store: NpcStore, box: Readonly<Aabb>, out: Int32Array)
 /**
  * Add an NPC of `kind` (NPC_IDS index) and `origin`, spawned from spec entry `group` (−1 for none), at
  * (xs[j], ys[j]), at rest, facing north, in state 0 with no target node, flags, link, perception, path, contact
- * window, state limit or behaviour timer, and radius and walking speed 0 (the spawner sets the state, radius and speed). Returns its index, or −1 (changing nothing) when the store
+ * window, state limit, behaviour timer, near-miss pass or dust timer, and radius and walking speed 0 (the spawner sets the state, radius and speed). Returns its index, or −1 (changing nothing) when the store
  * is full. Takes the position through arrays so no double crosses the call.
  */
 export function addNpc(
@@ -440,6 +455,9 @@ export function addNpc(
   store.stateLimit[i] = 0;
   store.timerA[i] = 0;
   store.timerB[i] = 0;
+  store.nearMiss[i] = 0;
+  store.nearMissD2[i] = 0;
+  store.dustTicks[i] = 0;
   linkCell(store, i, npcCellIndex(store, i));
   return i;
 }
@@ -501,6 +519,9 @@ export function removeNpc(store: NpcStore, i: number): void {
     store.stateLimit[i] = store.stateLimit[last] as number;
     store.timerA[i] = store.timerA[last] as number;
     store.timerB[i] = store.timerB[last] as number;
+    store.nearMiss[i] = store.nearMiss[last] as number;
+    store.nearMissD2[i] = store.nearMissD2[last] as number;
+    store.dustTicks[i] = store.dustTicks[last] as number;
     const movedSlot = store.handleSlot[last] as number;
     store.handleSlot[i] = movedSlot;
     store.slotIndex[movedSlot] = i;

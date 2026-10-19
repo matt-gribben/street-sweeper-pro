@@ -22,7 +22,8 @@ export const EVENTS_PER_TICK = 512;
  * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
  * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd, SSP-093 HazardJolt and HazardStop, SSP-063
  * ComboTier, SSP-078 Complaint and Horn, SSP-092 Knock, SSP-082 NpcHit, SSP-089 CarHorn, SSP-083
- * HandbagWhack, SSP-084 Caught; later issues append the rest of the §7.2 list.
+ * HandbagWhack, SSP-084 Caught, SSP-095 NearMiss, DustCloud and Cough; later issues append the rest of the §7.2
+ * list.
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036).
@@ -84,6 +85,21 @@ export const EVENTS_PER_TICK = 512;
  *   toward horn spam (complaints.ts markHornCaught). Phase 9 (scoring.ts stepScoring) awards the points through
  *   the bonus API: never multiplied, never touching the chain (GDD §10.3). The "Caught!" popup, the bonus
  *   sparkle (sfx.combo_tier:bonus) and his "huh" (sfx.ped_oi:huh) read it.
+ * - NearMiss: entity = the pedestrian's NPC store index, a = x, b = y (its centre, m), c = the style bonus's
+ *   points (tuning.json streetLife.nearMiss.pts, +25). Phase 7 (npc/reactions.ts stepStreetLife, SSP-095), once
+ *   per pass: on the tick after Bessie's closest approach to a pedestrian, when that approach was within
+ *   nearMiss.maxGapM (0.5 m) of her body at more than minSpeedMps (3 m/s) and the pass had no contact. Phase 9
+ *   (scoring.ts stepScoring) awards it through the bonus API like Caught. The bonus popup, sfx.combo_tier:bonus
+ *   and the pedestrian's "Oi!" (sfx.ped_oi) read it.
+ * - DustCloud: entity −1, a = x, b = y (the gutter brush centre the cloud rises from, m), c = the brush's side
+ *   (−1 left, +1 right). Phase 6 (dirt.ts stepDust, SSP-095): each gutter brush, every streetLife.dust
+ *   cloudEveryTicks (7) ticks while the brush collects over dusty ground (`%` yard) and Bessie is not spraying.
+ *   The cloud lives cloudLifeTicks (30) ticks. fx.dust_puff (SSP-102 placeholder particles, SSP-154) reads it.
+ * - Cough: entity = the pedestrian's NPC store index, a = x, b = y (its centre, m), c = its kind (NPC_IDS index).
+ *   Phase 7 (npc/reactions.ts stepStreetLife, SSP-095): a pedestrian within streetLife.dust.radiusM (3 m) of a
+ *   live dust cloud for dust.everyS × 60 (120) ticks in a row coughs, then again every 120 ticks it stays in
+ *   range; its −10 penalty fact (Offence.Dust, no complaint) is recorded with it. fx.cough (SSP-155) and
+ *   sfx.ped_oi:cough (M5) read it.
  */
 export const EV = {
   Impact: 1,
@@ -106,6 +122,9 @@ export const EV = {
   CarHorn: 18,
   HandbagWhack: 19,
   Caught: 20,
+  NearMiss: 21,
+  DustCloud: 22,
+  Cough: 23,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

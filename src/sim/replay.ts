@@ -449,6 +449,9 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     junction box its claim and claim edge and per slot its holder and holder edge
  *   SSP-083 appends the behaviour timers: per NPC, after stateLimit, I timerA, timerB (SSP-084's litterbug keeps
  *     his drop countdown in timerA, so it adds no field)
+ *   SSP-095 appends the dust and the street-life rules: I dust.count, cloudsEmitted, waitLeft, waitRight, then
+ *     per live cloud oldest first F x, y; I bornTick; I reactions.nearMisses, coughs; then per NPC: I nearMiss;
+ *     F nearMissD2; I dustTicks
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -508,6 +511,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbBodies(hasher, world);
   absorbReactions(hasher, world);
   absorbTraffic(hasher, world);
+  absorbStreetLife(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -1023,6 +1027,44 @@ function absorbReactions(hasher: StateHasher, world: World): void {
     w[k + 2] = (npc.timerA[i] as number) | 0;
     w[k + 3] = (npc.timerB[i] as number) | 0;
     k += 4;
+  }
+  mixWords(hasher, k);
+}
+
+function absorbStreetLife(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const q = HASH_QUANTUM;
+  const dust = world.dust;
+  const npc = world.npc;
+  const r = world.npcAi.reactions;
+  w[0] = dust.count | 0;
+  w[1] = dust.cloudsEmitted | 0;
+  w[2] = dust.waitLeft | 0;
+  w[3] = dust.waitRight | 0;
+  let k = 4;
+  for (let c = 0; c < dust.count; c += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    const slot = (dust.head + c) % dust.capacity;
+    w[k] = Math.round((dust.x[slot] as number) * q) | 0;
+    w[k + 1] = Math.round((dust.y[slot] as number) * q) | 0;
+    w[k + 2] = (dust.bornTick[slot] as number) | 0;
+    k += 3;
+  }
+  w[k] = r.nearMisses | 0;
+  w[k + 1] = r.coughs | 0;
+  k += 2;
+  for (let i = 0; i < npc.count; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (npc.nearMiss[i] as number) | 0;
+    w[k + 1] = Math.round((npc.nearMissD2[i] as number) * q) | 0;
+    w[k + 2] = (npc.dustTicks[i] as number) | 0;
+    k += 3;
   }
   mixWords(hasher, k);
 }

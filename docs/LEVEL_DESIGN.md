@@ -354,7 +354,7 @@ Each district below lists its layout, density, hazards and NPC mix. The numbers 
 | Initial grime | 12,000 cells (dense gutters, bin stores, loading yards) |
 | Stains | 10 `stain.oil`, each on the same tile as a `haz.oil_slick` |
 | Hazards | 30 `haz.puddle`, 18 `haz.pothole`, 10 `haz.oil_slick`, 2 `haz.open_manhole`; road grip 6.0 everywhere (rain) |
-| Dust | `%` tiles under canopies stay dry and dusty. Brush down without spray → dust cloud. |
+| Dust | `%` tiles under canopies stay dry and dusty. Brush down without spray → dust cloud. *(SSP-095: every `%` tile is dusty in the sim; the roadworks' dust needs a map representation, which SSP-204 adds with this district.)* |
 | Skips / hydrants | 2 / 4 |
 | Power-ups | 2 (pool: wrench, water can, super suction) |
 | Frontages / pledges | 34 / 10 (units and tower entrances have wide frontages) |

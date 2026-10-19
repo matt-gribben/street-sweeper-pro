@@ -463,6 +463,8 @@ Representative LU costs (full table in [ENTITY_CATALOG.md](ENTITY_CATALOG.md)): 
 
 Brush down on dusty tiles without spray emits a dust cloud. Pedestrians within 3 m cough: **−10 pts per pedestrian per 2 s** (no complaint). Dust tiles are concentrated in the Gasworks Estate (Wednesday) and roadworks. The design goal is a light resource tension: spray water while sweeping dusty stretches near people, or accept the coughing.
 
+*As built (SSP-095):* the dusty tiles are the `%` yards; each gutter brush puffs a cloud every 7 ticks while it sweeps one without spray, a cloud lasts 30 ticks, and a pedestrian within 3 m of one coughs after every 2 s in a row there. Each cough is a penalty, so it resets the chain (§20 Q8). The details are in [ENTITY_CATALOG §3.4](ENTITY_CATALOG.md#34-generic-pedestrian-reaction-model).
+
 ### 8.7 Dumping
 
 | Site | How | Drain time | Pays | Also |
@@ -1132,7 +1134,7 @@ Tracked here until resolved; resolutions go into the relevant section and data f
 | 5 | Does the Shift map overlay pause? | M3 | No (§6.2); revisit if playtests show frustration |
 | 6 | Trophy threshold and exact Inspection Score formula | M6 | 0.5 × mean best Tidy % Mon–Sat + 0.5 × Inspection pass rate; Trophy at ≥ 80 (§12.8) |
 | 7 | Speed zoom on or off | M0 | **Resolved in M0: On** ([ROADMAP D-01](ROADMAP.md#8-m0-spike-decision-log), SSP-024; `SPEED_ZOOM_DEFAULT = true`). Transit driving zooms out to H = 37.8 m as in §7.5. Re-judged with real driving and procedural asphalt in M1 (SSP-047): **kept on**, so [LEVEL_DESIGN §7.9](LEVEL_DESIGN.md#79-sight-lines-and-the-camera) keeps the 20 m telegraph |
-| 8 | Is dust coughing a "penalty" that resets the chain? | M3 *(moved from M2 at the M2 close, SSP-074: dust and the pedestrians who cough arrive in M3; SSP-095 confirms it)* | Yes, for consistency with "any penalty resets the chain". M2 built the hook: any call to the penalty API resets the chain (§10.2, SSP-063) |
+| 8 | Is dust coughing a "penalty" that resets the chain? | M3 *(moved from M2 at the M2 close, SSP-074: dust and the pedestrians who cough arrive in M3)* | **Resolved in M3 (SSP-095): yes.** Each cough is a −10 penalty fact (`Offence.Dust`, no complaint) through the one penalty pipeline, so it resets the chain like any penalty, for consistency with "any penalty resets the chain" (§8.6, §10.2; [ENTITY_CATALOG §3.4](ENTITY_CATALOG.md#34-generic-pedestrian-reaction-model)) |
 | 9 | Free Sweep: collectibles allowed? HP floor at 1? | M6 | Yes and yes (§13.2) |
 | 10 | Undumped hopper contents at shift end: any pay-out? | M2 | **Resolved in M2 (SSP-062): none.** The tipping fee is paid only on LU drained at a depot bay (`hopper.luDumpedDepot`); a drain cut short by the knock-off counts only what had drained (§5.3, §8.7) |
 | 11 | Pedestrian yield radius 6 m (10 m with LED beacon) vs shopper sidestep at 4 m: confirm that 6 m is "aware and slowing", with per-NPC dodge distances inside it | M3 | **Resolved in M3 (SSP-084, lead call for owner review): yes.** Inside the awareness radius a yielding type is Aware and stops and parts (Yield). The dodge distances are per type and measured against Bessie's predicted path (1.5 s of her ground velocity), not her centre: the shopper hops aside when that path comes within 4 m of him and she is coming his way, once per approach; the businessman notices her only within 2 m of her body. So a fast Bessie is dodged from further off than a slow one ([ENTITY_CATALOG §6.2](ENTITY_CATALOG.md#62-behaviours)) |

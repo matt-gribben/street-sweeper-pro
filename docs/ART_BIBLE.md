@@ -439,7 +439,8 @@ High three-quarter view (§4.4). Heights include outline. Pivot = bottom-centre 
 | Elderly (hunched) | 18–19 | 8 | 6 | 4–5 | 10 / ≤ 18 with trolley or frame | `npc.old_woman` (Doris), `npc.old_man_frame` |
 | Child | 16–17 | 8 | 4–5 | 4 | 8 / ≤ 16 with skateboard | `npc.kid_skateboard`, `npc.kid_chalk` |
 
-- Heads are deliberately large (8 px, a third or more of the figure) so expressions read: two-pixel eyes (00 or 01), a 1–2 px mouth, eyebrows only on angry frames.
+- Heads are deliberately large (8 px, a third or more of the figure) so expressions read: two-pixel eyes (00 or 01; 08 when the character's key already spends four neutral steps, since interior ink counts against the §5.4 limit, e.g. `npc.businessman`, SSP-098), a 1–2 px mouth, eyebrows only on angry frames.
+- Feet stay on the pivot row in every frame except startle frame 0, the 1 px hop (§8.3), whose feet sit on row 21. The angry fist must clear the head inside the 22 px height, so the body squats 1 px on angry frames (SSP-098).
 - Carried props are part of the figure and must fit inside the cell: handbag, tartan shopping trolley, pushchair, walking frame, clipboard, phone, skateboard, postie trolley, lollipop sign.
 - **Signature silhouettes:** each character must be identifiable as a 1× silhouette alone (§15). Doris = hunch + trolley; old man = frame; jogger = mid-stride, wide arms; businessman = arm up to ear; lollipop lady = disc on a pole; mum = pushchair rectangle ahead of her.
 

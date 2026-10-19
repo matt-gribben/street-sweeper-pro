@@ -326,6 +326,48 @@
       "swaps": []
     },
     {
+      "id": "npc.businessman",
+      "class": "npc",
+      "technique": "grid",
+      "source": "assets-src/sprites/npc/businessman.sprite.txt",
+      "cell": [24, 24],
+      "states": ["walk", "idle", "startle", "fall", "angry"],
+      "dirs": ["s", "sw", "w", "nw", "n", "ne", "e", "se"],
+      "frames": { "walk": 4, "idle": 2, "startle": 2, "fall": 3, "angry": 2 },
+      "atlas": "actors",
+      "outline": false,
+      "swaps": [],
+      "placeholder": true
+    },
+    {
+      "id": "npc.litterbug",
+      "class": "npc",
+      "technique": "grid",
+      "source": "assets-src/sprites/npc/litterbug.sprite.txt",
+      "cell": [24, 24],
+      "states": ["walk", "idle", "startle", "fall", "angry"],
+      "dirs": ["s", "sw", "w", "nw", "n", "ne", "e", "se"],
+      "frames": { "walk": 4, "idle": 2, "startle": 2, "fall": 3, "angry": 2 },
+      "atlas": "actors",
+      "outline": false,
+      "swaps": [],
+      "placeholder": true
+    },
+    {
+      "id": "npc.market_trader",
+      "class": "npc",
+      "technique": "grid",
+      "source": "assets-src/sprites/npc/market_trader.sprite.txt",
+      "cell": [24, 24],
+      "states": ["walk", "idle", "startle", "fall", "angry"],
+      "dirs": ["s", "sw", "w", "nw", "n", "ne", "e", "se"],
+      "frames": { "walk": 4, "idle": 2, "startle": 2, "fall": 3, "angry": 2 },
+      "atlas": "actors",
+      "outline": false,
+      "swaps": [],
+      "placeholder": true
+    },
+    {
       "id": "npc.old_woman",
       "class": "npc",
       "technique": "ai-ingest",

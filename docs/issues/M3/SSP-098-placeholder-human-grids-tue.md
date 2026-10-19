@@ -2,7 +2,7 @@
 id: SSP-098
 title: "Author placeholder grids for businessman, litterbug and market trader"
 milestone: M3
-status: todo
+status: done
 type: asset
 estimate: M
 labels: [type:asset, area:assets, area:test, size:M]

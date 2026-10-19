@@ -1304,6 +1304,8 @@ Every recipe starts and ends the same way:
 6. Keep the figure within 18×22 inside the 24×24 cell, with feet on a consistent baseline (pivot).
 7. Run the common end steps. Read the sheet at 4× next to `npc.old_woman` and Bessie h00 to check the figure is on-model.
 
+**M3 placeholders (before step 1).** Until the Codex sheet exists, a person ships as a hand-authored `grid` placeholder (`"placeholder": true`) under its final frame IDs. `tools/sprites/placeholder_people.py` (SSP-098) emits the adult cast's 65-frame grids from a templated body, per-view heads and the ART_BIBLE §7.3 colour keys, and prints the 18×22 bounds report (`uv run --project tools/forge python tools/sprites/placeholder_people.py [--write] [id …]`). It is a one-off starting point: the committed `.sprite.txt` is the truth, so never re-run `--write` over a hand-edited grid. `tools/forge/tests/test_people.py` checks the bounds, pivot row and mirrors of every 24×24 `npc.*` grid.
+
 ### 10.5 Animal (`npc.cat`, `npc.dog_*`, `npc.pigeon`, `npc.seagull`, grids)
 
 1. Write the grid directly, e.g. `assets-src/sprites/npc/cat.sprite.txt`, `cell: 16x16`, with walk 4, sit 2, dart 2 and leap 3 per direction.

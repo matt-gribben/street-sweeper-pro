@@ -73,6 +73,9 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "font.kerbside5x7",
         "haz.speed_bump",
         *LITTER_IDS,
+        "npc.businessman",
+        "npc.litterbug",
+        "npc.market_trader",
         "npc.old_woman",
         "prop.hydrant",
         "prop.lamp_post",
@@ -175,7 +178,7 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
     # stain variants, 12 grime overlay variants, 3 pickups x 2 bob frames and 3 flat placeholders (33 frames);
     # + 200 SSP-068 font frames + the 3 SSP-285 placeholder 9-slice panels + the SSP-070 HUD bar fill (1) and
     # dump ring (9) + the SSP-299 Brush-o-meter (3), needle (1), brush state (11) and off-screen arrows (16).
-    assert sum(len(e.frame_ids()) for e in entries) == 773
+    assert sum(len(e.frame_ids()) for e in entries) == 1085
     assert sum(len(e.frame_ids()) for e in entries if e.asset_class == "litter") == 180
     for e in raw["assets"]:
         assert list(e) == list(FIELDS) + [k for k in OPTIONAL_FIELDS if k in e], "fields in the documented order"

@@ -91,7 +91,8 @@ function checkReplay(name: string, replay: LoadedReplay, level: Level, update: b
   for (const failure of invariantFailures(file.invariants, monitor)) failures.push(`${name}: ${failure}`);
   const summary =
     `${name}: ${file.ticks} ticks, final ${run.finalHash}, events ${JSON.stringify(eventCountsByName(monitor))}, ` +
-    `min HP ${monitor.minHp}, max solid overlap ${monitor.maxSolidOverlapM.toFixed(4)} m`;
+    `min HP ${monitor.minHp}, max solid overlap ${monitor.maxSolidOverlapM.toFixed(4)} m, ` +
+    `score ${monitor.finalScore}, litter collected ${monitor.finalLitterCollected}`;
   return { failures, checkpoints: run.checkpoints, summary };
 }
 
@@ -212,17 +213,20 @@ describe('synthetic replay (built in, hand-built level)', () => {
     expect(result.failures[0]).toContain('3 of 6 checkpoints differ');
   });
 
-  it('fails an invariant the run breaks, and refuses the M2-only keys', () => {
+  it('fails an invariant the run breaks, including the M2 score and litter minimums (SSP-065)', () => {
+    // The synthetic town has no litter or grime, so its replay ends on 0 points with nothing collected.
     const strict: ReplayFile = {
       ...recorded,
       invariants: { minEvents: { Impact: 1 }, minScore: 1, minLitterCollected: 20 },
     };
     const result = checkReplay('strict', reload(strict), level, false);
     expect(result.failures).toEqual([
-      'strict: invariant minScore is not supported until scoring exists (M2, SSP-065)',
-      'strict: invariant minLitterCollected is not supported until litter exists (M2, SSP-065)',
+      'strict: minScore: the replay ended on 0 points, expected at least 1',
+      'strict: minLitterCollected: 0 item(s) collected over the replay, expected at least 20',
       'strict: minEvents.Impact: 0 event(s) over the replay, expected at least 1',
     ]);
+    const met: ReplayFile = { ...recorded, invariants: { minScore: 0, minLitterCollected: 0 } };
+    expect(checkReplay('met', reload(met), level, false).failures).toEqual([]);
   });
 
   it('allocates nothing per tick (TECHNICAL_DESIGN §17 heap-delta check)', {

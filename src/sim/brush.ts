@@ -7,7 +7,7 @@
 //     spin timers and writes VehicleState.brushDown / brushPos / rpm. `brushDown` is the top-speed flag: it is
 //     true from the tick lowering starts until the brush is fully raised again, so the 6.0 m/s brush-down cap
 //     applies through Lowering, SpinningUp, Collecting, Bulldozing and Raising (GDD §8.2).
-//   - stepBrushLitter, phase 5, after beginLitterTick and before stepLitter (SSP-065 wires it in): gutter,
+//   - stepBrushLitter, phase 5, after beginLitterTick and before stepLitter (wired by SSP-065): gutter,
 //     suction, fling, inlet and bulldozer against the LitterField. It sets one-tick pushes that stepLitter then
 //     applies, so an item moves on the tick the brush acts on it.
 //
@@ -115,6 +115,41 @@ export type Brush = {
   readonly localBox: Aabb;
   readonly worldBox: Aabb;
   readonly hits: Int32Array;
+  /** True when this tick's brush step found the brush collecting (isBrushCollecting); set by stepBrushLitter. */
+  collecting: boolean;
+  /**
+   * The tuning the copied numbers below (and `localBox`) were taken from, or null before the first brush step.
+   * stepBrushLitter re-reads them whenever `tuning` is a different object (setWorldTuning replaces it).
+   */
+  constsFor: Tuning | null;
+  /**
+   * The tuning numbers stepBrushLitter reads, copied as plain doubles on the Brush (as dirt.ts does), so the
+   * per-tick loads are monomorphic double fields rather than loads from tuning objects, whose mixed integer
+   * and fractional values leave their fields tagged (stores derived from them boxed every tick; SSP-065).
+   */
+  cGutterX: number;
+  cGutterY: number;
+  cGutterR2: number;
+  cSweepIn: number;
+  cSweepBack: number;
+  cSuctionMinX: number;
+  cSuctionMaxX: number;
+  cSuctionMaxY: number;
+  cInletX: number;
+  cInletY: number;
+  cInletMinX: number;
+  cInletMaxX: number;
+  cInletMinY: number;
+  cInletMaxY: number;
+  cPinY: number;
+  cPullMps: number;
+  cCollectMinRpm: number;
+  cCleanPickupMaxMps: number;
+  cFlingRampMps: number;
+  /** Pull scratch: the item's offset to the inlet centre and its length (pullLength). */
+  pullTx: number;
+  pullTy: number;
+  pullDist: number;
 };
 
 /** What render, audio and UI may see: the same object, typed read-only. */
@@ -134,10 +169,11 @@ export function createBrush(tuning: Tuning, seed: number, capacity: number = LIT
   if (!Number.isInteger(capacity) || capacity < 1) {
     throw new Error(`createBrush: capacity must be a positive integer, got ${capacity}`);
   }
-  return {
+  const brush: Brush = {
     state: BrushState.Raised,
     posTicks: 0,
-    rpmTicks: 0,
+    // Fractional first so the field starts as a double: it is fractional while spinning down (§17).
+    rpmTicks: 0.5,
     tuning,
     suctionMult: 1,
     flingThresholdMps: null,
@@ -147,7 +183,33 @@ export function createBrush(tuning: Tuning, seed: number, capacity: number = LIT
     localBox: { minX: 0.5, minY: 0.5, maxX: 0.5, maxY: 0.5 },
     worldBox: { minX: 0.5, minY: 0.5, maxX: 0.5, maxY: 0.5 },
     hits: new Int32Array(capacity),
+    collecting: false,
+    constsFor: null,
+    cGutterX: 0.5,
+    cGutterY: 0.5,
+    cGutterR2: 0.5,
+    cSweepIn: 0.5,
+    cSweepBack: 0.5,
+    cSuctionMinX: 0.5,
+    cSuctionMaxX: 0.5,
+    cSuctionMaxY: 0.5,
+    cInletX: 0.5,
+    cInletY: 0.5,
+    cInletMinX: 0.5,
+    cInletMaxX: 0.5,
+    cInletMinY: 0.5,
+    cInletMaxY: 0.5,
+    cPinY: 0.5,
+    cPullMps: 0.5,
+    cCollectMinRpm: 0.5,
+    cCleanPickupMaxMps: 0.5,
+    cFlingRampMps: 0.5,
+    pullTx: 0.5,
+    pullTy: 0.5,
+    pullDist: 0.5,
   };
+  brush.rpmTicks = 0;
+  return brush;
 }
 
 /** The read-only view of `brush`. No copy: it is the same object. */
@@ -299,6 +361,44 @@ function brushZoneBox(tuning: Tuning, out: Aabb): void {
   out.maxY = maxY + m;
 }
 
+/** brush.pullDist = |(pullTx, pullTy)|. Takes only the Brush, so no double crosses the call. */
+function pullLength(brush: Brush): void {
+  const tx = brush.pullTx;
+  const ty = brush.pullTy;
+  brush.pullDist = sqrt(tx * tx + ty * ty);
+}
+
+/** Copy the numbers stepBrushLitter reads from `brush.tuning` onto the Brush (see Brush.constsFor). */
+function applyBrushConsts(brush: Brush): void {
+  const tuning = brush.tuning;
+  const sw = tuning.sweeping;
+  const g = sw.gutterBrush;
+  const su = sw.suction;
+  const inl = sw.inlet;
+  const bt = tuning.vehicle.sweeper.brush;
+  brush.cGutterX = g.centreXM;
+  brush.cGutterY = g.centreYM;
+  brush.cGutterR2 = g.radiusM * g.radiusM;
+  brush.cSweepIn = g.sweepInMps;
+  brush.cSweepBack = g.sweepBackMps;
+  brush.cSuctionMinX = su.minXM;
+  brush.cSuctionMaxX = su.maxXM;
+  brush.cSuctionMaxY = su.maxYM;
+  brush.cInletX = inl.centreXM;
+  brush.cInletY = inl.centreYM;
+  brush.cInletMinX = inl.centreXM - inl.widthM / 2;
+  brush.cInletMaxX = inl.centreXM + inl.widthM / 2;
+  brush.cInletMinY = inl.centreYM - inl.depthM / 2;
+  brush.cInletMaxY = inl.centreYM + inl.depthM / 2;
+  brush.cPinY = tuning.vehicle.sweeper.body.lengthM / 2 + sw.bulldozer.pinAheadM;
+  brush.cPullMps = su.pullMps;
+  brush.cCollectMinRpm = bt.collectMinRpm;
+  brush.cCleanPickupMaxMps = bt.cleanPickupMaxMps;
+  brush.cFlingRampMps = bt.flingCertainMps - bt.cleanPickupMaxMps;
+  brushZoneBox(tuning, brush.localBox);
+  brush.constsFor = tuning;
+}
+
 /**
  * Phase 5 (see the header): run the brush against `field` for one tick. When the brush is not collecting it
  * only clears the brush flags it left on items. Emits EV.Fling and EV.LitterCollected (and, through
@@ -311,28 +411,39 @@ export function stepBrushLitter(
   hopper: Hopper,
   events: EventQueue,
 ): void {
-  const tuning = brush.tuning;
-  const active = isBrushCollecting(brush, vehicle, tuning);
+  if (brush.constsFor !== brush.tuning) applyBrushConsts(brush);
+  // isBrushCollecting, on the copied collectMinRpm.
+  const st = brush.state;
+  const active =
+    (st === BrushState.Collecting || st === BrushState.Bulldozing) &&
+    vehicle.brushPos === 1 &&
+    vehicle.rpm >= brush.cCollectMinRpm;
+  brush.collecting = active;
   if (!active && !brush.anyFlagged) return;
 
-  const sw = tuning.sweeping;
-  const g = sw.gutterBrush;
-  const su = sw.suction;
-  const inl = sw.inlet;
-  const gcx = g.centreXM;
-  const gcy = g.centreYM;
-  const r2 = g.radiusM * g.radiusM;
-  const icx = inl.centreXM;
-  const icy = inl.centreYM;
-  const inletMinX = icx - inl.widthM / 2;
-  const inletMaxX = icx + inl.widthM / 2;
-  const inletMinY = icy - inl.depthM / 2;
-  const inletMaxY = icy + inl.depthM / 2;
-  const pinY = tuning.vehicle.sweeper.body.lengthM / 2 + sw.bulldozer.pinAheadM;
-  const pull = su.pullMps * vehicle.rpm * brush.suctionMult;
-  const p = flingProbability(brush, tuning, Math.abs(vehicle.vLongMps));
+  const gcx = brush.cGutterX;
+  const gcy = brush.cGutterY;
+  const r2 = brush.cGutterR2;
+  const sweepIn = brush.cSweepIn;
+  const sweepBack = brush.cSweepBack;
+  const suMinX = brush.cSuctionMinX;
+  const suMaxX = brush.cSuctionMaxX;
+  const suMaxY = brush.cSuctionMaxY;
+  const icx = brush.cInletX;
+  const icy = brush.cInletY;
+  const inletMinX = brush.cInletMinX;
+  const inletMaxX = brush.cInletMaxX;
+  const inletMinY = brush.cInletMinY;
+  const inletMaxY = brush.cInletMaxY;
+  const pinY = brush.cPinY;
+  const pull = brush.cPullMps * vehicle.rpm * brush.suctionMult;
+  // flingProbability(brush, tuning, |vLong|), written out inline: a call that V8 does not inline boxes its
+  // double argument and result (16 B each, every collecting tick; found by the World heap check, SSP-065).
+  const t0 = brush.flingThresholdMps ?? brush.cCleanPickupMaxMps;
+  const speed = vehicle.vLongMps < 0 ? -vehicle.vLongMps : vehicle.vLongMps;
+  const ramp = (speed - t0) / brush.cFlingRampMps;
+  const p = ramp > 0 ? (ramp < 1 ? ramp : 1) : 0;
 
-  brushZoneBox(tuning, brush.localBox);
   localRectToWorldAabb(vehicle, brush.localBox, brush.worldBox);
   const hits = brush.hits;
   const n = queryLitter(field, brush.worldBox, hits);
@@ -362,7 +473,7 @@ export function stepBrushLitter(
     const dgy = ly - gcy;
     const inRightCircle = dlx * dlx + dgy * dgy <= r2;
     const inLeftCircle = drx * drx + dgy * dgy <= r2;
-    const inPull = lx >= su.minXM && lx <= su.maxXM && ly >= inletMaxY && ly <= su.maxYM;
+    const inPull = lx >= suMinX && lx <= suMaxX && ly >= inletMaxY && ly <= suMaxY;
     const inInlet = lx >= inletMinX && lx <= inletMaxX && ly >= inletMinY && ly <= inletMaxY;
 
     if (!active || !(inRightCircle || inLeftCircle || inPull || inInlet)) {
@@ -426,17 +537,22 @@ export function stepBrushLitter(
     let pvx = 0;
     let pvy = 0;
     if (inRightCircle) {
-      pvx -= g.sweepInMps;
-      pvy -= g.sweepBackMps;
+      pvx -= sweepIn;
+      pvy -= sweepBack;
     }
     if (inLeftCircle) {
-      pvx += g.sweepInMps;
-      pvy -= g.sweepBackMps;
+      pvx += sweepIn;
+      pvy -= sweepBack;
     }
     if (inPull) {
       const tx = icx - lx;
       const ty = icy - ly;
-      const dist = sqrt(tx * tx + ty * ty);
+      // The length goes through scratch fields: this branch is too rare a call site for V8 to inline sqrt
+      // here, and a call that is not inlined boxes its double argument and result (SSP-065 World heap check).
+      brush.pullTx = tx;
+      brush.pullTy = ty;
+      pullLength(brush);
+      const dist = brush.pullDist;
       if (dist > 0) {
         // Never past the inlet centre in one tick.
         const speed = pull * DT_S < dist ? pull : dist / DT_S;

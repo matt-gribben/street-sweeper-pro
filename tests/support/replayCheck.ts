@@ -46,6 +46,9 @@ export type InvariantMonitor = {
   maxSolidOverlapM: number;
   /** The tick (1-based count) where maxSolidOverlapM was seen, or 0. */
   maxSolidOverlapTick: number;
+  /** The score and the litter collected at the end of the last observed tick (SSP-065). */
+  finalScore: number;
+  finalLitterCollected: number;
 };
 
 export function createInvariantMonitor(level: Level, tuning: Tuning): InvariantMonitor {
@@ -60,6 +63,8 @@ export function createInvariantMonitor(level: Level, tuning: Tuning): InvariantM
       }
       const v = world.vehicle;
       if (v.hp < monitor.minHp) monitor.minHp = v.hp;
+      monitor.finalScore = world.scoring.score;
+      monitor.finalLitterCollected = world.litter.litterCollected;
       box.xM = v.xM;
       box.yM = v.yM;
       box.headingRad = v.headingRad;
@@ -74,6 +79,8 @@ export function createInvariantMonitor(level: Level, tuning: Tuning): InvariantM
     minHp: Number.POSITIVE_INFINITY,
     maxSolidOverlapM: 0,
     maxSolidOverlapTick: 0,
+    finalScore: 0,
+    finalLitterCollected: 0,
   };
   return monitor;
 }
@@ -86,16 +93,24 @@ export function eventCountsByName(monitor: InvariantMonitor): { [name: string]: 
 }
 
 /**
- * Every invariant the run broke, as readable lines; empty when all hold. minScore and minLitterCollected need
- * scoring and litter (M2, SSP-065); until then they fail loudly instead of passing vacuously.
+ * Every invariant the run broke, as readable lines; empty when all hold. minScore and minLitterCollected are
+ * the score and the litter collected at the end of the replay (SSP-065).
  */
 export function invariantFailures(invariants: ReplayInvariants, monitor: InvariantMonitor): string[] {
   const failures: string[] = [];
-  if (invariants.minScore !== undefined) {
-    failures.push('invariant minScore is not supported until scoring exists (M2, SSP-065)');
+  if (invariants.minScore !== undefined && !(monitor.finalScore >= invariants.minScore)) {
+    failures.push(
+      `minScore: the replay ended on ${monitor.finalScore} points, expected at least ${invariants.minScore}`,
+    );
   }
-  if (invariants.minLitterCollected !== undefined) {
-    failures.push('invariant minLitterCollected is not supported until litter exists (M2, SSP-065)');
+  if (
+    invariants.minLitterCollected !== undefined &&
+    !(monitor.finalLitterCollected >= invariants.minLitterCollected)
+  ) {
+    failures.push(
+      `minLitterCollected: ${monitor.finalLitterCollected} item(s) collected over the replay, expected at least ` +
+        `${invariants.minLitterCollected}`,
+    );
   }
   if (invariants.hpMin !== undefined && !(monitor.minHp >= invariants.hpMin)) {
     failures.push(`hpMin: HP fell to ${monitor.minHp}, below ${invariants.hpMin}`);
@@ -117,8 +132,13 @@ export function invariantFailures(invariants: ReplayInvariants, monitor: Invaria
   return failures;
 }
 
-/** Ticks of replay playback before the measured window, so V8 has optimised the whole tick (§17, SSP-035). */
-export const REPLAY_HEAP_PREWARM_TICKS = 30_000;
+/**
+ * Ticks of replay playback before the measured window, so V8 has optimised the whole tick (§17, SSP-035).
+ * 150,000 since SSP-065: with the M2 phases in the tick, the rarely run paths (the brush only collects on part
+ * of a route, static contacts near lamp posts) were still tiering up after 30,000 ticks, and
+ * m1_drive_puddle_lane read 37 KB pre-final-GC; after 90,000 ticks 25 KB, and from 120,000 on 12.5–12.8 KB.
+ */
+export const REPLAY_HEAP_PREWARM_TICKS = 150_000;
 
 type ReplayStepper = (tick: number) => void;
 

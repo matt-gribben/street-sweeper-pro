@@ -11,14 +11,24 @@
 //   3 Static collision  Bessie vs merged solids, map boundary and props: SAT/MTV, restitution, damage, EV.Impact
 //                       (collision/resolveStatic.ts over collision/grid.ts, SSP-036)
 //   4 Bodies            empty until M3
-//   5 Brush/litter/water the leaf-pile brush-up hook (hazards.ts, SSP-093); the rest is SSP-065
-//   6 Dirt              empty until M2 (SSP-065)
+//   5 Brush/litter/water beginLitterTick → stepBrushLitter (gutter, suction, fling, inlet, bulldozer; brush.ts)
+//                       → the brush-up rules: stepBrushUpLeaves (hazards.ts) then stepBrushUpSplats (stains.ts)
+//                       → stepLitter (arcs, pushes, drift; litter.ts) → stepWater (hydrant refill, spray;
+//                       water.ts) (SSP-065)
+//   6 Dirt              stepDirt (grime footprint erase, Kerb Hugger; dirt.ts) → cleanStainsInCone (water.ts);
+//                       dust is M3 (SSP-065)
 //   7 NPC               empty until M3 (SSP-080)
 //   8 Traffic           empty until M3 (SSP-089)
-//   9 Scoring/combo/complaints empty until M2 (SSP-065)
+//   9 Scoring/combo/complaints stepScoring (scoring.ts, combo.ts) → stepTidy (tidy.ts); complaints.ts is M3
+//                       (SSP-078) (SSP-065)
 //  10 Shift timer       shift.ts (SSP-062): TOWED, the rollout start, the dump FSM (hopper drain, depot water
 //                       refill, EV.DumpStart/DumpEnd), the 240 s countdown, the knock-off and EV.ShiftEnd
 //  11 Emit events       seal the EventQueue
+//
+// Shift setup (createWorld, SSP-065): every store is allocated once, at its §7.1 capacity (litter 2,000, stains
+// 256, hazards 64), then the shift starts: the initial litter is spawned (spawnInitialLitter), the hazards
+// (spawnHazards, with the oil slicks' paired stains), the grime is laid (initGrime), the frontage tally is
+// counted and attached (initTidy), the tank is filled (refillWater) and the hopper is empty.
 //
 // The EventQueue is reset before phase 1, so every tick starts with it empty. Renderers, audio and UI read
 // the World only through WorldView (read-only types over the same objects; nothing is copied) and never write
@@ -26,7 +36,7 @@
 //
 // Hot path: stepWorld allocates nothing. Scratch objects live on the World, created once by createWorld.
 
-import { type Brush, type BrushView, createBrush, stepBrushState } from './brush.ts';
+import { type Brush, type BrushView, createBrush, stepBrushLitter, stepBrushState } from './brush.ts';
 import { createStaticGrid, type StaticGrid } from './collision/grid.ts';
 import {
   createStaticResolver,
@@ -34,6 +44,7 @@ import {
   resolveStatic,
   type StaticResolver,
 } from './collision/resolveStatic.ts';
+import { createDirt, type Dirt, type DirtView, initGrime, setDirtTuning, stepDirt } from './dirt.ts';
 import type { Entities } from './entities.ts';
 import {
   createEventQueue,
@@ -56,19 +67,30 @@ import {
 import { createHopper, type Hopper, type HopperView, setHopperCapacity } from './hopper.ts';
 import { createInputFrame, type InputFrame } from './inputFrame.ts';
 import { createKerbCrossings, findKerbCrossings, type KerbCrossings } from './kerb.ts';
-import { createLitterField, type LitterField, type LitterFieldView } from './litter.ts';
+import {
+  beginLitterTick,
+  createLitterField,
+  type LitterField,
+  type LitterFieldView,
+  spawnInitialLitter,
+  stepLitter,
+} from './litter.ts';
 import type { Level } from './map.ts';
 import { createStream, type Sfc32 } from './rng.ts';
+import { createScoring, type Scoring, type ScoringView, setScoringTuning, stepScoring } from './scoring.ts';
 import {
   createShift,
   gateShiftInput,
+  isShiftDraining,
   type Shift,
   type ShiftOptions,
   type ShiftView,
   setShiftTuning,
   stepShift,
 } from './shift.ts';
+import { createStainStore, type StainStore, type StainStoreView, stepBrushUpSplats } from './stains.ts';
 import { createSurfaceTable, type SurfaceTable, sampleSurface } from './surface.ts';
+import { createTidy, initTidy, setTidyTuning, stepTidy, type Tidy, type TidyView } from './tidy.ts';
 import { DEFAULT_ENTITIES, type SweeperTuning, type Tuning, tuningsEqual } from './tuning.ts';
 import {
   createVehicleParams,
@@ -78,6 +100,15 @@ import {
   type VehicleState,
   type VehicleSurface,
 } from './vehicle.ts';
+import {
+  cleanStainsInCone,
+  createWater,
+  refillWater,
+  setWaterTuning,
+  stepWater,
+  type Water,
+  type WaterView,
+} from './water.ts';
 
 /** The 11 tick phases, numbered as in TECHNICAL_DESIGN §5.2. */
 export const Phase = {
@@ -119,20 +150,36 @@ export type World = {
   readonly vehicleParams: VehicleParams;
   /**
    * Bessie's hopper (hopper.ts, SSP-058): bulldozer state, drain and LU-dumped counters over
-   * vehicle.hopperLU and vehicleParams.hopperCapacityLU. Dumping (phase 10, shift.ts, SSP-062) drains it;
-   * brush collection (phase 5) adds to it once SSP-065 wires the brush in.
+   * vehicle.hopperLU and vehicleParams.hopperCapacityLU. Empty at shift start. Brush collection (phase 5) adds
+   * to it, hazard jolts (phase 2) spill from it and dumping (phase 10, shift.ts, SSP-062) drains it.
    */
   readonly hopper: Hopper;
   /**
-   * Bessie's brush (brush.ts, SSP-059). Phase 2 runs its state machine (and so the brush-down top speed); its
-   * litter step (gutter, suction, fling, inlet, bulldozer) joins phase 5 with the LitterField in SSP-065.
+   * Bessie's brush (brush.ts, SSP-059). Phase 2 runs its state machine (and so the brush-down top speed); phase 5
+   * runs its litter step (gutter, suction, fling, inlet, bulldozer) against the LitterField (SSP-065).
    */
   readonly brush: Brush;
   /**
-   * The LitterField (litter.ts). Until SSP-065 spawns the shift's litter into it and wires the brush, it holds
-   * only the litter hazard jolts spill out of the hopper (SSP-093).
+   * The LitterField (litter.ts), capacity 2,000: the shift's initial litter (spawnInitialLitter at shift start)
+   * plus dynamic litter (hazard spills, SSP-093). Phase 5 moves and collects it.
    */
   readonly litter: LitterField;
+  /**
+   * The stain store (stains.ts, SSP-061), capacity 256: the oil slicks' paired stains at shift start, and the
+   * dog-mess splats phase 5 makes. Phase 6 sprays stains clean.
+   */
+  readonly stains: StainStore;
+  /**
+   * Bessie's water system (water.ts, SSP-061) over vehicle.water: full at shift start; phase 5 runs the hydrant
+   * refill and the spray, phase 6 the cone's stain cleaning; the shift's depot dump refills it.
+   */
+  readonly water: Water;
+  /** The grime mask and its counters (dirt.ts, SSP-060): laid at shift start, erased in phase 6. */
+  readonly dirt: Dirt;
+  /** Score, combo chain and their parts (scoring.ts, combo.ts, SSP-063), stepped in phase 9. */
+  readonly scoring: Scoring;
+  /** Tidy %, stars and the frontages' clean % and Clean Sweeps (tidy.ts, SSP-064), stepped in phase 9. */
+  readonly tidy: Tidy;
   /**
    * The hazard store (hazards.ts, SSP-093), spawned at shift start from the level's speed bumps and compiled
    * `hazards` spec. Phase 2 reads its grip overrides and applies its jolts and hard stop.
@@ -176,6 +223,11 @@ export type WorldView = {
   readonly hopper: HopperView;
   readonly brush: BrushView;
   readonly litter: LitterFieldView;
+  readonly stains: StainStoreView;
+  readonly water: WaterView;
+  readonly dirt: DirtView;
+  readonly scoring: ScoringView;
+  readonly tidy: TidyView;
   readonly hazards: HazardStoreView;
   readonly surface: Readonly<VehicleSurface>;
   readonly events: ReadonlyEventQueue;
@@ -190,9 +242,12 @@ export type WorldView = {
  * tuning is passed in, never imported, so the dev panel can supply an edited copy (§8). `shift` holds the
  * shift start parameters (ShiftOptions: `firstPlay`, default false); the shift starts in its rollout.
  * `entities` is the validated entities.json; it defaults to the committed file (DEFAULT_ENTITIES), which no
- * caller edits. Bessie spawns at the level's player start (body centre, heading), stationary. The hazards are
- * spawned (spawnHazards: speed bumps, placed, random on the `hazards` stream). The event queue starts empty
- * and sealed.
+ * caller edits. Bessie spawns at the level's player start (body centre, heading), stationary, with an empty
+ * hopper and a full tank. Shift setup (SSP-065), in this order: the initial litter (spawnInitialLitter on the
+ * `litter` stream), the hazards (spawnHazards: speed bumps, placed, random on the `hazards` stream, each oil
+ * slick with its paired stain), the grime (initGrime on the `grime` stream), the frontage tally (initTidy),
+ * the full tank (refillWater). Each step draws on its own stream, so the order changes no layout; it matters
+ * only in that initTidy must follow the litter and the grime. The event queue starts empty and sealed.
  */
 export function createWorld(
   level: Level,
@@ -206,11 +261,23 @@ export function createWorld(
   const { x, y, heading } = level.player;
   const vehicle = createVehicleState(sweeper, x, y, heading);
   const vehicleParams = createVehicleParams(sweeper, tuning.hopper.capacityLu);
+  // A new VehicleState has an empty hopper (hopperLU 0): the shift starts empty.
   const hopper = createHopper(vehicle, vehicleParams, tuning.hopper);
   const litter = createLitterField(level, tuning, entities);
+  const stains = createStainStore(entities, undefined, litter.capacity);
   const eventsRng = createStream(seed >>> 0, 'events');
   const hazards = createHazardStore(level, entities, eventsRng, undefined, litter.capacity);
-  spawnHazards(hazards, level, seed >>> 0);
+  const dirt = createDirt(level, tuning);
+  const scoring = createScoring(tuning, entities);
+  const tidy = createTidy(level, tuning);
+  const water = createWater(vehicle, tuning, level);
+  // Shift setup (see above).
+  spawnInitialLitter(litter, level, seed >>> 0);
+  spawnHazards(hazards, level, seed >>> 0, stains);
+  initGrime(dirt, level, seed >>> 0);
+  initTidy(tidy, dirt, litter);
+  refillWater(water);
+  stains.onPenalty = scoring.penaltyHook;
   const world: World = {
     level,
     tuning,
@@ -220,15 +287,20 @@ export function createWorld(
     vehicle,
     vehicleParams,
     hopper,
-    brush: createBrush(tuning, seed >>> 0),
+    brush: createBrush(tuning, seed >>> 0, litter.capacity),
     litter,
+    stains,
+    water,
+    dirt,
+    scoring,
+    tidy,
     hazards,
     eventsRng,
     surface: { gripPerS: sweeper.lateralGripPerS.asphalt, rollMult: 1 },
     events: createEventQueue(),
     staticGrid: createStaticGrid(level, tuning.propFootprints),
     staticResolver: createStaticResolver(),
-    shift: createShift(level, vehicle, hopper, { vehicle, tuning: tuning.water }, tuning, shift),
+    shift: createShift(level, vehicle, hopper, water, tuning, shift),
     recordInput: null,
     phaseTrace: null,
     surfaceTable: createSurfaceTable(sweeper),
@@ -251,7 +323,9 @@ export function viewWorld(world: World): WorldView {
  * through `world.tuning` and `world.vehicleParams.tuning` each tick, and the per-surface table is refilled in
  * place, so the next tick runs on the new values. Bessie's pose, speed and gear carry on; her HP is clamped to
  * the new health.maxHp, and the hopper takes the new hopper.capacityLu (its LU clamped to it, `full`
- * recomputed without an event) and warnFraction. The static grid was built from `propFootprints` at creation, so a tuning whose
+ * recomputed without an event) and warnFraction; the tank is clamped to the new water.tankUnits (the shift's
+ * depot refill reads the same Water), the Dirt, scoring, combo and Tidy re-read their numbers (running totals,
+ * the chain and Clean Sweeps are kept; every % is recomputed). The static grid was built from `propFootprints` at creation, so a tuning whose
  * footprints differ needs a new World: this throws instead of half-applying it.
  *
  * A replay is `f(seed, district, inputs)` under one tuning, so ticks run after a change no longer reproduce
@@ -271,8 +345,12 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   world.hopper.tuning = tuning.hopper;
   setHopperCapacity(world.hopper, tuning.hopper.capacityLu);
   world.brush.tuning = tuning;
+  setWaterTuning(world.water, tuning);
   setShiftTuning(world.shift, tuning);
   world.litter.flingTuning = tuning.sweeping.fling;
+  setDirtTuning(world.dirt, tuning);
+  setScoringTuning(world.scoring, tuning);
+  setTidyTuning(world.tidy, tuning, world.dirt, world.litter);
 }
 
 /** Advance the world by one tick (DT_S) under `input`, running the 11 phases of §5.2 in order. */
@@ -412,7 +490,7 @@ function emitKerbJolt(events: EventQueue, scratch: KerbCrossings, i: number, v: 
 }
 
 // Phases 3–10 are ordered call sites. Each takes the World so the systems that fill them (named below) slot in
-// without touching stepWorld; until then they intentionally do nothing.
+// without touching stepWorld; phases 4, 7 and 8 intentionally do nothing until M3.
 
 /**
  * Phase 3 (§9.2): resolve Bessie against the static grid (merged solids, map boundary, props) with SAT/MTV,
@@ -428,18 +506,40 @@ function phaseBodies(_world: World): void {
 }
 
 /**
- * Phase 5: brush, litter and water. SSP-093 runs the leaf-pile brush-up hook (stepBrushUpLeaves: a leaf pile
- * driven through with the brush Raised becomes haz.wet_leaves). SSP-065 wires in beginLitterTick →
- * stepBrushLitter (brush.ts) → the brush-up rules (this one and stains.ts's splats) → stepLitter (litter.ts),
- * and water.ts.
+ * Phase 5 (SSP-065): brush, litter and water, against Bessie's pose after phase 3.
+ *   1. beginLitterTick: prevX/prevY for render interpolation, before anything moves litter this tick.
+ *   2. stepBrushLitter (brush.ts): while the brush collects, the fling roll, the bulldozer at a full hopper,
+ *      inlet collection (EV.LitterCollected, addToHopper, maybe EV.HopperFull) and the gutter and suction
+ *      pushes; otherwise it clears the brush flags it left.
+ *   3. The brush-up rules, only while the brush is Raised: leaf piles driven through become haz.wet_leaves
+ *      (stepBrushUpLeaves, hazards.ts, SSP-093), then dog mess becomes stain.splat with its −20 through
+ *      scoring's penalty hook (stepBrushUpSplats, stains.ts).
+ *   4. stepLitter: fling arcs, this tick's pushes and drift.
+ *   5. stepWater: the hydrant refill, then the spray (it touches no litter, so its place in the phase changes
+ *      nothing but the order of its reads).
  */
 function phaseBrushLitter(world: World): void {
-  stepBrushUpLeaves(world.hazards, world.litter, world.brush, world.vehicle, world.tuning.vehicle.sweeper);
+  const sweeper = world.tuning.vehicle.sweeper;
+  const litter = world.litter;
+  beginLitterTick(litter);
+  stepBrushLitter(world.brush, litter, world.vehicle, world.hopper, world.events);
+  stepBrushUpLeaves(world.hazards, litter, world.brush, world.vehicle, sweeper);
+  stepBrushUpSplats(world.stains, litter, world.brush, world.vehicle, sweeper);
+  stepLitter(litter);
+  stepWater(world.water, world.input);
 }
 
-/** Phase 6: dirt (grime footprint erase, stain cleaning, dust). SSP-065. */
-function phaseDirt(_world: World): void {
-  // Filled by SSP-065.
+/**
+ * Phase 6 (SSP-065): dirt. stepDirt erases the grime under the footprint (and, for a brush hugging a kerb, the
+ * gutter grime under it) while the brush collects (isBrushCollecting, as phase 5 recorded it in brush.collecting), and records the tick's cleaned cells, Kerb Hugger contact
+ * and dirty rectangle; then cleanStainsInCone gives every stain in this tick's spray cone one tick of spray
+ * (EV.StainCleaned when one comes clean). Dust is M3.
+ */
+function phaseDirt(world: World): void {
+  // brush.collecting is isBrushCollecting as phase 5's brush step found it; nothing between changes it (the
+  // step may switch Collecting to Bulldozing, which still collects).
+  stepDirt(world.dirt, world.vehicle, world.brush.collecting);
+  cleanStainsInCone(world.water, world.stains, world.events);
 }
 
 /** Phase 7: NPC AI. SSP-080. */
@@ -452,9 +552,16 @@ function phaseTraffic(_world: World): void {
   // Filled by SSP-089.
 }
 
-/** Phase 9: scoring, combo and complaints, consuming this tick's events. SSP-065. */
-function phaseScoring(_world: World): void {
-  // Filled by SSP-065.
+/**
+ * Phase 9 (SSP-065): scoring and combo, then Tidy %. stepScoring reads this tick's facts (the chain timer,
+ * frozen while a dump drains; EV.LitterCollected and EV.StainCleaned in emission order; the Dirt's cleaned
+ * cells and Kerb Hugger contact; the penalties recorded in phases 1–8), then stepTidy recomputes the frontages
+ * whose counters moved, awards Clean Sweeps through the bonus API and updates Tidy % and the stars. The drain
+ * state is read before phase 10 runs. Complaints join in M3 (SSP-078).
+ */
+function phaseScoring(world: World): void {
+  stepScoring(world.scoring, world.events, world.dirt, isShiftDraining(world.shift));
+  stepTidy(world.tidy, world.dirt, world.litter, world.scoring);
 }
 
 /**

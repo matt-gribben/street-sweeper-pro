@@ -334,8 +334,14 @@ export function decodeInputs(text: string, ticks: number): InputLog {
 // State hash
 // ---------------------------------------------------------------------------------------------------------
 
-/** The running FNV-1a hash of one run. state[0] holds it as an Int32 (so it never boxes). */
-export type StateHasher = { readonly state: Int32Array };
+/** Words in a hasher's buffer (absorbTick). */
+const HASH_WORDS = 4096;
+
+/**
+ * The running FNV-1a hash of one run. state[0] holds it as an Int32 (so it never boxes); state[1] is 1 once
+ * the hasher has absorbed the whole grime mask (absorbTick), 0 before. `words` is absorbTick's buffer.
+ */
+export type StateHasher = { readonly state: Int32Array; readonly words: Int32Array };
 
 /** Math.round(v * 1e4) as an Int32: the quantum a float is hashed as. For tests and tools. */
 export function quantise(v: number): number {
@@ -366,7 +372,7 @@ export function fnv1a32Int32s(values: ArrayLike<number>): number {
 
 /** A hasher for a run with `seed`, already holding the header (REPLAY_VERSION, seed). */
 export function createStateHasher(seed: number): StateHasher {
-  const hasher: StateHasher = { state: new Int32Array(1) };
+  const hasher: StateHasher = { state: new Int32Array(2), words: new Int32Array(HASH_WORDS) };
   resetStateHasher(hasher, seed);
   return hasher;
 }
@@ -377,6 +383,7 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
   h = fnvInt32(h, REPLAY_VERSION);
   h = fnvInt32(h, seed | 0);
   hasher.state[0] = h;
+  hasher.state[1] = 0;
 }
 
 /**
@@ -392,79 +399,362 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *   I events.count, then per event in emission order: I type, I entity, F a, F b, F c
  *   I hazards.count, hazards.hazardsSpawned, then per hazard: I kind, col0, row0, col1, row1, flags (SSP-093)
  *   I litter.count, litter.litterSpawned, litter.litterCollected, then per item: F x, y; I kind, flags, rot
- *     (SSP-093; SSP-065 appends the rest of the litter store with the brush and the other M2 state)
+ *     (SSP-093), then (SSP-065) F prevX, prevY, vx, vy; I arcT, arcDur; F arcX0, arcY0, arcX1, arcY1;
+ *     I driftTicks, spawnTile
+ *   SSP-065 appends the rest of the M2 state:
+ *   I brush.state, brush.posTicks; F brush.rpmTicks, brush.suctionMult, brush.flingThresholdMps (I −1 when
+ *     null); B brush.anyFlagged; I brush.rng a, b, c, counter; I eventsRng a, b, c, counter
+ *   B hopper.full; F hopper.luDumpedTotal, luDumpedDepot; I hopper.drainSite; F hopper.drainStartLU;
+ *     I hopper.drainTicks, drainTicksDone; F hopper.drainScheduledLU
+ *   B water.sprayHeld, spraying, refilling; F water.coneApexX, coneApexY
+ *   I stains.count, stainsSpawned, stainsCleaned, then per stain: F x, y; I kind, cleanTicks
+ *   I dirt.initialCells, initialGutterCells, cleanedCells, cleanedGutterCells, tickCleanedCells,
+ *     tickCleanedGutterCells; B dirt.kerbContact, kerbContactLeft, kerbContactRight;
+ *     I dirt.dirtyMinX, dirtyMinY, dirtyMaxX, dirtyMaxY; then the grime mask (below)
+ *   I scoring.score, itemPts, stainPts, grimePts, bonusPts, penaltyPts, kerbContactTicks, kerbHuggerAwards,
+ *     pendingPenalties, pendingPenaltyPts; I combo.chain, multiplier, timerTicks, bestChain, refreshTicks
+ *   I tidy.tidyPpm, stars, cleanSweeps, pledgesMet, then per frontage: I frontageCleanPpm, cleanSwept,
+ *     pledgeMet, and its zone counters grimeInitial, grimeCleaned, litterSpawned, litterCollected
+ *   I shift.phase, ticksRun, timerStartTick, ticksRemaining, knockOffTick, endReason, endTick, dumpState,
+ *     dumpSite, holdTicks; F shift.drainLuDumpedAtStart; B shift.dumpNeedsRelease; I shift.dumpsCompleted
  *
- * world.surface is not hashed: phase 2 resamples it from the pose every tick. Every new store field joins
- * this list, appended, in the commit that adds it (M2 adds the litter store, the grime mask and the shift
- * counters); that commit re-records the replay hashes. Allocation-free: floats are quantised in place and
- * only Int32 values cross the fnvInt32 call boundary.
+ * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
+ * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
+ * bytes of that tick's dirty rectangle (row-major, each byte as an Int32), which holds every cell the tick
+ * changed (dirt.ts). So the stream determines the mask after every tick, at the cost of a few hundred cells a
+ * tick instead of the whole mask (196,608 bytes for Puddle Lane, 786,432 for the Civic Quarter).
+ *
+ * Not hashed: world.surface (phase 2 resamples it from the pose every tick) and per-tick scratch that the
+ * pose determines (query boxes and hit lists, the water and shift axes). Every new store field joins this
+ * list, appended, in the commit that adds it; that commit re-records the replay hashes. Allocation-free:
+ * floats are quantised in place into the hasher's Int32 word buffer, and only the hasher, the World and small
+ * integers cross a call (see mixWords).
  */
 export function absorbTick(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const q = HASH_QUANTUM;
   const v = world.vehicle;
   const input = world.input;
-  const q = HASH_QUANTUM;
+  w[0] = world.tick | 0;
+  w[1] = input.throttle | 0;
+  w[2] = input.brake | 0;
+  w[3] = input.steer | 0;
+  w[4] = input.buttons | 0;
+  w[5] = input.pressed | 0;
+  w[6] = Math.round(v.xM * q) | 0;
+  w[7] = Math.round(v.yM * q) | 0;
+  w[8] = Math.round(v.headingRad * q) | 0;
+  w[9] = Math.round(v.prevXM * q) | 0;
+  w[10] = Math.round(v.prevYM * q) | 0;
+  w[11] = Math.round(v.prevHeadingRad * q) | 0;
+  w[12] = Math.round(v.vLongMps * q) | 0;
+  w[13] = Math.round(v.vLatMps * q) | 0;
+  w[14] = Math.round(v.steerRad * q) | 0;
+  w[15] = Math.round(v.yawRateRadPerS * q) | 0;
+  w[16] = v.gear | 0;
+  w[17] = v.brushDown ? 1 : 0;
+  w[18] = Math.round(v.brushPos * q) | 0;
+  w[19] = Math.round(v.rpm * q) | 0;
+  w[20] = Math.round(v.hp * q) | 0;
+  w[21] = Math.round(v.hopperLU * q) | 0;
+  w[22] = Math.round(v.water * q) | 0;
+  w[23] = Math.round(v.massKg * q) | 0;
+  w[24] = v.reverseHoldTicks | 0;
+  w[25] = v.reverseEngaged ? 1 : 0;
+  mixWords(hasher, 26);
+  absorbEvents(hasher, world);
+  absorbHazards(hasher, world);
+  absorbLitter(hasher, world);
+  absorbBrushHopperWater(hasher, world);
+  absorbStains(hasher, world);
+  absorbDirt(hasher, world);
+  absorbScoring(hasher, world);
+  absorbShift(hasher, world);
+}
+
+// absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
+// so the FNV-1a step runs in one small loop instead of hundreds of inlined call sites: a big function whose
+// fnvInt32 calls V8 stopped inlining (its inlining budget is per function) passed the running hash across
+// those calls, and a hash value outside the small-integer range boxed on every one (SSP-065 heap check). Only
+// the hasher and the World cross these calls. Each section flushes before its buffer could overflow.
+
+/** Mix words[0..n) into the running hash, in order. */
+function mixWords(hasher: StateHasher, n: number): void {
+  const w = hasher.words;
   let h = hasher.state[0] as number;
-  h = fnvInt32(h, world.tick | 0);
-  h = fnvInt32(h, input.throttle | 0);
-  h = fnvInt32(h, input.brake | 0);
-  h = fnvInt32(h, input.steer | 0);
-  h = fnvInt32(h, input.buttons | 0);
-  h = fnvInt32(h, input.pressed | 0);
-  h = fnvInt32(h, Math.round(v.xM * q) | 0);
-  h = fnvInt32(h, Math.round(v.yM * q) | 0);
-  h = fnvInt32(h, Math.round(v.headingRad * q) | 0);
-  h = fnvInt32(h, Math.round(v.prevXM * q) | 0);
-  h = fnvInt32(h, Math.round(v.prevYM * q) | 0);
-  h = fnvInt32(h, Math.round(v.prevHeadingRad * q) | 0);
-  h = fnvInt32(h, Math.round(v.vLongMps * q) | 0);
-  h = fnvInt32(h, Math.round(v.vLatMps * q) | 0);
-  h = fnvInt32(h, Math.round(v.steerRad * q) | 0);
-  h = fnvInt32(h, Math.round(v.yawRateRadPerS * q) | 0);
-  h = fnvInt32(h, v.gear | 0);
-  h = fnvInt32(h, v.brushDown ? 1 : 0);
-  h = fnvInt32(h, Math.round(v.brushPos * q) | 0);
-  h = fnvInt32(h, Math.round(v.rpm * q) | 0);
-  h = fnvInt32(h, Math.round(v.hp * q) | 0);
-  h = fnvInt32(h, Math.round(v.hopperLU * q) | 0);
-  h = fnvInt32(h, Math.round(v.water * q) | 0);
-  h = fnvInt32(h, Math.round(v.massKg * q) | 0);
-  h = fnvInt32(h, v.reverseHoldTicks | 0);
-  h = fnvInt32(h, v.reverseEngaged ? 1 : 0);
-  const events = world.events;
-  const n = events.count;
-  h = fnvInt32(h, n | 0);
   for (let i = 0; i < n; i += 1) {
-    h = fnvInt32(h, (events.type[i] as number) | 0);
-    h = fnvInt32(h, (events.entity[i] as number) | 0);
-    h = fnvInt32(h, Math.round((events.a[i] as number) * q) | 0);
-    h = fnvInt32(h, Math.round((events.b[i] as number) * q) | 0);
-    h = fnvInt32(h, Math.round((events.c[i] as number) * q) | 0);
-  }
-  const hz = world.hazards;
-  const nh = hz.count;
-  h = fnvInt32(h, nh | 0);
-  h = fnvInt32(h, hz.hazardsSpawned | 0);
-  for (let i = 0; i < nh; i += 1) {
-    h = fnvInt32(h, (hz.kind[i] as number) | 0);
-    h = fnvInt32(h, (hz.col0[i] as number) | 0);
-    h = fnvInt32(h, (hz.row0[i] as number) | 0);
-    h = fnvInt32(h, (hz.col1[i] as number) | 0);
-    h = fnvInt32(h, (hz.row1[i] as number) | 0);
-    h = fnvInt32(h, (hz.flags[i] as number) | 0);
-  }
-  const lf = world.litter;
-  const nl = lf.count;
-  h = fnvInt32(h, nl | 0);
-  h = fnvInt32(h, lf.litterSpawned | 0);
-  h = fnvInt32(h, lf.litterCollected | 0);
-  for (let i = 0; i < nl; i += 1) {
-    h = fnvInt32(h, Math.round((lf.x[i] as number) * q) | 0);
-    h = fnvInt32(h, Math.round((lf.y[i] as number) * q) | 0);
-    h = fnvInt32(h, (lf.kind[i] as number) | 0);
-    h = fnvInt32(h, (lf.flags[i] as number) | 0);
-    h = fnvInt32(h, (lf.rot[i] as number) | 0);
+    const x = w[i] as number;
+    h = Math.imul(h ^ (x & 0xff), FNV_PRIME);
+    h = Math.imul(h ^ ((x >>> 8) & 0xff), FNV_PRIME);
+    h = Math.imul(h ^ ((x >>> 16) & 0xff), FNV_PRIME);
+    h = Math.imul(h ^ (x >>> 24), FNV_PRIME);
   }
   hasher.state[0] = h;
+}
+
+/** Words a section may write after its last flush check (the longest per-entity record is 19). */
+const SECTION_SLACK = 32;
+const FLUSH_AT = HASH_WORDS - SECTION_SLACK;
+
+function absorbEvents(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const q = HASH_QUANTUM;
+  const events = world.events;
+  const n = events.count;
+  w[0] = n | 0;
+  let k = 1;
+  for (let i = 0; i < n; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (events.type[i] as number) | 0;
+    w[k + 1] = (events.entity[i] as number) | 0;
+    w[k + 2] = Math.round((events.a[i] as number) * q) | 0;
+    w[k + 3] = Math.round((events.b[i] as number) * q) | 0;
+    w[k + 4] = Math.round((events.c[i] as number) * q) | 0;
+    k += 5;
+  }
+  mixWords(hasher, k);
+}
+
+function absorbHazards(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const hz = world.hazards;
+  const n = hz.count;
+  w[0] = n | 0;
+  w[1] = hz.hazardsSpawned | 0;
+  let k = 2;
+  for (let i = 0; i < n; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (hz.kind[i] as number) | 0;
+    w[k + 1] = (hz.col0[i] as number) | 0;
+    w[k + 2] = (hz.row0[i] as number) | 0;
+    w[k + 3] = (hz.col1[i] as number) | 0;
+    w[k + 4] = (hz.row1[i] as number) | 0;
+    w[k + 5] = (hz.flags[i] as number) | 0;
+    k += 6;
+  }
+  mixWords(hasher, k);
+}
+
+function absorbLitter(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const q = HASH_QUANTUM;
+  const lf = world.litter;
+  const n = lf.count;
+  w[0] = n | 0;
+  w[1] = lf.litterSpawned | 0;
+  w[2] = lf.litterCollected | 0;
+  let k = 3;
+  for (let i = 0; i < n; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = Math.round((lf.x[i] as number) * q) | 0;
+    w[k + 1] = Math.round((lf.y[i] as number) * q) | 0;
+    w[k + 2] = (lf.kind[i] as number) | 0;
+    w[k + 3] = (lf.flags[i] as number) | 0;
+    w[k + 4] = (lf.rot[i] as number) | 0;
+    w[k + 5] = Math.round((lf.prevX[i] as number) * q) | 0;
+    w[k + 6] = Math.round((lf.prevY[i] as number) * q) | 0;
+    w[k + 7] = Math.round((lf.vx[i] as number) * q) | 0;
+    w[k + 8] = Math.round((lf.vy[i] as number) * q) | 0;
+    w[k + 9] = (lf.arcT[i] as number) | 0;
+    w[k + 10] = (lf.arcDur[i] as number) | 0;
+    w[k + 11] = Math.round((lf.arcX0[i] as number) * q) | 0;
+    w[k + 12] = Math.round((lf.arcY0[i] as number) * q) | 0;
+    w[k + 13] = Math.round((lf.arcX1[i] as number) * q) | 0;
+    w[k + 14] = Math.round((lf.arcY1[i] as number) * q) | 0;
+    w[k + 15] = (lf.driftTicks[i] as number) | 0;
+    w[k + 16] = (lf.spawnTile[i] as number) | 0;
+    k += 17;
+  }
+  mixWords(hasher, k);
+}
+
+function absorbBrushHopperWater(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const q = HASH_QUANTUM;
+  const b = world.brush;
+  w[0] = b.state | 0;
+  w[1] = b.posTicks | 0;
+  w[2] = Math.round(b.rpmTicks * q) | 0;
+  w[3] = Math.round(b.suctionMult * q) | 0;
+  const t0 = b.flingThresholdMps;
+  w[4] = t0 === null ? -1 : Math.round(t0 * q) | 0;
+  w[5] = b.anyFlagged ? 1 : 0;
+  const r = b.rng;
+  w[6] = r.a | 0;
+  w[7] = r.b | 0;
+  w[8] = r.c | 0;
+  w[9] = r.counter | 0;
+  const e = world.eventsRng;
+  w[10] = e.a | 0;
+  w[11] = e.b | 0;
+  w[12] = e.c | 0;
+  w[13] = e.counter | 0;
+  const hp = world.hopper;
+  w[14] = hp.full ? 1 : 0;
+  w[15] = Math.round(hp.luDumpedTotal * q) | 0;
+  w[16] = Math.round(hp.luDumpedDepot * q) | 0;
+  w[17] = hp.drainSite | 0;
+  w[18] = Math.round(hp.drainStartLU * q) | 0;
+  w[19] = hp.drainTicks | 0;
+  w[20] = hp.drainTicksDone | 0;
+  w[21] = Math.round(hp.drainScheduledLU * q) | 0;
+  const wa = world.water;
+  w[22] = wa.sprayHeld ? 1 : 0;
+  w[23] = wa.spraying ? 1 : 0;
+  w[24] = wa.refilling ? 1 : 0;
+  w[25] = Math.round(wa.coneApexX * q) | 0;
+  w[26] = Math.round(wa.coneApexY * q) | 0;
+  mixWords(hasher, 27);
+}
+
+function absorbStains(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const q = HASH_QUANTUM;
+  const st = world.stains;
+  const n = st.count;
+  w[0] = n | 0;
+  w[1] = st.stainsSpawned | 0;
+  w[2] = st.stainsCleaned | 0;
+  let k = 3;
+  for (let i = 0; i < n; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = Math.round((st.x[i] as number) * q) | 0;
+    w[k + 1] = Math.round((st.y[i] as number) * q) | 0;
+    w[k + 2] = (st.kind[i] as number) | 0;
+    w[k + 3] = (st.cleanTicks[i] as number) | 0;
+    k += 4;
+  }
+  mixWords(hasher, k);
+}
+
+function absorbDirt(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const d = world.dirt;
+  const x0 = d.dirtyMinX | 0;
+  const y0 = d.dirtyMinY | 0;
+  const x1 = d.dirtyMaxX | 0;
+  const y1 = d.dirtyMaxY | 0;
+  w[0] = d.initialCells | 0;
+  w[1] = d.initialGutterCells | 0;
+  w[2] = d.cleanedCells | 0;
+  w[3] = d.cleanedGutterCells | 0;
+  w[4] = d.tickCleanedCells | 0;
+  w[5] = d.tickCleanedGutterCells | 0;
+  w[6] = d.kerbContact ? 1 : 0;
+  w[7] = d.kerbContactLeft ? 1 : 0;
+  w[8] = d.kerbContactRight ? 1 : 0;
+  w[9] = x0;
+  w[10] = y0;
+  w[11] = x1;
+  w[12] = y1;
+  let k = 13;
+  const mask = d.mask;
+  if ((hasher.state[1] as number) === 0) {
+    // The whole mask, once per hasher, as little-endian Int32 words (its length is a multiple of 8).
+    const n = mask.length;
+    for (let i = 0; i < n; i += 4) {
+      if (k > FLUSH_AT) {
+        mixWords(hasher, k);
+        k = 0;
+      }
+      w[k] =
+        (mask[i] as number) |
+        ((mask[i + 1] as number) << 8) |
+        ((mask[i + 2] as number) << 16) |
+        ((mask[i + 3] as number) << 24);
+      k += 1;
+    }
+    hasher.state[1] = 1;
+  }
+  // The dirty rectangle (empty when x1 < x0), each byte as a word.
+  const maskW = d.maskW | 0;
+  for (let y = y0; y <= y1; y += 1) {
+    const row = y * maskW;
+    for (let x = x0; x <= x1; x += 1) {
+      if (k > FLUSH_AT) {
+        mixWords(hasher, k);
+        k = 0;
+      }
+      w[k] = (mask[row + x] as number) | 0;
+      k += 1;
+    }
+  }
+  mixWords(hasher, k);
+}
+
+function absorbScoring(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const s = world.scoring;
+  const c = s.combo;
+  const t = world.tidy;
+  w[0] = s.score | 0;
+  w[1] = s.itemPts | 0;
+  w[2] = s.stainPts | 0;
+  w[3] = s.grimePts | 0;
+  w[4] = s.bonusPts | 0;
+  w[5] = s.penaltyPts | 0;
+  w[6] = s.kerbContactTicks | 0;
+  w[7] = s.kerbHuggerAwards | 0;
+  w[8] = s.pendingPenalties | 0;
+  w[9] = s.pendingPenaltyPts | 0;
+  w[10] = c.chain | 0;
+  w[11] = c.multiplier | 0;
+  w[12] = c.timerTicks | 0;
+  w[13] = c.bestChain | 0;
+  w[14] = c.refreshTicks | 0;
+  w[15] = t.tidyPpm | 0;
+  w[16] = t.stars | 0;
+  w[17] = t.cleanSweeps | 0;
+  w[18] = t.pledgesMet | 0;
+  let k = 19;
+  const z = t.zones;
+  const n = t.frontageCount;
+  for (let i = 0; i < n; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (t.frontageCleanPpm[i] as number) | 0;
+    w[k + 1] = (t.cleanSwept[i] as number) | 0;
+    w[k + 2] = (t.pledgeMet[i] as number) | 0;
+    w[k + 3] = (z.grimeInitial[i] as number) | 0;
+    w[k + 4] = (z.grimeCleaned[i] as number) | 0;
+    w[k + 5] = (z.litterSpawned[i] as number) | 0;
+    w[k + 6] = (z.litterCollected[i] as number) | 0;
+    k += 7;
+  }
+  mixWords(hasher, k);
+}
+
+function absorbShift(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const sh = world.shift;
+  w[0] = sh.phase | 0;
+  w[1] = sh.ticksRun | 0;
+  w[2] = sh.timerStartTick | 0;
+  w[3] = sh.ticksRemaining | 0;
+  w[4] = sh.knockOffTick | 0;
+  w[5] = sh.endReason | 0;
+  w[6] = sh.endTick | 0;
+  w[7] = sh.dumpState | 0;
+  w[8] = sh.dumpSite | 0;
+  w[9] = sh.holdTicks | 0;
+  w[10] = Math.round(sh.drainLuDumpedAtStart * HASH_QUANTUM) | 0;
+  w[11] = sh.dumpNeedsRelease ? 1 : 0;
+  w[12] = sh.dumpsCompleted | 0;
+  mixWords(hasher, 13);
 }
 
 /** The hasher's current value as a uint32. */
@@ -577,7 +867,7 @@ export const EVENT_NAMES = Object.keys(EV) as EventName[];
 
 /**
  * Replay invariants (§18.3). All optional; the runner checks each one present over the whole replay.
- * - minScore, minLitterCollected: need scoring and litter (M2). The M1 runner refuses them (fails loudly).
+ * - minScore, minLitterCollected: the score and the litter collected at the end of the replay (SSP-065).
  * - hpMin: Bessie's HP at the end of every tick is ≥ hpMin.
  * - maxSolidOverlapM: Bessie's body OBB never penetrates a merged solid rect, or the map boundary, deeper
  *   than this many metres at the end of any tick (0.001 is the M1 value: resolution leaves a hairline).

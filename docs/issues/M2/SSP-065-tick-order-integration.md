@@ -2,7 +2,7 @@
 id: SSP-065
 title: "Wire tick phases 5, 6, 9 and 10 into World.step and add the zero-allocation test"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:perf, area:test, size:M, vertical-slice]

@@ -22,8 +22,10 @@
 //   ready         true once assets are loaded and the first complete frame is rendered; specs wait for it;
 //   step(n)       advance n ticks synchronously (also while frozen), then render exactly once;
 //   state()       a JSON-safe snapshot: in a shift, the World's SimSnapshot (src/sim/snapshot.ts: tick,
-//                 bessie { x, y, heading, speed }, hp) plus the camera (focus x, y, height h, look-ahead offset
-//                 leadX, leadY, pinned); in a scene without a sim, the loop's tick count plus the camera;
+//                 bessie { x, y, heading, speed }, hp; since SSP-065 score, tidy, stars, hopper, water, combo,
+//                 litter and grime counts and the frontages' clean %) plus the camera (focus x, y, height h,
+//                 look-ahead offset leadX, leadY, pinned); in a scene without a sim, the loop's tick count plus
+//                 the camera;
 //   readFrame()   the raw W×270 palette-mapped RGBA frame, row 0 at the top (Renderer.readFrame);
 //   setCamera()   pin the render camera at (x, y) sim metres and height h metres, springs off for good;
 //   perf()        draw calls of the last rendered frame (all passes), frames rendered since boot, plus the
@@ -35,7 +37,7 @@
 // and renders once (loop.renderNow). In a shift each loop tick is one World tick (ShiftScene.fixedUpdate calls
 // world.step), so state().tick, the World's tick, advances by exactly n (SSP-046). In the spike scenes a tick
 // advances the counter driving their actors (heading cycle, brush spin) and state() reports the loop's tick
-// count. SimSnapshot grows with the sim: M2 adds score, tidy and hopper (SSP-065), M3 complaints (SSP-078).
+// count. SimSnapshot grows with the sim: M2 added the sweeping state (SSP-065), M3 adds complaints (SSP-078).
 //
 // Timings are recorded once `ready` is true, one sample per requestAnimationFrame callback (the loop measures
 // the callback's CPU time and main.ts records it, so performance.now() stays in src/app/loop.ts); they are

@@ -173,10 +173,22 @@ describe('installTestHooks with test=1', () => {
   it('in a shift, state() is the SimSnapshot plus the camera, and step(n) renders exactly once', () => {
     const target: TestHookTarget = {};
     let simTick = 0;
+    const m2 = {
+      score: 120,
+      tidy: 0.25,
+      stars: 0,
+      hopper: { lu: 12.5, capacityLu: 100, full: false },
+      water: { units: 94, capacity: 100 },
+      combo: { chain: 3, multiplier: 1, timerTicks: 80, bestChain: 7 },
+      litter: { spawned: 130, collected: 9 },
+      grime: { initial: 9000, cleaned: 450 },
+      frontages: [{ id: 'frontage.test', clean: 0.5, cleanSwept: false }],
+    };
     const host = fakeHost(() => ({
       tick: simTick,
       bessie: { x: 7, y: 89 - simTick * 0.01, heading: 0, speed: 0.5 },
       hp: 100,
+      ...m2,
     }));
     const advance = host.advance;
     host.advance = (n) => {
@@ -195,6 +207,7 @@ describe('installTestHooks with test=1', () => {
       tick: 600,
       bessie: { x: 7, y: 83, heading: 0, speed: 0.5 },
       hp: 100,
+      ...m2,
       camera: { x: 0, y: 0, h: 31.5, leadX: 0, leadY: 0, pinned: false },
     });
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);

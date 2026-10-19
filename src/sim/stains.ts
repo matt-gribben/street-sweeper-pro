@@ -17,7 +17,7 @@
 // The sprite variant (gum has 3, splat 2) is a presentation choice: the renderer derives it from the stain's
 // position, so the sim holds no art data.
 //
-// Brush-up rule (stepBrushUpSplats, phase 5 after beginLitterTick and before stepLitter; SSP-065 wires it in):
+// Brush-up rule (stepBrushUpSplats, phase 5 after beginLitterTick and before stepLitter; wired by SSP-065):
 // while the brush is Raised (BrushState.Raised only: during Lowering and Raising litter is neither collected nor
 // driven over, GDD §8.2 table), a litter item whose kind has a `brushUp: { effect: 'stain' }` rule in
 // entities.json (litter.dog_mess → stain.splat, −20) and whose centre is inside Bessie's body OBB (1.75 ×
@@ -92,6 +92,11 @@ export type StainStore = {
   readonly bodyBox: Aabb;
   readonly worldBox: Aabb;
   readonly hits: Int32Array;
+  /** The sweeper tuning `bodyBox` was built from (null before the first brush-up step). */
+  bodyBoxFor: SweeperTuning | null;
+  /** cos and sin of Bessie's heading at the last brush-up step (writeBodyAxes). */
+  axisC: number;
+  axisS: number;
 };
 
 /** What render, audio and UI may see: the same object, typed read-only. */
@@ -166,6 +171,9 @@ export function createStainStore(
     bodyBox: { minX: 0.5, minY: 0.5, maxX: 0.5, maxY: 0.5 },
     worldBox: { minX: 0.5, minY: 0.5, maxX: 0.5, maxY: 0.5 },
     hits: new Int32Array(litterCapacity),
+    bodyBoxFor: null,
+    axisC: 0.5,
+    axisS: 0.5,
   };
 }
 
@@ -241,6 +249,13 @@ export function stainKindIndex(id: StainId): number {
 // Phase 5: the brush-up rule
 // ---------------------------------------------------------------------------------------------------------
 
+/** store.axisC / axisS = cos / sin of Bessie's heading. Objects in, nothing out: no double crosses the call. */
+function writeBodyAxes(store: StainStore, vehicle: Readonly<VehicleState>): void {
+  const h = vehicle.headingRad;
+  store.axisC = cos(h);
+  store.axisS = sin(h);
+}
+
 /**
  * Phase 5, after beginLitterTick and before stepLitter. Does nothing unless `brush` is Raised. Then every litter
  * item of a kind with a brush-up stain rule whose centre is
@@ -255,21 +270,30 @@ export function stepBrushUpSplats(
   sweeper: SweeperTuning,
 ): number {
   if (brush.state !== BrushState.Raised) return 0;
-  const hw = sweeper.body.widthM / 2;
-  const hl = sweeper.body.lengthM / 2;
   const box = store.bodyBox;
-  box.minX = -hw;
-  box.maxX = hw;
-  box.minY = -hl;
-  box.maxY = hl;
+  // The body box depends on the tuning alone, so it is rebuilt only when the tuning changes, and the axes come
+  // through scratch fields: written per tick from tuning loads, or passed to cos/sin calls V8 did not inline,
+  // these boxed doubles every tick (found by the World heap check, SSP-065).
+  if (store.bodyBoxFor !== sweeper) {
+    const hw = sweeper.body.widthM / 2;
+    const hl = sweeper.body.lengthM / 2;
+    box.minX = -hw;
+    box.maxX = hw;
+    box.minY = -hl;
+    box.maxY = hl;
+    store.bodyBoxFor = sweeper;
+  }
+  const hw = box.maxX;
+  const hl = box.maxY;
+  writeBodyAxes(store, vehicle);
   localRectToWorldAabb(vehicle, box, store.worldBox);
   const hits = store.hits;
   const n = queryLitter(field, store.worldBox, hits);
   if (n === 0) return 0;
 
   const kinds = store.kinds;
-  const c = cos(vehicle.headingRad);
-  const s = sin(vehicle.headingRad);
+  const c = store.axisC;
+  const s = store.axisS;
   const px = vehicle.xM;
   const py = vehicle.yM;
   let splats = 0;

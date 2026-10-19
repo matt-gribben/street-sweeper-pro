@@ -1,12 +1,22 @@
 // Replay format, input log and quantised state hash (src/sim/replay.ts; TECHNICAL_DESIGN §18.3, SSP-038), plus
 // the runner's invariant geometry (tests/support/solidOverlap.ts, replayCheck.ts).
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { encodeBase64 } from '../../src/sim/base64.ts';
 import { EV, pushEvent } from '../../src/sim/eventQueue.ts';
 import { addHazard } from '../../src/sim/hazards.ts';
-import { BRAKE_MAX, createInputFrame, PRESSED, STEER_MAX, THROTTLE_MAX } from '../../src/sim/inputFrame.ts';
+import {
+  BRAKE_MAX,
+  BUTTON,
+  createInputFrame,
+  type InputFrame,
+  PRESSED,
+  STEER_MAX,
+  THROTTLE_MAX,
+} from '../../src/sim/inputFrame.ts';
 import { addLitter } from '../../src/sim/litter.ts';
-import { createBlankLevel } from '../../src/sim/map.ts';
+import { createBlankLevel, decodeLevel } from '../../src/sim/map.ts';
 import {
   absorbTick,
   appendInput,
@@ -36,7 +46,8 @@ import {
   serialiseReplay,
   stateHash,
 } from '../../src/sim/replay.ts';
-import { nextInt, sfc32 } from '../../src/sim/rng.ts';
+import { nextInt, nextU32, sfc32 } from '../../src/sim/rng.ts';
+import { addStain } from '../../src/sim/stains.ts';
 import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import type { VehicleState } from '../../src/sim/vehicle.ts';
 import { createWorld, type World } from '../../src/sim/world.ts';
@@ -210,6 +221,19 @@ describe('state hash', () => {
   function handSetWorld(): World {
     const level = createBlankLevel('test.hash', 4, 4);
     level.player = { x: 3.25, y: 4.5, heading: 0.75 };
+    // One frontage over two tiles, so the Tidy's per-frontage fields are in the stream (SSP-065).
+    level.frontages = [
+      {
+        id: 'frontage.hash',
+        pledge: true,
+        rect: [0, 0, 2, 1],
+        face: 'n',
+        cells: [
+          [0, 0],
+          [1, 0],
+        ],
+      },
+    ];
     const world = createWorld(level, 1234, DEFAULT_TUNING);
     world.tick = 7;
     Object.assign(world.input, { throttle: 200, brake: 0, steer: -40, buttons: 1, pressed: 2 });
@@ -220,6 +244,8 @@ describe('state hash', () => {
     addHazard(world.hazards, 2, 1, 1, 2, 3); // haz.pothole over tiles (1, 1)–(1, 2)
     world.hazards.flags[0] = 1;
     addLitter(world.litter, 3, 5.125, 2.75, 2);
+    addStain(world.stains, 1, 2.5, 6.25);
+    world.dirt.mask[100] = 70;
     return world;
   }
 
@@ -321,6 +347,602 @@ describe('state hash', () => {
     expect(stateHash(hasher)).not.toBe(base);
   });
 
+  it('covers the M2 state: litter, brush, hopper, water, stains, grime, scoring, Tidy and shift (SSP-065)', () => {
+    const base = hashOf(handSetWorld());
+    const mutations: [string, (w: World) => void][] = [
+      // The rest of the litter store.
+      [
+        'litter.prevX',
+        (w) => {
+          w.litter.prevX[0] = 5.126;
+        },
+      ],
+      [
+        'litter.prevY',
+        (w) => {
+          w.litter.prevY[0] = 2.751;
+        },
+      ],
+      [
+        'litter.vx',
+        (w) => {
+          w.litter.vx[0] = 0.001;
+        },
+      ],
+      [
+        'litter.vy',
+        (w) => {
+          w.litter.vy[0] = -0.001;
+        },
+      ],
+      [
+        'litter.arcT',
+        (w) => {
+          w.litter.arcT[0] = 1;
+        },
+      ],
+      [
+        'litter.arcDur',
+        (w) => {
+          w.litter.arcDur[0] = 30;
+        },
+      ],
+      [
+        'litter.arcX0',
+        (w) => {
+          w.litter.arcX0[0] = 5.126;
+        },
+      ],
+      [
+        'litter.arcY0',
+        (w) => {
+          w.litter.arcY0[0] = 2.751;
+        },
+      ],
+      [
+        'litter.arcX1',
+        (w) => {
+          w.litter.arcX1[0] = 5.126;
+        },
+      ],
+      [
+        'litter.arcY1',
+        (w) => {
+          w.litter.arcY1[0] = 2.751;
+        },
+      ],
+      [
+        'litter.driftTicks',
+        (w) => {
+          w.litter.driftTicks[0] = 1;
+        },
+      ],
+      [
+        'litter.spawnTile',
+        (w) => {
+          w.litter.spawnTile[0] = 0;
+        },
+      ],
+      // Brush and the RNG streams.
+      [
+        'brush.state',
+        (w) => {
+          w.brush.state = 1;
+        },
+      ],
+      [
+        'brush.posTicks',
+        (w) => {
+          w.brush.posTicks = 1;
+        },
+      ],
+      [
+        'brush.rpmTicks',
+        (w) => {
+          w.brush.rpmTicks = 0.5;
+        },
+      ],
+      [
+        'brush.suctionMult',
+        (w) => {
+          w.brush.suctionMult = 1.25;
+        },
+      ],
+      [
+        'brush.flingThresholdMps',
+        (w) => {
+          w.brush.flingThresholdMps = 6;
+        },
+      ],
+      [
+        'brush.anyFlagged',
+        (w) => {
+          w.brush.anyFlagged = true;
+        },
+      ],
+      ['brush.rng', (w) => void nextU32(w.brush.rng)],
+      ['eventsRng', (w) => void nextU32(w.eventsRng)],
+      // Hopper.
+      [
+        'hopper.full',
+        (w) => {
+          w.hopper.full = true;
+        },
+      ],
+      [
+        'hopper.luDumpedTotal',
+        (w) => {
+          w.hopper.luDumpedTotal = 0.5;
+        },
+      ],
+      [
+        'hopper.luDumpedDepot',
+        (w) => {
+          w.hopper.luDumpedDepot = 0.5;
+        },
+      ],
+      [
+        'hopper.drainSite',
+        (w) => {
+          w.hopper.drainSite = 1;
+        },
+      ],
+      [
+        'hopper.drainStartLU',
+        (w) => {
+          w.hopper.drainStartLU = 10;
+        },
+      ],
+      [
+        'hopper.drainTicks',
+        (w) => {
+          w.hopper.drainTicks = 120;
+        },
+      ],
+      [
+        'hopper.drainTicksDone',
+        (w) => {
+          w.hopper.drainTicksDone = 1;
+        },
+      ],
+      [
+        'hopper.drainScheduledLU',
+        (w) => {
+          w.hopper.drainScheduledLU = 0.25;
+        },
+      ],
+      // Water.
+      [
+        'water.sprayHeld',
+        (w) => {
+          w.water.sprayHeld = true;
+        },
+      ],
+      [
+        'water.spraying',
+        (w) => {
+          w.water.spraying = true;
+        },
+      ],
+      [
+        'water.refilling',
+        (w) => {
+          w.water.refilling = true;
+        },
+      ],
+      [
+        'water.coneApexX',
+        (w) => {
+          w.water.coneApexX = 1.5;
+        },
+      ],
+      [
+        'water.coneApexY',
+        (w) => {
+          w.water.coneApexY = 1.5;
+        },
+      ],
+      // Stains.
+      ['stains: one more', (w) => void addStain(w.stains, 0, 1, 1)],
+      [
+        'stains.x',
+        (w) => {
+          w.stains.x[0] = 2.501;
+        },
+      ],
+      [
+        'stains.y',
+        (w) => {
+          w.stains.y[0] = 6.251;
+        },
+      ],
+      [
+        'stains.kind',
+        (w) => {
+          w.stains.kind[0] = 2;
+        },
+      ],
+      [
+        'stains.cleanTicks',
+        (w) => {
+          w.stains.cleanTicks[0] = 1;
+        },
+      ],
+      [
+        'stains.stainsSpawned',
+        (w) => {
+          w.stains.stainsSpawned += 1;
+        },
+      ],
+      [
+        'stains.stainsCleaned',
+        (w) => {
+          w.stains.stainsCleaned += 1;
+        },
+      ],
+      // Grime counters, the dirty rectangle and the mask.
+      [
+        'dirt.initialCells',
+        (w) => {
+          w.dirt.initialCells += 1;
+        },
+      ],
+      [
+        'dirt.initialGutterCells',
+        (w) => {
+          w.dirt.initialGutterCells += 1;
+        },
+      ],
+      [
+        'dirt.cleanedCells',
+        (w) => {
+          w.dirt.cleanedCells += 1;
+        },
+      ],
+      [
+        'dirt.cleanedGutterCells',
+        (w) => {
+          w.dirt.cleanedGutterCells += 1;
+        },
+      ],
+      [
+        'dirt.tickCleanedCells',
+        (w) => {
+          w.dirt.tickCleanedCells += 1;
+        },
+      ],
+      [
+        'dirt.tickCleanedGutterCells',
+        (w) => {
+          w.dirt.tickCleanedGutterCells += 1;
+        },
+      ],
+      [
+        'dirt.kerbContact',
+        (w) => {
+          w.dirt.kerbContact = true;
+        },
+      ],
+      [
+        'dirt.kerbContactLeft',
+        (w) => {
+          w.dirt.kerbContactLeft = true;
+        },
+      ],
+      [
+        'dirt.kerbContactRight',
+        (w) => {
+          w.dirt.kerbContactRight = true;
+        },
+      ],
+      [
+        'dirt.dirtyMinX',
+        (w) => {
+          w.dirt.dirtyMinX = 3;
+        },
+      ],
+      [
+        'dirt.dirtyMinY',
+        (w) => {
+          w.dirt.dirtyMinY = 3;
+        },
+      ],
+      [
+        'dirt.dirtyMaxX',
+        (w) => {
+          w.dirt.dirtyMaxX = 3;
+        },
+      ],
+      [
+        'dirt.dirtyMaxY',
+        (w) => {
+          w.dirt.dirtyMaxY = 3;
+        },
+      ],
+      [
+        'dirt.mask (a cell outside any dirty rect)',
+        (w) => {
+          w.dirt.mask[1000] = 1;
+        },
+      ],
+      // Scoring and combo.
+      [
+        'scoring.score',
+        (w) => {
+          w.scoring.score += 1;
+        },
+      ],
+      [
+        'scoring.itemPts',
+        (w) => {
+          w.scoring.itemPts += 1;
+        },
+      ],
+      [
+        'scoring.stainPts',
+        (w) => {
+          w.scoring.stainPts += 1;
+        },
+      ],
+      [
+        'scoring.grimePts',
+        (w) => {
+          w.scoring.grimePts += 1;
+        },
+      ],
+      [
+        'scoring.bonusPts',
+        (w) => {
+          w.scoring.bonusPts += 1;
+        },
+      ],
+      [
+        'scoring.penaltyPts',
+        (w) => {
+          w.scoring.penaltyPts -= 1;
+        },
+      ],
+      [
+        'scoring.kerbContactTicks',
+        (w) => {
+          w.scoring.kerbContactTicks += 1;
+        },
+      ],
+      [
+        'scoring.kerbHuggerAwards',
+        (w) => {
+          w.scoring.kerbHuggerAwards += 1;
+        },
+      ],
+      [
+        'scoring.pendingPenalties',
+        (w) => {
+          w.scoring.pendingPenalties += 1;
+        },
+      ],
+      [
+        'scoring.pendingPenaltyPts',
+        (w) => {
+          w.scoring.pendingPenaltyPts -= 20;
+        },
+      ],
+      [
+        'combo.chain',
+        (w) => {
+          w.scoring.combo.chain += 1;
+        },
+      ],
+      [
+        'combo.multiplier',
+        (w) => {
+          w.scoring.combo.multiplier += 1;
+        },
+      ],
+      [
+        'combo.timerTicks',
+        (w) => {
+          w.scoring.combo.timerTicks += 1;
+        },
+      ],
+      [
+        'combo.bestChain',
+        (w) => {
+          w.scoring.combo.bestChain += 1;
+        },
+      ],
+      [
+        'combo.refreshTicks',
+        (w) => {
+          w.scoring.combo.refreshTicks += 1;
+        },
+      ],
+      // Tidy and the frontage tally.
+      [
+        'tidy.tidyPpm',
+        (w) => {
+          w.tidy.tidyPpm += 1;
+        },
+      ],
+      [
+        'tidy.stars',
+        (w) => {
+          w.tidy.stars += 1;
+        },
+      ],
+      [
+        'tidy.cleanSweeps',
+        (w) => {
+          w.tidy.cleanSweeps += 1;
+        },
+      ],
+      [
+        'tidy.pledgesMet',
+        (w) => {
+          w.tidy.pledgesMet += 1;
+        },
+      ],
+      [
+        'tidy.frontageCleanPpm',
+        (w) => {
+          w.tidy.frontageCleanPpm[0] = 1;
+        },
+      ],
+      [
+        'tidy.cleanSwept',
+        (w) => {
+          w.tidy.cleanSwept[0] = 1;
+        },
+      ],
+      [
+        'tidy.pledgeMet',
+        (w) => {
+          w.tidy.pledgeMet[0] = 1 - (w.tidy.pledgeMet[0] as number);
+        },
+      ],
+      [
+        'zones.grimeInitial',
+        (w) => {
+          w.tidy.zones.grimeInitial[0] = 9;
+        },
+      ],
+      [
+        'zones.grimeCleaned',
+        (w) => {
+          w.tidy.zones.grimeCleaned[0] = 9;
+        },
+      ],
+      [
+        'zones.litterSpawned',
+        (w) => {
+          w.tidy.zones.litterSpawned[0] = 9;
+        },
+      ],
+      [
+        'zones.litterCollected',
+        (w) => {
+          w.tidy.zones.litterCollected[0] = 9;
+        },
+      ],
+      // Shift.
+      [
+        'shift.phase',
+        (w) => {
+          w.shift.phase = 1;
+        },
+      ],
+      [
+        'shift.ticksRun',
+        (w) => {
+          w.shift.ticksRun += 1;
+        },
+      ],
+      [
+        'shift.timerStartTick',
+        (w) => {
+          w.shift.timerStartTick = 3;
+        },
+      ],
+      [
+        'shift.ticksRemaining',
+        (w) => {
+          w.shift.ticksRemaining -= 1;
+        },
+      ],
+      [
+        'shift.knockOffTick',
+        (w) => {
+          w.shift.knockOffTick = 3;
+        },
+      ],
+      [
+        'shift.endReason',
+        (w) => {
+          w.shift.endReason = 2;
+        },
+      ],
+      [
+        'shift.endTick',
+        (w) => {
+          w.shift.endTick = 3;
+        },
+      ],
+      [
+        'shift.dumpState',
+        (w) => {
+          w.shift.dumpState = 1;
+        },
+      ],
+      [
+        'shift.dumpSite',
+        (w) => {
+          w.shift.dumpSite = 0;
+        },
+      ],
+      [
+        'shift.holdTicks',
+        (w) => {
+          w.shift.holdTicks = 1;
+        },
+      ],
+      [
+        'shift.drainLuDumpedAtStart',
+        (w) => {
+          w.shift.drainLuDumpedAtStart = 0.5;
+        },
+      ],
+      [
+        'shift.dumpNeedsRelease',
+        (w) => {
+          w.shift.dumpNeedsRelease = true;
+        },
+      ],
+      [
+        'shift.dumpsCompleted',
+        (w) => {
+          w.shift.dumpsCompleted += 1;
+        },
+      ],
+    ];
+    for (const [name, mutate] of mutations) {
+      const world = handSetWorld();
+      mutate(world);
+      expect(hashOf(world), name).not.toBe(base);
+    }
+  });
+
+  it('absorbs the whole grime mask once per hasher, then the dirty rectangle every tick', () => {
+    const world = handSetWorld();
+    // An empty dirty rectangle: only the first absorb sees a change outside it.
+    world.dirt.dirtyMinX = world.dirt.maskW;
+    world.dirt.dirtyMaxX = -1;
+    const once = (w: World): { first: number; second: number } => {
+      const hasher = createStateHasher(w.seed);
+      absorbTick(hasher, w);
+      const first = stateHash(hasher);
+      absorbTick(hasher, w);
+      return { first, second: stateHash(hasher) };
+    };
+    const a = once(world);
+    world.dirt.mask[1000] = 9;
+    const b = once(world);
+    expect(b.first).not.toBe(a.first);
+    // Inside the dirty rectangle a change is seen on every tick.
+    const inRect = handSetWorld();
+    inRect.dirt.dirtyMinX = 0;
+    inRect.dirt.dirtyMinY = 0;
+    inRect.dirt.dirtyMaxX = 3;
+    inRect.dirt.dirtyMaxY = 3;
+    const hasher = createStateHasher(inRect.seed);
+    absorbTick(hasher, inRect);
+    const twin = createStateHasher(inRect.seed);
+    absorbTick(twin, inRect);
+    inRect.dirt.mask[0] = 5; // cell (0, 0), inside the rect
+    absorbTick(hasher, inRect);
+    inRect.dirt.mask[0] = 0;
+    absorbTick(twin, inRect);
+    expect(stateHash(hasher)).not.toBe(stateHash(twin));
+  });
+
   it('ignores differences below the 1e-4 quantum', () => {
     const base = hashOf(handSetWorld());
     const world = handSetWorld();
@@ -362,9 +984,66 @@ describe('state hash', () => {
 
 /**
  * Pinned by 'keeps its canonical byte layout'. SSP-093 appended the hazard store and the LitterField to the
- * hashed state (and a hazard and an item to the hand-set World): c80faedc → 648c18d0.
+ * hashed state (and a hazard and an item to the hand-set World): c80faedc → 648c18d0. SSP-065 appended the
+ * rest of the litter store and the M2 state (brush, hopper, water, stains, grime mask, scoring, Tidy, shift),
+ * and gave the hand-set World a frontage, a stain and a grime cell: 648c18d0 → ada67916.
  */
-const GOLDEN_HAND_SET_HASH = '648c18d0';
+const GOLDEN_HAND_SET_HASH = 'ada67916';
+
+describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
+  const level = decodeLevel(
+    readFileSync(
+      fileURLToPath(new URL('../../public/assets/levels/puddle_lane.json', import.meta.url)),
+      'utf8',
+    ),
+  );
+
+  /** Lower the brush, then drive north up Mangle Street from the depot, spraying every other second. */
+  function frameAt(t: number, out: InputFrame): InputFrame {
+    out.throttle = t < 30 ? 0 : 200;
+    out.brake = 0;
+    out.steer = 0;
+    out.pressed = t === 0 ? PRESSED.BRUSH : 0;
+    out.buttons = ((t / 60) | 0) % 2 === 1 ? BUTTON.SPRAY : 0;
+    return out;
+  }
+
+  /** Run 600 ticks on seed 1001, calling `between` after each tick (before the hash absorbs the next). */
+  function run(between: (world: World, t: number) => void): { hashes: number[]; world: World } {
+    const world = createWorld(level, 1001, DEFAULT_TUNING);
+    const hasher = createStateHasher(world.seed);
+    const frame = createInputFrame();
+    const hashes: number[] = [];
+    for (let t = 0; t < 600; t++) {
+      world.step(frameAt(t, frame));
+      between(world, t);
+      absorbTick(hasher, world);
+      hashes.push(stateHash(hasher));
+    }
+    return { hashes, world };
+  }
+
+  it('gives identical hashes for the same seed and inputs, with litter, grime and scoring all moving', () => {
+    const a = run(() => {});
+    const b = run(() => {});
+    expect(b.hashes).toEqual(a.hashes);
+    // The run exercised the M2 state, so the hash covers something.
+    expect(a.world.litter.count).toBeGreaterThan(100);
+    expect(a.world.dirt.cleanedCells).toBeGreaterThan(0);
+    expect(a.world.scoring.score).toBeGreaterThan(0);
+    expect(a.world.vehicle.water).toBeLessThan(DEFAULT_TUNING.water.tankUnits);
+  });
+
+  it('changes from the tick one litter item is moved by 1e-3 m, and not before', () => {
+    const a = run(() => {});
+    const far = a.world.litter.count - 1; // an item nowhere near Bessie: only the hash can notice the move
+    const moved = run((world, t) => {
+      if (t === 299) world.litter.x[far] = (world.litter.x[far] as number) + 1e-3;
+    });
+    expect(moved.hashes.slice(0, 299)).toEqual(a.hashes.slice(0, 299));
+    for (let t = 299; t < 600; t++) expect(moved.hashes[t], `tick ${t}`).not.toBe(a.hashes[t]);
+  });
+});
 
 describe('checkpoints', () => {
   it('fall every 600 ticks plus the final tick', () => {

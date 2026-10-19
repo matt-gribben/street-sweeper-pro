@@ -205,10 +205,18 @@ describe('ShiftScene', () => {
     expect(shift.simEvents).toBe(world.events);
     // The depot start: the level's player start, heading 0 = north.
     expect(level.player.heading).toBe(0);
-    expect(shift.snapshot()).toEqual({
+    expect(shift.snapshot()).toMatchObject({
       tick: 0,
       bessie: { x: level.player.x, y: level.player.y, heading: 0, speed: 0 },
       hp: 100,
+      // Shift setup (SSP-065): Puddle Lane's 130 items and 9,000 grime cells, an empty hopper, a full tank.
+      score: 0,
+      tidy: 0,
+      hopper: { lu: 0, capacityLu: 100, full: false },
+      water: { units: 100, capacity: 100 },
+      combo: { chain: 0, multiplier: 1, timerTicks: 0, bestChain: 0 },
+      litter: { spawned: 130, collected: 0 },
+      grime: { initial: 9000, cleaned: 0 },
     });
     expect(ctx.root.children.map((g) => g.name)).toEqual(['levelCity', 'bessieSprite']);
     expect(follows).toEqual([[level.player.x, level.player.y, 0, 0, 0]]);
@@ -493,7 +501,21 @@ describe('__ssp hooks bound to the ShiftScene', () => {
     expect(isShiftTestState(state)).toBe(true);
     if (!isShiftTestState(state)) return;
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
-    expect(Object.keys(state).sort()).toEqual(['bessie', 'camera', 'hp', 'tick']);
+    expect(Object.keys(state).sort()).toEqual([
+      'bessie',
+      'camera',
+      'combo',
+      'frontages',
+      'grime',
+      'hopper',
+      'hp',
+      'litter',
+      'score',
+      'stars',
+      'tick',
+      'tidy',
+      'water',
+    ]);
     expect(Object.keys(state.bessie).sort()).toEqual(['heading', 'speed', 'x', 'y']);
     expect(state.tick).toBe(90);
     expect(state.bessie.speed).toBeGreaterThan(0);

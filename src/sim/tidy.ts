@@ -132,15 +132,22 @@ export function tidyPpm(
   litterCollected: number,
   litterSpawned: number,
 ): number {
+  // toPpm, written out inline: this runs per tick (stepTidy, updateFrontage), and a call V8 does not inline
+  // boxes its double argument (16 B; found by the World heap check, SSP-065). Only integers cross the call.
+  let fraction: number;
   if (grimeInitial > 0) {
     const grime = grimeCleaned / grimeInitial;
-    if (litterSpawned > 0) {
-      return toPpm(weights.grimeWeight * grime + weights.litterWeight * (litterCollected / litterSpawned));
-    }
-    return toPpm(grime);
+    fraction =
+      litterSpawned > 0
+        ? weights.grimeWeight * grime + weights.litterWeight * (litterCollected / litterSpawned)
+        : grime;
+  } else if (litterSpawned > 0) {
+    fraction = litterCollected / litterSpawned;
+  } else {
+    return TIDY_PPM;
   }
-  if (litterSpawned > 0) return toPpm(litterCollected / litterSpawned);
-  return TIDY_PPM;
+  const ppm = Math.round(fraction * TIDY_PPM);
+  return ppm < 0 ? 0 : ppm > TIDY_PPM ? TIDY_PPM : ppm;
 }
 
 /** Tidy % (0..1) for the given counts: tidyPpm ÷ 1e6. */

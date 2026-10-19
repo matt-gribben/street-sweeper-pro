@@ -45,7 +45,7 @@
 //
 // Determinism: the selection sorts integer keys, the erase visits cells in row-major order and every branch
 // compares quantised or exactly representable values except the inside tests, which use the same IEEE
-// arithmetic on every V8. The mask and counters join the replay hash with SSP-065.
+// arithmetic on every V8. The mask and counters are in the replay hash (SSP-065).
 //
 // Hot path: stepDirt allocates nothing (no `new`, literals or closures). The pose travels in scratch fields on
 // the Dirt rather than as double arguments, which V8 boxes when it does not inline a call (see kerb.ts).

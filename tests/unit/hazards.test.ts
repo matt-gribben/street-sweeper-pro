@@ -41,6 +41,7 @@ import { createSurfaceTable, NO_SURFACE, sampleSurface } from '../../src/sim/sur
 import { DEFAULT_ENTITIES, DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import { createVehicleParams, createVehicleState } from '../../src/sim/vehicle.ts';
 import { createWorld, stepWorld, type World } from '../../src/sim/world.ts';
+import { endlessShiftTuning } from '../support/endlessShift.ts';
 import { assertHeapDeltaWithinThresholds, measureHeapDelta } from '../support/heapDelta.ts';
 
 const sweeper = DEFAULT_TUNING.vehicle.sweeper;
@@ -635,9 +636,10 @@ describe('shift-start spawn (LEVEL_DESIGN §9.3)', () => {
 describe('hot path', () => {
   it('stepWorld over grip, jolt and bump hazards allocates nothing per tick (§17 heap-delta check)', () => {
     // A circle (radius about 13 m) over puddles, oil, potholes and a speed bump, with an empty hopper (so no
-    // spills, which add litter) and a few crisp packets for the brush-up query to find.
+    // spills, which add litter) and a few crisp packets for the brush-up query to find. The run outlasts the
+    // 240 s shift, so it uses the endless-shift tuning (SSP-062 knocks off and gates the input after time-up).
     const level = roadLevel(40, 30, 40, 30, NORTH);
-    const world = createWorld(level, 7, DEFAULT_TUNING);
+    const world = createWorld(level, 7, endlessShiftTuning());
     const kinds = [PUDDLE, OIL, POTHOLE] as const;
     for (let row = 4; row < 28; row += 4) {
       for (let col = 16; col < 40; col += 4) {

@@ -632,6 +632,15 @@ Full per-entity values are in [ENTITY_CATALOG.md](ENTITY_CATALOG.md). The tiers 
 | **SACKED!** | Council Complaints meter reaches **5** | The shift fails with a comic Mercury headline and you retry. Nothing from the shift is banked (proposed). `jng.sacked`. | "SWEEPER SACKED AFTER GRANNY STANDOFF" |
 | **TOWED!** | Bessie's Dignity reaches **0 HP** | The shift ends immediately, keeps **50% of the score** and earns **no stars**. Proposed: no wage, tipping fees already earned are kept. `jng.towed`. | "BESSIE TOWED: 'SHE'S NOT ANGRY, JUST DISAPPOINTED'" |
 
+*Decided in SSP-079 (lead call, for owner review; `src/sim/shift.ts` phase 10):*
+
+- **Precedence.** A tick on which the 5th complaint lands **and** HP reaches 0 ends **SACKED!**: the meter is checked first. The complaints are the shift's rule and the HP is the vehicle's, and SACKED is the harsher result (nothing banked), so a player cannot escape the sack by crashing on the same tick.
+- **TOWED rounding.** The TOWED score is **floor(0.5 × score)**, rounded down to an integer (towards −∞ for a negative score: −15 → −8). It is computed in integer parts per million of `tuning.json` `endStates.towedScoreKeep`, so no float product can land a hair under a whole number.
+- **SACKED figures.** The tally shows the score as it stood and **no stars**. Nothing is banked; the £ economy is M6.
+- **When they apply.** Both fail states apply during the rollout and while the timer runs. Once the timer has run out, the knock-off has settled the shift as time up: a 5th complaint or 0 HP during the coast to rest no longer means SACKED or TOWED.
+- **Frozen at the end.** On the tick `EV.ShiftEnd` fires (every reason), the sim stops: further ticks change no state and emit no events, so the tally shows the state the shift ended in.
+- **Try Again** is the tally's default focus after every end. From SACKED it restarts the same shift with the intro card skipped in about 0.1 s (`tests/e2e/sacked.spec.ts`).
+
 Design rules for failure (Pillar 4):
 
 - **Telegraph.** Complaint stamps slam onto the HUD with `sfx.complaint_stamp`. At 4 complaints the meter shakes and Pam barks "One more and you're off the van!" At 40 HP Bessie visibly dents and smokes.

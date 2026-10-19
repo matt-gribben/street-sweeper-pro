@@ -10,7 +10,7 @@
 //                       and Bessie's sprites and places the follow camera over her start pose;
 //   fixedUpdate(input)  world.step(input): one tick of the canonical tick order (§5.2), then merges the tick's
 //                       grime dirty rectangle into the city's GroundGrime (SSP-066), until the shift has ended
-//                       (EV.ShiftEnd, after the knock-off coast or on TOWED): from then on the World is no longer
+//                       (EV.ShiftEnd, after the knock-off coast or on SACKED or TOWED): from then on the World is no longer
 //                       stepped, so the state the tally shows is the state the shift ended in (SSP-071);
 //   render(alpha)       lerps Bessie's pose between the last two ticks (shortest arc for the heading), points the
 //                       follow camera at it with her velocity and speed and poses her sprites (the brush overlay's

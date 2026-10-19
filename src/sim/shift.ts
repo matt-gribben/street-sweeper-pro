@@ -1,8 +1,9 @@
-// The shift (TECHNICAL_DESIGN §5.1, §5.2 phase 10, §10.5; GDD §5.3, §8.7; LEVEL_DESIGN §4.1; SSP-062): the
-// 240 s integer-tick timer and its rollout start, the depot-bay and skip dump FSM, the knock-off and the
-// end-of-shift event the scenes turn into the tally.
+// The shift (TECHNICAL_DESIGN §5.1, §5.2 phase 10, §10.5; GDD §5.3, §8.7, §11.3; LEVEL_DESIGN §4.1; SSP-062,
+// SSP-079): the 240 s integer-tick timer and its rollout start, the depot-bay and skip dump FSM, the knock-off,
+// the fail states and the end-of-shift event the scenes turn into the tally.
 //
-// Phases (ShiftPhase). Rollout → Running → KnockOff → Ended; Rollout or Running → Ended directly on TOWED.
+// Phases (ShiftPhase). Rollout → Running → KnockOff → Ended; Rollout or Running → Ended directly on SACKED or
+// TOWED.
 //   - Rollout: the shift starts with Bessie stationary at `@`. The timer starts on the first tick whose input
 //     has throttle > 0, or on tick rolloutTicks (180: tuning.json shift.rolloutS × 60) if no throttle came
 //     first, whichever is earlier (LEVEL_DESIGN §4.1, §13 Q3, decided in SSP-062). The start tick is the
@@ -15,11 +16,22 @@
 //     is ignored (gateShiftInput, phase 1) and Bessie rolls to a stop under the knock-off brake. A dump in
 //     progress is cut short. On the first tick that ends with Bessie at rest (speed below REST_SPEED_MPS) the
 //     shift ends with EV.ShiftEnd (TIME_UP); if she is already at rest when the timer reaches 0, that is the
-//     same tick. Once knocked off, the reason is settled: HP reaching 0 during the roll no longer means TOWED.
-//   - Ended: EV.ShiftEnd has fired (once per shift); endReason and endTick say why and when. The World keeps
-//     stepping (the scene moves to the tally) with the input still gated, so nothing more happens.
-//   - TOWED (the M1 stub of SSP-036, now on this path): in Rollout or Running, the first tick that ends with
-//     HP ≤ 0 ends the shift at once with reason TOWED. Its 50% score and no-stars rules are M3 (SSP-079).
+//     same tick. Once knocked off, the reason is settled: a 5th complaint or HP reaching 0 during the roll no
+//     longer means SACKED or TOWED (decided in SSP-079, GDD §11.3).
+//   - Ended: EV.ShiftEnd has fired (once per shift); endReason and endTick say why and when. The sim is frozen
+//     from the next tick on: world.ts stepWorld runs no phase once the shift has Ended (SSP-079), so the state
+//     the tally shows is the state the shift ended in, however often step() is called after it.
+//   - The fail states (GDD §11.3, SSP-079), checked first in Rollout and Running, against the state phases 2–9
+//     left this tick:
+//       SACKED: the complaints meter (complaints.ts) has reached its cap, tuning.json complaints.meter.sackedAt
+//         (5), which phase 9 filed this tick or earlier;
+//       TOWED: Bessie's HP is ≤ 0 (phase 2 hazards, phase 3 impacts).
+//     Either ends the shift at once (a dump in progress is cut short). Precedence (decided in SSP-079, GDD §11.3):
+//     on a tick that does both, SACKED wins, as the meter is the shift's rule and the HP the vehicle's.
+//   The tally's figures (GDD §11.3, decided in SSP-079): finalShiftScore is the score, except TOWED keeps
+//   floor(endStates.towedScoreKeep × score) (0.5: half, rounded down to an integer; computed in integer ppm, so
+//   no float product can land a hair under a whole number); finalShiftStars is the would-be stars after TIME UP
+//   and 0 after SACKED or TOWED. SACKED keeps the score shown (nothing is banked: £ is M6).
 //   Undumped LU at the end pay nothing (GDD §20 Q10, decided in SSP-062): the tipping-fee base is
 //   hopper.luDumpedDepot, which a drain cut short by the knock-off counts only up to its last tick.
 //
@@ -80,6 +92,9 @@ export const SKIP_SITE_ID = 'site.skip';
  */
 export const REST_SPEED_MPS = 1e-4;
 
+/** towedScoreKeep is held in parts per million, so the TOWED score is integer arithmetic (see the header). */
+const KEEP_PPM = 1_000_000;
+
 /** Where the shift is (see the header). */
 export const ShiftPhase = { Rollout: 0, Running: 1, KnockOff: 2, Ended: 3 } as const;
 export type ShiftPhase = (typeof ShiftPhase)[keyof typeof ShiftPhase];
@@ -100,10 +115,15 @@ export type ShiftOptions = {
 /** The tank a depot bay refills: Bessie's water and the water tuning (its tankUnits is "full"). */
 export type ShiftTank = { readonly vehicle: VehicleState; tuning: WaterTuning };
 
+/** What SACKED reads of the complaints meter (complaints.ts Complaints): the count and its cap. */
+export type ShiftComplaints = { readonly count: number; readonly max: number };
+
 /** One shift. Create with createShift; only the sim writes it. */
 export type Shift = {
   /** Bessie: speed and pose for the site tests, hp for TOWED. */
   readonly vehicle: VehicleState;
+  /** The complaints meter, for SACKED (complaints.ts; phase 9 writes it). */
+  readonly complaints: ShiftComplaints;
   /** Bessie's hopper, which the dump drains. */
   readonly hopper: Hopper;
   /** The tank a depot bay refills. */
@@ -155,6 +175,8 @@ export type Shift = {
   /** Half of Bessie's body width and length (vehicle.sweeper.body), m. */
   halfWidthM: number;
   halfLengthM: number;
+  /** endStates.towedScoreKeep in ppm (500,000): the share of the score TOWED keeps. */
+  towedScoreKeepPpm: number;
 
   /** Bessie's right and forward unit axes at the last Rollout/Running stepShift. */
   rightX: number;
@@ -205,6 +227,7 @@ export type ShiftView = {
   readonly skipReachM: number;
   readonly halfWidthM: number;
   readonly halfLengthM: number;
+  readonly towedScoreKeepPpm: number;
   readonly rightX: number;
   readonly rightY: number;
   readonly forwardX: number;
@@ -221,14 +244,16 @@ function ticksOf(seconds: number): number {
 }
 
 /**
- * A new shift on `level` for Bessie (`vehicle`, `hopper`, `tank`), in Rollout with the full timer. Dump sites
- * are the level's site.depot_bay and site.skip entries, in level order. Setup only: allocates.
+ * A new shift on `level` for Bessie (`vehicle`, `hopper`, `tank`), watching `complaints` for SACKED, in Rollout
+ * with the full timer. Dump sites are the level's site.depot_bay and site.skip entries, in level order. Setup
+ * only: allocates.
  */
 export function createShift(
   level: Level,
   vehicle: VehicleState,
   hopper: Hopper,
   tank: ShiftTank,
+  complaints: ShiftComplaints,
   tuning: Tuning,
   options: ShiftOptions = {},
 ): Shift {
@@ -257,6 +282,7 @@ export function createShift(
   }
   const shift: Shift = {
     vehicle,
+    complaints,
     hopper,
     tank,
     firstPlay: options.firstPlay === true,
@@ -287,6 +313,7 @@ export function createShift(
     skipReachM: 0.5,
     halfWidthM: 0.5,
     halfLengthM: 0.5,
+    towedScoreKeepPpm: 0,
     rightX: 0.5,
     rightY: 0.5,
     forwardX: 0.5,
@@ -332,6 +359,7 @@ export function setShiftTuning(shift: Shift, tuning: Tuning): void {
   shift.skipReachM = d.skip.reachM;
   shift.halfWidthM = sweeper.body.widthM / 2;
   shift.halfLengthM = sweeper.body.lengthM / 2;
+  shift.towedScoreKeepPpm = Math.round(tuning.endStates.towedScoreKeep * KEEP_PPM);
   if (shift.phase === ShiftPhase.Rollout) shift.ticksRemaining = shift.durationTicks;
 }
 
@@ -343,6 +371,34 @@ export function isShiftDraining(shift: ShiftView): boolean {
 /** True once the timer has run out or the shift has ended: phase 1 replaces the driver's input. */
 export function shiftIgnoresInput(shift: ShiftView): boolean {
   return shift.phase === ShiftPhase.KnockOff || shift.phase === ShiftPhase.Ended;
+}
+
+/** True once EV.ShiftEnd has fired: the World is frozen (world.ts stepWorld runs no phase). */
+export function isShiftEnded(shift: ShiftView): boolean {
+  return shift.phase === ShiftPhase.Ended;
+}
+
+/** True when the shift ended in a fail state, SACKED or TOWED (GDD §11.3): Try Again is the tally's focus. */
+export function isShiftFailed(shift: ShiftView): boolean {
+  return shift.endReason === ShiftEndReason.Sacked || shift.endReason === ShiftEndReason.Towed;
+}
+
+/**
+ * The score the tally shows for a shift whose scoring.ts score is `score` (an integer): after TOWED,
+ * floor(towedScoreKeep × score) (half, rounded down, in integer ppm; GDD §11.3); otherwise `score` itself, the
+ * running score while the shift runs. Pure.
+ */
+export function finalShiftScore(shift: ShiftView, score: number): number {
+  if (shift.endReason !== ShiftEndReason.Towed) return score;
+  return Math.floor((score * shift.towedScoreKeepPpm) / KEEP_PPM);
+}
+
+/**
+ * The stars the tally awards for a shift whose would-be stars (tidy.ts, from Tidy %) are `stars`: none after
+ * SACKED or TOWED (GDD §11.3), `stars` otherwise. Pure.
+ */
+export function finalShiftStars(shift: ShiftView, stars: number): number {
+  return isShiftFailed(shift) ? 0 : stars;
 }
 
 /** True while the timer counts down. */
@@ -398,8 +454,9 @@ export function gateShiftInput(shift: Shift, input: InputFrame): void {
 }
 
 /**
- * Phase 10: TOWED, the timer start, the dump FSM, the countdown and the knock-off, in that order (see the
- * header). Reads this tick's (gated) input and Bessie after phases 2–9. Allocation-free.
+ * Phase 10: SACKED, TOWED, the timer start, the dump FSM, the countdown and the knock-off, in that order (see
+ * the header). Reads this tick's (gated) input, the complaints meter after phase 9 and Bessie after phases 2–9.
+ * Allocation-free.
  */
 export function stepShift(shift: Shift, input: Readonly<InputFrame>, events: EventQueue): void {
   const tick = shift.ticksRun;
@@ -407,9 +464,16 @@ export function stepShift(shift: Shift, input: Readonly<InputFrame>, events: Eve
   if (shift.phase === ShiftPhase.Ended) return;
 
   if (shift.phase !== ShiftPhase.KnockOff) {
-    if (shift.vehicle.hp <= 0) {
+    // SACKED before TOWED on a tick that does both (the precedence rule, GDD §11.3).
+    const failed =
+      shift.complaints.count >= shift.complaints.max
+        ? ShiftEndReason.Sacked
+        : shift.vehicle.hp <= 0
+          ? ShiftEndReason.Towed
+          : 0;
+    if (failed !== 0) {
       stopDump(shift, events);
-      endShift(shift, ShiftEndReason.Towed, tick, events);
+      endShift(shift, failed, tick, events);
       return;
     }
     if (shift.phase === ShiftPhase.Rollout && timerStartsOn(shift, input, tick)) {
@@ -518,7 +582,7 @@ function endDump(shift: Shift, completed: boolean, events: EventQueue): void {
   shift.dumpNeedsRelease = true;
 }
 
-/** Cut a dump short (knock-off, TOWED): a drain ends with DumpEnd (cut short), a hold just stops. */
+/** Cut a dump short (knock-off, SACKED, TOWED): a drain ends with DumpEnd (cut short), a hold just stops. */
 function stopDump(shift: Shift, events: EventQueue): void {
   if (shift.dumpState === DumpState.Draining) {
     cancelHopperDrain(shift.hopper);

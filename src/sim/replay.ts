@@ -948,7 +948,9 @@ export type ReplayRun = {
 
 /**
  * Run `log` for `ticks` ticks on a fresh World(level, seed, tuning) and return the checkpoint hashes. Node is
- * the canonical environment (ROADMAP R-09); the same build gives the same hashes in Chromium.
+ * the canonical environment (ROADMAP R-09); the same build gives the same hashes in Chromium. A checkpoint is
+ * keyed by the number of step() calls made, not world.tick: once the shift has ended the World is frozen and
+ * world.tick stops (SSP-079), while each further step still absorbs the frozen state into the running hash.
  */
 export function runReplay(
   level: Level,
@@ -972,7 +974,7 @@ export function runReplay(
     world.step(frame);
     absorbTick(hasher, world);
     if (observe !== null) observe(world);
-    if (world.tick === at[next]) {
+    if (t + 1 === at[next]) {
       hashes[next] = stateHash(hasher);
       next += 1;
     }
@@ -1028,7 +1030,8 @@ export const EVENT_NAMES = Object.keys(EV) as EventName[];
  *   than this many metres at the end of any tick (0.001 is the M1 value: resolution leaves a hairline).
  * - minEvents: per EV name, at least this many events over the whole replay.
  * - shiftEnded (SSP-072): the shift ended inside the replay with this reason (a ShiftEndReason name): exactly
- *   one EV.ShiftEnd, whose reason is this one. The full-shift replay asserts 'TimeUp'.
+ *   one EV.ShiftEnd, whose reason is this one. The full-shift replay asserts 'TimeUp'; SSP-107 records the
+ *   'Sacked' and 'Towed' replays (SSP-079).
  * - minLuDumped (SSP-072): LU dumped over the replay (hopper.luDumpedTotal at the end) is at least the value.
  * - minDumpsCompleted (SSP-072): at least this many dumps drained to the end (EV.DumpEnd with c = 1).
  * - emptyAfterDump (SSP-072): every completed dump leaves the hopper at exactly 0 LU and, at a depot bay, the

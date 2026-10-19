@@ -374,8 +374,8 @@ describe('corners and resolution', () => {
   });
 });
 
-describe('TOWED stub (TECHNICAL_DESIGN §9.2 step 6)', () => {
-  it('HP reaching 0 emits a single EV.ShiftEnd (TOWED); further impacts keep HP at 0 and emit no ShiftEnd', () => {
+describe('TOWED (TECHNICAL_DESIGN §9.2 step 6, SSP-079)', () => {
+  it('HP reaching 0 emits a single EV.ShiftEnd (TOWED); the World is then frozen, so nothing more happens', () => {
     const world = createWorld(eastWall(), 1, noDrag());
     world.vehicle.hp = 36; // exactly one 11 m/s hit
     world.vehicle.vLongMps = 11;
@@ -390,21 +390,20 @@ describe('TOWED stub (TECHNICAL_DESIGN §9.2 step 6)', () => {
     }
     expect(world.shift.endReason).toBe(ShiftEndReason.Towed);
 
-    // Back off and hit again, twice: impacts still happen, HP stays at 0, no second ShiftEnd.
-    let shiftEnds = 0;
-    let impacts = 0;
-    for (let hit = 0; hit < 2; hit++) {
-      world.vehicle.xM = 24;
-      world.vehicle.vLongMps = 11;
-      for (let i = 0; i < 120; i++) {
-        world.step(NEUTRAL);
-        shiftEnds += countEvents(world.events, EV.ShiftEnd);
-        impacts += countEvents(world.events, EV.Impact);
-        expect(world.vehicle.hp).toBe(0);
-      }
+    // Full throttle into the wall for 2 s: the shift has ended, so the sim is frozen (world.ts, SSP-079): no
+    // event (no impact, no second ShiftEnd), HP stays at 0 and Bessie does not move.
+    const tick = world.tick;
+    const x = world.vehicle.xM;
+    const full = frame(THROTTLE_MAX, 0, 0);
+    let events = 0;
+    for (let i = 0; i < 120; i++) {
+      world.step(full);
+      events += world.events.count;
+      expect(world.vehicle.hp).toBe(0);
     }
-    expect(impacts).toBeGreaterThanOrEqual(2);
-    expect(shiftEnds).toBe(0);
+    expect(events).toBe(0);
+    expect(world.tick).toBe(tick);
+    expect(world.vehicle.xM).toBe(x);
     expect(world.shift.endReason).toBe(ShiftEndReason.Towed);
   });
 

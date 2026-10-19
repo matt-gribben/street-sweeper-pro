@@ -6,11 +6,11 @@
 //
 // - The intro card preloads the compiled level (§6.3); the flow keeps it, so Try Again and Back to Briefing fetch
 //   no level (Try Again's new ShiftScene loads only its atlases, well inside GDD §11.3's 3 s).
-// - EV.ShiftEnd arrives on the bus after the knock-off coast (TIME UP) or on TOWED. The ShiftScene stops stepping
-//   its World on that tick, so the snapshot the flow takes there is the state the tally shows, and what
+// - EV.ShiftEnd arrives on the bus after the knock-off coast (TIME UP), or on SACKED or TOWED (SSP-079). The
+//   ShiftScene stops stepping its World on that tick (and the World is frozen from then on anyway), so the snapshot the flow takes there is the state the tally shows, and what
 //   `__ssp.state()` keeps returning while the ShiftScene is still on screen and once the tally is up.
 // - Try Again replaces the tally with a fresh ShiftScene on the same district and seed: the intro is skipped and
-//   the World starts again at tick 0. Back to Briefing replaces it with a fresh intro card (standing in for 'quit'
+//   the World starts again at tick 0, after every end reason (GDD §11.3: from SACKED or TOWED in under 3 s). Back to Briefing replaces it with a fresh intro card (standing in for 'quit'
 //   until a TitleScene exists, GDD §15.1).
 // - Every transition is a SceneManager replace (a push onto an empty stack at boot). A transition that fails is
 //   reported through onError (main.ts logs it) and leaves the old scene on screen.

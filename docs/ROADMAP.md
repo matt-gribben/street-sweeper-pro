@@ -350,7 +350,7 @@ Each milestone has the same shape:
 - [x] `src/sim/world.ts` and `map.ts`: tile types, building columns, surface lookups. *(SSP-032 codec and id tables; SSP-035 World and surface sampling.)*
 - [x] `src/sim/replay.ts`: input log format, state hash quantised to 1e-4. *(SSP-038; first replay SSP-049.)*
 - [x] Fixed tick order steps 1–3 (input, vehicle, static collision) and step 11 (emit events). The other steps exist as empty, ordered calls. *(SSP-035, with kerb jolts; SSP-036 fills step 3.)*
-- [x] Health: 100 HP, with a stub "TOWED!" event at 0 (the end-of-shift flow arrives in M2/M3). *(SSP-036: `EV.ShiftEnd` with reason Towed, once.)*
+- [x] Health: 100 HP, with a stub "TOWED!" event at 0 (the end-of-shift flow arrives in M2/M3). *(SSP-036: `EV.ShiftEnd` with reason Towed, once. Replaced by the real TOWED end state in SSP-079.)*
 
 *Level*
 
@@ -485,7 +485,7 @@ Each milestone has the same shape:
 | Behaviours | One unit test file per behaviour, covering each rule in [ENTITY_CATALOG.md](ENTITY_CATALOG.md): e.g. Doris never yields; horn makes her slower; spray makes her chase at 1.2 m/s with 2 HP per handbag hit. The cat darts at 6–10 m with 40% probability; a hit makes it ride the roof for 3 s. |
 | Penalties | A table-driven test asserts every hit penalty and complaint count against `entities.json`. The police "+1 extra complaint within 15 m" rule is tested when `veh.police` arrives in M6. |
 | Complaints | Horn spam (> 3 honks in 5 s) = 1 complaint. Blocking traffic over 10 s = 1 complaint. Running an occupied zebra = −200 + 1 complaint. 5 complaints = SACKED. |
-| End states | Replays `m3_sacked.json` and `m3_towed.json` reach SACKED and TOWED deterministically. TOWED keeps 50% of the score and awards no stars. |
+| End states | Replays `m3_sacked.json` and `m3_towed.json` reach SACKED and TOWED deterministically. TOWED keeps 50% of the score and awards no stars. *(SSP-079: the SACKED and TOWED transitions, their precedence, the frozen sim, the tally's figures and Try Again; the replays are SSP-107.)* |
 | NPC budget | Stress scene with 80 NPCs + 30 vehicles + 2,000 litter: sim tick stays allocation-free, and its time fits the budget derived from D-08. |
 | Determinism | fast-check property: for any seed and random input log, replaying the same log yields the same state hash. |
 
@@ -496,7 +496,7 @@ Each milestone has the same shape:
 - [ ] `src/sim/traffic.ts`: lane graph following, stopping behind Bessie, honk after 3 s blocked, the 10 s Road Rage complaint, bus stops at `site.bus_stop` for 5 s.
 - [ ] `src/sim/bodies.ts`: knockable impulse bodies with masses and spill counts from `entities.json`.
 - [ ] Hazards in `world.ts`/`vehicle.ts`: grip overrides, jolts, LU spills behind the vehicle, the broken-glass HP drain, open-manhole hard stop. *(SSP-093: the hazard store and spawner, grip overrides, pothole and speed-bump jolts with LU spills, the open-manhole hard stop and the leaf-pile → wet-leaves hook, in `src/sim/hazards.ts`. The broken-glass HP drain is SSP-094.)*
-- [ ] `src/sim/complaints.ts`: 0–5 meter, horn-spam window, SACKED at 5. *(SSP-078: the meter, the horn-spam window with its re-arm rule, the penalty pipeline (`src/sim/penalties.ts`) and the HUD complaints meter. The SACKED transition is SSP-079.)*
+- [x] `src/sim/complaints.ts`: 0–5 meter, horn-spam window, SACKED at 5. *(SSP-078: the meter, the horn-spam window with its re-arm rule, the penalty pipeline (`src/sim/penalties.ts`) and the HUD complaints meter. SSP-079: the SACKED transition in `shift.ts` phase 10.)*
 - [ ] Horn (8 m radius), near miss (+25), Pigeon Scatter (+25), Caught! (+100), dust coughing (−10 per pedestrian per 2 s). *(SSP-078: the HORN edge → `EV.Horn` with its 8 m radius and the Caught! hook; delivering it to NPCs is SSP-082.)*
 - [ ] Power-up spawning (1–3 per shift on pavements) and effects with durations.
 - [ ] Fill in tick order steps 4, 7 and 8. *(SSP-080: step 7, NPC AI: the NPC store, behaviour registry, stimuli, staggered perception and the population controller, in `src/sim/npc/`.)*

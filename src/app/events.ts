@@ -66,7 +66,7 @@ export type ReverseBeeperEvent = SimEventBase & {
   readonly y: number;
 };
 
-/** The shift ended (phase 10, shift.ts, SSP-062): TOWED or TIME_UP, once per shift. */
+/** The shift ended (phase 10, shift.ts, SSP-062, SSP-079): TIME_UP, SACKED or TOWED, once per shift. */
 export type ShiftEndEvent = SimEventBase & {
   readonly type: typeof EV.ShiftEnd;
   readonly reason: ShiftEndReasonValue;

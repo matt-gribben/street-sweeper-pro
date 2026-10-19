@@ -2,7 +2,7 @@
 id: SSP-079
 title: "End shifts on SACKED (5 complaints) and TOWED (0 HP) with correct tally rules"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:gameplay, area:ui, area:test, size:M, vertical-slice]

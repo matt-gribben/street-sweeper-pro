@@ -19,7 +19,8 @@
 // tank every 900 ticks and empties a full hopper over 3 s as a skip would (the shift's dump FSM needs a site;
 // this is the hopper half of it). Complaints are active (SSP-078): she honks four times in the first 80 ticks of
 // every 10 s, so every 10 s brings EV.Horn, a Noise fact through the penalty pipeline, a chain reset and an
-// EV.Complaint, and the harness empties the meter whenever it reaches its cap (5), so complaints keep landing.
+// EV.Complaint, and the harness empties the meter one short of its cap (at 4), so complaints keep landing and
+// SACKED (5, SSP-079) never ends the shift.
 import { describe, expect, it } from 'vitest';
 import { DT_S, TILE_M } from '../../src/sim/constants.ts';
 import { LITTER_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
@@ -163,7 +164,7 @@ function stressRig(): { world: World; step: (t: number) => void } {
     if (world.hopper.full && world.hopper.drainSite === 0) startHopperDrain(world.hopper, DumpSite.Skip, 180);
     if (world.hopper.drainSite !== 0) stepHopperDrain(world.hopper);
     if (t % 900 === 0) refillWater(world.water);
-    if (world.complaints.count >= world.complaints.max) world.complaints.count = 0;
+    if (world.complaints.count >= world.complaints.max - 1) world.complaints.count = 0;
     tend(t);
   };
   return { world, step };

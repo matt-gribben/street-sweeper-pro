@@ -1,20 +1,23 @@
-// The tally page, numbers only (GDD §15.1, §15.3; SSP-071): the end of a shift as plain figures on a
-// `ui.panel_paper` panel, with Try Again (the default focus) and Back to Briefing. The Muckleford Mercury layout,
-// the headline, the £ column and the frontage map replace it in M6 (SSP-192); its final UI art is M4 (SSP-157).
+// The tally page, numbers only (GDD §11.3, §15.1, §15.3; SSP-071, SSP-079): the end of a shift as plain figures
+// on a `ui.panel_paper` panel, with Try Again (the default focus, after a fail state too) and Back to Briefing.
+// The Muckleford Mercury layout, the headline, the £ column and the frontage map replace it in M6 (SSP-192); its
+// final UI art is M4 (SSP-157).
 //
-//   TIME UP!  (or TOWED!, 18 postbox red)
+//   TIME UP!  (or SACKED! / TOWED!, the fail states, in 18 postbox red)
 //   PUDDLE LANE
 //   TIDY                47.3%     Tidy % with one decimal
 //   ITEMS COLLECTED     12 / 40   litter collected / spawned this shift
 //   GRIME CLEANED  300 / 9,000    grime cells cleaned / laid at shift start
-//   SCORE              12,450
-//   STARS                 ★★★     would-be stars from Tidy % (0.60 / 0.80 / 0.92): earned 15 outlined, the rest 04
+//   SCORE              12,450    the final score: floor(0.5 × score) after TOWED (shift.ts finalShiftScore)
+//   STARS                 ★★★     stars from Tidy % (0.60 / 0.80 / 0.92), none after SACKED or TOWED
+//                                 (finalShiftStars): earned 15 outlined, the rest 04
 //   [ → TRY AGAIN       ]
 //   [   BACK TO BRIEFING ]
 //
 // Every figure comes from the SimSnapshot the shift ended with (snapshot.ts, the same object `__ssp.state()`
-// returns while the tally shows), so tests/e2e/flow.spec.ts can check the page against the state. TOWED's tally
-// rules (50% of the score, no stars) are M3 (SSP-079): until then the page shows the figures as they stand.
+// returns while the tally shows), so tests/e2e/flow.spec.ts and tests/e2e/sacked.spec.ts can check the page
+// against the state. The score and stars are the snapshot's shift.finalScore and shift.finalStars, so the fail
+// rules (TOWED keeps half the score, rounded down; SACKED and TOWED earn no stars; GDD §11.3) live in the sim.
 //
 // Pure layout over UiItems (uiItems.ts): TallyScene draws it, the tests rasterise it on the CPU. Text is 00 ink
 // on the paper panel (ART_BIBLE §12.4: the Mercury is 00 on 07). The buttons are a menus.ts Menu (SSP-286): the
@@ -38,6 +41,7 @@ export const TALLY_BUTTON_LABELS: readonly string[] = ['TRY AGAIN', 'BACK TO BRI
 export const TALLY_REASON_TEXT: { readonly [R in SimShiftEndReason]: string } = {
   time_up: 'TIME UP!',
   towed: 'TOWED!',
+  sacked: 'SACKED!',
 };
 
 /** The star glyph (Kerbside 5×7 has it, ART_BIBLE §12.5). */
@@ -49,14 +53,14 @@ export const MAX_STARS = 3;
 /** The figures the page shows, formatted. */
 export type TallyFigures = {
   readonly reason: string;
-  /** The shift ended TOWED (the header turns 18 postbox red). */
-  readonly towed: boolean;
+  /** The shift ended in a fail state, SACKED or TOWED (the header turns 18 postbox red). */
+  readonly failed: boolean;
   readonly district: string;
   readonly tidy: string;
   readonly items: string;
   readonly grime: string;
   readonly score: string;
-  /** Would-be stars, 0..3. */
+  /** Stars awarded, 0..3 (0 after SACKED or TOWED). */
   readonly stars: number;
 };
 
@@ -109,13 +113,13 @@ export function tallyFigures(snapshot: SimSnapshot, districtName: string): Tally
   if (reason === null) throw new Error(`tally: the shift has not ended (phase ${snapshot.shift.phase})`);
   return {
     reason: TALLY_REASON_TEXT[reason],
-    towed: reason === 'towed',
+    failed: reason === 'towed' || reason === 'sacked',
     district: districtName,
     tidy: formatTidyPercent(snapshot.tidy),
     items: formatFraction(snapshot.litter.collected, snapshot.litter.spawned),
     grime: formatFraction(snapshot.grime.cleaned, snapshot.grime.initial),
-    score: formatCount(snapshot.score),
-    stars: Math.max(0, Math.min(MAX_STARS, snapshot.stars)),
+    score: formatCount(snapshot.shift.finalScore ?? snapshot.score),
+    stars: Math.max(0, Math.min(MAX_STARS, snapshot.shift.finalStars ?? snapshot.stars)),
   };
 }
 
@@ -167,7 +171,7 @@ export function tallyPageLayout(
   const right = x + PANEL_W_PX - PAD_X_PX;
   const items: UiItem[] = [
     { kind: 'panel', style: PanelStyle.Paper, x, y, w: PANEL_W_PX, h: PANEL_H_PX },
-    textItem(figures.reason, cx, y + REASON_Y_PX, figures.towed ? POSTBOX_RED : INK, TextAlign.Centre),
+    textItem(figures.reason, cx, y + REASON_Y_PX, figures.failed ? POSTBOX_RED : INK, TextAlign.Centre),
     textItem(figures.district, cx, y + DISTRICT_Y_PX, INK, TextAlign.Centre),
   ];
   const rows = tallyRows(figures);

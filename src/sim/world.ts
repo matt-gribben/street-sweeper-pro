@@ -27,9 +27,14 @@
 //   9 Scoring/combo/complaints stepHornSpam → applyPenalties (complaints.ts, SSP-078: the honk window, then
 //                       the tick's penalty facts: points, complaints, EV.Complaint) → stepScoring (scoring.ts,
 //                       combo.ts: pickups, then the penalties' points and the chain reset) → stepTidy (tidy.ts)
-//  10 Shift timer       shift.ts (SSP-062): TOWED, the rollout start, the dump FSM (hopper drain, depot water
-//                       refill, EV.DumpStart/DumpEnd), the 240 s countdown, the knock-off and EV.ShiftEnd
+//  10 Shift timer       shift.ts (SSP-062, SSP-079): SACKED (5 complaints), then TOWED (HP 0), the rollout
+//                       start, the dump FSM (hopper drain, depot water refill, EV.DumpStart/DumpEnd), the 240 s
+//                       countdown, the knock-off and EV.ShiftEnd
 //  11 Emit events       seal the EventQueue
+//
+// The shift's end freezes the sim (SSP-079): once EV.ShiftEnd has fired (shift.phase Ended, for every reason),
+// stepWorld runs no phase. It only empties the event queue (a frozen step emits nothing, so no reader sees the
+// ShiftEnd tick's events twice); the tick, the input buffer, the recorder and every store stay as the shift ended.
 //
 // Shift setup (createWorld, SSP-065): every store is allocated once, at its §7.1 capacity (litter 2,000, stains
 // 256, hazards 64, NPCs 80, penalty facts 64 per tick), then the shift starts: the initial litter is spawned
@@ -105,6 +110,7 @@ import {
   createShift,
   gateShiftInput,
   isShiftDraining,
+  isShiftEnded,
   type Shift,
   type ShiftOptions,
   type ShiftView,
@@ -243,9 +249,9 @@ export type World = {
   /** Phase-3 scratch; its `log` lists this tick's contacts. */
   readonly staticResolver: StaticResolver;
   /**
-   * The shift (shift.ts, SSP-062): timer, dump FSM and end of shift, run in phase 10. `shift.endReason` says why
-   * the shift ended (0 while it runs); EV.ShiftEnd fires once, on that tick. The World keeps stepping after it
-   * (the scene moves to the tally) with the input gated to the knock-off brake.
+   * The shift (shift.ts, SSP-062, SSP-079): timer, dump FSM, SACKED, TOWED and end of shift, run in phase 10.
+   * `shift.endReason` says why the shift ended (0 while it runs); EV.ShiftEnd fires once, on that tick. From
+   * then on the World is frozen: step() changes no state (see the header).
    */
   readonly shift: Shift;
   /** Phase-1 hook for the replay log (SSP-038). Null until a recorder is attached. */
@@ -327,6 +333,7 @@ export function createWorld(
   initTidy(tidy, dirt, litter);
   refillWater(water);
   const penalties = createPenaltyLog();
+  const complaints = createComplaints(tuning);
   stains.onPenalty = createPenaltyHook(penalties, Offence.Splat);
   // NPCs spawn from the first tick's phase 7 on (the spawner never places one at shift setup).
   const npc = createNpcStore(level);
@@ -348,7 +355,7 @@ export function createWorld(
     scoring,
     tidy,
     penalties,
-    complaints: createComplaints(tuning),
+    complaints,
     hazards,
     eventsRng,
     npc,
@@ -358,7 +365,7 @@ export function createWorld(
     events: createEventQueue(),
     staticGrid: createStaticGrid(level, tuning.propFootprints),
     staticResolver: createStaticResolver(),
-    shift: createShift(level, vehicle, hopper, water, tuning, shift),
+    shift: createShift(level, vehicle, hopper, water, complaints, tuning, shift),
     recordInput: null,
     phaseTrace: null,
     surfaceTable: createSurfaceTable(sweeper),
@@ -413,9 +420,16 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   setComplaintsTuning(world.complaints, tuning);
 }
 
-/** Advance the world by one tick (DT_S) under `input`, running the 11 phases of §5.2 in order. */
+/**
+ * Advance the world by one tick (DT_S) under `input`, running the 11 phases of §5.2 in order. Once the shift
+ * has ended the World is frozen: the call only empties the event queue (see the header).
+ */
 export function stepWorld(world: World, input: Readonly<InputFrame>): void {
   resetEvents(world.events, world.tick);
+  if (isShiftEnded(world.shift)) {
+    sealEvents(world.events);
+    return;
+  }
   const trace = world.phaseTrace;
 
   if (trace !== null) trace(Phase.Input, world);
@@ -460,7 +474,7 @@ export function stepWorld(world: World, input: Readonly<InputFrame>): void {
 
 /**
  * Phase 1: copy the frame field by field (the caller may reuse its object) and hand it to the recorder. Then,
- * once the shift is over (knock-off or ended), replace it with the knock-off brake (shift.ts): the log keeps
+ * once the timer has run out (the knock-off), replace it with the knock-off brake (shift.ts): the log keeps
  * what the player pressed, and every later phase sees the gated frame. Last, the gated frame's HORN edge is
  * consumed: EV.Horn at Bessie's pose as the tick starts, and the honk is marked for phase 9's spam window
  * (complaints.ts stepHornInput, SSP-078).
@@ -649,9 +663,10 @@ function phaseScoring(world: World): void {
 }
 
 /**
- * Phase 10 (shift.ts, SSP-062): TOWED (the first tick that ends with HP at 0, §9.2 step 6), the timer's rollout
- * start, the dump FSM (depot bays and skips: hopper drain, depot water refill, EV.DumpStart/EV.DumpEnd), the
- * countdown and the knock-off, ending in EV.ShiftEnd (TOWED or TIME_UP) once. SACKED is SSP-079 (M3).
+ * Phase 10 (shift.ts, SSP-062, SSP-079): SACKED (the first tick that ends with the complaints meter at 5), else
+ * TOWED (the first tick that ends with HP at 0, §9.2 step 6), the timer's rollout start, the dump FSM (depot
+ * bays and skips: hopper drain, depot water refill, EV.DumpStart/EV.DumpEnd), the countdown and the knock-off,
+ * ending in EV.ShiftEnd (SACKED, TOWED or TIME_UP) once.
  */
 function phaseShiftTimer(world: World): void {
   stepShift(world.shift, world.input, world.events);

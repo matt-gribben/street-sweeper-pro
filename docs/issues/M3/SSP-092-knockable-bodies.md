@@ -2,7 +2,7 @@
 id: SSP-092
 title: "Implement bodies.ts knockable impulse bodies with spills and penalties"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:physics, area:gameplay, area:test, size:M, vertical-slice]

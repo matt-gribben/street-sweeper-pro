@@ -447,6 +447,22 @@ export function localRectToWorldAabb(pose: FlingSource, local: Readonly<Aabb>, o
  * bursts, spills) both use it.
  */
 export function addLitter(field: LitterField, kind: number, xM: number, yM: number, rot: number): number {
+  addAtScratch[0] = xM;
+  addAtScratch[1] = yM;
+  return addLitterAt(field, kind, addAtScratch, rot);
+}
+
+/** addLitter's position, handed to addLitterAt. */
+const addAtScratch = new Float64Array(2);
+
+/**
+ * addLitter with the position in `at[0]`, `at[1]` (metres): the per-tick form, which passes no double, so a
+ * caller in an optimised tick never boxes one (a double argument is boxed when V8 does not inline the call;
+ * eventQueue.ts). The knock spills use it (bodies.ts, SSP-092). Same rules and result as addLitter.
+ */
+export function addLitterAt(field: LitterField, kind: number, at: Float64Array, rot: number): number {
+  const xM = at[0] as number;
+  const yM = at[1] as number;
   if (!(kind >= 0 && kind < LITTER_IDS.length && (kind | 0) === kind)) {
     throw new Error(`addLitter: kind must be a LITTER_IDS index, got ${kind}`);
   }

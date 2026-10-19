@@ -26,7 +26,14 @@
 // they are not sim events: never in an EventQueue, a replay or a hash.
 
 import { Offence } from '../sim/complaints.ts';
-import { LITTER_IDS, type LitterId, STAIN_IDS, type StainId } from '../sim/entities.ts';
+import {
+  KNOCKABLE_IDS,
+  type KnockableId,
+  LITTER_IDS,
+  type LitterId,
+  STAIN_IDS,
+  type StainId,
+} from '../sim/entities.ts';
 import {
   EV,
   type EventType,
@@ -208,6 +215,20 @@ export type HornEvent = SimEventBase & {
   readonly radiusM: number;
 };
 
+/**
+ * Bessie knocked a wheelie bin, cone, A-board, trolley or recycling box (phase 4, bodies.ts, SSP-092): once per
+ * contact episode. `entity` is the body's BodyStore index. Sound: the kind's entities.json `sfx.knock`
+ * (bin_knock or cone_knock, M5).
+ */
+export type KnockEvent = SimEventBase & {
+  readonly type: typeof EV.Knock;
+  /** The contact point, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** What was knocked. */
+  readonly kind: KnockableId;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -225,6 +246,7 @@ export type SimEventByType = {
   [EV.ComboTier]: ComboTierEvent;
   [EV.Complaint]: ComplaintEvent;
   [EV.Horn]: HornEvent;
+  [EV.Knock]: KnockEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -301,6 +323,7 @@ function createPayloads(): Payloads {
     },
     [EV.Complaint]: { type: EV.Complaint, tick: 0, entity: -1, x: 0, y: 0, reason: Offence.Hit },
     [EV.Horn]: { type: EV.Horn, tick: 0, entity: -1, x: 0, y: 0, radiusM: 0 },
+    [EV.Knock]: { type: EV.Knock, tick: 0, entity: -1, x: 0, y: 0, kind: 'prop.wheelie_bin' },
   };
 }
 
@@ -315,6 +338,14 @@ function litterKindOf(c: number, type: EventType, tick: number): LitterId {
   const id = Number.isInteger(c) ? LITTER_IDS[c] : undefined;
   if (id === undefined)
     throw new Error(`EventBus: event type ${type} at tick ${tick} carries unknown litter kind ${c}`);
+  return id;
+}
+
+/** The knockable id carried in a Knock event's `c` (a KNOCKABLE_IDS index); throws on anything else. */
+function knockableKindOf(c: number, tick: number): KnockableId {
+  const id = Number.isInteger(c) ? KNOCKABLE_IDS[c] : undefined;
+  if (id === undefined)
+    throw new Error(`EventBus: event type ${EV.Knock} at tick ${tick} carries unknown knockable kind ${c}`);
   return id;
 }
 
@@ -344,7 +375,8 @@ function isEventType(type: number): type is EventType {
     type === EV.HazardStop ||
     type === EV.ComboTier ||
     type === EV.Complaint ||
-    type === EV.Horn
+    type === EV.Horn ||
+    type === EV.Knock
   );
 }
 
@@ -461,6 +493,7 @@ export class EventBus implements UiEventSink, PauseEventSink {
     [EV.ComboTier]: [],
     [EV.Complaint]: [],
     [EV.Horn]: [],
+    [EV.Knock]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -724,6 +757,16 @@ export class EventBus implements UiEventSink, PauseEventSink {
         e.y = b;
         e.radiusM = c;
         this.emit(EV.Horn, e);
+        return;
+      }
+      case EV.Knock: {
+        const e = this.payloads[EV.Knock];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.kind = knockableKindOf(c, tick);
+        this.emit(EV.Knock, e);
         return;
       }
     }

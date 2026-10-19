@@ -403,25 +403,49 @@ describe('road markings (MARKING, TECHNICAL_DESIGN §15.2)', () => {
 });
 
 describe('L014 dead ends', () => {
-  it('measures a cul-de-sac in tiles from the road it leaves, whatever the road widths', () => {
-    for (const roadW of [2, 3, 4, 5]) {
-      for (const stubW of [2, 3]) {
-        for (const depth of [5, 9]) {
-          const w = 30;
-          const h = 1 + roadW + depth + 1;
-          const mask = new Uint8Array(w * h);
-          for (let y = 1; y < 1 + roadW; y += 1) mask.fill(1, y * w, y * w + w);
-          for (let y = 1 + roadW; y < 1 + roadW + depth; y += 1) mask.fill(1, y * w + 10, y * w + 10 + stubW);
-          const found = findDeadEnds(mask, w, h);
-          if (depth === 5) expect(found, `road ${roadW} stub ${stubW}`).toEqual([]);
-          else {
-            expect(found, `road ${roadW} stub ${stubW}`).toHaveLength(1);
-            // Within a tile of the true depth (Zhang–Suen puts even-width centre lines off-centre).
-            expect(Math.abs((found[0]?.tiles ?? 0) - depth)).toBeLessThanOrEqual(1);
+  it('measures a cul-de-sac in tiles from the edge of the road it leaves, whatever the road widths', () => {
+    // Even widths put the Zhang–Suen centre line half a tile off-centre; the depth must still be exact, so
+    // 6 tiles passes and 7 fails off every road width, stub width and stub position (both parities).
+    for (const roadW of [2, 3, 4, 5, 6]) {
+      for (const stubW of [2, 3, 4]) {
+        for (const x0 of [10, 11]) {
+          for (const depth of [5, 6, 7, 9]) {
+            const w = 30;
+            const h = 1 + roadW + depth + 1;
+            const mask = new Uint8Array(w * h);
+            for (let y = 1; y < 1 + roadW; y += 1) mask.fill(1, y * w, y * w + w);
+            const top = 1 + roadW;
+            for (let y = top; y < top + depth; y += 1) mask.fill(1, y * w + x0, y * w + x0 + stubW);
+            const tiles = findDeadEnds(mask, w, h).map((d) => d.tiles);
+            const label = `road ${roadW} stub ${stubW} at x ${x0} depth ${depth}`;
+            expect(tiles, label).toEqual(depth <= 6 ? [] : [depth]);
           }
         }
       }
     }
+  });
+
+  it('measures the issue repro exactly: a 3-wide stub 6 deep off a 4-wide road passes', () => {
+    const w = 30;
+    const h = 13;
+    const mask = new Uint8Array(w * h);
+    for (let y = 1; y <= 4; y += 1) mask.fill(1, y * w, y * w + w);
+    for (let y = 5; y <= 10; y += 1) mask.fill(1, y * w + 10, y * w + 13);
+    expect(findDeadEnds(mask, w, h)).toEqual([]);
+    for (let x = 10; x <= 12; x += 1) mask[11 * w + x] = 1;
+    expect(findDeadEnds(mask, w, h)).toEqual([{ x: 11, y: 11, tiles: 7 }]);
+  });
+
+  it('measures an L-shaped cul-de-sac along its bend from the edge of the road it leaves', () => {
+    // Down 4 rows of a 3-wide stub off a 2-wide road, then 4 tiles east along its last 3 rows: the far
+    // corner is 4 + 4 = 8 tiles from the road edge.
+    const w = 30;
+    const h = 9;
+    const mask = new Uint8Array(w * h);
+    for (let y = 1; y <= 2; y += 1) mask.fill(1, y * w, y * w + w);
+    mask.fill(1, 3 * w + 10, 3 * w + 13);
+    for (let y = 4; y <= 6; y += 1) mask.fill(1, y * w + 10, y * w + 17);
+    expect(findDeadEnds(mask, w, h).map((d) => d.tiles)).toEqual([8]);
   });
 
   it('passes a cul-de-sac with a 5×5 turning head, a short one, and roads that run off the map', () => {

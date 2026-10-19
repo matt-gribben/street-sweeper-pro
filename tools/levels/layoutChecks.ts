@@ -154,9 +154,11 @@ export function thin(img: Uint8Array, W: number, H: number): void {
  *
  * The mask is thinned to its centre line (Zhang–Suen); a tip that is not in a turning head is walked along
  * the centre line to the nearest junction, turning head or map edge. That stretch of centre line owns a
- * pocket of the carriageway (the cells nearer to it than to any other centre-line cell) and the depth is the
- * farthest pocket cell's path distance from the rest of the carriageway, so it counts the tiles of the cul-de-
- * sac itself whatever the widths of the two roads. A corridor closed at both ends (reached only over
+ * pocket of the carriageway (the cells nearer to it than to any other centre-line cell). The pocket's mouth
+ * is squared up to the cul-de-sac's straight sides (squareMouth), so it starts at the edge of the road it
+ * leaves even where an even-width road's centre line sits half a tile off-centre, and the depth is the
+ * farthest pocket cell's path distance from the rest of the carriageway: the tiles of the cul-de-sac itself,
+ * whatever the widths of the two roads. A corridor closed at both ends (reached only over
  * pavement) is measured end to end and reported once.
  */
 export function findDeadEnds(
@@ -213,6 +215,8 @@ export function findDeadEnds(
   const pocket = new Int32Array(W * H).fill(-1);
   const depth = new Int32Array(W * H);
   const closed = new Uint8Array(W * H);
+  const cut = new Int32Array(W * H).fill(-1);
+  const runs = carriagewayRuns(area, W, H);
   const walk: number[] = [];
   const cells: number[] = [];
   for (let y = 0; y < H; y += 1) {
@@ -267,6 +271,13 @@ export function findDeadEnds(
           cells.push(j);
         }
       }
+      // The centre line of an even-width road sits half a tile off-centre, so the trim above can leave one
+      // row of the road in the pocket or take one row of the cul-de-sac out of it. Square the mouth up to the
+      // cul-de-sac's straight sides: a pocket cell on the mouth whose cross-section (its run of carriageway
+      // across the direction of the mouth) opens out wider than the next cell in belongs to the road it
+      // leaves; then a carriageway cell just past the mouth whose cross-section fits within the pocket cell next
+      // to it, and past which the walls open out, belongs to the cul-de-sac.
+      squareMouth(tip, cells, pocket, cut, area, runs, W, H);
       // Depth: path distance into the pocket from the rest of the carriageway (1 at the mouth). A closed
       // corridor has no mouth: measure it from its far end (the pocket cell farthest from the tip).
       const front: number[] = [];
@@ -300,6 +311,118 @@ export function findDeadEnds(
     }
   }
   return found;
+}
+
+/** Per cell of `area`, the first and last column of its row run and the first and last row of its column run. */
+interface Runs {
+  rowLo: Int32Array;
+  rowHi: Int32Array;
+  colLo: Int32Array;
+  colHi: Int32Array;
+}
+
+function carriagewayRuns(area: Uint8Array, W: number, H: number): Runs {
+  const runs: Runs = {
+    rowLo: new Int32Array(W * H),
+    rowHi: new Int32Array(W * H),
+    colLo: new Int32Array(W * H),
+    colHi: new Int32Array(W * H),
+  };
+  for (let y = 0; y < H; y += 1) {
+    for (let x = 0; x < W; ) {
+      if (area[y * W + x] !== 1) {
+        x += 1;
+        continue;
+      }
+      let end = x;
+      while (end + 1 < W && area[y * W + end + 1] === 1) end += 1;
+      for (let cx = x; cx <= end; cx += 1) {
+        runs.rowLo[y * W + cx] = x;
+        runs.rowHi[y * W + cx] = end;
+      }
+      x = end + 1;
+    }
+  }
+  for (let x = 0; x < W; x += 1) {
+    for (let y = 0; y < H; ) {
+      if (area[y * W + x] !== 1) {
+        y += 1;
+        continue;
+      }
+      let end = y;
+      while (end + 1 < H && area[(end + 1) * W + x] === 1) end += 1;
+      for (let cy = y; cy <= end; cy += 1) {
+        runs.colLo[cy * W + x] = y;
+        runs.colHi[cy * W + x] = end;
+      }
+      y = end + 1;
+    }
+  }
+  return runs;
+}
+
+/**
+ * Squares a dead end's pocket (cells marked `tip` in `pocket`, listed in `cells`) up to the cul-de-sac's
+ * straight sides, in place. Shrink, to a fixed point: drop a pocket cell that has a carriageway neighbour
+ * outside the pocket on one side and a pocket cell on the other when its cross-section (the run of carriageway
+ * through it at right angles to that neighbour) is not contained in that inner cell's: the walls open out
+ * there, so it is the road the dead end leaves. Grow: add a carriageway cell next to the pocket that was not
+ * dropped, whose cross-section lies within the neighbouring pocket cell's and past which the walls open out:
+ * the same two walls carry on to the edge of the road it leaves, so the cul-de-sac does too. (Requiring the
+ * opening keeps a pocket that is only a slice of a straight road from growing along it.) Dropped cells are
+ * removed from `cells`; added ones are appended.
+ */
+function squareMouth(
+  tip: number,
+  cells: number[],
+  pocket: Int32Array,
+  cut: Int32Array,
+  area: Uint8Array,
+  runs: Runs,
+  W: number,
+  H: number,
+): void {
+  // Cross-section of cell c at right angles to an orthogonal step (dx, dy).
+  const lo = (c: number, dy: number): number => (dy !== 0 ? runs.rowLo[c] : runs.colLo[c]) ?? 0;
+  const hi = (c: number, dy: number): number => (dy !== 0 ? runs.rowHi[c] : runs.colHi[c]) ?? 0;
+  const step = (c: number, dx: number, dy: number): number => {
+    const x = (c % W) + dx;
+    const y = Math.floor(c / W) + dy;
+    return x < 0 || y < 0 || x >= W || y >= H ? -1 : y * W + x;
+  };
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const c of cells) {
+      if (pocket[c] !== tip) continue;
+      for (const [dx, dy] of ORTHO) {
+        const out = step(c, dx, dy);
+        const inner = step(c, -dx, -dy);
+        if (out < 0 || inner < 0 || area[out] !== 1 || pocket[out] === tip || pocket[inner] !== tip) continue;
+        if (lo(c, dy) >= lo(inner, dy) && hi(c, dy) <= hi(inner, dy)) continue;
+        pocket[c] = -1;
+        cut[c] = tip;
+        changed = true;
+        break;
+      }
+    }
+  }
+  let kept = 0;
+  for (const c of cells) if (pocket[c] === tip) cells[kept++] = c;
+  cells.length = kept;
+  for (let q = 0; q < cells.length; q += 1) {
+    const c = cells[q] ?? 0;
+    for (const [dx, dy] of ORTHO) {
+      const out = step(c, dx, dy);
+      if (out < 0 || area[out] !== 1 || pocket[out] === tip || cut[out] === tip) continue;
+      if (lo(out, dy) < lo(c, dy) || hi(out, dy) > hi(c, dy)) continue;
+      const beyond = step(out, dx, dy);
+      if (beyond < 0 || area[beyond] !== 1) continue;
+      if (lo(beyond, dy) >= lo(out, dy) && hi(beyond, dy) <= hi(out, dy)) continue;
+      pocket[out] = tip;
+      cells.push(out);
+    }
+  }
 }
 
 /**

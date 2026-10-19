@@ -438,6 +438,50 @@ export type PigeonScatterEvent = SimEventBase & {
   readonly pts: number;
 };
 
+/**
+ * A pickup scored (phase 9, scoring.ts stepScoring, SSP-288): once per EV.LitterCollected, EV.StainCleaned or
+ * EV.GlassSwept, after its chain increment. `entity` is the multiplier, decoded as `multiplier`. The world-space
+ * score popup (ui/popups.ts) reads it.
+ */
+export type PickupScoredEvent = SimEventBase & {
+  readonly type: typeof EV.PickupScored;
+  /** The pickup's position, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The combo multiplier it scored at (1..5). */
+  readonly multiplier: number;
+  /** The points it scored: its pts × the multiplier (0 for a 0-point pickup). */
+  readonly pts: number;
+};
+
+/**
+ * A penalty fact was applied (phase 9, complaints.ts applyPenalties, SSP-288): once per fact, in the order
+ * recorded. `entity` is the Offence code, decoded as `reason`. The world-space penalty popup (ui/popups.ts) reads it.
+ */
+export type PenaltyEvent = SimEventBase & {
+  readonly type: typeof EV.Penalty;
+  /** Where the offence happened, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** Why (complaints.ts Offence). */
+  readonly reason: Offence;
+  /** Its points, 0 or below. */
+  readonly pts: number;
+};
+
+/**
+ * Doris started shaking her fist at a horn while glaring (phase 7, npc/behaviours/oldWoman.ts, SSP-288). `entity` is
+ * her NPC store index. Her "Hmph!" bubble (ui/popups.ts) and sfx.granny_harrumph (M5) read it.
+ */
+export type FistShakeEvent = SimEventBase & {
+  readonly type: typeof EV.FistShake;
+  /** Doris's centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** How long she shakes it, ticks (90). */
+  readonly ticks: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -471,6 +515,9 @@ export type SimEventByType = {
   [EV.DustCloud]: DustCloudEvent;
   [EV.Cough]: CoughEvent;
   [EV.PigeonScatter]: PigeonScatterEvent;
+  [EV.PickupScored]: PickupScoredEvent;
+  [EV.Penalty]: PenaltyEvent;
+  [EV.FistShake]: FistShakeEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -571,6 +618,17 @@ function createPayloads(): Payloads {
     [EV.DustCloud]: { type: EV.DustCloud, tick: 0, entity: -1, x: 0, y: 0, side: 1 },
     [EV.Cough]: { type: EV.Cough, tick: 0, entity: -1, x: 0, y: 0, kind: 'npc.shopper' },
     [EV.PigeonScatter]: { type: EV.PigeonScatter, tick: 0, entity: -1, x: 0, y: 0, pts: 0 },
+    [EV.PickupScored]: {
+      type: EV.PickupScored,
+      tick: 0,
+      entity: -1,
+      x: 0,
+      y: 0,
+      multiplier: 1,
+      pts: 0,
+    },
+    [EV.Penalty]: { type: EV.Penalty, tick: 0, entity: -1, x: 0, y: 0, reason: Offence.Hit, pts: 0 },
+    [EV.FistShake]: { type: EV.FistShake, tick: 0, entity: -1, x: 0, y: 0, ticks: 0 },
   };
 }
 
@@ -670,7 +728,10 @@ function isEventType(type: number): type is EventType {
     type === EV.NearMiss ||
     type === EV.DustCloud ||
     type === EV.Cough ||
-    type === EV.PigeonScatter
+    type === EV.PigeonScatter ||
+    type === EV.PickupScored ||
+    type === EV.Penalty ||
+    type === EV.FistShake
   );
 }
 
@@ -803,6 +864,9 @@ export class EventBus implements UiEventSink, PauseEventSink {
     [EV.DustCloud]: [],
     [EV.Cough]: [],
     [EV.PigeonScatter]: [],
+    [EV.PickupScored]: [],
+    [EV.Penalty]: [],
+    [EV.FistShake]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -1227,6 +1291,41 @@ export class EventBus implements UiEventSink, PauseEventSink {
         e.y = b;
         e.pts = c;
         this.emit(EV.PigeonScatter, e);
+        return;
+      }
+      case EV.PickupScored: {
+        const e = this.payloads[EV.PickupScored];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.multiplier = entity;
+        e.pts = c;
+        this.emit(EV.PickupScored, e);
+        return;
+      }
+      case EV.Penalty: {
+        if (!OFFENCES.has(entity)) {
+          throw new Error(`EventBus: Penalty at tick ${tick} carries unknown offence ${entity}`);
+        }
+        const e = this.payloads[EV.Penalty];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.reason = entity as Offence;
+        e.pts = c;
+        this.emit(EV.Penalty, e);
+        return;
+      }
+      case EV.FistShake: {
+        const e = this.payloads[EV.FistShake];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.ticks = c;
+        this.emit(EV.FistShake, e);
         return;
       }
     }

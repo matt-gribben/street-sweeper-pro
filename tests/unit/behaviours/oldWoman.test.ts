@@ -299,6 +299,14 @@ describe('horn: FistShake, then a slower walk (ENTITY_CATALOG §6.3)', () => {
     world.step(honk());
     expect(countEvents(world.events, EV.Horn)).toBe(1);
     expect(state(world, doris)).toBe(DORIS.FistShake);
+    // EV.FistShake (SSP-288, her "Hmph!" bubble): once, at her, with the 90-tick shake.
+    expect(countEvents(world.events, EV.FistShake)).toBe(1);
+    const q = world.events;
+    for (let k = 0; k < q.count; k++) {
+      if (q.type[k] !== EV.FistShake) continue;
+      const i = idx(world, doris);
+      expect([q.entity[k], q.a[k], q.b[k], q.c[k]]).toEqual([i, world.npc.x[i], world.npc.y[i], 90]);
+    }
     // Bessie drives off straight after the honk, so nothing sends her back into a glare.
     bessieAway(world);
     const i0 = idx(world, doris);
@@ -349,7 +357,11 @@ describe('horn: FistShake, then a slower walk (ENTITY_CATALOG §6.3)', () => {
     const { world, doris } = glaringDoris();
     world.step(honk());
     // Bessie stays in the way: after the fist shake, SlowWalk sees her and glares at once.
-    for (let t = 0; t < 89; t++) world.step(neutral);
+    let shakes = 0;
+    for (let t = 0; t < 89; t++) {
+      world.step(neutral);
+      shakes += countEvents(world.events, EV.FistShake);
+    }
     expect(state(world, doris)).toBe(DORIS.FistShake);
     world.step(neutral);
     expect(state(world, doris)).toBe(DORIS.SlowWalk);
@@ -357,6 +369,9 @@ describe('horn: FistShake, then a slower walk (ENTITY_CATALOG §6.3)', () => {
     expect(state(world, doris)).toBe(DORIS.Glare);
     world.step(honk());
     expect(state(world, doris)).toBe(DORIS.FistShake);
+    // Only a new fist shake is reported, never the ticks of one.
+    expect(shakes).toBe(0);
+    expect(countEvents(world.events, EV.FistShake)).toBe(1);
   });
 
   it('Bump and NearMiss leave her as she is', () => {

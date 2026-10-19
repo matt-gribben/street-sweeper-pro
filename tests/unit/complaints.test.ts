@@ -300,6 +300,35 @@ describe('the penalty pipeline (phase 9)', () => {
     expect(world.complaints.count).toBe(3);
   });
 
+  it('reports every fact as EV.Penalty (SSP-288): its Offence in `entity`, position and points, in order', () => {
+    const world = chainedWorld();
+    onNextTick(world, Phase.Bodies, [
+      [Offence.Hit, -500, 2, 1, 2],
+      [Offence.RoadRage, 0, 1, 3, 4],
+      [Offence.Dust, -10, 0, 5, 6],
+    ]);
+    world.step(NEUTRAL);
+    const q = world.events;
+    const facts: number[][] = [];
+    for (let k = 0; k < q.count; k++) {
+      if (q.type[k] === EV.Penalty)
+        facts.push([q.entity[k] as number, q.a[k] as number, q.b[k] as number, q.c[k] as number]);
+    }
+    expect(facts).toEqual([
+      [Offence.Hit, 1, 2, -500],
+      [Offence.RoadRage, 3, 4, 0],
+      [Offence.Dust, 5, 6, -10],
+    ]);
+    // Each before the complaints it files.
+    let firstPenalty = -1;
+    let firstComplaint = -1;
+    for (let k = q.count - 1; k >= 0; k--) {
+      if (q.type[k] === EV.Penalty) firstPenalty = k;
+      if (q.type[k] === EV.Complaint) firstComplaint = k;
+    }
+    expect(firstPenalty).toBeLessThan(firstComplaint);
+  });
+
   it('a pickup in the same tick still scores at the old multiplier, then the chain resets', () => {
     // Phase 9 order: horn spam, the facts' points recorded, then stepScoring's pickups, then the penalties.
     const world = chainedWorld();

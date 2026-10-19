@@ -14,6 +14,8 @@
 //      (a pedestrian passed within 0.5 m above 3 m/s, phase 7, SSP-095) and EV.PigeonScatter (Bessie through a
 //      scattering flock in phase 7, SSP-088) awards its event `c` (+100, +25, +25) through the bonus API: a style
 //      bonus, so not multiplied and no chain change.
+//      Each pickup then emits EV.PickupScored (SSP-288: its position, the multiplier it scored at and the points),
+//      which only the world-space score popup reads.
 //      Every pickup counts for the chain, including the 0-point ones (litter.spilled_shopping, stain.splat).
 //      Stain cleans take the multiplier and extend the chain (ENTITY_CATALOG §17 Q5, resolved in SSP-063).
 //      EV.GlassSwept (haz.broken_glass swept up, SSP-094) scores its event `c` (rules.sweepPts, 20) the same way,
@@ -48,7 +50,7 @@ import {
 } from './combo.ts';
 import { SIM_HZ } from './constants.ts';
 import { type Entities, LITTER_IDS, type LitterId } from './entities.ts';
-import { EV, type EventQueue } from './eventQueue.ts';
+import { EV, type EventQueue, emitEvent } from './eventQueue.ts';
 import type { PenaltyHook } from './stains.ts';
 import type { Tuning } from './tuning.ts';
 
@@ -190,6 +192,18 @@ export function addPenalty(scoring: Scoring, pts: number): void {
 }
 
 /**
+ * EV.PickupScored for the pickup event at `source` (SSP-288): the multiplier it scored at in `entity`, its position
+ * copied from the pickup event, the points it scored in `c`. A presentation fact for the world-space score popup;
+ * the score itself is already counted. Takes and returns only small integers (no doubles cross the call).
+ */
+function emitPickupScored(events: EventQueue, source: number, multiplier: number, scored: number): void {
+  const e = emitEvent(events, EV.PickupScored, multiplier);
+  events.a[e] = events.a[source] as number;
+  events.b[e] = events.b[source] as number;
+  events.c[e] = scored;
+}
+
+/**
  * Tick phase 9 (see the header): the chain timer (frozen while `draining`), this tick's pickups from `events`,
  * grime and Kerb Hugger from `dirt`, then the tick's penalties. May emit EV.ComboTier into `events`.
  * Allocation-free.
@@ -203,8 +217,8 @@ export function stepScoring(
   const combo = scoring.combo;
   stepComboTimer(combo, draining, events);
 
-  // Pickups. Only the events emitted before phase 9: the EV.ComboTier events this loop appends are not facts
-  // for it.
+  // Pickups. Only the events emitted before phase 9: the EV.ComboTier and EV.PickupScored events this loop
+  // appends are not facts for it.
   const n = events.count;
   const type = events.type;
   const litterPts = scoring.litterPts;
@@ -215,11 +229,13 @@ export function stepScoring(
       const mul = addComboPickup(combo, events);
       scoring.itemPts += pts * mul;
       scoring.score += pts * mul;
+      emitPickupScored(events, i, mul, pts * mul);
     } else if (t === EV.StainCleaned) {
       const pts = (events.c[i] as number) | 0;
       const mul = addComboPickup(combo, events);
       scoring.stainPts += pts * mul;
       scoring.score += pts * mul;
+      emitPickupScored(events, i, mul, pts * mul);
     } else if (t === EV.Caught || t === EV.NearMiss || t === EV.PigeonScatter) {
       awardBonus(scoring, (events.c[i] as number) | 0);
     } else if (t === EV.GlassSwept) {
@@ -227,6 +243,7 @@ export function stepScoring(
       const mul = addComboPickup(combo, events);
       scoring.itemPts += pts * mul;
       scoring.score += pts * mul;
+      emitPickupScored(events, i, mul, pts * mul);
     }
   }
 

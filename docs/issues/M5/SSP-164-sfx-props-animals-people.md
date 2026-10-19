@@ -35,7 +35,7 @@ AUDIO_DESIGN §5.4. Columns: engine | variants | jitter | bus | priority | voice
 
 **People** (3–6 formant-ish square syllables with vibrato; never sampled speech; nothing pained or screaming):
 - `ped_oi`: jsfxr | 6 + `cough`ᴺ, `tut`ᴺ, `huh`ᴺ | 60 | voice | 4 | 2/250 | 'Oi!' ≈ 330→440→260 Hz, 280 ms; cough = 3 noise bursts; tut = 2 dry clicks; huh = single rising blip.
-- `granny_harrumph`: jsfxr | 3 + `whack`ᴺ | 40 | voice | 4 | 1/600 | HMPH: low nasal pulse, falling pitch, breathy tail, 400 ms, **preceded by 150 ms of rendered silence**; whack = noise thump + 200 Hz body.
+- `granny_harrumph`: jsfxr | 3 + `whack`ᴺ | 40 | voice | 4 | 1/600 | Hmph: low nasal pulse, falling pitch, breathy tail, 400 ms, **preceded by 150 ms of rendered silence**; whack = noise thump + 200 Hz body.
 - `kid_waah`: jsfxr | 2 | 50 | voice | 4 | 1/1000 | rising-then-falling square wail, wide vibrato, 1.1 s, starting ≈700 Hz.
 
 Runtime bark pitch offsets are applied by the player, not baked in. Rating guard (PEGI 7, CLAUDE.md rule 11): no pain or scream sounds. Some of these (seagull, loose-dog barks, kids) are only triggered from M6, but **all must be rendered in M5** ('All `sfx.*` rendered').

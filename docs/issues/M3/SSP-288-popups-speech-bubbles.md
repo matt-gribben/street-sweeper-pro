@@ -2,7 +2,7 @@
 id: SSP-288
 title: "Add src/ui/popups.ts: world-space score/penalty popups and NPC speech bubbles"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:ui, area:gameplay, area:test, size:M, vertical-slice]

@@ -385,6 +385,7 @@ describe('freeze mode', () => {
       sceneStack: () => [],
       boot: () => ({ status: 'loaded', error: null, lutBuilds: 1 }),
       loadInputs: () => {},
+      injectEvent: () => {},
     });
     expect(hooks?.params.freeze).toBe(true);
     loop.start();

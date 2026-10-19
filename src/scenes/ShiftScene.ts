@@ -32,6 +32,13 @@
 // (SSP-299). The HUD only reads the World. Pam's radio panel (SSP-289) labels its keycaps from DEFAULT_GLYPHS for
 // the device the player used last (options.input, the flow's menu source), set on the HUD's radio every frame.
 //
+// Popups (SSP-288, src/ui/popups.ts): enter() also builds the world-space score/penalty popups and NPC speech
+// bubbles over the HUD's UiSpriteBatch and attaches them to the bus (EV.PickupScored, EV.Penalty, EV.NpcHit,
+// EV.FistShake, EV.Caught, EV.CarHorn; unsubscribed in exit()). render() draws them before the HUD, into the same
+// batch (no extra draw call), interpolated by the frame's alpha and projected with the same camera centre and scale
+// it hands the HUD: src/ui may not import camera.ts, so this scene is where the projection comes from. Their ages
+// count World ticks, so they freeze with the World under the PauseOverlay.
+//
 // The camera (SSP-047, src/render/camera.ts) follows Bessie's interpolated body centre, leads it by up to 3.0 m
 // along her velocity (forward·vLong + right·vLat at the drawn heading) and takes its speed-zoom height from her
 // vLong (31.5 m up to 6.0 m/s, 37.8 m from 11.0 m/s), snapped to the 1/16 m texel grid with the remainder carried
@@ -87,12 +94,16 @@ import { createWorld, setWorldTuning, viewWorld, type World, type WorldView } fr
 import type { BitmapFont } from '../ui/bitmapText.ts';
 import { Hud } from '../ui/hud.ts';
 import type { HudCamera } from '../ui/hudModel.ts';
+import { createPopupCamera, POPUPS_MAX_QUADS, Popups } from '../ui/popups.ts';
 
 /** The HUD's font (`public/assets/fonts/kerbside5x7.json`). */
 export const HUD_FONT: FontName = 'kerbside5x7';
 
 /** UI quads the HUD batch holds (the M2 HUD draws under 200). */
 export const HUD_CAPACITY = 512;
+
+/** UI quads the shift's UI batch holds: the HUD's plus the world-space popups' and bubbles' (SSP-288). */
+export const SHIFT_UI_CAPACITY = HUD_CAPACITY + POPUPS_MAX_QUADS;
 
 /** The district `npm run dev` boots into in M1. */
 export const DEFAULT_DISTRICT = 'district.puddle_lane';
@@ -140,6 +151,7 @@ type Built = {
   readonly items: ItemsBatch;
   readonly hudBatch: UiSpriteBatch;
   readonly hud: Hud;
+  readonly popups: Popups;
 };
 
 /** The drive-only shift: one World, its level city and Bessie. */
@@ -170,12 +182,16 @@ export class ShiftScene implements Scene {
   private hud: Hud | null = null;
   private hudBatch: UiSpriteBatch | null = null;
   private unsubscribeHud: Unsubscribe | null = null;
+  private popupLayer: Popups | null = null;
+  private unsubscribePopups: Unsubscribe | null = null;
   /** The brush overlay's spin phase (render-side, brushSpin.ts). */
   private readonly brushSpin = createBrushSpin();
   /** The camera's ground rect this frame (the items batch's cull rect before its margin), reused every frame. */
   private readonly cameraRect: Aabb = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
   /** Where the camera looks this frame, for the HUD's off-screen arrows (SSP-299), reused every frame. */
   private readonly hudCamera: HudCamera = { xM: 0, yM: 0, pxPerM: 0 };
+  /** The same camera plus the frame's render alpha, for the popups' bubbles (SSP-288), reused every frame. */
+  private readonly popupCamera = createPopupCamera();
   private log: InputLog | null = null;
   private districtId: string | null = null;
   /** The pose drawn this frame, reused every frame. */
@@ -281,6 +297,11 @@ export class ShiftScene implements Scene {
     return this.hud;
   }
 
+  /** The world-space score popups and speech bubbles (null before enter() resolves; SSP-288). */
+  get popups(): Popups | null {
+    return this.popupLayer;
+  }
+
   /** The HUD's UI batch (null before enter() resolves): its count is the quads drawn last frame. */
   get uiBatch(): UiSpriteBatch | null {
     return this.hudBatch;
@@ -354,7 +375,7 @@ export class ShiftScene implements Scene {
       assets.atlas('ui'),
       assets.font(HUD_FONT),
     );
-    const { sim, city, bessie, hud, hudBatch } = built;
+    const { sim, city, bessie, hud, hudBatch, popups } = built;
     this.items = built.items;
     if (this.recordInputs) {
       const log = createInputLog();
@@ -370,6 +391,8 @@ export class ShiftScene implements Scene {
     this.hud = hud;
     this.hudBatch = hudBatch;
     this.unsubscribeHud = hud.attach(this.context.events);
+    this.popupLayer = popups;
+    this.unsubscribePopups = popups.attach(this.context.events, viewWorld(sim));
     this.unsubscribeHidden = this.context.onHidden(() => this.requestPause(PauseReason.Hidden));
     // A Pause press latched before the shift started (Esc on the card or the tally) must not pause it.
     this.pauseInput?.takeSceneEdges(ACTION.PAUSE);
@@ -410,9 +433,10 @@ export class ShiftScene implements Scene {
         litterCapacity: sim.litter.capacity,
         stainCapacity: sim.stains.capacity,
       });
-      const hudBatch = new UiSpriteBatch(ui, HUD_CAPACITY);
+      const hudBatch = new UiSpriteBatch(ui, SHIFT_UI_CAPACITY);
       const hud = new Hud(hudBatch, font, DEFAULT_GLYPHS);
-      return { sim, city, bessie, items: itemsBatch, hudBatch, hud };
+      const popups = new Popups(hudBatch, font);
+      return { sim, city, bessie, items: itemsBatch, hudBatch, hud, popups };
     } catch (error: unknown) {
       itemsBatch?.dispose();
       bessie?.dispose();
@@ -439,6 +463,9 @@ export class ShiftScene implements Scene {
     }
     this.unsubscribeHud?.();
     this.unsubscribeHud = null;
+    this.unsubscribePopups?.();
+    this.unsubscribePopups = null;
+    this.popupLayer = null;
     this.unsubscribeHidden?.();
     this.unsubscribeHidden = null;
     if (this.hudBatch !== null) {
@@ -506,6 +533,13 @@ export class ShiftScene implements Scene {
       camera.pxPerM = groundPxPerMetre(rig.height.value);
       hud.radio.setDevice(this.input?.activeDevice ?? DEFAULT_INPUT_DEVICE);
       batch.begin();
+      // World-space popups and bubbles first, so the HUD draws over them (same batch: no extra draw call).
+      const popupCamera = this.popupCamera;
+      popupCamera.xM = camera.xM;
+      popupCamera.yM = camera.yM;
+      popupCamera.pxPerM = camera.pxPerM;
+      popupCamera.alpha = alpha;
+      this.popupLayer?.draw(world, rig.internalWidth, popupCamera);
       hud.draw(world, rig.internalWidth, camera);
       batch.end();
     }

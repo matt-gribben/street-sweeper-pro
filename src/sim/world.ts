@@ -38,7 +38,8 @@
 //                       combo.ts: pickups, then the penalties' points and the chain reset) → stepTidy (tidy.ts)
 //  10 Shift timer       shift.ts (SSP-062, SSP-079): SACKED (5 complaints), then TOWED (HP 0), the rollout
 //                       start, the dump FSM (hopper drain, depot water refill, EV.DumpStart/DumpEnd), the 240 s
-//                       countdown, the knock-off and EV.ShiftEnd
+//                       countdown, the knock-off and EV.ShiftEnd; then the level events (stepShiftEvents,
+//                       SSP-088): the market opening and the market close's litter pile, on the `events` stream
 //  11 Emit events       seal the EventQueue
 //
 // The shift's end freezes the sim (SSP-079): once EV.ShiftEnd has fired (shift.phase Ended, for every reason),
@@ -129,14 +130,18 @@ import { createStream, type Sfc32 } from './rng.ts';
 import { createScoring, type Scoring, type ScoringView, setScoringTuning, stepScoring } from './scoring.ts';
 import {
   createShift,
+  createShiftEvents,
   gateShiftInput,
   isShiftDraining,
   isShiftEnded,
   type Shift,
+  type ShiftEvents,
+  type ShiftEventsView,
   type ShiftOptions,
   type ShiftView,
   setShiftTuning,
   stepShift,
+  stepShiftEvents,
 } from './shift.ts';
 import { createStainStore, type StainStore, type StainStoreView, stepBrushUpSplats } from './stains.ts';
 import { createSurfaceTable, type SurfaceTable, sampleSurface } from './surface.ts';
@@ -308,6 +313,11 @@ export type World = {
    * then on the World is frozen: step() changes no state (see the header).
    */
   readonly shift: Shift;
+  /**
+   * The level's market and market closes (shift.ts ShiftEvents, SSP-088): phase 10 opens the market (the spawner
+   * then mans its pitches in phase 7) and builds the closing litter piles on the `events` stream.
+   */
+  readonly shiftEvents: ShiftEvents;
   /** Phase-1 hook for the replay log (SSP-038). Null until a recorder is attached. */
   recordInput: InputRecorder | null;
   /** Optional phase-order trace. Null by default. */
@@ -348,6 +358,7 @@ export type WorldView = {
   /** This tick's phase-3 contacts. */
   readonly staticResolver: { readonly log: ReadonlyContactLog };
   readonly shift: ShiftView;
+  readonly shiftEvents: ShiftEventsView;
 };
 
 /**
@@ -436,6 +447,7 @@ export function createWorld(
     staticGrid,
     staticResolver: createStaticResolver(),
     shift: createShift(level, vehicle, hopper, water, complaints, tuning, shift),
+    shiftEvents: createShiftEvents(level, hazards.spill),
     recordInput: null,
     phaseTrace: null,
     surfaceTable: createSurfaceTable(sweeper),
@@ -772,8 +784,11 @@ function phaseScoring(world: World): void {
  * Phase 10 (shift.ts, SSP-062, SSP-079): SACKED (the first tick that ends with the complaints meter at 5), else
  * TOWED (the first tick that ends with HP at 0, §9.2 step 6), the timer's rollout start, the dump FSM (depot
  * bays and skips: hopper drain, depot water refill, EV.DumpStart/EV.DumpEnd), the countdown and the knock-off,
- * ending in EV.ShiftEnd (SACKED, TOWED or TIME_UP) once.
+ * ending in EV.ShiftEnd (SACKED, TOWED or TIME_UP) once. Then the level events at the elapsed time the countdown
+ * left (stepShiftEvents, SSP-088): the market opens, a market close starts, its due pile rounds are placed
+ * (addLitterAt on the `events` stream; the brush meets them from the next tick's phase 5).
  */
 function phaseShiftTimer(world: World): void {
   stepShift(world.shift, world.input, world.events);
+  stepShiftEvents(world);
 }

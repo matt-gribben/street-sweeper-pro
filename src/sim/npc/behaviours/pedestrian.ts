@@ -370,7 +370,10 @@ export const pedestrianBehaviour: Behaviour = {
   },
 };
 
-/** The generic stationary pedestrian (the market trader until SSP-088): never walks, never yields. */
+/**
+ * The generic stationary pedestrian: never walks, never yields. The market trader's module (marketTrader.ts,
+ * SSP-088) is this plus his pitch's heading; tests use it as a person who stands still.
+ */
 export const stationaryPedestrianBehaviour: Behaviour = {
   initial: PED.Idle,
   jaywalks: false,

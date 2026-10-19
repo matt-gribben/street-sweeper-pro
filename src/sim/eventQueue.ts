@@ -84,6 +84,12 @@ export const EVENTS_PER_TICK = 512;
  *   toward horn spam (complaints.ts markHornCaught). Phase 9 (scoring.ts stepScoring) awards the points through
  *   the bonus API: never multiplied, never touching the chain (GDD §10.3). The "Caught!" popup, the bonus
  *   sparkle (sfx.combo_tier:bonus) and his "huh" (sfx.ped_oi:huh) read it.
+ * - PigeonScatter: entity = the flock's number (the birds' NpcStore `group`), a = x, b = y (the centre of the
+ *   circle the flock covered as it took off, m), c = the style bonus's points (entities.json npc.pigeon
+ *   rules.scatterPts, +25). Phase 7 (npc/behaviours/pigeon.ts, SSP-088), at most once per flock per scatter: on
+ *   the first tick of a scatter that Bessie's body OBB overlaps that circle. Phase 9 (scoring.ts stepScoring)
+ *   awards it through the bonus API like Caught!: never multiplied, never touching the chain (GDD §10.3). The
+ *   "Pigeon Scatter" popup and the bonus sparkle read it (the flap, sfx.pigeon_flap, reads the birds' Fly state).
  */
 export const EV = {
   Impact: 1,
@@ -106,6 +112,7 @@ export const EV = {
   CarHorn: 18,
   HandbagWhack: 19,
   Caught: 20,
+  PigeonScatter: 21,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

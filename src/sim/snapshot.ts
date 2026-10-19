@@ -67,7 +67,7 @@ export type SimFrontageSnapshot = {
 };
 
 /** Where an NPC came from (npc/store.ts NpcOrigin), by name. */
-export const NPC_ORIGIN_NAMES = ['ambient', 'named', 'perch', 'flock', 'companion'] as const;
+export const NPC_ORIGIN_NAMES = ['ambient', 'named', 'perch', 'flock', 'companion', 'market'] as const;
 export type NpcOriginName = (typeof NPC_ORIGIN_NAMES)[number];
 
 /** One live NPC (npc/store.ts), in store index order. */

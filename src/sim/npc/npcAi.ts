@@ -24,6 +24,7 @@ import type { Tuning } from '../tuning.ts';
 import type { World } from '../world.ts';
 import type { Behaviour } from './behaviour.ts';
 import { createOldWomanParams, type OldWomanParams } from './behaviours/oldWoman.ts';
+import { createPigeonFlocks, type PigeonFlocks } from './behaviours/pigeon.ts';
 import { createDoorRound, type DoorRound } from './doorRound.ts';
 import { createReactions, type Reactions } from './reactions.ts';
 import { behavioursByKind } from './registry.ts';
@@ -52,6 +53,8 @@ export type NpcAi = {
   readonly oldWoman: OldWomanParams;
   /** The level's frontage doors in the postie's walking order (doorRound.ts, SSP-085). */
   readonly doorRound: DoorRound;
+  /** The pigeon flocks' shared state, one slot per flock the level can place (behaviours/pigeon.ts, SSP-088). */
+  readonly flocks: PigeonFlocks;
 };
 
 /**
@@ -78,6 +81,7 @@ export function createNpcAi(
     reactions: createReactions(tuning, entities, capacity),
     oldWoman: createOldWomanParams(entities),
     doorRound: createDoorRound(level, steering),
+    flocks: createPigeonFlocks(level, entities),
   };
 }
 

@@ -284,6 +284,20 @@ export type CaughtEvent = SimEventBase & {
   readonly pts: number;
 };
 
+/**
+ * Bessie drove through a scattering pigeon flock (phase 7, npc/behaviours/pigeon.ts, SSP-088): once per flock per
+ * scatter. `entity` is the flock's number. Phase 9 has already added its points as a style bonus. The "Pigeon
+ * Scatter" popup and the bonus sparkle (sfx.combo_tier:bonus) read it.
+ */
+export type PigeonScatterEvent = SimEventBase & {
+  readonly type: typeof EV.PigeonScatter;
+  /** The centre of the circle the flock covered as it took off, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The style bonus (entities.json npc.pigeon rules.scatterPts, +25), unmultiplied. */
+  readonly pts: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -306,6 +320,7 @@ export type SimEventByType = {
   [EV.CarHorn]: CarHornEvent;
   [EV.HandbagWhack]: HandbagWhackEvent;
   [EV.Caught]: CaughtEvent;
+  [EV.PigeonScatter]: PigeonScatterEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -387,6 +402,7 @@ function createPayloads(): Payloads {
     [EV.CarHorn]: { type: EV.CarHorn, tick: 0, entity: -1, x: 0, y: 0, honk: 1 },
     [EV.HandbagWhack]: { type: EV.HandbagWhack, tick: 0, entity: -1, x: 0, y: 0, hp: 0 },
     [EV.Caught]: { type: EV.Caught, tick: 0, entity: -1, x: 0, y: 0, pts: 0 },
+    [EV.PigeonScatter]: { type: EV.PigeonScatter, tick: 0, entity: -1, x: 0, y: 0, pts: 0 },
   };
 }
 
@@ -451,7 +467,8 @@ function isEventType(type: number): type is EventType {
     type === EV.NpcHit ||
     type === EV.CarHorn ||
     type === EV.HandbagWhack ||
-    type === EV.Caught
+    type === EV.Caught ||
+    type === EV.PigeonScatter
   );
 }
 
@@ -573,6 +590,7 @@ export class EventBus implements UiEventSink, PauseEventSink {
     [EV.CarHorn]: [],
     [EV.HandbagWhack]: [],
     [EV.Caught]: [],
+    [EV.PigeonScatter]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -886,6 +904,16 @@ export class EventBus implements UiEventSink, PauseEventSink {
         e.y = b;
         e.pts = c;
         this.emit(EV.Caught, e);
+        return;
+      }
+      case EV.PigeonScatter: {
+        const e = this.payloads[EV.PigeonScatter];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.pts = c;
+        this.emit(EV.PigeonScatter, e);
         return;
       }
     }

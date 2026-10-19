@@ -86,7 +86,7 @@ const AIM_MARGIN_M = 24;
 
 /**
  * The rig: `generic` keeps the registry's behaviours (the SSP-082 generic pedestrian for the people, the SSP-084
- * shopper, businessman and litterbug, the SSP-085 old man, mum and postie, the no-op for the animals) instead of the test walker, so the reaction
+ * shopper, businessman and litterbug, the SSP-085 old man, mum and postie, the SSP-088 pigeons, the no-op for the cats) instead of the test walker, so the reaction
  * model's states run in the window, with the shoppers' sidesteps, the businessmen's 2 m startles, the litterbugs'
  * drops and, under the harness's horn, their Caught! (EV.Caught, the bonus in phase 9) and slinking off. `doris`
  * adds Doris (SSP-083) to the mix and sprays for 2 s of every 4 (the tank topped up), so her glare, fist shake,

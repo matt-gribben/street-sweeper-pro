@@ -474,7 +474,15 @@
     "sprite": "npc.pigeon",
     "sfx": { "scatter": "pigeon_flap" },
     "districts": ["district.high_street", "district.promenade", "district.civic_quarter"],
-    "rules": { "flockMin": 6, "flockMax": 12, "scatterM": 4, "landM": 10, "scatterPts": 25 },
+    "rules": {
+      "flockMin": 6,
+      "flockMax": 12,
+      "scatterM": 4,
+      "landM": 10,
+      "scatterPts": 25,
+      "flyMps": 8,
+      "gatherM": 10
+    },
     "milestone": "M3"
   },
   "veh.hatchback": {

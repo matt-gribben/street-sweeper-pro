@@ -215,6 +215,59 @@ export const LITTER_PLACE_ALL_BITS =
 export const LITTER_WEIGHT_MAX = 65535;
 
 /**
+ * Bits of a traffic lane edge's `flags` (SSP-076; TECHNICAL_DESIGN §11.4 and §15.2, LEVEL_DESIGN §7.1–§7.5).
+ * A stop flag (ZEBRA, SCHOOL_CROSSING, BUS_STOP, GIVE_WAY) means the edge's `to` node lies on that feature
+ * (or, for GIVE_WAY, past the give-way line into a junction): along a path, the `from` node of the first
+ * flagged edge is where a vehicle stops.
+ * - ZEBRA / SCHOOL_CROSSING / BUS_STOP: the lane tiles at the `to` node include a `site.zebra`,
+ *   `site.school_crossing` or `site.bus_stop` tile.
+ * - GIVE_WAY: a connector from a minor arm into a junction, or an entry onto a mini-roundabout.
+ * - PORTAL_IN: the `from` node is an entry portal on the map edge (traffic spawns there).
+ * - PORTAL_OUT: the `to` node is an exit portal on the map edge (traffic despawns there).
+ * - JUNCTION: a connector through a junction box, from one arm's lane to another's.
+ * - ROUNDABOUT: an edge of a mini-roundabout's clockwise ring, or a connector onto or off it.
+ * - U_TURN: a turn-around at a dead end (or a junction with a single arm), from one lane into the other.
+ * The values are written into compiled files: append new bits, never renumber.
+ */
+export const LANE_FLAG = {
+  ZEBRA: 1 << 0,
+  SCHOOL_CROSSING: 1 << 1,
+  BUS_STOP: 1 << 2,
+  GIVE_WAY: 1 << 3,
+  PORTAL_IN: 1 << 4,
+  PORTAL_OUT: 1 << 5,
+  JUNCTION: 1 << 6,
+  ROUNDABOUT: 1 << 7,
+  U_TURN: 1 << 8,
+} as const;
+export type LaneFlagBit = (typeof LANE_FLAG)[keyof typeof LANE_FLAG];
+
+/** Every defined lane edge flag; an edge with any other bit set is rejected. */
+export const LANE_FLAG_ALL_BITS = (1 << 9) - 1;
+
+/**
+ * Bits of a pavement nav edge's `flags` (SSP-076; TECHNICAL_DESIGN §11.1, LEVEL_DESIGN §7.2–§7.5). An edge
+ * with any of them is a road crossing; every other nav edge joins two walkable tiles and never crosses a road.
+ * Behaviours that jaywalk ignore the crossing edges and leave the graph instead.
+ * - ZEBRA: the crossing runs over `site.zebra` tiles only.
+ * - SCHOOL_CROSSING: over `site.school_crossing` tiles only.
+ * - DROPPED_KERB: from or to a dropped kerb `d`, over any road tiles.
+ * The values are written into compiled files: append new bits, never renumber.
+ */
+export const NAV_FLAG = {
+  ZEBRA: 1 << 0,
+  SCHOOL_CROSSING: 1 << 1,
+  DROPPED_KERB: 1 << 2,
+} as const;
+export type NavFlagBit = (typeof NAV_FLAG)[keyof typeof NAV_FLAG];
+
+/** The nav flags that mark a road-crossing edge. */
+export const NAV_FLAG_CROSSING = NAV_FLAG.ZEBRA | NAV_FLAG.SCHOOL_CROSSING | NAV_FLAG.DROPPED_KERB;
+
+/** Every defined nav edge flag; an edge with any other bit set is rejected. */
+export const NAV_FLAG_ALL_BITS = NAV_FLAG_CROSSING;
+
+/**
  * The asset id (`roof.*` or `facade.*`) a roof/wall layer value names, or null for STYLE_NONE.
  * Throws if the value is past the end of the table.
  */
@@ -305,16 +358,90 @@ export type Frontage = {
 /** A JSON value, for the lists whose entry shape a later milestone defines (spawns, schedules). */
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
-/** Traffic lane graph (M3, SSP-076). Nodes `[x, y]`; edges `[from, to, speedLimit, flags]`. */
-export type LaneGraph = {
-  nodes: [x: number, y: number][];
-  edges: [from: number, to: number, speedLimit: number, flags: number][];
+/**
+ * A run of parking bays (`p` cells) beside one traffic lane (SSP-076): the cells as a tile rect (x1/y1
+ * exclusive, like every rect) and the heading in radians (0 = north, clockwise) of the lane beside it, which
+ * is the way a car parked there faces. Parked-car slots are cut from the run at shift start (SSP-090).
+ */
+export type ParkingBay = { rect: TileRect; heading: number };
+
+/** A frontage's door point on the nav graph (SSP-076): the node in front of the facade's centre. */
+export type NavDoor = { frontage: string; node: number };
+
+/** An anchor digit's nav node (SSP-076): the node on the anchor's tile, or the nearest one. */
+export type NavAnchor = { char: string; name: string; node: number };
+
+/**
+ * The traffic lane graph as compiled JSON lists (SSP-076): what the compiler builds and the file holds.
+ * Nodes are `[x, y]` in metres; edges are directed `[from, to, speedLimitMps, flags]` (LANE_FLAG), sorted
+ * by (from, to) with no repeats.
+ */
+export type LaneGraphLists = {
+  nodes: readonly (readonly [x: number, y: number])[];
+  edges: readonly (readonly [from: number, to: number, speedLimitMps: number, flags: number])[];
+  bays: readonly ParkingBay[];
 };
 
-/** Pavement nav graph (M3, SSP-076). Nodes `[x, y]`; edges `[from, to, flags]`. */
+/**
+ * The pavement nav graph as compiled JSON lists (SSP-076). Nodes are `[x, y]` in metres (walkable tile
+ * centres, row-major). Edges `[from, to, flags]` (NAV_FLAG) are two-way: each is listed once with from < to,
+ * sorted by (from, to). `portals` are the nodes on the map edge (ascending), `doors` one per frontage that has
+ * a door point (frontage order) and `anchors` one per anchor tile (sorted by char, then node).
+ */
+export type NavGraphLists = {
+  nodes: readonly (readonly [x: number, y: number])[];
+  edges: readonly (readonly [from: number, to: number, flags: number])[];
+  portals: readonly number[];
+  doors: readonly NavDoor[];
+  anchors: readonly NavAnchor[];
+};
+
+/**
+ * The decoded traffic lane graph (M3, SSP-076): typed arrays built once per shift load, so traffic.ts walks it
+ * without allocating. Edges are sorted by `from`, so the edges leaving node n are `outStart[n]` up to (not
+ * including) `outStart[n + 1]` (CSR offsets).
+ */
+export type LaneGraph = {
+  readonly nodeCount: number;
+  /** Node positions in metres. */
+  readonly nodeX: Float64Array;
+  readonly nodeY: Float64Array;
+  readonly edgeCount: number;
+  readonly edgeFrom: Uint32Array;
+  readonly edgeTo: Uint32Array;
+  /** The edge's speed limit in m/s (tuning.json → streetLife.laneSpeed, baked by the compiler). */
+  readonly edgeSpeedMps: Float64Array;
+  /** LANE_FLAG bits. */
+  readonly edgeFlags: Uint16Array;
+  /** nodeCount + 1 offsets into the edge arrays. */
+  readonly outStart: Uint32Array;
+  readonly bays: readonly ParkingBay[];
+};
+
+/**
+ * The decoded pavement nav graph (M3, SSP-076). Edges are two-way; the adjacency lists hold each edge from
+ * both ends: node n's neighbours are `adjNode[k]` over `adjEdge[k]` for k from `adjStart[n]` up to (not
+ * including) `adjStart[n + 1]`, in edge order (CSR offsets).
+ */
 export type NavGraph = {
-  nodes: [x: number, y: number][];
-  edges: [from: number, to: number, flags: number][];
+  readonly nodeCount: number;
+  /** Node positions in metres. */
+  readonly nodeX: Float64Array;
+  readonly nodeY: Float64Array;
+  readonly edgeCount: number;
+  /** Edge endpoints, edgeFrom < edgeTo. */
+  readonly edgeFrom: Uint32Array;
+  readonly edgeTo: Uint32Array;
+  /** NAV_FLAG bits. */
+  readonly edgeFlags: Uint8Array;
+  /** nodeCount + 1 offsets into adjEdge/adjNode. */
+  readonly adjStart: Uint32Array;
+  readonly adjEdge: Uint32Array;
+  readonly adjNode: Uint32Array;
+  /** Map-edge nodes, ascending. */
+  readonly portals: Uint32Array;
+  readonly doors: readonly NavDoor[];
+  readonly anchors: readonly NavAnchor[];
 };
 
 /** One compiled litter type: its id, its `litter.table` weight and the LITTER_PLACE bits it requires. */
@@ -449,8 +576,8 @@ export function createBlankLevel(id: string, w: number, h: number): Level {
     props: [],
     sites: [],
     frontages: [],
-    lanes: { nodes: [], edges: [] },
-    nav: { nodes: [], edges: [] },
+    lanes: buildLaneGraph({ nodes: [], edges: [], bays: [] }, w, h),
+    nav: buildNavGraph({ nodes: [], edges: [], portals: [], doors: [], anchors: [] }, w, h),
     spawns: {},
     litter: null,
     grime: null,
@@ -502,6 +629,214 @@ export function mergeSolids(collide: Uint8Array, w: number, h: number): TileRect
     }
   }
   return rects;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Lane and nav graphs (SSP-076)
+// ---------------------------------------------------------------------------------------------------------
+
+/** Pattern of an anchor name (LEVEL_DESIGN §8.4: snake_case). */
+const ANCHOR_NAME_PATTERN = /^[a-z0-9_]+$/;
+
+/** Throw unless `[x, y]` is a finite position in metres inside the map (its edges included). */
+function checkGraphNode(where: string, path: string, x: number, y: number, w: number, h: number): void {
+  if (!Number.isFinite(x) || !Number.isFinite(y))
+    throw new Error(`${where}: ${path} must be two finite numbers (metres)`);
+  if (x < 0 || y < 0 || x > w * TILE_M || y > h * TILE_M)
+    throw new Error(`${where}: ${path} (${x}, ${y}) lies outside the ${w * TILE_M}×${h * TILE_M} m map`);
+}
+
+/** Throw unless `node` indexes one of `count` nodes. */
+function checkNodeRef(where: string, path: string, node: number, count: number): void {
+  if (!Number.isInteger(node) || node < 0 || node >= count)
+    throw new Error(`${where}: ${path} must be a node index 0..${count - 1} (got ${node})`);
+}
+
+/** Throw unless (from, to) pairs strictly ascend (sorted, no repeats). */
+function checkEdgeOrder(
+  where: string,
+  path: string,
+  prevFrom: number,
+  prevTo: number,
+  from: number,
+  to: number,
+) {
+  if (from < prevFrom || (from === prevFrom && to <= prevTo))
+    throw new Error(`${where}: ${path} must be sorted by (from, to) with no repeats`);
+}
+
+/**
+ * Validate lane graph lists and build the typed LaneGraph with its CSR offsets (SSP-076). Throws, naming the
+ * entry, on a node outside the map, an edge to an unknown node or to itself, unsorted or repeated edges, a
+ * speed limit that is not positive, unknown flag bits, or a malformed bay. Load-time code: allocates.
+ */
+export function buildLaneGraph(
+  lists: LaneGraphLists,
+  w: number,
+  h: number,
+  where = 'buildLaneGraph',
+): LaneGraph {
+  const nodeCount = lists.nodes.length;
+  const edgeCount = lists.edges.length;
+  const nodeX = new Float64Array(nodeCount);
+  const nodeY = new Float64Array(nodeCount);
+  lists.nodes.forEach(([x, y], i) => {
+    checkGraphNode(where, `lanes.nodes[${i}]`, x, y, w, h);
+    nodeX[i] = x;
+    nodeY[i] = y;
+  });
+  const edgeFrom = new Uint32Array(edgeCount);
+  const edgeTo = new Uint32Array(edgeCount);
+  const edgeSpeedMps = new Float64Array(edgeCount);
+  const edgeFlags = new Uint16Array(edgeCount);
+  const outStart = new Uint32Array(nodeCount + 1);
+  let prevFrom = -1;
+  let prevTo = -1;
+  lists.edges.forEach(([from, to, speed, flags], i) => {
+    const path = `lanes.edges[${i}]`;
+    checkNodeRef(where, `${path} from`, from, nodeCount);
+    checkNodeRef(where, `${path} to`, to, nodeCount);
+    if (from === to) throw new Error(`${where}: ${path} joins node ${from} to itself`);
+    checkEdgeOrder(where, path, prevFrom, prevTo, from, to);
+    prevFrom = from;
+    prevTo = to;
+    if (!Number.isFinite(speed) || speed <= 0)
+      throw new Error(`${where}: ${path} speed limit must be a positive number of m/s (got ${speed})`);
+    if (!Number.isInteger(flags) || flags < 0 || (flags & ~LANE_FLAG_ALL_BITS) !== 0)
+      throw new Error(`${where}: ${path} has unknown flag bits (${flags})`);
+    edgeFrom[i] = from;
+    edgeTo[i] = to;
+    edgeSpeedMps[i] = speed;
+    edgeFlags[i] = flags;
+    outStart[from + 1] = (outStart[from + 1] ?? 0) + 1;
+  });
+  for (let n = 0; n < nodeCount; n += 1) outStart[n + 1] = (outStart[n + 1] ?? 0) + (outStart[n] ?? 0);
+  const bays = lists.bays.map((bay, i): ParkingBay => {
+    const path = `lanes.bays[${i}]`;
+    const [x0, y0, x1, y1] = bay.rect;
+    if (bay.rect.length !== 4 || !bay.rect.every(Number.isInteger) || x0 < 0 || y0 < 0 || x1 > w || y1 > h)
+      throw new Error(`${where}: ${path}.rect must be four integer tile coordinates inside the map`);
+    if (x1 <= x0 || y1 <= y0) throw new Error(`${where}: ${path}.rect must not be empty`);
+    if (!Number.isFinite(bay.heading)) throw new Error(`${where}: ${path}.heading must be a finite number`);
+    return { rect: [x0, y0, x1, y1], heading: bay.heading };
+  });
+  return { nodeCount, nodeX, nodeY, edgeCount, edgeFrom, edgeTo, edgeSpeedMps, edgeFlags, outStart, bays };
+}
+
+/**
+ * Validate nav graph lists and build the typed NavGraph with its two-way CSR adjacency (SSP-076). Throws,
+ * naming the entry, on a node outside the map, an edge not written from < to, unsorted or repeated edges,
+ * unknown flag bits, or a portal, door or anchor that names an unknown node or is out of order.
+ * Load-time code: allocates.
+ */
+export function buildNavGraph(lists: NavGraphLists, w: number, h: number, where = 'buildNavGraph'): NavGraph {
+  const nodeCount = lists.nodes.length;
+  const edgeCount = lists.edges.length;
+  const nodeX = new Float64Array(nodeCount);
+  const nodeY = new Float64Array(nodeCount);
+  lists.nodes.forEach(([x, y], i) => {
+    checkGraphNode(where, `nav.nodes[${i}]`, x, y, w, h);
+    nodeX[i] = x;
+    nodeY[i] = y;
+  });
+  const edgeFrom = new Uint32Array(edgeCount);
+  const edgeTo = new Uint32Array(edgeCount);
+  const edgeFlags = new Uint8Array(edgeCount);
+  const adjStart = new Uint32Array(nodeCount + 1);
+  let prevFrom = -1;
+  let prevTo = -1;
+  lists.edges.forEach(([from, to, flags], i) => {
+    const path = `nav.edges[${i}]`;
+    checkNodeRef(where, `${path} from`, from, nodeCount);
+    checkNodeRef(where, `${path} to`, to, nodeCount);
+    if (from >= to)
+      throw new Error(`${where}: ${path} must be written once with from < to (got ${from}, ${to})`);
+    checkEdgeOrder(where, path, prevFrom, prevTo, from, to);
+    prevFrom = from;
+    prevTo = to;
+    if (!Number.isInteger(flags) || flags < 0 || (flags & ~NAV_FLAG_ALL_BITS) !== 0)
+      throw new Error(`${where}: ${path} has unknown flag bits (${flags})`);
+    edgeFrom[i] = from;
+    edgeTo[i] = to;
+    edgeFlags[i] = flags;
+    adjStart[from + 1] = (adjStart[from + 1] ?? 0) + 1;
+    adjStart[to + 1] = (adjStart[to + 1] ?? 0) + 1;
+  });
+  for (let n = 0; n < nodeCount; n += 1) adjStart[n + 1] = (adjStart[n + 1] ?? 0) + (adjStart[n] ?? 0);
+  const adjEdge = new Uint32Array(edgeCount * 2);
+  const adjNode = new Uint32Array(edgeCount * 2);
+  const fill = adjStart.slice(0, nodeCount);
+  for (let e = 0; e < edgeCount; e += 1) {
+    const a = edgeFrom[e] ?? 0;
+    const b = edgeTo[e] ?? 0;
+    const ka = fill[a] ?? 0;
+    adjEdge[ka] = e;
+    adjNode[ka] = b;
+    fill[a] = ka + 1;
+    const kb = fill[b] ?? 0;
+    adjEdge[kb] = e;
+    adjNode[kb] = a;
+    fill[b] = kb + 1;
+  }
+  const portals = new Uint32Array(lists.portals.length);
+  lists.portals.forEach((node, i) => {
+    checkNodeRef(where, `nav.portals[${i}]`, node, nodeCount);
+    if (i > 0 && node <= (portals[i - 1] ?? 0))
+      throw new Error(`${where}: nav.portals must ascend with no repeats`);
+    portals[i] = node;
+  });
+  const doors = lists.doors.map((door, i): NavDoor => {
+    if (typeof door.frontage !== 'string' || door.frontage.length === 0)
+      throw new Error(`${where}: nav.doors[${i}].frontage must be a frontage id`);
+    checkNodeRef(where, `nav.doors[${i}].node`, door.node, nodeCount);
+    return { frontage: door.frontage, node: door.node };
+  });
+  let prevAnchor = '';
+  const anchors = lists.anchors.map((anchor, i): NavAnchor => {
+    const path = `nav.anchors[${i}]`;
+    if (!/^[0-9]$/.test(anchor.char)) throw new Error(`${where}: ${path}.char must be one digit 0–9`);
+    if (!ANCHOR_NAME_PATTERN.test(anchor.name)) throw new Error(`${where}: ${path}.name must be snake_case`);
+    checkNodeRef(where, `${path}.node`, anchor.node, nodeCount);
+    const key = `${anchor.char}:${String(anchor.node).padStart(10, '0')}`;
+    if (i > 0 && key <= prevAnchor) throw new Error(`${where}: nav.anchors must be sorted by (char, node)`);
+    prevAnchor = key;
+    return { char: anchor.char, name: anchor.name, node: anchor.node };
+  });
+  return {
+    nodeCount,
+    nodeX,
+    nodeY,
+    edgeCount,
+    edgeFrom,
+    edgeTo,
+    edgeFlags,
+    adjStart,
+    adjEdge,
+    adjNode,
+    portals,
+    doors,
+    anchors,
+  };
+}
+
+/** The JSON lists of a typed lane graph (the inverse of buildLaneGraph). */
+export function laneGraphLists(g: LaneGraph): LaneGraphLists {
+  const nodes: [number, number][] = [];
+  for (let n = 0; n < g.nodeCount; n += 1) nodes.push([g.nodeX[n] ?? 0, g.nodeY[n] ?? 0]);
+  const edges: [number, number, number, number][] = [];
+  for (let e = 0; e < g.edgeCount; e += 1)
+    edges.push([g.edgeFrom[e] ?? 0, g.edgeTo[e] ?? 0, g.edgeSpeedMps[e] ?? 0, g.edgeFlags[e] ?? 0]);
+  return { nodes, edges, bays: g.bays };
+}
+
+/** The JSON lists of a typed nav graph (the inverse of buildNavGraph). */
+export function navGraphLists(g: NavGraph): NavGraphLists {
+  const nodes: [number, number][] = [];
+  for (let n = 0; n < g.nodeCount; n += 1) nodes.push([g.nodeX[n] ?? 0, g.nodeY[n] ?? 0]);
+  const edges: [number, number, number][] = [];
+  for (let e = 0; e < g.edgeCount; e += 1)
+    edges.push([g.edgeFrom[e] ?? 0, g.edgeTo[e] ?? 0, g.edgeFlags[e] ?? 0]);
+  return { nodes, edges, portals: [...g.portals], doors: g.doors, anchors: g.anchors };
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -716,6 +1051,30 @@ function litterOut(litter: LitterSpawn, w: number, h: number): JsonValue {
   };
 }
 
+/** The `lanes` JSON (SSP-076), re-validated through buildLaneGraph so a mutated typed array cannot slip out. */
+function lanesOut(g: LaneGraph, w: number, h: number): JsonValue {
+  const lists = laneGraphLists(g);
+  buildLaneGraph(lists, w, h, 'encodeLevel');
+  return {
+    nodes: lists.nodes.map(([x, y]) => [x, y]),
+    edges: lists.edges.map(([from, to, speed, flags]) => [from, to, speed, flags]),
+    bays: lists.bays.map((b) => ({ rect: [b.rect[0], b.rect[1], b.rect[2], b.rect[3]], heading: b.heading })),
+  };
+}
+
+/** The `nav` JSON (SSP-076), re-validated through buildNavGraph. */
+function navOut(g: NavGraph, w: number, h: number): JsonValue {
+  const lists = navGraphLists(g);
+  buildNavGraph(lists, w, h, 'encodeLevel');
+  return {
+    nodes: lists.nodes.map(([x, y]) => [x, y]),
+    edges: lists.edges.map(([from, to, flags]) => [from, to, flags]),
+    portals: [...lists.portals],
+    doors: lists.doors.map((d) => ({ frontage: d.frontage, node: d.node })),
+    anchors: lists.anchors.map((a) => ({ char: a.char, name: a.name, node: a.node })),
+  };
+}
+
 /**
  * Encode a level as compiled JSON text (TECHNICAL_DESIGN §15.2): keys in the canonical order, layers as
  * base64 Uint8, a trailing newline, no timestamps. The output depends only on the level's contents, so
@@ -778,20 +1137,8 @@ export function encodeLevel(level: Level): string {
         cells: zoneCells('encodeLevel', f.cells, rect, `frontages[${i}].cells`),
       };
     }),
-    lanes: {
-      nodes: level.lanes.nodes.map((n, i) => [
-        finite(n[0], `lanes.nodes[${i}]`),
-        finite(n[1], `lanes.nodes[${i}]`),
-      ]),
-      edges: level.lanes.edges.map((e, i) => e.map((v) => finite(v, `lanes.edges[${i}]`))),
-    },
-    nav: {
-      nodes: level.nav.nodes.map((n, i) => [
-        finite(n[0], `nav.nodes[${i}]`),
-        finite(n[1], `nav.nodes[${i}]`),
-      ]),
-      edges: level.nav.edges.map((e, i) => e.map((v) => finite(v, `nav.edges[${i}]`))),
-    },
+    lanes: lanesOut(level.lanes, w, h),
+    nav: navOut(level.nav, w, h),
     spawns,
     schedules: canonicalJson(level.schedules, 'schedules'),
     weather: level.weather,
@@ -953,6 +1300,55 @@ function litterIn(value: unknown, w: number, h: number): LitterSpawn {
   return { initial, minSpacingM, table, places, weights };
 }
 
+/** Decode `lanes` (SSP-076) into the typed LaneGraph (buildLaneGraph checks the references and order). */
+function lanesIn(value: unknown, w: number, h: number): LaneGraph {
+  const lanes = obj(value, 'lanes');
+  const lists: LaneGraphLists = {
+    nodes: arr(lanes.nodes, 'lanes.nodes').map((n, i) => xyIn(n, `lanes.nodes[${i}]`)),
+    edges: arr(lanes.edges, 'lanes.edges').map((e, i): [number, number, number, number] => {
+      const [from = 0, to = 0, speedLimit = 0, flags = 0] = tuple(e, 4, `lanes.edges[${i}]`, num);
+      return [from, to, speedLimit, flags];
+    }),
+    bays: arr(lanes.bays, 'lanes.bays').map((v, i): ParkingBay => {
+      const b = obj(v, `lanes.bays[${i}]`);
+      return {
+        rect: rectIn(b.rect, `lanes.bays[${i}].rect`),
+        heading: num(b.heading, `lanes.bays[${i}].heading`),
+      };
+    }),
+  };
+  return buildLaneGraph(lists, w, h, 'decodeLevel');
+}
+
+/** Decode `nav` (SSP-076) into the typed NavGraph (buildNavGraph checks the references and order). */
+function navIn(value: unknown, w: number, h: number): NavGraph {
+  const nav = obj(value, 'nav');
+  const lists: NavGraphLists = {
+    nodes: arr(nav.nodes, 'nav.nodes').map((n, i) => xyIn(n, `nav.nodes[${i}]`)),
+    edges: arr(nav.edges, 'nav.edges').map((e, i): [number, number, number] => {
+      const [from = 0, to = 0, flags = 0] = tuple(e, 3, `nav.edges[${i}]`, num);
+      return [from, to, flags];
+    }),
+    portals: arr(nav.portals, 'nav.portals').map((v, i) => int(v, `nav.portals[${i}]`)),
+    doors: arr(nav.doors, 'nav.doors').map((v, i): NavDoor => {
+      const d = obj(v, `nav.doors[${i}]`);
+      return {
+        frontage: str(d.frontage, `nav.doors[${i}].frontage`),
+        node: int(d.node, `nav.doors[${i}].node`),
+      };
+    }),
+    anchors: arr(nav.anchors, 'nav.anchors').map((v, i): NavAnchor => {
+      const a = obj(v, `nav.anchors[${i}]`);
+      return {
+        char: str(a.char, `nav.anchors[${i}].char`),
+        name: str(a.name, `nav.anchors[${i}].name`),
+        node: int(a.node, `nav.anchors[${i}].node`),
+      };
+    }),
+  };
+  return buildNavGraph(lists, w, h, 'decodeLevel');
+}
+
 /**
  * Decode compiled level JSON (the text, or the value `JSON.parse`/`fetch().json()` returned) into typed
  * arrays. Validates the format tag, version, every field's type, every layer's length and the value range
@@ -1006,8 +1402,6 @@ export function decodeLevel(input: unknown): Level {
   };
   checkLayerValues('decodeLevel', layers, w, roofIds.length, wallIds.length);
 
-  const lanes = obj(root.lanes, 'lanes');
-  const nav = obj(root.nav, 'nav');
   const spawnSrc = obj(root.spawns, 'spawns');
   const spawns: { [kind: string]: JsonValue[] } = {};
   for (const kind of Object.keys(spawnSrc)) {
@@ -1056,20 +1450,8 @@ export function decodeLevel(input: unknown): Level {
         cells: zoneCells('decodeLevel', cells, rect, `frontages[${i}].cells`),
       };
     }),
-    lanes: {
-      nodes: arr(lanes.nodes, 'lanes.nodes').map((n, i) => xyIn(n, `lanes.nodes[${i}]`)),
-      edges: arr(lanes.edges, 'lanes.edges').map((e, i) => {
-        const [from = 0, to = 0, speedLimit = 0, flags = 0] = tuple(e, 4, `lanes.edges[${i}]`, num);
-        return [from, to, speedLimit, flags];
-      }),
-    },
-    nav: {
-      nodes: arr(nav.nodes, 'nav.nodes').map((n, i) => xyIn(n, `nav.nodes[${i}]`)),
-      edges: arr(nav.edges, 'nav.edges').map((e, i) => {
-        const [from = 0, to = 0, flags = 0] = tuple(e, 3, `nav.edges[${i}]`, num);
-        return [from, to, flags];
-      }),
-    },
+    lanes: lanesIn(root.lanes, w, h),
+    nav: navIn(root.nav, w, h),
     spawns,
     litter,
     grime,

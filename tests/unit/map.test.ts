@@ -1,5 +1,5 @@
 // Compiled-level codec, id tables and solid merge (TECHNICAL_DESIGN §9.1, §15.2; SSP-032; audio header SSP-033;
-// grime cell bits, `spawns.grime` and `spawns.litter` SSP-054).
+// grime cell bits, `spawns.grime` and `spawns.litter` SSP-054; lane and nav graphs SSP-076).
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,8 @@ import { decodeBase64, decodeBase64Uint16, encodeBase64, encodeBase64Uint16 } fr
 import {
   AMBIENCE_ID_PATTERN,
   AUTOTILE_NONE,
+  buildLaneGraph,
+  buildNavGraph,
   COLLIDE,
   COLLIDE_ALL_BITS,
   createBlankLevel,
@@ -19,6 +21,8 @@ import {
   GROUND_SURFACE,
   Ground,
   GUTTER_CELLS_PER_TILE,
+  LANE_FLAG,
+  LANE_FLAG_ALL_BITS,
   LAYER_NAMES,
   LEVEL_FORMAT,
   LEVEL_VERSION,
@@ -34,6 +38,9 @@ import {
   MAX_STYLES,
   MUSIC_ID_PATTERN,
   mergeSolids,
+  NAV_FLAG,
+  NAV_FLAG_ALL_BITS,
+  NAV_FLAG_CROSSING,
   resolveStyle,
   SURFACE_COUNT,
   Surface,
@@ -129,23 +136,42 @@ function handBuiltLevel(): Level {
       ],
     },
   ];
-  level.lanes = {
-    nodes: [
-      [1, 5],
-      [11, 5],
-    ],
-    edges: [[0, 1, 13.4, 0]],
-  };
-  level.nav = {
-    nodes: [
-      [1, 3],
-      [11, 3],
-    ],
-    edges: [
-      [0, 1, 0],
-      [1, 0, 0],
-    ],
-  };
+  level.lanes = buildLaneGraph(
+    {
+      nodes: [
+        [0, 5],
+        [1, 5],
+        [11, 5],
+        [12, 5],
+      ],
+      edges: [
+        [0, 1, 7, LANE_FLAG.PORTAL_IN],
+        [1, 2, 6.5, LANE_FLAG.ZEBRA | LANE_FLAG.BUS_STOP],
+        [2, 3, 7, LANE_FLAG.PORTAL_OUT],
+      ],
+      bays: [{ rect: [5, 2, 6, 3], heading: Math.PI / 2 }],
+    },
+    w,
+    h,
+  );
+  level.nav = buildNavGraph(
+    {
+      nodes: [
+        [1, 3],
+        [11, 3],
+        [11, 1],
+      ],
+      edges: [
+        [0, 1, 0],
+        [1, 2, NAV_FLAG.ZEBRA],
+      ],
+      portals: [0, 1],
+      doors: [{ frontage: 'fr_0_0', node: 0 }],
+      anchors: [{ char: '1', name: 'doris_home', node: 2 }],
+    },
+    w,
+    h,
+  );
   level.spawns = {
     npc: [{ id: 'npc.old_woman', anchor: 'doris_home' }],
     traffic: [{ id: 'veh.hatchback' }],
@@ -388,11 +414,15 @@ describe('encodeLevel / decodeLevel', () => {
         '  "frontages": [],',
         '  "lanes": {',
         '    "nodes": [],',
-        '    "edges": []',
+        '    "edges": [],',
+        '    "bays": []',
         '  },',
         '  "nav": {',
         '    "nodes": [],',
-        '    "edges": []',
+        '    "edges": [],',
+        '    "portals": [],',
+        '    "doors": [],',
+        '    "anchors": []',
         '  },',
         '  "spawns": {},',
         '  "schedules": [],',
@@ -692,6 +722,131 @@ describe('purity and Node type stripping', () => {
     expect(result.error).toBeUndefined();
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('map.ts solids=[[0,0,3,1]] roundTrip=true');
+  });
+});
+
+describe('lane and nav graphs (SSP-076)', () => {
+  it('lane and nav flag bits are distinct single bits, appended in their pinned order', () => {
+    expect(Object.keys(LANE_FLAG)).toEqual([
+      'ZEBRA',
+      'SCHOOL_CROSSING',
+      'BUS_STOP',
+      'GIVE_WAY',
+      'PORTAL_IN',
+      'PORTAL_OUT',
+      'JUNCTION',
+      'ROUNDABOUT',
+      'U_TURN',
+    ]);
+    expect(Object.values(LANE_FLAG)).toEqual([1, 2, 4, 8, 16, 32, 64, 128, 256]);
+    expect(Object.values(LANE_FLAG).reduce((a, b) => a | b, 0)).toBe(LANE_FLAG_ALL_BITS);
+    expect(Object.keys(NAV_FLAG)).toEqual(['ZEBRA', 'SCHOOL_CROSSING', 'DROPPED_KERB']);
+    expect(Object.values(NAV_FLAG)).toEqual([1, 2, 4]);
+    expect(NAV_FLAG_CROSSING).toBe(7);
+    expect(NAV_FLAG_ALL_BITS).toBe(NAV_FLAG_CROSSING);
+  });
+
+  it('decodes into typed arrays with CSR offsets: outgoing lane edges and two-way nav adjacency', () => {
+    const { lanes, nav } = decodeLevel(encodeLevel(handBuiltLevel()));
+    expect(lanes.nodeX).toBeInstanceOf(Float64Array);
+    expect(lanes.edgeFlags).toBeInstanceOf(Uint16Array);
+    expect([...lanes.nodeX]).toEqual([0, 1, 11, 12]);
+    expect([...lanes.outStart]).toEqual([0, 1, 2, 3, 3]);
+    // The edges leaving node 1: edge outStart[1] up to outStart[2].
+    expect(lanes.edgeTo[lanes.outStart[1] ?? 0]).toBe(2);
+    expect(lanes.edgeSpeedMps[1]).toBe(6.5);
+    expect(lanes.edgeFlags[1]).toBe(LANE_FLAG.ZEBRA | LANE_FLAG.BUS_STOP);
+    expect(lanes.bays).toEqual([{ rect: [5, 2, 6, 3], heading: Math.PI / 2 }]);
+    expect([...nav.adjStart]).toEqual([0, 1, 3, 4]);
+    // Node 1 sees node 0 over edge 0 and node 2 over edge 1; each edge is listed from both ends.
+    expect([...nav.adjNode]).toEqual([1, 0, 2, 1]);
+    expect([...nav.adjEdge]).toEqual([0, 0, 1, 1]);
+    expect([...nav.portals]).toEqual([0, 1]);
+    expect(nav.doors).toEqual([{ frontage: 'fr_0_0', node: 0 }]);
+    expect(nav.anchors).toEqual([{ char: '1', name: 'doris_home', node: 2 }]);
+  });
+
+  it('writes lanes and nav as compact tuples and objects in the canonical key order', () => {
+    const text = encodeLevel(handBuiltLevel());
+    const root = JSON.parse(text) as Record<string, Record<string, unknown>>;
+    expect(Object.keys(root.lanes ?? {})).toEqual(['nodes', 'edges', 'bays']);
+    expect(Object.keys(root.nav ?? {})).toEqual(['nodes', 'edges', 'portals', 'doors', 'anchors']);
+    expect(text).toContain('\n      [1,2,6.5,5],\n');
+    expect(text).toContain('\n      {"rect":[5,2,6,3],"heading":1.5707963267948966}\n');
+    expect(text).toContain('\n    "portals": [0,1],\n');
+    expect(text).toContain('\n      {"char":"1","name":"doris_home","node":2}\n');
+  });
+
+  it('rejects malformed graphs when built, decoded or encoded, naming the entry', () => {
+    const threeNodes: [number, number][] = [
+      [1, 1],
+      [2, 2],
+      [3, 3],
+    ];
+    const lane = (edges: [number, number, number, number][], nodes = threeNodes) =>
+      buildLaneGraph({ nodes, edges, bays: [] }, 6, 4);
+    expect(() => lane([], [[13, 1]])).toThrow(/lanes\.nodes\[0\] \(13, 1\) lies outside the 12×8 m map/);
+    expect(() => lane([[0, 3, 7, 0]])).toThrow(/lanes\.edges\[0\] to must be a node index 0\.\.2 \(got 3\)/);
+    expect(() => lane([[1, 1, 7, 0]])).toThrow(/joins node 1 to itself/);
+    expect(() =>
+      lane([
+        [1, 2, 7, 0],
+        [0, 1, 7, 0],
+      ]),
+    ).toThrow(/lanes\.edges\[1\] must be sorted by \(from, to\) with no repeats/);
+    expect(() =>
+      lane([
+        [0, 1, 7, 0],
+        [0, 1, 7, 0],
+      ]),
+    ).toThrow(/with no repeats/);
+    expect(() => lane([[0, 1, 0, 0]])).toThrow(/speed limit must be a positive number of m\/s/);
+    expect(() => lane([[0, 1, 7, 1 << 9]])).toThrow(/unknown flag bits \(512\)/);
+    expect(() =>
+      buildLaneGraph({ nodes: [], edges: [], bays: [{ rect: [5, 3, 7, 4], heading: 0 }] }, 6, 4),
+    ).toThrow(/lanes\.bays\[0\]\.rect must be four integer tile coordinates inside the map/);
+
+    const nav = (lists: Partial<Parameters<typeof buildNavGraph>[0]>) =>
+      buildNavGraph({ nodes: threeNodes, edges: [], portals: [], doors: [], anchors: [], ...lists }, 6, 4);
+    expect(() => nav({ edges: [[1, 0, 0]] })).toThrow(/nav\.edges\[0\] must be written once with from < to/);
+    expect(() => nav({ edges: [[0, 1, 8]] })).toThrow(/nav\.edges\[0\] has unknown flag bits \(8\)/);
+    expect(() => nav({ portals: [1, 0] })).toThrow(/nav\.portals must ascend with no repeats/);
+    expect(() => nav({ doors: [{ frontage: 'fr_0_0', node: 3 }] })).toThrow(/nav\.doors\[0\]\.node/);
+    expect(() => nav({ anchors: [{ char: 'x', name: 'a', node: 0 }] })).toThrow(/char must be one digit/);
+    expect(() =>
+      nav({
+        anchors: [
+          { char: '2', name: 'b', node: 0 },
+          { char: '1', name: 'a', node: 0 },
+        ],
+      }),
+    ).toThrow(/nav\.anchors must be sorted by \(char, node\)/);
+
+    const text = encodeLevel(handBuiltLevel());
+    const edit = (
+      change: (lanes: Record<string, unknown>, nav: Record<string, unknown>) => void,
+    ): unknown => {
+      const root = JSON.parse(text) as { lanes: Record<string, unknown>; nav: Record<string, unknown> };
+      change(root.lanes, root.nav);
+      return root;
+    };
+    expect(() => decodeLevel(edit((lanes) => delete lanes.bays))).toThrow(
+      /decodeLevel: lanes\.bays must be an array/,
+    );
+    expect(() => decodeLevel(edit((lanes) => (lanes.edges = [[0, 1, 7]])))).toThrow(
+      /lanes\.edges\[0\] must have 4 entries/,
+    );
+    expect(() => decodeLevel(edit((_, n) => (n.portals = [0.5])))).toThrow(
+      /nav\.portals\[0\] must be an integer/,
+    );
+    expect(() => decodeLevel(edit((_, n) => (n.edges = [[0, 9, 0]])))).toThrow(
+      /decodeLevel: nav\.edges\[0\] to must be a node index/,
+    );
+
+    // A typed array changed after building is caught again when encoding.
+    const mutated = handBuiltLevel();
+    mutated.lanes.edgeFlags[0] = 1 << 12;
+    expect(() => encodeLevel(mutated)).toThrow(/encodeLevel: lanes\.edges\[0\] has unknown flag bits/);
   });
 });
 

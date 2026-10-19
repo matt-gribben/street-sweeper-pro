@@ -5,6 +5,9 @@
 // blob autotile, markings, merged solids) hold their invariants on every map; the layout checks
 // (L014–L022), which random rows of props cannot satisfy, are skipped here and covered by fixtures. SSP-054:
 // half the maps carry litter and grime specs, and the spawn layers hold their invariants on every map.
+// SSP-076: the maps carry a legal road network (a 3-tile road across the map, two-way or one-way, and often a
+// 3-tile side road that dead-ends or leaves the map), so the lane checks L011–L013 stay on; the lane and nav
+// graphs round-trip with everything else and hold their invariants on every map.
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fc from 'fast-check';
@@ -12,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeLevel, encodeLevel } from '../../src/sim/map.ts';
 import { compileLevel, DEFAULT_LEGEND, formatDiagnostic } from '../../tools/levels/compile-level.ts';
 import { KERB_BLOB_PATH, readKerbBlob } from '../../tools/levels/kerbBlob.ts';
-import { spawnLayerViolations, tileLayerViolations } from '../support/levelInvariants.ts';
+import { graphViolations, spawnLayerViolations, tileLayerViolations } from '../support/levelInvariants.ts';
 
 const KERB_BLOB = readKerbBlob(join(fileURLToPath(new URL('../../', import.meta.url)), KERB_BLOB_PATH));
 
@@ -32,10 +35,22 @@ const LETTERS = ['A', 'B', 'C', 'D', 'E'];
 
 /** Row 0: a building strip with gaps. */
 const STRIP = ['A', 'A', 'B', 'C', '.', ','];
-/** Row 1: pavement with kerbside props, dropped kerbs and anchors. */
+/**
+ * Rows 1 and 5: pavement with kerbside props, dropped kerbs and anchors, on odd columns only (even columns are
+ * plain pavement). A prop then always has two pavement neighbours against one road, so it inherits pavement
+ * (LEVEL_DESIGN §8.3): a prop that inherited road would stretch the carriageway into a shape that is not a
+ * legal road (a 1–2 tile spur, L011).
+ */
 const KERB = ['.', '.', '.', 'l', 'h', 'n', 'i', 'q', '!', 'g', 'd', 'f', '1', '2'];
-/** Rows 2–3: a two-row carriageway (every road tile has a road neighbour, so L013 never fires). */
-const ROAD = ['#', '#', '#', '>', '<', '^', 'v', 'z', 'k', 'b', 'p', '='];
+/**
+ * Rows 2–4: a 3-tile carriageway from the west edge to the east edge, so every map has a legal lane graph.
+ * `#` is replaced by the road's arrow on a one-way map; the road features stay (they take the road's flow).
+ * Props beside it may inherit its ground and widen it, which is still legal.
+ */
+const ROAD = ['#', '#', '#', '#', 'z', 'k', 'b', 'p', '='];
+/** The flows a road can have: two-way, or one of the arrows (east–west road, north–south side road). */
+const MAIN_FLOWS = ['#', '>', '<'];
+const SIDE_FLOWS = ['#', 'v', '^'];
 /** Interior: drivable grounds (plus the level's own `*`), props, sites and anchors. */
 const INTERIOR = ['.', ':', '%', ',', '+', '*', 'l', 't', 'n', 'm', 'u', 's', '$', '3'];
 /**
@@ -44,10 +59,18 @@ const INTERIOR = ['.', ':', '%', ',', '+', '*', 'l', 't', 'n', 'm', 'u', 's', '$
  */
 const BLOCKERS = ['w', 'e', 'r', 'D', 'E', 'D'];
 
+/**
+ * A 3-tile side road on columns x..x+2 from row 5 down to row `end`: two-way, or one-way only when it reaches
+ * the south edge (a one-way dead end traps its traffic, L012).
+ */
+type SideRoad = { x: number; end: number; flow: string };
+
 type Spec = {
   w: number;
   h: number;
   picks: number[];
+  mainFlow: string;
+  side: SideRoad | null;
   start: [number, number];
   depot: [number, number, number, number];
   waterEdge: boolean;
@@ -62,13 +85,21 @@ type Spec = {
 };
 
 const specArb: fc.Arbitrary<Spec> = fc
-  .record({ w: fc.integer({ min: 3, max: 24 }), h: fc.integer({ min: 6, max: 20 }) })
+  .record({ w: fc.integer({ min: 7, max: 24 }), h: fc.integer({ min: 8, max: 20 }) })
   .chain(({ w, h }) =>
     fc
       .record({
         picks: fc.array(fc.nat({ max: 1 << 16 }), { minLength: w * h, maxLength: w * h }),
         sx: fc.integer({ min: 0, max: w - 1 }),
-        sy: fc.integer({ min: 4, max: h - 2 }),
+        sy: fc.integer({ min: 6, max: h - 2 }),
+        mainFlow: fc.constantFrom(...MAIN_FLOWS),
+        side: fc.option(
+          fc.record({
+            x: fc.integer({ min: 0, max: w - 3 }),
+            end: fc.integer({ min: 5, max: h - 1 }),
+            flow: fc.constantFrom(...SIDE_FLOWS),
+          }),
+        ),
         pad: fc.tuple(fc.nat({ max: 3 }), fc.nat({ max: 3 }), fc.nat({ max: 3 }), fc.nat({ max: 3 })),
         waterEdge: fc.boolean(),
         heading: fc.integer({ min: 0, max: 31 }),
@@ -84,6 +115,8 @@ const specArb: fc.Arbitrary<Spec> = fc
           picks,
           sx,
           sy,
+          mainFlow,
+          side,
           pad,
           waterEdge,
           heading,
@@ -102,6 +135,8 @@ const specArb: fc.Arbitrary<Spec> = fc
             w,
             h,
             picks,
+            mainFlow,
+            side: legalSide(side, sx, sy, h, waterEdge),
             start: [sx, sy],
             depot: [x0, y0, x1 - x0, y1 - y0],
             waterEdge,
@@ -117,6 +152,25 @@ const specArb: fc.Arbitrary<Spec> = fc
       ),
   );
 
+/**
+ * The side road made legal: it stops above the water edge, is two-way unless it reaches the south edge, and is
+ * dropped when the start would stand on it.
+ */
+function legalSide(
+  side: SideRoad | null,
+  sx: number,
+  sy: number,
+  h: number,
+  waterEdge: boolean,
+): SideRoad | null {
+  if (side === null) return null;
+  const end = waterEdge ? Math.min(side.end, h - 3) : side.end;
+  if (end < 5) return null;
+  const flow = end === h - 1 ? side.flow : '#';
+  if (sx >= side.x && sx <= side.x + 2 && sy >= 5 && sy <= end) return null;
+  return { x: side.x, end, flow };
+}
+
 function pick(set: readonly string[], n: number): string {
   return set[n % set.length] ?? '.';
 }
@@ -130,11 +184,22 @@ function build(spec: Spec): { rows: string[]; levelText: string } {
     for (let x = 0; x < w; x += 1) {
       const n = spec.picks[y * w + x] ?? 0;
       let c: string;
+      const side = spec.side;
+      const onSide = side !== null && y >= 5 && y <= side.end && x >= side.x && x <= side.x + 2;
+      // Plain pavement beside and below the side road, so no prop inherits its ground and stretches it.
+      const besideSide =
+        side !== null &&
+        ((y >= 5 && y <= side.end + 1 && (x === side.x - 1 || x === side.x + 3)) ||
+          (y === side.end + 1 && x >= side.x - 1 && x <= side.x + 3));
       if (x === spec.start[0] && y === spec.start[1]) c = '@';
+      else if (onSide) c = side.flow;
+      else if (besideSide) c = '.';
       else if (y === 0) c = pick(STRIP, n);
-      else if (y === 1) c = pick(KERB, n);
-      else if (y <= 3) c = pick(ROAD, n);
-      else if (y === h - 1 && spec.waterEdge) c = '~';
+      else if (y === 1 || y === 5) c = x % 2 === 1 ? pick(KERB, n) : '.';
+      else if (y <= 4) {
+        c = pick(ROAD, n);
+        if (c === '#') c = spec.mainFlow;
+      } else if (y === h - 1 && spec.waterEdge) c = '~';
       // A pavement row above the water, so no prop, site or start inherits water from it.
       else if (y === h - 2 && spec.waterEdge) c = '.';
       else if (x % 2 === 1 && y % 2 === 1 && n % 3 === 0) c = pick(BLOCKERS, n >> 2);
@@ -244,6 +309,9 @@ describe('level compiler round trip (TECHNICAL_DESIGN §18.2)', () => {
         expect(decoded.props).toHaveLength(props);
         expect(tileLayerViolations(decoded, output.map, KERB_BLOB)).toEqual([]);
         expect(spawnLayerViolations(decoded, output.map)).toEqual([]);
+        expect(graphViolations(decoded, output.map)).toEqual([]);
+        expect(decoded.lanes.nodeCount).toBeGreaterThan(0);
+        expect(decoded.nav.nodeCount).toBeGreaterThan(0);
         expect(decoded.litter === null).toBe(!spec.spawns);
         expect(decoded.grime === null).toBe(!spec.spawns);
         expect(decoded.music === undefined).toBe(!spec.audio);

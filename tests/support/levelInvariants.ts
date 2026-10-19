@@ -1,19 +1,25 @@
 // Structural invariants of a compiled level's derived tile layers (SSP-034): collide SOLID / KERB_EDGE bits,
-// the kerb blob autotile, the markings and the merged solids. Shared by the unit and property tests; each
+// the kerb blob autotile, the markings and the merged solids; the spawn layers (SSP-054); the lane and nav
+// graphs (SSP-076). Shared by the unit and property tests; each
 // returns human-readable violations (empty = all hold).
+import { TILE_M } from '../../src/sim/constants.ts';
 import {
   AUTOTILE_NONE,
   COLLIDE,
   GRIME_CELL,
   GUTTER_CELLS_PER_TILE,
+  LANE_FLAG,
   type Level,
   LITTER_CELLS_PER_TILE,
   LITTER_PLACE,
   MARKING,
+  NAV_FLAG,
+  NAV_FLAG_CROSSING,
   type TileRect,
 } from '../../src/sim/map.ts';
 import type { ResolvedMap } from '../../tools/levels/compile-level.ts';
 import type { KerbBlob } from '../../tools/levels/kerbBlob.ts';
+import { isWalkable } from '../../tools/levels/navGraph.ts';
 import { isRaisedKerbCell, isRoadCell } from '../../tools/levels/tileLayers.ts';
 
 const SIDES = [
@@ -158,5 +164,115 @@ export function spawnLayerViolations(level: Level, map: ResolvedMap): string[] {
         out.push(`litter sub-cell ${k}: GUTTER place off the road`);
     });
   }
+  return out;
+}
+
+/**
+ * Every violation of the SSP-076 graph invariants. Lanes: every node lies on a road cell (portal nodes on the
+ * map edge, beside one); every node has an edge in and an edge out, except entry portals (no edge in) and exit
+ * portals (no edge out); PORTAL_IN leaves and PORTAL_OUT reaches the map edge; every bay cell is a `p` cell.
+ * Nav: one node per walkable tile, at its centre; an edge without a crossing flag joins two tiles that touch
+ * (orthogonally or diagonally) and a crossing edge runs straight over road cells only, all zebra cells for
+ * ZEBRA and all school-crossing cells for SCHOOL_CROSSING, and starts or ends on a dropped kerb for
+ * DROPPED_KERB; the portals are exactly the nodes on the map edge; doors name frontages.
+ */
+export function graphViolations(level: Level, map: ResolvedMap): string[] {
+  const [w, h] = level.size;
+  const out: string[] = [];
+  const tileOf = (x: number, y: number): [number, number] => [
+    Math.min(Math.floor(x / TILE_M), w - 1),
+    Math.min(Math.floor(y / TILE_M), h - 1),
+  ];
+  const onEdge = (x: number, y: number): boolean =>
+    x === 0 || y === 0 || x === w * TILE_M || y === h * TILE_M;
+
+  const lanes = level.lanes;
+  const ins = new Uint32Array(lanes.nodeCount);
+  for (let e = 0; e < lanes.edgeCount; e += 1) {
+    const from = lanes.edgeFrom[e] ?? 0;
+    const to = lanes.edgeTo[e] ?? 0;
+    const flags = lanes.edgeFlags[e] ?? 0;
+    ins[to] = (ins[to] ?? 0) + 1;
+    if ((flags & LANE_FLAG.PORTAL_IN) !== 0 && !onEdge(lanes.nodeX[from] ?? 0, lanes.nodeY[from] ?? 0))
+      out.push(`lane edge ${e}: PORTAL_IN from a node inside the map`);
+    if ((flags & LANE_FLAG.PORTAL_OUT) !== 0 && !onEdge(lanes.nodeX[to] ?? 0, lanes.nodeY[to] ?? 0))
+      out.push(`lane edge ${e}: PORTAL_OUT to a node inside the map`);
+  }
+  for (let v = 0; v < lanes.nodeCount; v += 1) {
+    const x = lanes.nodeX[v] ?? 0;
+    const y = lanes.nodeY[v] ?? 0;
+    const [tx, ty] = tileOf(x, y);
+    if (!isRoadCell(map, ty * w + tx)) out.push(`lane node ${v} (${x}, ${y}): not on a road cell`);
+    const outs = (lanes.outStart[v + 1] ?? 0) - (lanes.outStart[v] ?? 0);
+    if (outs === 0 && !onEdge(x, y)) out.push(`lane node ${v} (${x}, ${y}): no edge out`);
+    if (ins[v] === 0 && !onEdge(x, y)) out.push(`lane node ${v} (${x}, ${y}): no edge in`);
+  }
+  for (const [i, bay] of lanes.bays.entries()) {
+    const [x0, y0, x1, y1] = bay.rect;
+    for (let y = y0; y < y1; y += 1)
+      for (let x = x0; x < x1; x += 1)
+        if (((level.layers.markings[y * w + x] ?? 0) & MARKING.PARKING_BAY) === 0)
+          out.push(`bay ${i}: tile (${x}, ${y}) is not a parking bay`);
+  }
+
+  const nav = level.nav;
+  const nodeAt = new Int32Array(w * h).fill(-1);
+  for (let v = 0; v < nav.nodeCount; v += 1) {
+    const x = nav.nodeX[v] ?? 0;
+    const y = nav.nodeY[v] ?? 0;
+    const tx = x / TILE_M - 0.5;
+    const ty = y / TILE_M - 0.5;
+    if (!Number.isInteger(tx) || !Number.isInteger(ty))
+      out.push(`nav node ${v} (${x}, ${y}): not a tile centre`);
+    else nodeAt[ty * w + tx] = v;
+  }
+  for (let i = 0; i < w * h; i += 1) {
+    if (isWalkable(map, i) !== (nodeAt[i] !== -1)) out.push(`tile ${i}: walkable and nav node disagree`);
+  }
+  for (let e = 0; e < nav.edgeCount; e += 1) {
+    const a = nav.edgeFrom[e] ?? 0;
+    const b = nav.edgeTo[e] ?? 0;
+    const flags = nav.edgeFlags[e] ?? 0;
+    const ax = (nav.nodeX[a] ?? 0) / TILE_M - 0.5;
+    const ay = (nav.nodeY[a] ?? 0) / TILE_M - 0.5;
+    const bx = (nav.nodeX[b] ?? 0) / TILE_M - 0.5;
+    const by = (nav.nodeY[b] ?? 0) / TILE_M - 0.5;
+    const span = Math.max(Math.abs(bx - ax), Math.abs(by - ay));
+    if ((flags & NAV_FLAG_CROSSING) === 0) {
+      if (span !== 1) out.push(`nav edge ${e}: joins tiles ${span} apart without a crossing flag`);
+      continue;
+    }
+    if (ax !== bx && ay !== by) {
+      out.push(`nav edge ${e}: a crossing that is not straight`);
+      continue;
+    }
+    const dx = Math.sign(bx - ax);
+    const dy = Math.sign(by - ay);
+    let zebra = true;
+    let school = true;
+    for (let k = 1; k < span; k += 1) {
+      const t = (ay + dy * k) * w + (ax + dx * k);
+      if (!isRoadCell(map, t)) out.push(`nav edge ${e}: a crossing over a tile that is not road`);
+      zebra &&= map.defs[t]?.site === 'site.zebra';
+      school &&= map.defs[t]?.site === 'site.school_crossing';
+    }
+    const dropped = (x: number, y: number): boolean => map.defs[y * w + x]?.mark === 'dropped_kerb';
+    if (flags === NAV_FLAG.ZEBRA && !zebra) out.push(`nav edge ${e}: ZEBRA over a tile that is not a zebra`);
+    if (flags === NAV_FLAG.SCHOOL_CROSSING && !school)
+      out.push(`nav edge ${e}: SCHOOL_CROSSING over a tile that is not a school crossing`);
+    if (flags === NAV_FLAG.DROPPED_KERB && !dropped(ax, ay) && !dropped(bx, by))
+      out.push(`nav edge ${e}: DROPPED_KERB with no dropped kerb at either end`);
+  }
+  const portals = new Set(nav.portals);
+  for (let v = 0; v < nav.nodeCount; v += 1) {
+    const tx = (nav.nodeX[v] ?? 0) / TILE_M - 0.5;
+    const ty = (nav.nodeY[v] ?? 0) / TILE_M - 0.5;
+    const edge = tx === 0 || ty === 0 || tx === w - 1 || ty === h - 1;
+    if (edge !== portals.has(v))
+      out.push(`nav node ${v}: portal tag ${portals.has(v)} but on the map edge ${edge}`);
+  }
+  const frontageIds = new Set(level.frontages.map((f) => f.id));
+  for (const door of nav.doors)
+    if (!frontageIds.has(door.frontage)) out.push(`door ${door.frontage}: no such frontage`);
   return out;
 }

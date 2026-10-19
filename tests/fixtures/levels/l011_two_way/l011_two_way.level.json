@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "district.fixture_l011_two_way",
+  "name": "Fixture l011_two_way",
+  "day": "mon",
+  "mode": "shift",
+  "map": "l011_two_way.map.txt",
+  "size": [8, 6],
+  "timer": 240,
+  "seed": 1,
+  "timeOfDay": "morning",
+  "weather": "clear",
+  "start": {
+    "heading": 0
+  },
+  "depot": {
+    "rect": [0, 5, 8, 1]
+  },
+  "buildings": {
+    "A": {
+      "storeys": 2,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house"
+    }
+  }
+}

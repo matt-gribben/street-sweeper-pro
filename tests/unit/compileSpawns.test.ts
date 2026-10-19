@@ -79,7 +79,7 @@ function compileInline(rows: readonly string[], extra: Record<string, unknown> =
     levelText: levelJson(rows, extra),
     knownAssetIds: KNOWN,
     kerbBlob: KERB_BLOB,
-    skipCodes: LAYOUT_CODES,
+    skipCodes: [...LAYOUT_CODES, 'L011', 'L012', 'L013'],
   });
 }
 

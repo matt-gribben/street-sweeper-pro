@@ -8,6 +8,6 @@
   "public/assets/atlas/world.json": "bd99d8acdf39dbe600374c60010157be5e9d917e55643608584d6b3f4b7f37d3",
   "public/assets/atlas/world.png": "a6cfa277b7fd3e756d5fe3544e8b8d580f58db76d5239ddd3a055f1c017b3edb",
   "public/assets/fonts/kerbside5x7.json": "dd727e1030daa3a825755ae3414c0d460568841cffc1dbaaeb2bd51862bad017",
-  "public/assets/levels/puddle_lane.json": "eec0bce5c17812f36fbf7a8a27dbce9752bf53d27129d411e4346c0766821d27",
+  "public/assets/levels/puddle_lane.json": "7df3523e935d36001458394159d19fef25ba1ca92eb0ae90efb9641fd59ddb55",
   "src/gen/assets.ts": "d71eddc75392689cde656843c9b729c61594600de3ec516bcb9116d55047ab84"
 }

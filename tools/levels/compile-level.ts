@@ -1,14 +1,15 @@
 // Level compiler: assets-src/levels/<name>.map.txt + <name>.level.json → public/assets/levels/<name>.json
 // (LEVEL_DESIGN §8, §10; TECHNICAL_DESIGN §15). SSP-033 builds the core: map parse, legend and overrides,
 // ground inheritance, building columns, surface and route layers, props/sites/anchors/start, the M1 checks
-// (L000–L006, L010, L013) and the v1 encoding through src/sim/map.ts. SSP-034 adds the kerb blob autotile,
+// (L000–L006, L010) and the v1 encoding through src/sim/map.ts. SSP-034 adds the kerb blob autotile,
 // collide bits, road markings and merged solids (tileLayers.ts, with the shared table read by kerbBlob.ts)
 // and L014/L015/L020–L022 (layoutChecks.ts). SSP-054 adds the M2 spawn layers (spawnLayers.ts): the grime
 // `gutter` cells and zone `grimeDensity`, the litter weight field (`spawns.litter`), the grime counts
 // (`spawns.grime`), the LitterSpec/GrimeSpec guards and L050/L051. SSP-055 adds frontages (frontages.ts) and
 // pledge resolution, one site per depot bay and skip, the depot.rect rules of L020, the frontageWidth,
 // pledges, powerups and collectibles guards, and L030/L031 (pledges), L040 (power-ups) and L041
-// (collectibles). M3/M6 add the other spawns, graphs and the remaining budgets.
+// (collectibles). SSP-076 adds the traffic lane graph and L011–L013 (laneGraph.ts), the pavement nav graph
+// (navGraph.ts) and the level.json → junctions guard. M3/M6 add the other spawns and the remaining budgets.
 //
 // Run: node tools/levels/compile-level.ts [--out <dir>] [--src <dir>] [--manifest <file>]
 //   --out <dir>       output ROOT; levels go to <dir>/public/assets/levels/ (forge verify passes build/tmp/verify)
@@ -27,6 +28,8 @@ import { fileURLToPath } from 'node:url';
 import { SHIFT_S, TILE_M } from '../../src/sim/constants.ts';
 import {
   AMBIENCE_ID_PATTERN,
+  buildLaneGraph,
+  buildNavGraph,
   COLLIDE,
   createBlankLevel,
   encodeLevel,
@@ -62,7 +65,9 @@ import {
   isFrontageUse,
 } from './frontages.ts';
 import { KERB_BLOB_PATH, type KerbBlob, readKerbBlob } from './kerbBlob.ts';
+import { computeLaneGraph, type JunctionSpec, type LaneCode, type Side } from './laneGraph.ts';
 import { checkLayout, groups, type LayoutCode } from './layoutChecks.ts';
+import { computeNavGraph } from './navGraph.ts';
 import type { Building, BuildingUse, Day, GroundName, LegendEntry, Mode, TimeOfDay } from './schema.ts';
 import {
   computeGrimeCells,
@@ -203,7 +208,8 @@ function isPlainGround(def: LegendDef): boolean {
  * A validation code. L000 (this compiler) is a level file pair or level.json that does not match schema.ts;
  * the rest are LEVEL_DESIGN §10.3. L005 covers the music/ambience shape and, since SSP-054, the
  * `litter.table` ids (canonical litter ids in entities.json, allowed in a known district).
- * L014, L015 and L020–L022 are the layout checks (layoutChecks.ts, SSP-034). L050 (the litter part) and
+ * L011–L013 are the lane graph checks (laneGraph.ts, SSP-076). L014, L015 and L020–L022 are the layout checks
+ * (layoutChecks.ts, SSP-034). L050 (the litter part) and
  * L051 are the SSP-054 budgets. L030/L031 (pledges), L040 (power-ups) and L041 (collectibles) are SSP-055;
  * L031 is the only warning.
  */
@@ -216,13 +222,13 @@ export type LevelCode =
   | 'L005'
   | 'L006'
   | 'L010'
-  | 'L013'
   | 'L030'
   | 'L031'
   | 'L040'
   | 'L041'
   | 'L050'
   | 'L051'
+  | LaneCode
   | LayoutCode;
 
 export type Diagnostic = {
@@ -237,7 +243,7 @@ export type Diagnostic = {
   message: string;
 };
 
-/** `puddle_lane.map.txt:8:23 L013 isolated road tile` (LEVEL_DESIGN §10.3). */
+/** `puddle_lane.map.txt:8:23 L013 road tile not connected to the lane graph` (LEVEL_DESIGN §10.3). */
 export function formatDiagnostic(d: Diagnostic): string {
   return `${d.file}:${d.row}:${d.col} ${d.code} ${d.message}`;
 }
@@ -463,6 +469,14 @@ type CheckedLevel = {
   pledges: string[] | null;
   powerups: CheckedPowerups | null;
   collectibles: CheckedCollectibles | null;
+  /** level.json → junctions (SSP-076): give-way overrides and mini-roundabouts; [] when absent. */
+  junctions: JunctionSpec[];
+  /**
+   * level.json → traffic is `{ none: true }` (the Depot Yard): the level has no traffic, so it compiles an
+   * empty lane graph and skips L011–L013 (LEVEL_DESIGN §7.1: narrow roads are one-way or carry no traffic).
+   * The rest of TrafficSpec is guarded by SSP-077.
+   */
+  noTraffic: boolean;
 };
 
 class Reporter {
@@ -1073,6 +1087,55 @@ function checkCollectibles(r: Reporter, value: unknown, districtId: unknown): Ch
   return ok ? out : null;
 }
 
+const SIDES: readonly Side[] = ['n', 'e', 's', 'w'];
+
+/**
+ * Guard level.json → junctions (schema.ts, SSP-076): each entry is `{ at: [x, y] }` in tiles inside the map,
+ * with `major` (distinct sides n/e/s/w) and/or `roundabout: true`. Whether `at` names a junction is checked
+ * against the lane graph later.
+ */
+function checkJunctions(r: Reporter, value: unknown, size: readonly [number, number] | null): JunctionSpec[] {
+  const out: JunctionSpec[] = [];
+  if (value === undefined) return out;
+  if (!Array.isArray(value)) {
+    r.key(['junctions'], 'L000', 'junctions must be an array of { at, major?, roundabout? }');
+    return out;
+  }
+  value.forEach((entry: unknown, i) => {
+    const where = `junctions[${i}]`;
+    const path = ['junctions'];
+    if (!isObject(entry)) {
+      r.key(path, 'L000', `${where} must be an object`);
+      return;
+    }
+    let ok = onlyKeys(r, entry, ['at', 'major', 'roundabout'], path, where);
+    const { at, major, roundabout } = entry;
+    if (!isXY(at, size)) {
+      r.key(path, 'L000', `${where}.at must be [x, y] tile coordinates inside the map`);
+      ok = false;
+    }
+    let sides: Side[] | null = null;
+    if (major !== undefined) {
+      const list = Array.isArray(major) ? major : [];
+      sides = SIDES.filter((side) => list.includes(side));
+      if (!Array.isArray(major) || sides.length !== major.length || major.length === 0) {
+        r.key(path, 'L000', `${where}.major must list distinct sides from n, e, s, w`);
+        ok = false;
+      }
+    }
+    if (roundabout !== undefined && typeof roundabout !== 'boolean') {
+      r.key(path, 'L000', `${where}.roundabout must be a boolean`);
+      ok = false;
+    }
+    if (major === undefined && roundabout !== true) {
+      r.key(path, 'L000', `${where} must set major or roundabout: true`);
+      ok = false;
+    }
+    if (ok && isXY(at, size)) out.push({ at: [at[0], at[1]], major: sides, roundabout: roundabout === true });
+  });
+  return out;
+}
+
 /** Guard a parsed level.json against schema.ts; null when a field the map checks need is unusable. */
 function checkLevelFile(
   r: Reporter,
@@ -1179,6 +1242,7 @@ function checkLevelFile(
       `powerups.count ${powerups.count} is outside ${MIN_POWERUPS}–${MAX_POWERUPS}`,
     );
   const collectibles = checkCollectibles(r, root.collectibles, id);
+  const junctions = checkJunctions(r, root.junctions, mapSize);
 
   if (typeof id !== 'string' || mode === undefined || !sizeOk || timer === undefined || weather === undefined)
     return null;
@@ -1201,6 +1265,8 @@ function checkLevelFile(
     pledges,
     powerups,
     collectibles,
+    junctions,
+    noTraffic: isObject(root.traffic) && root.traffic.none === true,
   };
 }
 
@@ -1264,7 +1330,7 @@ export type BuildingInstance = {
   use: BuildingUse;
 };
 
-/** An anchor digit placed on the map. Not written to the compiled JSON in M1 (M3 tags nav nodes, SSP-076). */
+/** An anchor digit placed on the map. Written as a nav graph anchor tag (`nav.anchors`, SSP-076). */
 export type AnchorPoint = { char: string; name: string; tile: [x: number, y: number] };
 
 /** The resolved map, kept for the compiler stages SSP-034 and later milestones add. Row-major, w·h. */
@@ -1451,10 +1517,10 @@ export type CompileInput = {
   /** The kerb blob table (readKerbBlob(KERB_BLOB_PATH)); the compiler never holds its own copy. */
   kerbBlob: KerbBlob;
   /**
-   * Layout codes not to check. Only unit tests set it, to compile tiny maps that exercise other rules
-   * without two depot bays and a hydrant; the CLI always checks everything.
+   * Layout and lane codes not to check. Only unit tests set it, to compile tiny maps that exercise other rules
+   * without two depot bays, a hydrant or a legal road network; the CLI always checks everything.
    */
-  skipCodes?: readonly LayoutCode[];
+  skipCodes?: readonly (LayoutCode | LaneCode)[];
 };
 
 export type CompileOutput = {
@@ -1558,25 +1624,22 @@ export function compileLevel(input: CompileInput): CompileResult {
     mr.at(y + 1, x + 1, 'L010', `drivable area of ${size} tile(s) not reachable from ${START_CHAR}`);
   }
 
-  // L013: a road tile with no orthogonal road neighbour.
-  for (let y = 0; y < h; y += 1) {
-    for (let x = 0; x < w; x += 1) {
-      if (!isRoadGround(map.ground[y * w + x] ?? 0)) continue;
-      const linked = NEIGHBOURS.some(([ddx, ddy]) => {
-        const nx = x + ddx;
-        const ny = y + ddy;
-        return nx >= 0 && ny >= 0 && nx < w && ny < h && isRoadGround(map.ground[ny * w + nx] ?? 0);
-      });
-      if (!linked) mr.at(y + 1, x + 1, 'L013', 'isolated road tile');
-    }
-  }
   if (mr.diagnostics.length > 0) return finish(null);
+
+  // The traffic lane graph and L011–L013 (SSP-076). An L011 road shape makes L012 meaningless, so it is
+  // reported only on a map whose roads are well formed (laneGraph.ts).
+  const skip = new Set<LevelCode>(input.skipCodes ?? []);
+  const lanes = lvl.noTraffic
+    ? { lists: { nodes: [], edges: [], bays: [] }, findings: [], junctionProblems: [] }
+    : computeLaneGraph(map, DEFAULT_TUNING.streetLife.laneSpeed, lvl.junctions);
+  for (const f of lanes.findings) if (!skip.has(f.code)) mr.at(f.y + 1, f.x + 1, f.code, f.message);
+  for (const p of lanes.junctionProblems) lr.key(['junctions'], 'L000', p.message);
+  if (mr.errors > 0 || lr.errors > 0) return finish(null);
 
   // Layout checks (L014, L015, L020–L022) over the route mask.
   const route = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i += 1)
     route[i] = map.drivable[i] === 1 && GROUND_ROUTE[map.ground[i] ?? 0] === true ? 1 : 0;
-  const skip = new Set<LevelCode>(input.skipCodes ?? []);
   for (const f of checkLayout(map, route, lvl.mode, lvl.depot)) {
     if (!skip.has(f.code)) mr.at(f.y + 1, f.x + 1, f.code, f.message);
   }
@@ -1607,8 +1670,9 @@ export function compileLevel(input: CompileInput): CompileResult {
   L.collide.set(tiles.collide);
   L.markings.set(tiles.markings);
   level.solids = mergeSolids(L.collide, w, h);
-  // grimeDensity, gutter and the litter field are the spawn layers below (SSP-054); lanes/nav stay empty
-  // stubs until M3 (SSP-076).
+  level.lanes = buildLaneGraph(lanes.lists, w, h, 'compileLevel');
+  // grimeDensity, gutter and the litter field are the spawn layers below (SSP-054); the nav graph follows the
+  // frontages, whose doors it tags (SSP-076).
 
   // Props: one per cell, at the tile centre in metres, rot 0, row-major.
   const props: LevelProp[] = [];
@@ -1759,6 +1823,8 @@ export function compileLevel(input: CompileInput): CompileResult {
     cells: f.cells.map((i): [number, number] => [i % w, Math.floor(i / w)]),
   }));
   if (lvl.collectibles !== null) checkCollectiblePlacement(lr, lvl.collectibles, map, props, lvl.mode);
+  // The pavement nav graph (SSP-076), with portal, door and anchor tags.
+  level.nav = buildNavGraph(computeNavGraph(map, frontages, anchors), w, h, 'compileLevel');
 
   // A budget or content error (L030, L041, L050, L051) fails the level before it is encoded.
   if (lr.errors > 0) return finish(null);

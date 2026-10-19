@@ -78,7 +78,7 @@ function compileInline(rows: readonly string[], extra: Record<string, unknown> =
     levelText: `${JSON.stringify(level, null, 2)}\n`,
     knownAssetIds: KNOWN,
     kerbBlob: BLOB,
-    skipCodes: LAYOUT_CODES,
+    skipCodes: [...LAYOUT_CODES, 'L011', 'L012', 'L013'],
   });
 }
 

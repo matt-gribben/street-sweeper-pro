@@ -15,10 +15,13 @@
 //   §15.1), because no M1 task creates districts.json. (SSP-033 open question 1.)
 // - The compiler validates only the fields M1 consumes (identity, mode, map, size, timer, seed, timeOfDay,
 //   weather, music, ambience, start, depot, legend, buildings, anchors), plus `litter` and `grime` since
-//   SSP-054 and `frontageWidth`, `pledges`, `powerups` and `collectibles` since SSP-055. The other
-//   spawn-side fields (`junctions`, `stains`, `hazards`, `knockables`, `npcs`, `traffic`, `events`,
+//   SSP-054, `frontageWidth`, `pledges`, `powerups` and `collectibles` since SSP-055 and `junctions` since
+//   SSP-076. The other spawn-side fields (`stains`, `hazards`, `knockables`, `npcs`, `traffic`, `events`,
 //   `skipRun`, `par`) are typed for authors but passed over unchecked until the tasks that consume them
-//   (M3 SSP-076/077, M6 SSP-190) add their guards.
+//   (M3 SSP-077, M6 SSP-190) add their guards.
+// - `junctions` (SSP-076): `major` became optional and `roundabout` was added, because LEVEL_DESIGN §7.4's
+//   mini-roundabout has no map character. An entry names the junction whose cells include its `at` tile and
+//   sets its major sides (give-way on the others), marks it a mini-roundabout, or both; it must do one.
 // - `legend` keys are single printable ASCII characters. A level may add or override entries but never
 //   redefine `A`–`Z`, `0`–`9` or `@` (§8.3). A legend entry without `ground` inherits its ground (§8.3).
 // - `start.heading` is an integer heading index 0..31 (h00 = north, clockwise); the compiler converts it to
@@ -193,7 +196,8 @@ export interface LevelFile {
   buildings: Record<string, Building>;
   /** Digit → anchor name, e.g. "1" → "doris_home". */
   anchors?: Record<string, string>;
-  junctions?: { at: XY; major: ('n' | 'e' | 's' | 'w')[] }[];
+  /** Give-way overrides and mini-roundabouts (SSP-076): `at` is any tile of the junction; set major and/or roundabout. */
+  junctions?: { at: XY; major?: ('n' | 'e' | 's' | 'w')[]; roundabout?: boolean }[];
   /** Per-use frontage widths in tiles; only the uses that get frontages (house … unit), positive integers. */
   frontageWidth?: Partial<Record<BuildingUse, number>>;
   /** Frontage ids `fr_<x>_<y>`: 8..20 on a shift level, each a generated frontage (L030). Optional (above). */

@@ -14,13 +14,17 @@ A top-down pixel-art arcade driving game about the most underappreciated job in 
 
 ---
 
-## Status: pre-alpha, M0 complete (pending lead approval)
+## Status: pre-alpha, M1 complete (pending lead approval)
 
-Milestone **M0, Foundations & Look Spike**, is done (2026-10-19): the repo is scaffolded with the pinned versions, `npm run ci` is green on the dev Mac, the forge (`tools/forge/`) builds the Blender and grid assets deterministically, the Blender and Codex wrappers work, the Kerbside-32 palette with its `night` and `shadow` tables is locked in [assets-src/STYLE.md](assets-src/STYLE.md), and the spike scene below runs in-engine. The decisions it settled are in the [M0 decision log](docs/ROADMAP.md#8-m0-spike-decision-log). There is **no game yet**: no vehicle sim, no driving, no audio. The next milestone is **M1, Drivable Bessie** (see [docs/ROADMAP.md](docs/ROADMAP.md)).
+Milestone **M1, Drivable Bessie**, is done (2026-10-19). `npm run dev` opens Puddle Lane, compiled from its ASCII map and drawn with procedural placeholder tiles and facades. You can drive Bessie there with the keyboard or a gamepad. Under her is the deterministic sim: a kinematic bicycle model, OBB/SAT collision with impact damage, kerb jolts and surface grip. The camera adds look-ahead and speed zoom, and the F1 dev panel tunes the handling live. The first 3,600-tick replay hash is committed. The evidence is in [docs/ROADMAP.md](docs/ROADMAP.md#m1-drivable-bessie). Milestone **M0, Foundations & Look Spike** (pinned scaffold, forge, Blender and Codex wrappers, the locked Kerbside-32 palette in [assets-src/STYLE.md](assets-src/STYLE.md)) closed earlier the same day, and the decisions it settled are in the [M0 decision log](docs/ROADMAP.md#8-m0-spike-decision-log). There is **no game loop yet**: no brush, litter, timer, HUD or audio. The next milestone is **M2, Sweeping Core**.
 
 Sections below that describe commands, directories or behaviour that later milestones add are marked *(partly planned)*, with what works today stated next to them.
 
-### Screenshot
+### Screenshots
+
+![Bessie driving north up a Puddle Lane street with her brushes down, between pavements, double yellow lines and a brick terrace](docs/img/m1-drive.png)
+
+Puddle Lane in the M1 build (`/?test=1&seed=1&scene=district.puddle_lane&freeze=1&springs=1`, after 4 s of full throttle with the brush down). The camera leads Bessie by nearly 3 m and the ground is exactly 1 texel per pixel. This is the `camera_1to1.png` capture from `tests/visual/camera_follow.spec.ts`, upscaled 4× with nearest-neighbour filtering. The tiles and facades are procedural placeholders until M4.
 
 ![The M0 spike scene: 1-, 3- and 6-storey blocks leaning outward from the screen centre, four Bessies, four pedestrians and four sprite-stack lamp posts](docs/img/m0-spike.png)
 
@@ -165,7 +169,7 @@ The canonical public build will be an HTML5 game on itch.io, pushed with butler 
 
 ## Commands *(partly planned)*
 
-Every script below exists. `npm run audio` and `npm run levels` are input-count guards until M5 and M1 add their sources (they report "0 sources; nothing to render"), `npm run test:replay` has no recorded replays until M1, and `npm run test:e2e` runs only the perf draw-call check until the M2 smoke test exists.
+Every script below exists. `npm run audio` is an input-count guard until M5 adds its sources (it reports "0 sources; nothing to render"). `npm run levels` compiles Puddle Lane, and `npm run test:replay` runs the committed `m1_drive_puddle_lane` replay (both since M1). `npm run test:e2e` runs only the perf draw-call check until the M2 smoke test exists.
 
 ### Assets and content
 

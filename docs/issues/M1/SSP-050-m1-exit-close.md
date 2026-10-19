@@ -2,7 +2,7 @@
 id: SSP-050
 title: "Verify M1 exit criteria, run the lead handling playtest and open the Close M1 PR"
 milestone: M1
-status: todo
+status: done
 type: release
 estimate: S
 labels: [type:release, area:release, area:docs, area:test, size:S, vertical-slice]
@@ -56,11 +56,11 @@ R-07: if the lead finds the handling sluggish rather than satisfyingly heavy, it
 
 ## Acceptance criteria
 
-- [ ] Every canonical exit criterion and measurable check in ROADMAP M1 is ticked in the PR with a link to its proof
-- [ ] `npm run ci` exits 0 on the dev Mac, and the PR states which checks are stubs or not yet in CI per the §5.2 ramp
-- [ ] The lead's playtest feedback is recorded in the PR; any tuning changes are in tuning.json, with GDD §7 mirrored and the replay re-recorded with a reason
-- [ ] The risk register is re-scored and the M1 checklist items are ticked in docs/ROADMAP.md
-- [ ] `npm run dev` launches a drivable Puddle Lane
+- [x] Every canonical exit criterion and measurable check in ROADMAP M1 is ticked in the PR with a link to its proof
+- [x] `npm run ci` exits 0 on the dev Mac, and the PR states which checks are stubs or not yet in CI per the §5.2 ramp
+- [x] The lead's playtest feedback is recorded in the PR; any tuning changes are in tuning.json, with GDD §7 mirrored and the replay re-recorded with a reason
+- [x] The risk register is re-scored and the M1 checklist items are ticked in docs/ROADMAP.md
+- [x] `npm run dev` launches a drivable Puddle Lane
 
 ## Verification
 

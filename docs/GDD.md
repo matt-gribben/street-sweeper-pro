@@ -252,7 +252,7 @@ All keys are remappable and stored in `ssp.settings.v1`. Rumble on impacts plays
 ### 6.2 Control design notes
 
 - **Digital steering is first-class.** Most players are on a keyboard. Steering input is rate-limited (120°/s steer, 180°/s return, see §7), so tapping A/D produces smooth arcs, not twitches. Analogue sticks map stick X directly to the target steering angle.
-- **Brake then reverse.** Holding brake at a standstill (< 0.2 m/s, proposed) engages reverse after a 0.25 s hold (proposed, M1) with the reverse beeper. This avoids accidental reversing when braking hard.
+- **Brake then reverse.** Holding brake at a standstill (below 0.2 m/s) engages reverse after a 0.25 s hold, with the reverse beeper. This avoids accidental reversing when braking hard. In reverse the pedals swap roles: brake drives Bessie backwards and throttle brakes her. Throttle at a standstill puts her back into forward at once. *(Built in SSP-030 and confirmed by the M1 lead playtest, SSP-050. The numbers live in `tuning.json` → `vehicle.sweeper.reverse`.)*
 - **Brush is a toggle, spray is a hold.** The brush is a mode (you're "on the job" or in transit); spray is a short, resource-spending burst. An accessibility option offers toggle-spray (see §17).
 - **Dump and Interact share one held button.** Holding for 1.0 s prevents accidental dumps while still being quick. A ring fills around the button prompt during the hold.
 - **The horn is a tool, not a toy.** It has gameplay effects (cats bolt, loose dogs sit, litterbugs get caught, Doris slows down) and a cost (> 3 honks in 5 s = a Noise complaint).
@@ -296,6 +296,8 @@ Bessie is the game. Handling values live in `src/data/tuning.json` → `vehicle.
 | Head-on wall hit at 11 m/s | (11 − 2) × 4 = **36 HP** | Three of these and you're towed. A 4 m/s scrape costs 8 HP. |
 | Head-on wall hit at 11 m/s with `upg.bumper` | 36 × 0.6 ≈ **21.6 HP** | |
 | Dented variant threshold | below 40 HP | Visible warning before TOWED |
+
+*Measured in the sim at M1 close (SSP-050), with drag included, which the derived values above leave out.* 0 → 4.0 m/s takes 1.98 s empty and 3.05 s at a full hopper. A stop from 10.9 m/s takes 1.62 s and 8.4 m. At 37.8 m the camera shows about 10.1 m ahead of the screen centre, plus up to 3.0 m of look-ahead, so the stop stays in view. A full-lock 90° turn takes 2.35 s at 4 m/s and 1.43 s at 10.9 m/s.
 
 **Speed display.** The HUD speedometer (the "Brush-o-meter", §15.2) shows **mph** by default for local flavour (4.0 m/s ≈ 9 mph, 6.0 m/s ≈ 13 mph, 11.0 m/s ≈ 25 mph), with km/h as a setting (proposed). Its zones matter more than its digits.
 

@@ -427,7 +427,7 @@ Each milestone has the same shape:
 *Content*
 
 - [x] `src/data/entities.json` seeded with every `litter.*` and `stain.*` from [ENTITY_CATALOG.md](ENTITY_CATALOG.md) (points, LU, notes). *(SSP-053: 15 litter and 5 stain entries with rules and adopted spray times, plus `pwr.flask_of_tea`, `collect.false_teeth` and `collect.golden_crisp`; typed loader `src/sim/entities.ts`; `tests/unit/entityCatalog.test.ts` diffs the catalog against the JSON. The M2 sweeping, hopper, water, dumping, combo, scoring, shift, star and Tidy % values are in `tuning.json`.)*
-- [ ] Puddle Lane `level.json`: litter density, spawn tables, frontages and pledge list.
+- [ ] Puddle Lane `level.json`: litter density, spawn tables, frontages and pledge list. *(Compiler support: SSP-054 bakes the litter and grime layers; SSP-055 generates the frontages (zones with stable `fr_<x>_<y>` ids), resolves pledges and checks L030/L031/L040/L041 and one site per bay and skip. With Puddle Lane's current building uses it generates 123 frontages; the 46/8 of §5.1 and the data itself arrive in SSP-056.)*
 - [ ] Placeholder `assets-src/sprites/litter/*.sprite.txt` for all 15 litter IDs (simple shapes in the right palette ramps, 16×16 cells), and placeholder `stain.*` procedural params. *(Litter part done: SSP-051, 15 grids with idle + 2 wobble frames, `dirs: "rot4"` code rotations, 180 frame IDs in the `items` atlas. Stain params done: SSP-052, 5 seeded generators in `stains.py` with 12 `v` variants in the `world` atlas, plus the `tile.grime_*` overlay patterns (ART_BIBLE §9.2) and placeholder grids for `pwr.flask_of_tea`, `collect.false_teeth`, `collect.golden_crisp`, `prop.hydrant`, `site.depot_bay` and `site.skip`.)*
 
 *Render, UI and flow*

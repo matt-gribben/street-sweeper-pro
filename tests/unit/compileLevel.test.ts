@@ -1,7 +1,9 @@
 // Level compiler core (LEVEL_DESIGN §8, §10; TECHNICAL_DESIGN §15; SSP-033): the CLI on plain Node type
 // stripping, the fixture per validation code, ground inheritance, building merge, layers and the audio header.
 // The kerb, collide, markings and layout checks of SSP-034 are in compileLayout.test.ts; the SSP-054 spawn
-// layers (grime cells, density, litter field) and L050/L051 in compileSpawns.test.ts.
+// layers (grime cells, density, litter field) and L050/L051 in compileSpawns.test.ts; the SSP-055 frontages,
+// pledges, sites and L030/L031/L040/L041 in compileFrontages.test.ts (the L031 warning fixture is there too,
+// because it compiles).
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -228,6 +230,15 @@ describe('one failing fixture per implemented code', () => {
       'l022_stop.map.txt:1:6 L022 hydrant has no stopping tile beside it (a road, apron, cobble, yard, alley or dropped-kerb tile with no prop)',
     ],
     [
+      'l030_pledges',
+      'l030_pledges.level.json:27:90 L030 pledge fr_1_1 is not a generated frontage (fr_<x>_<y>)',
+    ],
+    ['l040_powerups', 'l040_powerups.level.json:28:17 L040 powerups.count 4 is outside 1–3'],
+    [
+      'l041_collectibles',
+      'l041_collectibles.level.json:31:5 L041 Golden Crisp at [10.5, 8.5] is not on a drivable tile, so Bessie cannot reach it',
+    ],
+    [
       'l050_litter',
       'l050_litter.level.json:47:5 L050 litter.initial 1001 + expected dynamic litter 0 = 1001 is over the budget of 1000',
     ],
@@ -343,7 +354,14 @@ describe('the valid fixture', () => {
     expect(level.layers.gutter.some((v) => (v & GRIME_CELL.GUTTER) !== 0)).toBe(true);
     expect(level.litter).toBeNull();
     expect(level.grime).toBeNull();
-    expect(level.frontages).toEqual([]);
+    // Frontages (SSP-055): one per building along the row-2 pavement, each zone the pavement tile plus the
+    // row-3 gutter; widths 4 (house, leftover 1 merged), 4 (shop of width 5), 6 (civic of width 8), 4.
+    expect(level.frontages.map((f) => [f.id, f.face, f.rect, f.cells.length, f.pledge])).toEqual([
+      ['fr_0_2', 's', [0, 2, 4, 4], 8, false],
+      ['fr_4_2', 's', [4, 2, 8, 4], 8, false],
+      ['fr_10_2', 's', [10, 2, 16, 4], 12, false],
+      ['fr_16_2', 's', [16, 2, 20, 4], 8, false],
+    ]);
     expect(level.lanes).toEqual({ nodes: [], edges: [] });
     expect(level.nav).toEqual({ nodes: [], edges: [] });
     expect(level.spawns).toEqual({});
@@ -680,7 +698,7 @@ describe('level.json guards (L000)', () => {
     const litter = { initial: 0, table: {}, gutterBias: 0.5 };
     const grime = { cells: 0, gutterShare: 0, zones: [], speckle: 0 };
     expect(messages(compileInline(rows))).toEqual([]);
-    expect(messages(compileInline(rows, { pledges: ['fr_1_1'], litter, grime }))).toEqual([]);
+    expect(messages(compileInline(rows, { litter, grime }))).toEqual([]);
     expect(messages(compileInline(rows, { pledges: 'fr_1_1' }))).toEqual([
       expect.stringMatching(/L000 pledges must be an array of frontage ids$/),
     ]);

@@ -117,7 +117,18 @@ function handBuiltLevel(): Level {
     { id: 'prop.lamp_post', x: 1.5, y: 2.25, rot: Math.PI / 2 },
   ];
   level.sites = [{ id: 'site.depot_bay', rect: [4, 3, 6, 4] }];
-  level.frontages = [{ id: 'fr_0_0', pledge: true, rect: [0, 0, 2, 1], face: 's' }];
+  level.frontages = [
+    {
+      id: 'fr_0_0',
+      pledge: true,
+      rect: [0, 0, 2, 1],
+      face: 's',
+      cells: [
+        [0, 0],
+        [1, 0],
+      ],
+    },
+  ];
   level.lanes = {
     nodes: [
       [1, 5],
@@ -473,9 +484,36 @@ describe('encodeLevel / decodeLevel', () => {
     );
     expect(() =>
       decodeLevel(
-        edit((r) => (r.frontages = [{ id: 'fr_0_0', pledge: true, rect: [0, 0, 1, 1], face: 'up' }])),
+        edit(
+          (r) =>
+            (r.frontages = [{ id: 'fr_0_0', pledge: true, rect: [0, 0, 1, 1], face: 'up', cells: [[0, 0]] }]),
+        ),
       ),
     ).toThrow(/frontages\[0\]\.face must be one of n, e, s, w/);
+    // SSP-055: a frontage zone lists its tiles, inside its rect, row-major with no repeats.
+    const frontage =
+      (cells: unknown): ((r: Record<string, unknown>) => void) =>
+      (r) => {
+        r.frontages = [{ id: 'fr_0_0', pledge: false, rect: [0, 0, 2, 2], face: 's', cells }];
+      };
+    expect(() => decodeLevel(edit(frontage(undefined)))).toThrow(/frontages\[0\]\.cells must be an array/);
+    expect(() => decodeLevel(edit(frontage([])))).toThrow(
+      /frontages\[0\]\.cells must list at least one tile/,
+    );
+    expect(() => decodeLevel(edit(frontage([[2, 0]])))).toThrow(
+      /frontages\[0\]\.cells\[0\] \(2, 0\) must be an integer tile inside the frontage rect/,
+    );
+    expect(() =>
+      decodeLevel(
+        edit(
+          frontage([
+            [1, 0],
+            [0, 0],
+          ]),
+        ),
+      ),
+    ).toThrow(/frontages\[0\]\.cells must be sorted row-major with no repeats/);
+    expect(() => decodeLevel(edit(frontage([[0.5, 0]])))).toThrow(/frontages\[0\]\.cells\[0\]/);
     expect(() => decodeLevel(edit((r) => (r.weather = 'fog')))).toThrow(/weather must be one of/);
     expect(() => decodeLevel(edit((r) => delete r.player))).toThrow(/player must be an object/);
   });

@@ -990,7 +990,7 @@ Authoring (ASCII `assets-src/levels/<district>.map.txt`, one character per 2 m t
 3. Builds the collision grid and merged solid rects ([§9.1](#91-static-world)).
 4. Builds the **lane graph** (traffic) and **pavement nav graph** (pedestrians) from road and pavement cells plus legend annotations.
 5. Bakes grime density, gutter mask and the route-area mask used by Tidy %, and the litter spawn weight field (SSP-054, `tools/levels/spawnLayers.ts`).
-6. Checks budgets (litter, NPC and vehicle capacities, frontage count, 8–20 pledges) and fails with file:line errors. *As built (SSP-054):* L050's litter part and L051; the NPC and vehicle peaks need the M3 specs.
+6. Checks budgets (litter, NPC and vehicle capacities, frontage count, 8–20 pledges) and fails with file:line errors. *As built (SSP-054):* L050's litter part and L051; the NPC and vehicle peaks need the M3 specs. *As built (SSP-055):* generates the frontages and resolves the pledges (`tools/levels/frontages.ts`), with L030 (8–20 pledges, known ids), the L031 street-spread warning, L040 (1–3 power-ups) and L041 (collectible placement) ([LEVEL_DESIGN §7.10, §10.3](LEVEL_DESIGN.md#103-validation-rules)).
 7. Writes JSON with stable key order and no timestamps, so the output is byte-reproducible and verified by `assets:verify`.
 
 ### 15.2 Compiled schema (v1)
@@ -1020,8 +1020,9 @@ Grid layers are base64-encoded raw `Uint8` arrays in row-major order (compact an
   },
   "solids": [[x0, y0, x1, y1]],           // merged rects in tiles, x1/y1 exclusive
   "props":  [{ "id": "prop.hydrant", "x": 21.0, "y": 14.0, "rot": 0 }],
-  "sites":  [{ "id": "site.depot_bay", "rect": [2, 40, 6, 44] }],
-  "frontages": [{ "id": "fr_10_3", "pledge": true, "rect": [10, 3, 14, 4], "face": "s" }],  // fr_<x>_<y>, LEVEL_DESIGN §7.10
+  "sites":  [{ "id": "site.depot_bay", "rect": [6, 42, 8, 45] }],   // one per bay and per skip (SSP-055)
+  "frontages": [{ "id": "fr_0_3", "pledge": true, "rect": [0, 3, 3, 5], "face": "s",
+                  "cells": [[0, 3], [1, 3], [2, 3], [0, 4], [1, 4], [2, 4]] }],  // fr_<x>_<y>, LEVEL_DESIGN §7.10
   "lanes":  { "nodes": [[x, y]], "edges": [[from, to, speedLimit, flags]] },
   "nav":    { "nodes": [[x, y]], "edges": [[from, to, flags]] },
   "spawns": {                             // keys sorted
@@ -1062,6 +1063,8 @@ Grid layers are base64-encoded raw `Uint8` arrays in row-major order (compact an
 - **`spawns.grime`** is `{ cells, gutterCells, speckle }`, with `gutterCells = round(cells × gutterShare)` computed once by the compiler, so `dirt.ts` never re-rounds a float ([§10.3](#103-grime-mask-srcsimdirtts) has the selection). Omitted when level.json has no `grime`.
 - **`spawns.litter`** is one object, not a list: `initial` and `minSpacingM` from level.json, the type `table` (`{ id, weight, requires }` sorted by id, `requires` = the `LITTER_PLACE` bits a sub-cell needs for that type), `places` (base64 `Uint8`, `LITTER_PLACE` bits per 0.5 m sub-cell: 0 `GUTTER` road within 1 tile of a raised kerb, 1 `PAVEMENT`, 2 `NEAR_TREE` within 4 m of a `prop.tree`, 3 `NEAR_KERB` within 2 tiles of a raised kerb) and `weights` (base64 of little-endian `Uint16`, one per sub-cell, row-major over (w·4) × (h·4)). Weights are relative: the heaviest sub-cell is 65,535, any non-zero weight is at least 1, and 0 means litter never spawns there. Integer weights keep the shift-start sampler free of float sums. Omitted when level.json has no `litter`.
 - `map.ts` decodes both into the typed `Level.litter` (`places: Uint8Array`, `weights: Uint16Array`) and `Level.grime`; `Level.spawns` keeps only the M3 list kinds and may not use the names `litter` or `grime`. The fields were added to v1 with a regenerated Puddle Lane and no reader yet, so the version stays 1.
+
+**Frontages and sites (SSP-055).** The open question was how to store a frontage zone, which is not always a rectangle (pavement depth varies at corners, junction mouths and where a wide pavement meets a narrow one). The choice: each frontage lists its zone tiles in `cells` (`[x, y]` tile pairs, row-major, unique, at least one) and keeps `rect` as their bounding box, x1/y1 exclusive like every rect. A clipped rect alone would either drop zone tiles or take in road tiles beyond the gutter, and SSP-064's per-frontage clean % needs exactly the zone; zones of different frontages may overlap at corners, so the list cannot be a per-tile index layer. `face` is the compass direction the facade looks along (n, e, s, w), and `pledge` is true for the ids in level.json → `pledges`. The encoder and decoder check that every cell is an integer tile inside the frontage's `rect`, sorted row-major with no repeats. Frontages are sorted by their ID tile. `sites` holds one entry per depot bay and per skip (each 4-connected group of `$` or `s` cells, a filled rectangle by L020), so `site.depot_bay` and `site.skip` entries can be counted as bays and skips; zebras, school crossings, bus stops and speed bumps are still merged rectangles. `cells` was added to v1 with a regenerated Puddle Lane and no reader yet (SSP-064 is the first), so the version stays 1.
 
 **Encoding (SSP-032).** `encodeLevel` writes the keys in the order above, layers as padded standard base64, one top-level key per line, one list entry per line (each entry compact) and a trailing newline; spawn and schedule entries, whose shape later milestones define, are written with their object keys sorted. `spawns.grime` and `spawns.litter` (SSP-054) are written with their keys in the order shown above. `decodeLevel` accepts the text or the parsed value, checks every field with hand-written guards, the layer lengths (`gutter` is (w·8)·(h·8)) and the id ranges, and throws a message naming the field. Re-encoding a decoded level is byte-identical (`tests/unit/map.test.ts`).
 

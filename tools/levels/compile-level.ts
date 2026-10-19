@@ -5,8 +5,10 @@
 // collide bits, road markings and merged solids (tileLayers.ts, with the shared table read by kerbBlob.ts)
 // and L014/L015/L020–L022 (layoutChecks.ts). SSP-054 adds the M2 spawn layers (spawnLayers.ts): the grime
 // `gutter` cells and zone `grimeDensity`, the litter weight field (`spawns.litter`), the grime counts
-// (`spawns.grime`), the LitterSpec/GrimeSpec guards and L050/L051. M2/M3/M6 add frontages, the other
-// spawns, graphs and the remaining budgets.
+// (`spawns.grime`), the LitterSpec/GrimeSpec guards and L050/L051. SSP-055 adds frontages (frontages.ts) and
+// pledge resolution, one site per depot bay and skip, the depot.rect rules of L020, the frontageWidth,
+// pledges, powerups and collectibles guards, and L030/L031 (pledges), L040 (power-ups) and L041
+// (collectibles). M3/M6 add the other spawns, graphs and the remaining budgets.
 //
 // Run: node tools/levels/compile-level.ts [--out <dir>] [--src <dir>] [--manifest <file>]
 //   --out <dir>       output ROOT; levels go to <dir>/public/assets/levels/ (forge verify passes build/tmp/verify)
@@ -41,15 +43,26 @@ import {
   type Weather,
 } from '../../src/sim/map.ts';
 import {
+  COLLECTIBLE_IDS,
   DEFAULT_ENTITIES,
   DEFAULT_TUNING,
   DISTRICT_IDS,
   LITTER_IDS,
+  POWERUP_IDS,
   type PropFootprint,
   STATIC_PROP_IDS,
 } from '../../src/sim/tuning.ts';
+import {
+  computeStreets,
+  DEFAULT_FRONTAGE_WIDTH,
+  FRONTAGE_USES,
+  type FrontageUse,
+  frontageStreet,
+  generateFrontages,
+  isFrontageUse,
+} from './frontages.ts';
 import { KERB_BLOB_PATH, type KerbBlob, readKerbBlob } from './kerbBlob.ts';
-import { checkLayout, type LayoutCode } from './layoutChecks.ts';
+import { checkLayout, groups, type LayoutCode } from './layoutChecks.ts';
 import type { Building, BuildingUse, Day, GroundName, LegendEntry, Mode, TimeOfDay } from './schema.ts';
 import {
   computeGrimeCells,
@@ -191,7 +204,8 @@ function isPlainGround(def: LegendDef): boolean {
  * the rest are LEVEL_DESIGN §10.3. L005 covers the music/ambience shape and, since SSP-054, the
  * `litter.table` ids (canonical litter ids in entities.json, allowed in a known district).
  * L014, L015 and L020–L022 are the layout checks (layoutChecks.ts, SSP-034). L050 (the litter part) and
- * L051 are the SSP-054 budgets.
+ * L051 are the SSP-054 budgets. L030/L031 (pledges), L040 (power-ups) and L041 (collectibles) are SSP-055;
+ * L031 is the only warning.
  */
 export type LevelCode =
   | 'L000'
@@ -203,6 +217,10 @@ export type LevelCode =
   | 'L006'
   | 'L010'
   | 'L013'
+  | 'L030'
+  | 'L031'
+  | 'L040'
+  | 'L041'
   | 'L050'
   | 'L051'
   | LayoutCode;
@@ -251,6 +269,30 @@ function lineCol(text: string, offset: number): { row: number; col: number } {
  * found (or 1:1).
  */
 export function locateJsonKey(text: string, path: readonly string[]): { row: number; col: number } {
+  const { found } = scanJsonPath(text, path);
+  return found < 0 ? { row: 1, col: 1 } : lineCol(text, found);
+}
+
+/**
+ * Where the JSON string `value` appears for the `nth` time (0 = first) after the key at `path` (e.g. one
+ * pledge id inside `pledges`); falls back to the key's position.
+ */
+export function locateJsonString(
+  text: string,
+  path: readonly string[],
+  value: string,
+  nth = 0,
+): { row: number; col: number } {
+  const { found, after } = scanJsonPath(text, path);
+  const needle = JSON.stringify(value);
+  let at = text.indexOf(needle, after);
+  for (let k = 0; k < nth && at >= 0; k += 1) at = text.indexOf(needle, at + needle.length);
+  if (at >= 0) return lineCol(text, at);
+  return found < 0 ? { row: 1, col: 1 } : lineCol(text, found);
+}
+
+/** Offset of the deepest key of `path` found in order (−1 if none) and the offset just past its colon. */
+function scanJsonPath(text: string, path: readonly string[]): { found: number; after: number } {
   let from = 0;
   let found = -1;
   for (const key of path) {
@@ -261,7 +303,7 @@ export function locateJsonKey(text: string, path: readonly string[]): { row: num
     found = m.index;
     from = m.index + m[0].length;
   }
-  return found < 0 ? { row: 1, col: 1 } : lineCol(text, found);
+  return { found, after: from };
 }
 
 function escapeRegExp(s: string): string {
@@ -379,6 +421,25 @@ type CheckedZone =
 /** level.json → grime after the guards (schema.ts GrimeSpec). */
 type CheckedGrime = { cells: number; gutterShare: number; zones: CheckedZone[]; speckle: number };
 
+/** L030: pledges a shift level lists (LEVEL_DESIGN §7.10, §10.3). */
+export const MIN_PLEDGES = 8;
+export const MAX_PLEDGES = 20;
+/** L040: power-ups a shift level places (LEVEL_DESIGN §9.6, §10.3). */
+export const MIN_POWERUPS = 1;
+export const MAX_POWERUPS = 3;
+
+/** level.json → powerups after the guards (schema.ts LevelFile.powerups). */
+type CheckedPowerups = { count: number; table: { id: string; weight: number }[]; at: [number, number][] };
+
+/** One collectible placement after the guards: `at` in tiles (0.5 = tile centre). */
+type CheckedPlacement = { at: [number, number] };
+
+/** level.json → collectibles after the guards; a missing entry is null (L041 reports it). */
+type CheckedCollectibles = {
+  lostProperty: (CheckedPlacement & { id: string }) | null;
+  goldenCrisp: CheckedPlacement | null;
+};
+
 /** The level.json fields the M1 compiler consumes, after the guards. */
 type CheckedLevel = {
   id: string;
@@ -396,6 +457,12 @@ type CheckedLevel = {
   anchors: { [digit: string]: string };
   litter: CheckedLitter | null;
   grime: CheckedGrime | null;
+  /** level.json → frontageWidth: per-use overrides of DEFAULT_FRONTAGE_WIDTH. */
+  frontageWidth: { [use in FrontageUse]?: number };
+  /** level.json → pledges, or null when absent (optional until SSP-056; see schema.ts). */
+  pledges: string[] | null;
+  powerups: CheckedPowerups | null;
+  collectibles: CheckedCollectibles | null;
 };
 
 class Reporter {
@@ -412,6 +479,20 @@ class Reporter {
   key(path: readonly string[], code: LevelCode, message: string): void {
     const { row, col } = locateJsonKey(this.text, path);
     this.at(row, col, code, message);
+  }
+  /** A warning (L031): printed, but it never fails the level. */
+  warnKey(path: readonly string[], code: LevelCode, message: string): void {
+    const { row, col } = locateJsonKey(this.text, path);
+    this.diagnostics.push({ file: this.file, row, col, code, severity: 'warning', message });
+  }
+  /** An error at the `nth` occurrence (0 = first) of the string `value` inside the value of `path`. */
+  string(path: readonly string[], value: string, code: LevelCode, message: string, nth = 0): void {
+    const { row, col } = locateJsonString(this.text, path, value, nth);
+    this.at(row, col, code, message);
+  }
+  /** Number of errors (warnings excluded). */
+  get errors(): number {
+    return this.diagnostics.filter((d) => d.severity === 'error').length;
   }
 }
 
@@ -827,6 +908,171 @@ function checkGrime(
   return { cells, gutterShare, zones: checkedZones, speckle };
 }
 
+/** Guard level.json → frontageWidth: an object of frontage use → positive integer tiles. */
+function checkFrontageWidth(r: Reporter, value: unknown): { [use in FrontageUse]?: number } {
+  const out: { [use in FrontageUse]?: number } = {};
+  if (value === undefined) return out;
+  if (!isObject(value)) {
+    r.key(['frontageWidth'], 'L000', 'frontageWidth must be an object of building use → tiles');
+    return out;
+  }
+  for (const use of Object.keys(value)) {
+    const width = value[use];
+    if (!isFrontageUse(use))
+      r.key(
+        ['frontageWidth', use],
+        'L000',
+        `frontageWidth ${JSON.stringify(use)} must be a use that gets frontages (${FRONTAGE_USES.join(', ')})`,
+      );
+    else if (!isInt(width) || width < 1)
+      r.key(['frontageWidth', use], 'L000', `frontageWidth ${use} must be a positive integer`);
+    else out[use] = width;
+  }
+  return out;
+}
+
+/** Whether an entity with these entities.json districts may appear in `districtId` (any for an unknown one). */
+function allowedIn(districts: readonly string[], districtId: unknown): boolean {
+  const known = DISTRICT_IDS.find((d) => d === districtId);
+  return known === undefined || districts.includes(known);
+}
+
+/** `[x, y]` tile coordinates (finite numbers); with `size`, inside the map. */
+function isXY(v: unknown, size: readonly [number, number] | null): v is [number, number] {
+  if (!Array.isArray(v) || v.length !== 2 || !v.every(isNum)) return false;
+  const [x = 0, y = 0] = v;
+  return size === null || (x >= 0 && y >= 0 && x < size[0] && y < size[1]);
+}
+
+/** Guard level.json → powerups (schema.ts) and its L005 ids; the caller checks L040. */
+function checkPowerups(
+  r: Reporter,
+  value: unknown,
+  districtId: unknown,
+  size: readonly [number, number] | null,
+): CheckedPowerups | null {
+  if (value === undefined) return null;
+  if (!isObject(value)) {
+    r.key(['powerups'], 'L000', 'powerups must be an object');
+    return null;
+  }
+  let ok = onlyKeys(r, value, ['count', 'table', 'at'], ['powerups'], 'powerups');
+  const { count, table, at } = value;
+  if (!isInt(count)) {
+    r.key(
+      count === undefined ? ['powerups'] : ['powerups', 'count'],
+      'L000',
+      'powerups.count must be an integer',
+    );
+    ok = false;
+  }
+  const entries: { id: string; weight: number }[] = [];
+  if (!isObject(table) || Object.keys(table).length === 0) {
+    r.key(
+      table === undefined ? ['powerups'] : ['powerups', 'table'],
+      'L000',
+      'powerups.table must be an object of pwr.* id → weight with at least one entry',
+    );
+    ok = false;
+  } else {
+    for (const id of Object.keys(table)) {
+      const weight = table[id];
+      const path = ['powerups', 'table', id];
+      const known = POWERUP_IDS.find((p) => p === id);
+      if (!isNum(weight) || weight <= 0) {
+        r.key(path, 'L000', `powerups.table ${id} weight must be a positive number`);
+        ok = false;
+      } else if (known === undefined) {
+        r.key(path, 'L005', `powerups.table ${JSON.stringify(id)} is not a pwr id in src/data/entities.json`);
+        ok = false;
+      } else if (!allowedIn(DEFAULT_ENTITIES.powerups[known].districts, districtId)) {
+        r.key(
+          path,
+          'L005',
+          `powerups.table ${id} is not allowed in ${String(districtId)} (entities.json districts)`,
+        );
+        ok = false;
+      } else entries.push({ id, weight });
+    }
+  }
+  const placed: [number, number][] = [];
+  if (at !== undefined) {
+    if (!Array.isArray(at) || !at.every((p) => isXY(p, size))) {
+      r.key(
+        ['powerups', 'at'],
+        'L000',
+        'powerups.at must be an array of [x, y] tile positions inside the map',
+      );
+      ok = false;
+    } else for (const p of at as [number, number][]) placed.push([p[0], p[1]]);
+  }
+  if (!ok || !isInt(count)) return null;
+  entries.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return { count, table: entries, at: placed };
+}
+
+/** Guard level.json → collectibles (schema.ts) and the Lost Property id (L005). Missing entries stay null. */
+function checkCollectibles(r: Reporter, value: unknown, districtId: unknown): CheckedCollectibles | null {
+  if (value === undefined) return null;
+  if (!isObject(value)) {
+    r.key(['collectibles'], 'L000', 'collectibles must be an object');
+    return null;
+  }
+  let ok = onlyKeys(r, value, ['lostProperty', 'goldenCrisp'], ['collectibles'], 'collectibles');
+  const out: CheckedCollectibles = { lostProperty: null, goldenCrisp: null };
+  for (const kind of ['lostProperty', 'goldenCrisp'] as const) {
+    const entry = value[kind];
+    const path = ['collectibles', kind];
+    if (entry === undefined) continue;
+    if (!isObject(entry)) {
+      r.key(path, 'L000', `collectibles.${kind} must be an object`);
+      ok = false;
+      continue;
+    }
+    const fields = kind === 'lostProperty' ? ['id', 'at'] : ['at'];
+    if (!onlyKeys(r, entry, fields, path, `collectibles.${kind}`)) ok = false;
+    if (!isXY(entry.at, null)) {
+      r.key(
+        entry.at === undefined ? path : [...path, 'at'],
+        'L000',
+        `collectibles.${kind}.at must be [x, y] in tiles`,
+      );
+      ok = false;
+      continue;
+    }
+    const at: [number, number] = [entry.at[0], entry.at[1]];
+    if (kind === 'goldenCrisp') {
+      out.goldenCrisp = { at };
+      continue;
+    }
+    const id = entry.id;
+    const known = COLLECTIBLE_IDS.find((c) => c === id);
+    if (typeof id !== 'string' || !/^collect\.[a-z0-9_]+$/.test(id)) {
+      r.key(
+        id === undefined ? path : [...path, 'id'],
+        'L000',
+        'collectibles.lostProperty.id must be a collect.* id',
+      );
+      ok = false;
+    } else if (known === undefined || DEFAULT_ENTITIES.collectibles[known].kind !== 'lostProperty') {
+      r.key(
+        [...path, 'id'],
+        'L005',
+        `collectibles.lostProperty.id ${id} is not a lostProperty collectible in src/data/entities.json`,
+      );
+      ok = false;
+    } else if (!allowedIn(DEFAULT_ENTITIES.collectibles[known].districts, districtId)) {
+      r.key(
+        [...path, 'id'],
+        'L005',
+        `collectibles.lostProperty.id ${id} is not allowed in ${String(districtId)} (entities.json districts)`,
+      );
+      ok = false;
+    } else out.lostProperty = { id, at };
+  }
+  return ok ? out : null;
+}
+
 /** Guard a parsed level.json against schema.ts; null when a field the map checks need is unusable. */
 function checkLevelFile(
   r: Reporter,
@@ -902,14 +1148,37 @@ function checkLevelFile(
   const buildings = checkBuildings(r, root.buildings, known);
   const anchors = checkAnchors(r, root.anchors);
 
-  if (
-    root.pledges !== undefined &&
-    !(Array.isArray(root.pledges) && root.pledges.every((p) => typeof p === 'string'))
-  )
-    bad('pledges', 'must be an array of frontage ids');
+  let pledges: string[] | null = null;
+  if (root.pledges !== undefined) {
+    if (Array.isArray(root.pledges) && root.pledges.every((p) => typeof p === 'string')) {
+      pledges = root.pledges;
+      // L030 (count): a shift level lists 8..20 pledges. The ids are resolved against the frontages later.
+      if (mode === 'shift' && (pledges.length < MIN_PLEDGES || pledges.length > MAX_PLEDGES))
+        r.key(
+          ['pledges'],
+          'L030',
+          `pledges lists ${pledges.length} frontage(s); a shift level needs ${MIN_PLEDGES}–${MAX_PLEDGES}`,
+        );
+    } else bad('pledges', 'must be an array of frontage ids');
+  }
   const anchorNames = new Set(Object.values(anchors));
+  const mapSize: [number, number] | null = sizeOk ? [size[0], size[1]] : null;
   const litter = checkLitter(r, root.litter, id, anchorNames);
-  const grime = checkGrime(r, root.grime, sizeOk ? [size[0], size[1]] : null, anchorNames);
+  const grime = checkGrime(r, root.grime, mapSize, anchorNames);
+  const frontageWidth = checkFrontageWidth(r, root.frontageWidth);
+  const powerups = checkPowerups(r, root.powerups, id, mapSize);
+  // L040: a shift level places 1..3 power-ups.
+  if (
+    powerups !== null &&
+    mode === 'shift' &&
+    (powerups.count < MIN_POWERUPS || powerups.count > MAX_POWERUPS)
+  )
+    r.key(
+      ['powerups', 'count'],
+      'L040',
+      `powerups.count ${powerups.count} is outside ${MIN_POWERUPS}–${MAX_POWERUPS}`,
+    );
+  const collectibles = checkCollectibles(r, root.collectibles, id);
 
   if (typeof id !== 'string' || mode === undefined || !sizeOk || timer === undefined || weather === undefined)
     return null;
@@ -928,6 +1197,10 @@ function checkLevelFile(
     anchors,
     litter,
     grime,
+    frontageWidth,
+    pledges,
+    powerups,
+    collectibles,
   };
 }
 
@@ -1245,7 +1518,7 @@ export function compileLevel(input: CompileInput): CompileResult {
     else if (x < dx || y < dy || x >= dx + dw || y >= dy + dh)
       mr.at(y + 1, x + 1, 'L003', `${START_CHAR} lies outside depot.rect [${lvl.depot.join(', ')}]`);
   }
-  if (mr.diagnostics.length > 0 || lr.diagnostics.length > 0) return finish(null);
+  if (mr.errors > 0 || lr.errors > 0) return finish(null);
   const [sx, sy] = starts[0] ?? [0, 0];
 
   const { map, buildings } = resolveMap(rows, w, h, lvl);
@@ -1304,7 +1577,7 @@ export function compileLevel(input: CompileInput): CompileResult {
   for (let i = 0; i < w * h; i += 1)
     route[i] = map.drivable[i] === 1 && GROUND_ROUTE[map.ground[i] ?? 0] === true ? 1 : 0;
   const skip = new Set<LevelCode>(input.skipCodes ?? []);
-  for (const f of checkLayout(map, route, lvl.mode)) {
+  for (const f of checkLayout(map, route, lvl.mode, lvl.depot)) {
     if (!skip.has(f.code)) mr.at(f.y + 1, f.x + 1, f.code, f.message);
   }
   if (mr.diagnostics.length > 0) return finish(null);
@@ -1363,9 +1636,13 @@ export function compileLevel(input: CompileInput): CompileResult {
     }
   }
   // Sites: each id's cells merged into maximal rectangles (the solid merge on a mask), sorted north-west first.
+  // Depot bays and skips are one site per 4-connected group instead (SSP-055), the same unit L020 counts and
+  // L022 checks; layoutChecks has already required each group to be a filled rectangle (L020).
   const sites: LevelSite[] = [];
   for (const [id, mask] of siteMasks) {
-    for (const rect of mergeSolids(mask, w, h)) sites.push({ id, rect });
+    if (id === 'site.depot_bay' || id === 'site.skip') {
+      for (const cells of groups(map, (i) => mask[i] !== 0)) sites.push({ id, rect: cellBounds(cells, w) });
+    } else for (const rect of mergeSolids(mask, w, h)) sites.push({ id, rect });
   }
   sites.sort(
     (a, b) => a.rect[1] - b.rect[1] || a.rect[0] - b.rect[0] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
@@ -1455,9 +1732,143 @@ export function compileLevel(input: CompileInput): CompileResult {
     };
   }
 
-  // A budget error (L050/L051) fails the level before it is encoded.
-  if (lr.diagnostics.length > 0) return finish(null);
+  // Frontages and pledges (SSP-055, LEVEL_DESIGN §7.10), then L030 ids, L031 and L041.
+  const widths = buildings.map((b) => {
+    if (!isFrontageUse(b.use)) return 0;
+    return (
+      lvl.buildings[b.letter]?.frontageWidth ?? lvl.frontageWidth[b.use] ?? DEFAULT_FRONTAGE_WIDTH[b.use]
+    );
+  });
+  const frontages = generateFrontages(map, widths);
+  const pledged = new Set<string>();
+  if (lvl.pledges !== null) {
+    const known = new Set(frontages.map((f) => f.id));
+    for (const id of lvl.pledges) {
+      if (pledged.has(id)) lr.string(['pledges'], id, 'L030', `pledge ${id} is listed more than once`, 1);
+      else if (!known.has(id))
+        lr.string(['pledges'], id, 'L030', `pledge ${id} is not a generated frontage (fr_<x>_<y>)`);
+      pledged.add(id);
+    }
+    if (lvl.mode === 'shift') checkPledgeSpread(lr, map, frontages, pledged);
+  }
+  level.frontages = frontages.map((f) => ({
+    id: f.id,
+    pledge: pledged.has(f.id),
+    rect: f.rect,
+    face: f.face,
+    cells: f.cells.map((i): [number, number] => [i % w, Math.floor(i / w)]),
+  }));
+  if (lvl.collectibles !== null) checkCollectiblePlacement(lr, lvl.collectibles, map, props, lvl.mode);
+
+  // A budget or content error (L030, L041, L050, L051) fails the level before it is encoded.
+  if (lr.errors > 0) return finish(null);
   return finish({ level, text: encodeLevel(level), buildings, anchors, map });
+}
+
+/** Bounding box `[x0, y0, x1, y1]` (x1/y1 exclusive) of tile indices in a w-wide grid. */
+function cellBounds(cells: readonly number[], w: number): TileRect {
+  let [x0, y0, x1, y1] = [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, 0, 0];
+  for (const i of cells) {
+    const x = i % w;
+    const y = (i - x) / w;
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x + 1);
+    y1 = Math.max(y1, y + 1);
+  }
+  return [x0, y0, x1, y1];
+}
+
+/**
+ * L031 (warning, shift levels): more than a third of the pledges on one street (frontages.ts computeStreets).
+ * Pledges on no street (no gutter tile) and unknown ids are not counted on any street; the share is of every
+ * distinct listed pledge.
+ */
+function checkPledgeSpread(
+  lr: Reporter,
+  map: ResolvedMap,
+  frontages: readonly ReturnType<typeof generateFrontages>[number][],
+  pledged: ReadonlySet<string>,
+): void {
+  if (pledged.size === 0) return;
+  const { street, first } = computeStreets(map);
+  const byStreet = new Map<number, string[]>();
+  for (const f of frontages) {
+    if (!pledged.has(f.id)) continue;
+    const s = frontageStreet(street, f.gutter);
+    if (s < 0) continue;
+    const list = byStreet.get(s) ?? [];
+    list.push(f.id);
+    byStreet.set(s, list);
+  }
+  for (const [s, ids] of [...byStreet.entries()].sort((a, b) => a[0] - b[0])) {
+    if (ids.length * 3 <= pledged.size) continue;
+    const tile = first[s] ?? 0;
+    const x = tile % map.w;
+    const y = (tile - x) / map.w;
+    lr.warnKey(
+      ['pledges'],
+      'L031',
+      `${ids.length} of ${pledged.size} pledges (${ids.join(', ')}) are on the street that starts at map row ${y + 1}, column ${x + 1}; no street should hold more than a third`,
+    );
+  }
+}
+
+/**
+ * L041 (shift levels): Lost Property and the Golden Crisp must both be placed, on a tile Bessie's body can
+ * reach (drivable, so connected to @ by L010, and not inside a solid prop's footprint), and never in a footway
+ * (a 1-tile alley). Positions are tiles; the point itself is tested (0.5 = tile centre).
+ */
+function checkCollectiblePlacement(
+  lr: Reporter,
+  c: CheckedCollectibles,
+  map: ResolvedMap,
+  props: readonly LevelProp[],
+  mode: Mode,
+): void {
+  if (mode !== 'shift') return;
+  const entries = [
+    ['lostProperty', 'Lost Property', c.lostProperty?.at ?? null],
+    ['goldenCrisp', 'Golden Crisp', c.goldenCrisp?.at ?? null],
+  ] as const;
+  for (const [kind, label, at] of entries) {
+    const path = ['collectibles', kind];
+    if (at === null) {
+      lr.key(['collectibles'], 'L041', `collectibles.${kind} is missing: a shift level places the ${label}`);
+      continue;
+    }
+    const why = collectibleProblem(at, map, props);
+    if (why !== null) lr.key(path, 'L041', `${label} at [${at[0]}, ${at[1]}] ${why}`);
+  }
+}
+
+/** Why Bessie's body cannot pick up a collectible at tile position `at`, or null when she can. */
+export function collectibleProblem(
+  at: readonly [number, number],
+  map: ResolvedMap,
+  props: readonly LevelProp[],
+): string | null {
+  const [x, y] = at;
+  const tx = Math.floor(x);
+  const ty = Math.floor(y);
+  if (tx < 0 || ty < 0 || tx >= map.w || ty >= map.h) return 'is outside the map';
+  const i = ty * map.w + tx;
+  const footway =
+    map.ground[i] === Ground.Alley && map.drivable[i] === 0 && map.solid[i] === 0 && map.building[i] === -1;
+  if (footway) return 'is in a footway (a 1-tile alley Bessie cannot enter)';
+  if (map.drivable[i] !== 1) return 'is not on a drivable tile, so Bessie cannot reach it';
+  const px = x * TILE_M;
+  const py = y * TILE_M;
+  for (const prop of props) {
+    const fp = propFootprint(prop.id);
+    if (fp === undefined) continue;
+    const inside =
+      fp.shape === 'circle'
+        ? (px - prop.x) ** 2 + (py - prop.y) ** 2 <= fp.radiusM ** 2
+        : Math.abs(px - prop.x) <= fp.widthM / 2 && Math.abs(py - prop.y) <= fp.lengthM / 2;
+    if (inside) return `is inside the footprint of the ${prop.id}, so Bessie cannot reach it`;
+  }
+  return null;
 }
 
 /** The solid footprint of a static prop (tuning.json → propFootprints), or undefined for any other id. */

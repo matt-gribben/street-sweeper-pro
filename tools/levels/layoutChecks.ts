@@ -17,7 +17,8 @@
 //   meets only buildings, walls or the map edge is closed and is not a mouth.
 // - **L020:** at least 2 depot bays (4-connected groups of `site.depot_bay` cells); in shift levels every
 //   skip at least 40 m from every depot bay (the Skip Run's skips are set dressing, §8.6); every route tile
-//   within 200 m of a dump site (depot bay or skip).
+//   within 200 m of a dump site (depot bay or skip). Since SSP-055 also: each bay and each skip is one filled
+//   rectangle (it compiles to one site) and every bay lies inside depot.rect.
 // - **L021:** every route tile within 150 m of a hydrant (`prop.hydrant`) or depot bay.
 // - **L022:** a hydrant needs a carriageway cell without a prop orthogonally next to it; a skip (each
 //   4-connected group of `site.skip` cells) needs a drivable cell without a prop or skip along a long side
@@ -498,7 +499,7 @@ export function pathSteps(map: LayoutMap, sources: readonly number[]): Int32Arra
 }
 
 /** 4-connected groups of cells matching `pick`, each as its cell indices in row-major discovery order. */
-function groups(map: LayoutMap, pick: (i: number) => boolean): number[][] {
+export function groups(map: Pick<LayoutMap, 'w' | 'h'>, pick: (i: number) => boolean): number[][] {
   const { w, h } = map;
   const mark = new Uint8Array(w * h);
   const out: number[][] = [];
@@ -526,8 +527,16 @@ function groups(map: LayoutMap, pick: (i: number) => boolean): number[][] {
   return out;
 }
 
-/** Run every layout check. `route` is the compiled route mask (1 = route area). */
-export function checkLayout(map: LayoutMap, route: Uint8Array, mode: Mode): LayoutFinding[] {
+/**
+ * Run every layout check. `route` is the compiled route mask (1 = route area); `depot` is level.json →
+ * depot.rect, `[x, y, w, h]` in tiles.
+ */
+export function checkLayout(
+  map: LayoutMap,
+  route: Uint8Array,
+  mode: Mode,
+  depot: readonly [number, number, number, number],
+): LayoutFinding[] {
   const { w, h } = map;
   const findings: LayoutFinding[] = [];
   const at = (i: number, code: LayoutCode, message: string): void => {
@@ -580,6 +589,38 @@ export function checkLayout(map: LayoutMap, route: Uint8Array, mode: Mode): Layo
   const bays = groups(map, (i) => site(i) === DEPOT_BAY);
   const skips = groups(map, (i) => site(i) === SKIP);
   const bayCells = bays.flat();
+  // SSP-055: each bay and skip is one filled rectangle (one compiled site), and bays lie inside depot.rect
+  // (LEVEL_DESIGN §7.7).
+  for (const [list, what] of [
+    [bays, 'depot bay ($)'],
+    [skips, 'skip (s)'],
+  ] as const) {
+    for (const cells of list) {
+      const xs = cells.map((c) => c % w);
+      const ys = cells.map((c) => Math.floor(c / w));
+      const area = (Math.max(...xs) - Math.min(...xs) + 1) * (Math.max(...ys) - Math.min(...ys) + 1);
+      if (area !== cells.length)
+        at(
+          cells[0] ?? 0,
+          'L020',
+          `${what} cells must form one filled rectangle (${cells.length} cells, not a rectangle)`,
+        );
+    }
+  }
+  const [dx0, dy0, dw, dh] = depot;
+  for (const cells of bays) {
+    const out = cells.find((c) => {
+      const x = c % w;
+      const y = (c - x) / w;
+      return x < dx0 || y < dy0 || x >= dx0 + dw || y >= dy0 + dh;
+    });
+    if (out !== undefined)
+      at(
+        out,
+        'L020',
+        `depot bay ($) lies outside depot.rect [${depot.join(', ')}]; bays belong in the depot`,
+      );
+  }
   if (bays.length < MIN_DEPOT_BAYS) {
     at(
       bays[0]?.[0] ?? 0,

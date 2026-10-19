@@ -1,7 +1,12 @@
 // Typed, validated access to src/data/tuning.json (TECHNICAL_DESIGN §2.1, §3.2 rule 4, §8). This is the
 // only src/sim file allowed to import src/data/*.json (tests/unit/simPurity.test.ts enforces it). The JSON is
 // the source of truth for every handling number; GDD §7 mirrors it (CLAUDE.md §2). It also holds the
-// provisional static-prop collision footprints (`propFootprints`, SSP-036) until M4 measures the real slices.
+// provisional static-prop collision footprints (`propFootprints`, SSP-036) until M4 measures the real slices,
+// and since SSP-053 the M2 sweeping, hopper, water, dumping, combo, scoring, shift, star and Tidy % values
+// (mirrored by GDD §8, §9, §10 and §12.1).
+//
+// It is also the gateway for src/data/entities.json: the guards and types live in ./entities.ts (re-exported
+// below) and DEFAULT_ENTITIES is loaded here, because only this file may import src/data/.
 //
 // The sim never reads DEFAULT_TUNING implicitly: the composition root passes a Tuning object into
 // createWorld(level, seed, tuning), so the dev panel (SSP-048) can hand the World an edited copy. loadTuning
@@ -10,8 +15,13 @@
 // Validation is hand-written (no zod, no `any`, CLAUDE.md §5.1): every group must hold exactly its listed
 // keys, every value must be a finite number in range, and malformed data throws an Error naming the JSON
 // path. Angles are stored in degrees in the JSON and converted to radians here, once.
+import entitiesJson from '../data/entities.json' with { type: 'json' };
 import tuningJson from '../data/tuning.json' with { type: 'json' };
-import { DEG_TO_RAD } from './constants.ts';
+import { DEG_TO_RAD, SIM_HZ } from './constants.ts';
+import { describeValue, isRecord } from './dataGuards.ts';
+import { type Entities, loadEntities } from './entities.ts';
+
+export * from './entities.ts';
 
 /** Range rule for one numeric tuning value. */
 type Check =
@@ -24,7 +34,11 @@ type Check =
   /** (0, 1]: multipliers that only ever slow Bessie down, and keep fractions */
   | 'fraction'
   /** [0, 1] */
-  | 'unit';
+  | 'unit'
+  /** any finite number: signed vehicle-local coordinates */
+  | 'finite'
+  /** an integer >= 1: counts and points per event */
+  | 'positiveInteger';
 
 type GroupSpec = Readonly<Record<string, Check>>;
 
@@ -162,6 +176,129 @@ const SWEEPER_GROUPS = {
 type SweeperGroupName = keyof typeof SWEEPER_GROUPS;
 
 // ---------------------------------------------------------------------------------------------------------
+// M2 sweeping-core sections (SSP-053): GDD §8, §9, §10, §12.1 and TECHNICAL_DESIGN §10, mirrored there. The
+// brush timings, the fling ramp (brush.cleanPickupMaxMps → brush.flingCertainMps, a 2.0 m/s width) and the
+// full-hopper mass and handling multipliers already live in vehicle.sweeper (M1) and are not repeated here.
+// Geometry is vehicle-local metres: origin at the body centre, +y forward.
+// ---------------------------------------------------------------------------------------------------------
+
+/** GDD §8.1: the two gutter brush circles, centred at (±centreXM, centreYM). */
+const GUTTER_BRUSH_SPEC = {
+  radiusM: 'positive',
+  centreXM: 'positive',
+  centreYM: 'finite',
+} as const satisfies GroupSpec;
+
+/**
+ * TECHNICAL_DESIGN §10.1: the suction rect. Items inside are pulled to the inlet at
+ * pullMps × rpm × suction multiplier (upg.suction, pwr.super_suction).
+ */
+const SUCTION_SPEC = {
+  minXM: 'finite',
+  maxXM: 'finite',
+  minYM: 'finite',
+  maxYM: 'finite',
+  pullMps: 'positive',
+} as const satisfies GroupSpec;
+
+/** GDD §8.1: the inlet rect, widthM across (x) by depthM along (y). An item whose centre enters is collected. */
+const INLET_SPEC = {
+  centreXM: 'finite',
+  centreYM: 'finite',
+  widthM: 'positive',
+  depthM: 'positive',
+} as const satisfies GroupSpec;
+
+/** TECHNICAL_DESIGN §10.1: the rect that erases grime cells while collecting. */
+const GRIME_FOOTPRINT_SPEC = {
+  minXM: 'finite',
+  maxXM: 'finite',
+  minYM: 'finite',
+  maxYM: 'finite',
+} as const satisfies GroupSpec;
+
+/** GDD §8.1 and §9.1: a gutter brush centre within this distance of a kerb edge collects gutter grime. */
+const KERB_HUGGER_SPEC = {
+  maxKerbDistanceM: 'positive',
+} as const satisfies GroupSpec;
+
+/** GDD §8.1: a flung item lands this far sideways on its kinematic arc. */
+const FLING_SPEC = {
+  minDistanceM: 'positive',
+  maxDistanceM: 'positive',
+} as const satisfies GroupSpec;
+
+const SWEEPING_GROUPS = {
+  gutterBrush: GUTTER_BRUSH_SPEC,
+  suction: SUCTION_SPEC,
+  inlet: INLET_SPEC,
+  grimeFootprint: GRIME_FOOTPRINT_SPEC,
+  kerbHugger: KERB_HUGGER_SPEC,
+  fling: FLING_SPEC,
+} as const;
+
+/** GDD §8.4: base capacity in litter units (upg.hopper raises it later) and the HUD warning fill fraction. */
+const HOPPER_SPEC = {
+  capacityLu: 'positive',
+  warnFraction: 'fraction',
+} as const satisfies GroupSpec;
+
+/** GDD §8.5: tank size, spray use over a cone ahead of Bessie, and the hydrant refill rate (water units). */
+const WATER_SPEC = {
+  tankUnits: 'positive',
+  sprayUnitsPerS: 'positive',
+  sprayConeLengthM: 'positive',
+  hydrantRefillUnitsPerS: 'positive',
+} as const satisfies GroupSpec;
+
+/** GDD §8.7: the depot bay needs Bessie below maxSpeedMps; hold Dump for holdS, then drain for drainS. */
+const DEPOT_BAY_SPEC = {
+  holdS: 'positive',
+  drainS: 'positive',
+  maxSpeedMps: 'positive',
+} as const satisfies GroupSpec;
+
+/** GDD §8.7: a skip on the route. */
+const SKIP_SPEC = {
+  holdS: 'positive',
+  drainS: 'positive',
+} as const satisfies GroupSpec;
+
+/** One combo tier (GDD §10.2): a chain of at least minChain pickups scores ×multiplier. */
+const COMBO_TIER_SPEC = {
+  minChain: 'positiveInteger',
+  multiplier: 'positiveInteger',
+} as const satisfies GroupSpec;
+
+/** GDD §9.1 and §10.3: grime points per cell and the style bonuses M2 scores. */
+const SCORING_SPEC = {
+  grimeCellPts: 'positiveInteger',
+  gutterGrimeCellPts: 'positiveInteger',
+  kerbHuggerPts: 'positiveInteger',
+  kerbHuggerEveryS: 'positive',
+  cleanSweepPts: 'positiveInteger',
+} as const satisfies GroupSpec;
+
+/** LEVEL_DESIGN §4.1: a 240 s campaign shift; the timer starts on first throttle or after rolloutS. */
+const SHIFT_SPEC = {
+  durationS: 'positive',
+  rolloutS: 'nonNegative',
+} as const satisfies GroupSpec;
+
+/** GDD §12.1: the minimum Tidy % (as a fraction) for each star. */
+const STARS_SPEC = {
+  star1MinTidy: 'fraction',
+  star2MinTidy: 'fraction',
+  star3MinTidy: 'fraction',
+} as const satisfies GroupSpec;
+
+/** GDD §9.2: Tidy % = grimeWeight × grime cleaned share + litterWeight × litter collected share. */
+const TIDY_SPEC = {
+  grimeWeight: 'unit',
+  litterWeight: 'unit',
+} as const satisfies GroupSpec;
+
+// ---------------------------------------------------------------------------------------------------------
 // The typed result. Groups keep their JSON shape except steering, whose degrees become radians.
 // ---------------------------------------------------------------------------------------------------------
 
@@ -233,11 +370,38 @@ export type PropFootprint = CirclePropFootprint | BoxPropFootprint;
  * Collision footprints of the static props (SSP-036). PROVISIONAL until the M4 art pass: ENTITY_CATALOG §9
  * defines a prop's shape as the opaque bounding box of its lowest slice, which does not exist yet for most
  * props, so tuning.json holds one hand-picked table (sizes from STYLE.md §8's nominal widths) and
- * `provisional` stays true until M4 measures the real slices. The table moves to entities.json in M2.
+ * `provisional` stays true until M4 measures the real slices. The table moves to entities.json with the prop
+ * entries (M3, SSP-075).
  */
 export type PropFootprints = {
   readonly provisional: boolean;
   readonly shapes: { readonly [K in StaticPropId]: PropFootprint };
+};
+
+/** Brush, suction, inlet, grime and fling geometry (GDD §8.1, TECHNICAL_DESIGN §10.1). */
+export type SweepingTuning = {
+  readonly gutterBrush: Group<typeof GUTTER_BRUSH_SPEC>;
+  readonly suction: Group<typeof SUCTION_SPEC>;
+  readonly inlet: Group<typeof INLET_SPEC>;
+  readonly grimeFootprint: Group<typeof GRIME_FOOTPRINT_SPEC>;
+  readonly kerbHugger: Group<typeof KERB_HUGGER_SPEC>;
+  readonly fling: Group<typeof FLING_SPEC>;
+};
+
+/** Depot bay and skip dumping (GDD §8.7, TECHNICAL_DESIGN §10.5). */
+export type DumpingTuning = {
+  readonly depotBay: Group<typeof DEPOT_BAY_SPEC>;
+  readonly skip: Group<typeof SKIP_SPEC>;
+};
+
+export type ComboTier = Group<typeof COMBO_TIER_SPEC>;
+
+/** The combo chain (GDD §10.2). Below the first tier the multiplier is ×1. */
+export type ComboTuning = {
+  /** Seconds a pickup keeps the chain alive (doubled by pwr.flask_of_tea). */
+  readonly chainS: number;
+  /** Ascending in both minChain and multiplier. */
+  readonly tiers: readonly ComboTier[];
 };
 
 /** Everything in src/data/tuning.json, validated. Pass it into the sim explicitly; never import a singleton. */
@@ -246,7 +410,31 @@ export type Tuning = {
     readonly sweeper: SweeperTuning;
   };
   readonly propFootprints: PropFootprints;
+  readonly sweeping: SweepingTuning;
+  readonly hopper: Group<typeof HOPPER_SPEC>;
+  readonly water: Group<typeof WATER_SPEC>;
+  readonly dumping: DumpingTuning;
+  readonly combo: ComboTuning;
+  readonly scoring: Group<typeof SCORING_SPEC>;
+  readonly shift: Group<typeof SHIFT_SPEC>;
+  readonly stars: Group<typeof STARS_SPEC>;
+  readonly tidy: Group<typeof TIDY_SPEC>;
 };
+
+/** The top-level keys of tuning.json, in file order. */
+const ROOT_KEYS = [
+  'vehicle',
+  'propFootprints',
+  'sweeping',
+  'hopper',
+  'water',
+  'dumping',
+  'combo',
+  'scoring',
+  'shift',
+  'stars',
+  'tidy',
+] as const;
 
 // ---------------------------------------------------------------------------------------------------------
 // Guards
@@ -257,17 +445,6 @@ const GEOMETRY_EPS_M = 1e-9;
 
 function fail(path: string, message: string): never {
   throw new Error(`tuning: ${path} ${message}`);
-}
-
-function describeValue(value: unknown): string {
-  if (value === null) return 'null';
-  if (Array.isArray(value)) return 'an array';
-  if (typeof value === 'string') return `string ${JSON.stringify(value)}`;
-  return `${typeof value} ${String(value)}`;
-}
-
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** Narrow `raw` to an object holding exactly `keys`: none missing, none unknown. */
@@ -301,6 +478,11 @@ function readNumber(raw: unknown, path: string, check: Check): number {
       break;
     case 'unit':
       if (!(raw >= 0 && raw <= 1)) fail(path, `must be in [0, 1], got ${raw}`);
+      break;
+    case 'finite':
+      break;
+    case 'positiveInteger':
+      if (!(Number.isInteger(raw) && raw >= 1)) fail(path, `must be an integer >= 1, got ${raw}`);
       break;
   }
   return raw;
@@ -427,17 +609,122 @@ function readPropFootprints(raw: unknown, path: string): PropFootprints {
   return { provisional, shapes: shapes as PropFootprints['shapes'] };
 }
 
+/** Tolerance for sums of short JSON decimals (0.6 + 0.4). */
+const SUM_EPS = 1e-9;
+
+/** A min/max rect must have positive extent on both axes. */
+function checkRect(r: { minXM: number; maxXM: number; minYM: number; maxYM: number }, path: string): void {
+  if (!(r.minXM < r.maxXM)) fail(path, `minXM (${r.minXM}) must be below maxXM (${r.maxXM})`);
+  if (!(r.minYM < r.maxYM)) fail(path, `minYM (${r.minYM}) must be below maxYM (${r.maxYM})`);
+}
+
+function readSweeping(raw: unknown, path: string): SweepingTuning {
+  const obj = readObject(raw, path, Object.keys(SWEEPING_GROUPS));
+  const g = SWEEPING_GROUPS;
+  const sweeping: SweepingTuning = {
+    gutterBrush: readGroup(obj.gutterBrush, `${path}.gutterBrush`, g.gutterBrush),
+    suction: readGroup(obj.suction, `${path}.suction`, g.suction),
+    inlet: readGroup(obj.inlet, `${path}.inlet`, g.inlet),
+    grimeFootprint: readGroup(obj.grimeFootprint, `${path}.grimeFootprint`, g.grimeFootprint),
+    kerbHugger: readGroup(obj.kerbHugger, `${path}.kerbHugger`, g.kerbHugger),
+    fling: readGroup(obj.fling, `${path}.fling`, g.fling),
+  };
+  checkRect(sweeping.suction, `${path}.suction`);
+  checkRect(sweeping.grimeFootprint, `${path}.grimeFootprint`);
+  if (sweeping.fling.minDistanceM > sweeping.fling.maxDistanceM) {
+    fail(`${path}.fling`, 'minDistanceM must not exceed maxDistanceM');
+  }
+  return sweeping;
+}
+
+function readDumping(raw: unknown, path: string): DumpingTuning {
+  const obj = readObject(raw, path, ['depotBay', 'skip']);
+  return {
+    depotBay: readGroup(obj.depotBay, `${path}.depotBay`, DEPOT_BAY_SPEC),
+    skip: readGroup(obj.skip, `${path}.skip`, SKIP_SPEC),
+  };
+}
+
+/** `combo`: the chain timer and a non-empty tier list, strictly ascending in minChain and multiplier (> 1). */
+function readCombo(raw: unknown, path: string): ComboTuning {
+  const obj = readObject(raw, path, ['chainS', 'tiers']);
+  const chainS = readNumber(obj.chainS, `${path}.chainS`, 'positive');
+  const tiersRaw = obj.tiers;
+  if (!Array.isArray(tiersRaw) || tiersRaw.length === 0) {
+    fail(`${path}.tiers`, `must be a non-empty array, got ${describeValue(tiersRaw)}`);
+  }
+  const tiers: ComboTier[] = [];
+  for (let index = 0; index < tiersRaw.length; index += 1) {
+    const tierPath = `${path}.tiers[${index}]`;
+    const tier = readGroup(tiersRaw[index], tierPath, COMBO_TIER_SPEC);
+    const previous = tiers[index - 1];
+    const floor = previous ?? { minChain: 0, multiplier: 1 };
+    if (!(tier.minChain > floor.minChain)) {
+      fail(tierPath, `minChain must be above ${floor.minChain} (tiers ascend), got ${tier.minChain}`);
+    }
+    if (!(tier.multiplier > floor.multiplier)) {
+      fail(tierPath, `multiplier must be above ${floor.multiplier} (tiers ascend), got ${tier.multiplier}`);
+    }
+    tiers.push(tier);
+  }
+  return { chainS, tiers };
+}
+
+function readScoring(raw: unknown, path: string): Group<typeof SCORING_SPEC> {
+  const scoring = readGroup(raw, path, SCORING_SPEC);
+  if (scoring.gutterGrimeCellPts < scoring.grimeCellPts) {
+    fail(path, 'gutterGrimeCellPts must not be below grimeCellPts');
+  }
+  return scoring;
+}
+
+/** The shift timer is an integer tick counter (TECHNICAL_DESIGN §5.1), so both times must be whole ticks. */
+function readShift(raw: unknown, path: string): Group<typeof SHIFT_SPEC> {
+  const shift = readGroup(raw, path, SHIFT_SPEC);
+  for (const key of ['durationS', 'rolloutS'] as const) {
+    if (!Number.isInteger(shift[key] * SIM_HZ)) {
+      fail(`${path}.${key}`, `must be a whole number of ${SIM_HZ} Hz ticks, got ${shift[key]}`);
+    }
+  }
+  if (shift.rolloutS >= shift.durationS) fail(path, 'rolloutS must be below durationS');
+  return shift;
+}
+
+function readStars(raw: unknown, path: string): Group<typeof STARS_SPEC> {
+  const stars = readGroup(raw, path, STARS_SPEC);
+  if (!(stars.star1MinTidy < stars.star2MinTidy && stars.star2MinTidy < stars.star3MinTidy)) {
+    fail(path, 'thresholds must ascend: star1MinTidy < star2MinTidy < star3MinTidy');
+  }
+  return stars;
+}
+
+function readTidy(raw: unknown, path: string): Group<typeof TIDY_SPEC> {
+  const tidy = readGroup(raw, path, TIDY_SPEC);
+  const sum = tidy.grimeWeight + tidy.litterWeight;
+  if (Math.abs(sum - 1) > SUM_EPS) fail(path, `grimeWeight + litterWeight must be 1, got ${sum}`);
+  return tidy;
+}
+
 /**
  * Validate raw tuning data (the parsed JSON, or an edited copy of it) and return a new typed Tuning object.
  * Throws an Error naming the JSON path on any missing, unknown, mistyped or out-of-range value. Every call
  * builds a fresh object, so callers may hold or hand on their own copy.
  */
 export function loadTuning(raw: unknown): Tuning {
-  const root = readObject(raw, 'root', ['vehicle', 'propFootprints']);
+  const root = readObject(raw, 'root', ROOT_KEYS);
   const vehicle = readObject(root.vehicle, 'vehicle', ['sweeper']);
   return {
     vehicle: { sweeper: readSweeper(vehicle.sweeper, 'vehicle.sweeper') },
     propFootprints: readPropFootprints(root.propFootprints, 'propFootprints'),
+    sweeping: readSweeping(root.sweeping, 'sweeping'),
+    hopper: readGroup(root.hopper, 'hopper', HOPPER_SPEC),
+    water: readGroup(root.water, 'water', WATER_SPEC),
+    dumping: readDumping(root.dumping, 'dumping'),
+    combo: readCombo(root.combo, 'combo'),
+    scoring: readScoring(root.scoring, 'scoring'),
+    shift: readShift(root.shift, 'shift'),
+    stars: readStars(root.stars, 'stars'),
+    tidy: readTidy(root.tidy, 'tidy'),
   };
 }
 
@@ -446,6 +733,12 @@ export function loadTuning(raw: unknown): Tuning {
  * into the sim explicitly; sim code must take a Tuning parameter instead of importing this.
  */
 export const DEFAULT_TUNING: Tuning = loadTuning(tuningJson);
+
+/**
+ * The committed src/data/entities.json, validated at module load (SSP-053). Like DEFAULT_TUNING, the
+ * composition root passes it into the sim; sim code takes an Entities parameter instead of importing this.
+ */
+export const DEFAULT_ENTITIES: Entities = loadEntities(entitiesJson);
 
 /**
  * A deep copy of the committed src/data/tuning.json as parsed JSON (degrees, not radians). The dev panel

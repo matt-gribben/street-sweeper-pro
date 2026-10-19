@@ -225,15 +225,15 @@ stateDiagram-v2
 
 ## 5. Stains (`stain.*`)
 
-**Common spec:** cell **32×32**, 1–3 variants, technique `procedural` (`assets-src/procedural/stains/*.json`), atlas `world`. Stains are ground decals, so they have no collision. They are **cleaned only by water spray** (6 water units/s, 2.6 m cone ahead) and scored once per stain. The spray time needed per stain is TBD (M2 tuning), with proposed defaults 1.0 s (gum), 1.5 s (milkshake) and 2.0 s (oil and chalk); `stain.splat` uses the gum value until tuned. The loop sound is the live spray synth (see [AUDIO_DESIGN](AUDIO_DESIGN.md)); there is no one-shot `sfx.*` on completion other than the score popup. **Until M4:** placeholder generators under the final frame IDs `stain.<name>:v:-:n` (SSP-052; variants gum 3, milkshake 2, oil 2, chalk_art 3, splat 2; looks in [ART_BIBLE §8.7](ART_BIBLE.md#87-stains-and-hazards-ground-decals)).
+**Common spec:** cell **32×32**, 1–3 variants, technique `procedural` (`assets-src/procedural/stains/*.json`), atlas `world`. Stains are ground decals, so they have no collision. They are **cleaned only by water spray** (6 water units/s, 2.6 m cone ahead) and scored once per stain. The **Spray** column is the seconds of spray each stain needs (`sprayS` in `entities.json`, adopted in SSP-053 from the proposed defaults and tunable in M2 playtests); `stain.splat` uses the gum value. The loop sound is the live spray synth (see [AUDIO_DESIGN](AUDIO_DESIGN.md)); there is no one-shot `sfx.*` on completion other than the score popup. **Until M4:** placeholder generators under the final frame IDs `stain.<name>:v:-:n` (SSP-052; variants gum 3, milkshake 2, oil 2, chalk_art 3, splat 2; looks in [ART_BIBLE §8.7](ART_BIBLE.md#87-stains-and-hazards-ground-decals)).
 
-| ID | Name | Pts | Districts | Notes |
-|---|---|---|---|---|
-| `stain.gum` | Chewing gum | 10 | Tue, Sat, Sun | Small, many per tile near shops and bus stops. |
-| `stain.milkshake` | Milkshake | 20 | Tue, **Fri**, Sun | |
-| `stain.oil` | Oil stain | 30 | **Wed**, Sun | **Same tile as `haz.oil_slick`.** Spraying the slick cleans this stain; the +30 is awarded once. |
-| `stain.chalk_art` | Chalk art | 30 | **Thu**, Sun | Drawn by `npc.kid_chalk`. **Cleaning it while its kid is present: −100 + 1 complaint ("WAAAH!", `kid_waah`).** Wait until the kid leaves (60–90 s) to score the +30. |
-| `stain.splat` | Splat | 0 | Any | Created by driving brush-up over `litter.dog_mess` (−20). Cleaning it removes −20 grime. |
+| ID | Name | Pts | Spray | Districts | Notes |
+|---|---|---|---|---|---|
+| `stain.gum` | Chewing gum | 10 | 1.0 s | Tue, Sat, Sun | Small, many per tile near shops and bus stops. |
+| `stain.milkshake` | Milkshake | 20 | 1.5 s | Tue, **Fri**, Sun | |
+| `stain.oil` | Oil stain | 30 | 2.0 s | **Wed**, Sun | **Same tile as `haz.oil_slick`.** Spraying the slick cleans this stain; the +30 is awarded once. |
+| `stain.chalk_art` | Chalk art | 30 | 2.0 s | **Thu**, Sun | Drawn by `npc.kid_chalk`. **Cleaning it while its kid is present: −100 + 1 complaint ("WAAAH!", `kid_waah`).** Wait until the kid leaves (60–90 s) to score the +30. |
+| `stain.splat` | Splat | 0 | 1.0 s | Any | Created by driving brush-up over `litter.dog_mess` (−20). Cleaning it removes −20 grime. |
 
 ---
 
@@ -593,7 +593,18 @@ Liveries are per-instance ramp swaps of the `veh.sweeper` frames: no extra rende
 
 ## 15. `entities.json` shape
 
-`src/data/entities.json` is keyed by entity ID. The sim reads it once at boot into typed struct-of-arrays stores; render, audio and UI read the same file for sprite, SFX and display-name lookups. The shape below is the contract this catalog mirrors. [TECHNICAL_DESIGN](TECHNICAL_DESIGN.md) owns the loader.
+`src/data/entities.json` is keyed by entity ID. The sim reads it once at boot into typed struct-of-arrays stores; render, audio and UI read the same file for sprite, SFX and display-name lookups. The shape below is the contract this catalog mirrors. [TECHNICAL_DESIGN](TECHNICAL_DESIGN.md) owns the loader: `src/sim/entities.ts` holds the types and guards, and `src/sim/tuning.ts` (the only sim file that may import `src/data/`) loads the file as `DEFAULT_ENTITIES`.
+
+Since SSP-053 (M2) the file holds the 15 `litter.*` and 5 `stain.*` entries plus the three pickups Puddle Lane references (`pwr.flask_of_tea`, `collect.false_teeth`, `collect.golden_crisp`); every other class arrives with SSP-075 (M3). Fields per class:
+
+| Class | Required fields (besides `class`, `name`, `sprite`, `districts`, `milestone`) |
+|---|---|
+| `litter` | `pts`, `lu`, `sfx.pickup`, `rules` (optional keys: `brushUp`, `flung`, `burst`, `drift`) |
+| `stain` | `pts`, `sprayS`, `rules` (optional keys: `pairedHazard`, `cleanWhileOwnerPresent`). Stains have no `sfx` ([§5](#5-stains-stain)). |
+| `pwr` | `effect` (`kind`, its values, `durationS`), `sfx.pickup` |
+| `collect` | `kind` (`lostProperty` or `goldenCrisp`), `pts`, `sfx.pickup` |
+
+Angles in `rules` are stored in degrees and converted to radians at load, like `tuning.json`. "Any" in a Districts column means all eight districts; "All except Yard" means the seven shift districts.
 
 ```json
 {
@@ -605,7 +616,18 @@ Liveries are per-instance ramp swaps of the `veh.sweeper` frames: no extra rende
     "sprite": "litter.banana_skin",
     "sfx": { "pickup": "pickup_small" },
     "districts": ["district.high_street", "district.promenade", "district.civic_quarter"],
-    "rules": { "brushUp": "spinOut180" }
+    "rules": { "brushUp": { "effect": "spinOut", "turnDeg": 180 } },
+    "milestone": "M2"
+  },
+  "stain.gum": {
+    "class": "stain",
+    "name": "Chewing gum",
+    "pts": 10,
+    "sprayS": 1.0,
+    "sprite": "stain.gum",
+    "districts": ["district.high_street", "district.kebab_mile", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M2"
   },
   "npc.old_woman": {
     "class": "npc",
@@ -626,8 +648,8 @@ Liveries are per-instance ramp swaps of the `veh.sweeper` frames: no extra rende
 
 Rules for the file:
 
-- Keys are canonical IDs from [§2](#2-id-index). The `sprite` field references an `AssetId` from `src/gen/assets.ts`, which makes a missing sprite a compile error.
-- `sfx` values are bare IDs from [§1.4](#14-sfx-notation). A unit test asserts that each one exists in `assets-src/audio/sfx/`.
+- Keys are canonical IDs from [§2](#2-id-index). The `sprite` field references an `AssetId` from `src/gen/assets.ts`. The sim may import that module for types only, so the loader checks the shape and `tests/unit/entityCatalog.test.ts` asserts that every `sprite` is a real `AssetId` with frames.
+- `sfx` values are bare IDs from [§1.4](#14-sfx-notation). Until the audio sources arrive in M5, `tests/unit/entityCatalog.test.ts` asserts that each one is in the canonical §1.4 list (and the loader rejects any other value); from M5 (SSP-168) the test also asserts that each one exists in `assets-src/audio/sfx/`.
 - `districts` here is a *membership* list. Weights and counts live in the level JSON spawn tables ([LEVEL_DESIGN](LEVEL_DESIGN.md)). The level compiler fails if a level spawns an entity whose `districts` list does not include that level.
 - `milestone` is the milestone that delivers the entity's behaviour (§6.1). The level compiler rejects a district that spawns an entity whose milestone is later than the milestone that delivers that district ([LEVEL_DESIGN §10.3](LEVEL_DESIGN.md#103-validation-rules), L007).
 - Numbers marked TBD in this document are absent from the JSON until decided; the loader must fail loudly on a missing required field rather than defaulting.
@@ -658,5 +680,5 @@ Each item is resolved in the milestone named, then this section and the tables a
 | 7 | How many `litter.spilled_shopping` do other carrying NPCs (shopper, postie) drop when hit? Only Doris (6) is specified. | 0 for everyone except Doris | M3 |
 | 8 | `stain.splat`: "Cleaning it removes −20 grime" is ambiguous (refund of the −20 penalty, or just removal of the grime). | No refund; cleaning clears the grime cells only | M2 |
 | 9 | Thursday's weather is "wind + leaf fall" but `haz.wind_gust` is listed as a Friday event. Does Thursday get gusts too? | No: Thursday wind only drives leaf fall | M6 |
-| 10 | Missing values: Doris's post-horn speed (0.4 m/s proposed), handbag whack interval (1.0 s) and give-up distance (8 m), lollipop crossing duration (6 s), stain spray time (1.0 / 1.5 / 2.0 s), knockable masses for A-board/trolley/recycling box, prop slice counts, animation frame rates. | Gameplay values: TBD (M2/M3/M6 tuning) with the proposed defaults above. Slice counts: decided in M0 (§9, [ART_BIBLE §8.6](ART_BIBLE.md#86-props)). Frame rates: [ART_BIBLE §10.2](ART_BIBLE.md#102-timing-table). | M0–M6 |
+| 10 | Missing values: Doris's post-horn speed (0.4 m/s proposed), handbag whack interval (1.0 s) and give-up distance (8 m), lollipop crossing duration (6 s), knockable masses for A-board/trolley/recycling box, prop slice counts, animation frame rates. | Gameplay values: TBD (M3/M6 tuning) with the proposed defaults above. Stain spray times were settled in M2 (SSP-053: 1.0 / 1.5 / 2.0 s, splat = gum; [§5](#5-stains-stain)). Slice counts: decided in M0 (§9, [ART_BIBLE §8.6](ART_BIBLE.md#86-props)). Frame rates: [ART_BIBLE §10.2](ART_BIBLE.md#102-timing-table). | M0–M6 |
 | 11 | SFX gaps with no ID in the canonical list: banana spin-out, Lead Tangle, seagull snatch, handbag whack, pothole/speed-bump spill. Currently mapped to the nearest existing ID or silent. | Reuse existing IDs | M5 ([AUDIO_DESIGN](AUDIO_DESIGN.md)) |

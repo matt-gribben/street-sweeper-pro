@@ -2,7 +2,7 @@
 id: SSP-053
 title: "Seed entities.json with litter, stains and pickups; add M2 values to tuning.json"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:gameplay, area:test, area:docs, size:M, vertical-slice]

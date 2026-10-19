@@ -336,6 +336,8 @@ From the player's point of view (details in [TECHNICAL_DESIGN.md](TECHNICAL_DESI
 
 ## 8. Sweeping, hopper, water and dumping
 
+Since SSP-053 the numbers in this section are **mirrored from `src/data/tuning.json`** (`sweeping`, `hopper`, `water`, `dumping`; the brush timings and fling ramp are in `vehicle.sweeper.brush`, §7.1) and item values from `src/data/entities.json` ([ENTITY_CATALOG](ENTITY_CATALOG.md)). Change the JSON first, then this section in the same commit (`tests/unit/tuning.test.ts` checks them).
+
 ### 8.1 Brush geometry
 
 Vehicle-local coordinates: origin at body centre, +y forward, metres.
@@ -484,6 +486,8 @@ Pledges are the main routing puzzle in each district: they tell the player *wher
 ---
 
 ## 10. Scoring and combos
+
+Since SSP-053 the chain timer, combo tiers, grime points and the Kerb Hugger and Clean Sweep bonuses are **mirrored from `src/data/tuning.json`** (`combo`, `scoring`), as are the Tidy % weights of §9.2 (`tidy`) and the star thresholds of §12.1 (`stars`). `tests/unit/tuning.test.ts` checks the §10.2 tier table and the §12.1 thresholds against the file.
 
 ### 10.1 Points
 

@@ -95,7 +95,7 @@
     "inlet": { "centreXM": 0.0, "centreYM": 1.2, "widthM": 1.0, "depthM": 0.4 },
     "grimeFootprint": { "minXM": -1.3, "maxXM": 1.3, "minYM": 1.3, "maxYM": 2.2 },
     "kerbHugger": { "maxKerbDistanceM": 0.2 },
-    "fling": { "minDistanceM": 1.5, "maxDistanceM": 3.0 }
+    "fling": { "minDistanceM": 1.5, "maxDistanceM": 3.0, "arcDurationS": 0.5 }
   },
   "hopper": {
     "capacityLu": 100,

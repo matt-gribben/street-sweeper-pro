@@ -414,7 +414,7 @@ Each milestone has the same shape:
 
 *Sim*
 
-- [ ] `src/sim/litter.ts`: struct-of-arrays store, 4 m spatial hash, kinematic fling arc (1.5–3 m sideways), wind drift hook (used by `litter.newspaper` and `litter.crisp_packet` later).
+- [x] `src/sim/litter.ts`: struct-of-arrays store, 4 m spatial hash, kinematic fling arc (1.5–3 m sideways), wind drift hook (used by `litter.newspaper` and `litter.crisp_packet` later). *(SSP-057: capacity 2,000, intrusive per-cell lists re-bucketed only on a cell crossing, swap-remove, the brush query box, a 0.5 s arc (`sweeping.fling.arcDurationS`, decided in SSP-057), a `flung` landing hook for M3's broken glass, the Fenwick-tree shift-start sampler and the `litterSpawned`/`litterCollected` counters; see [TECHNICAL_DESIGN §10.2](TECHNICAL_DESIGN.md#102-litterfield-srcsimlitterts). The World allocates and spawns it with SSP-065.)*
 - [ ] `src/sim/brush.ts`: raise/lower 0.5 s, RPM spin-up 0.6 s, gutter sweep-in, suction pull at 3.0 m/s × RPM × multiplier, inlet collection.
 - [ ] `src/sim/dirt.ts`: an 8×8 grid of 4 px grime cells per tile, a `Uint8` mask per district, gutter grime strip along kerbs, the Kerb Hugger check (gutter brush within 0.2 m of a kerb edge).
 - [x] `src/sim/hopper.ts`: LU accounting, mass coupling into `vehicle.ts`, bulldozer state. *(SSP-058: capacity from `tuning.json`, `EV.HopperFull` once per fill, the overflow clamp recorded in GDD §8.4, the linear drain API and LU-dumped counters for `shift.ts`; see [TECHNICAL_DESIGN §10.5](TECHNICAL_DESIGN.md#105-hopper-and-dumping-srcsimhopperts).)*

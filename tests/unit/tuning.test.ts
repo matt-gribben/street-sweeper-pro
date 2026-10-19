@@ -508,6 +508,7 @@ describe('M2 sweeping-core sections (SSP-053) mirror GDD §8–§12 and TECHNICA
     ['sweeping.kerbHugger.maxKerbDistanceM', 0.2, 'GDD §8.1 within 0.2 m of a kerb edge'],
     ['sweeping.fling.minDistanceM', 1.5, 'GDD §8.1 knocked sideways 1.5 to 3 m'],
     ['sweeping.fling.maxDistanceM', 3.0, 'GDD §8.1 knocked sideways 1.5 to 3 m'],
+    ['sweeping.fling.arcDurationS', 0.5, 'GDD §8.1 the arc lasts 0.5 s'],
     ['hopper.capacityLu', 100, 'GDD §8.4 base capacity 100 LU'],
     ['hopper.warnFraction', 0.8, 'GDD §8.4 HUD warns at 80%'],
     ['water.tankUnits', 100, 'GDD §8.5 tank 100 units'],

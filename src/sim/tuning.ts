@@ -226,10 +226,14 @@ const KERB_HUGGER_SPEC = {
   maxKerbDistanceM: 'positive',
 } as const satisfies GroupSpec;
 
-/** GDD §8.1: a flung item lands this far sideways on its kinematic arc. */
+/**
+ * GDD §8.1: a flung item lands this far sideways on its kinematic arc, and the arc lasts arcDurationS (the
+ * item is uncollectable until it lands; litter.ts rounds it to whole ticks, at least 1; SSP-057).
+ */
 const FLING_SPEC = {
   minDistanceM: 'positive',
   maxDistanceM: 'positive',
+  arcDurationS: 'positive',
 } as const satisfies GroupSpec;
 
 const SWEEPING_GROUPS = {

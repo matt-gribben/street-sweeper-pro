@@ -2,7 +2,7 @@
 id: SSP-057
 title: "Implement LitterField store, 4 m spatial hash, fling arc and shift-start spawn"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:sim, area:perf, size:L, vertical-slice]
@@ -41,13 +41,13 @@ Spawn (LEVEL_DESIGN §9.1): stream `sfc32(seed ^ hash32('litter'))`. Weighted sa
 
 ## Acceptance criteria
 
-- [ ] Property test: for random item sets and random AABBs, the hash query returns exactly the items a brute-force scan finds
-- [ ] An item moving inside one cell is not re-bucketed; crossing a boundary moves it to the new cell (unit test)
-- [ ] Swap-remove keeps the hash consistent (property test over random add/remove sequences)
-- [ ] Spawning Puddle Lane with the same seed twice gives identical stores; a different seed gives a different layout; count equals `litter.initial` (130)
-- [ ] Spawned items respect minSpacingM 0.5 m, ≤ 6 per tile and the type constraints (unit test)
-- [ ] A flung item lands 1.5–3 m sideways on the side given by the sign of its local x and is uncollectable until it lands
-- [ ] No `new`, literals, closures or map/filter inside per-tick functions (code review; heap test in SSP-065)
+- [x] Property test: for random item sets and random AABBs, the hash query returns exactly the items a brute-force scan finds
+- [x] An item moving inside one cell is not re-bucketed; crossing a boundary moves it to the new cell (unit test)
+- [x] Swap-remove keeps the hash consistent (property test over random add/remove sequences)
+- [x] Spawning Puddle Lane with the same seed twice gives identical stores; a different seed gives a different layout; count equals `litter.initial` (130)
+- [x] Spawned items respect minSpacingM 0.5 m, ≤ 6 per tile and the type constraints (unit test)
+- [x] A flung item lands 1.5–3 m sideways on the side given by the sign of its local x and is uncollectable until it lands
+- [x] No `new`, literals, closures or map/filter inside per-tick functions (code review; heap test in SSP-065)
 
 ## Verification
 

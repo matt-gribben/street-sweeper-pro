@@ -1,0 +1,24 @@
+{
+  "id": "haz.open_manhole",
+  "generator": "tiles.open_manhole",
+  "seed": 1049,
+  "cell": [32, 32],
+  "variants": 1,
+  "params": {
+    "ground": {
+      "base_index": 2,
+      "speckle": { "indices": [1, 3], "density": 0.04, "pair_probability": 0.3, "max_fraction": 0.06 }
+    },
+    "hole": { "index": 0, "radius_px": 5, "centre_px": [12, 12], "wall_index": 1 },
+    "rim": { "index": 3, "width_px": 1 },
+    "lid": {
+      "index": 4,
+      "radius_px": 5,
+      "centre_px": [19, 19],
+      "lit_index": 5,
+      "pattern_index": 3,
+      "shadow_index": 1
+    },
+    "wrap": true
+  }
+}

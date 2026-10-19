@@ -1,0 +1,12 @@
+{
+  "id": "haz.broken_glass",
+  "generator": "hazards.broken_glass",
+  "cell": [32, 32],
+  "params": {
+    "seed": 7109,
+    "frames": 2,
+    "area": { "centre_px": [15, 16], "radius_px": 10 },
+    "shards": { "index": 28, "shade_index": 27, "count": [9, 12], "length_px": [1, 3], "gap_px": 1 },
+    "glints": { "index": 7, "per_frame": 2 }
+  }
+}

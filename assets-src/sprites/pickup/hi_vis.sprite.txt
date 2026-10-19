@@ -1,0 +1,43 @@
+id: pwr.hi_vis
+cell: 16x16
+palette: kerbside32
+# SSP-101 placeholder (ART_BIBLE §8.5): a hi-vis vest, 17 hivis_orange (18 hem shade) with two 07
+# chalk reflective bands and an 06 zip, open at the neck.
+# bob 0: icon down, halo ring 16; bob 1: icon 1 px up, halo ring 07. The ring is a ground
+# marking and has no ink outline; the icon draws its own (manifest outline: false). Final art: SSP-149.
+
+frame bob:-:0
+.....gggggg.....
+...gg......gg...
+..g..00..00..g..
+.g..0hh00hh0..g.
+.g.0hhh00hhh0.g.
+g.0hhhh00hhhh0.g
+g.0hhhhhhhhhh0.g
+g.077777777770.g
+g.0hhhh66hhhh0.g
+g.0hhhhhhhhhh0.g
+g.077777777770.g
+.g0hhhhhhhhhh0g.
+.g0ihhhhhhhhi0g.
+..g0000000000g..
+...gg......gg...
+.....gggggg.....
+
+frame bob:-:1
+.....777777.....
+...7700..0077...
+..7.0hh00hh0.7..
+.7.0hhh00hhh0.7.
+.70hhhh00hhhh07.
+7.0hhhhhhhhhh0.7
+7.077777777770.7
+7.0hhhh66hhhh0.7
+7.0hhhhhhhhhh0.7
+7.077777777770.7
+7.0hhhhhhhhhh0.7
+.70ihhhhhhhhi07.
+.7.0000000000.7.
+..7..........7..
+...77......77...
+.....777777.....

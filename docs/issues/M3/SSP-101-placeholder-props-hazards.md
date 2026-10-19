@@ -2,7 +2,7 @@
 id: SSP-101
 title: "Add placeholder sprites for knockables, hazards, SSP-096 and High Street props"
 milestone: M3
-status: todo
+status: done
 type: asset
 estimate: M
 labels: [type:asset, area:assets, area:test, size:M, vertical-slice]

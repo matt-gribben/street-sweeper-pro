@@ -37,6 +37,14 @@ Surfaces (``v`` frames are plain variants unless a ``layouts`` list gives them a
   asphalt ground with a tile-wide 03 band (ART_BIBLE §8.7), lit 04 on its north/west edge and
   shaded 01 on its south/east edge, with 07 chevrons every ``chevron_period_px``. ``layouts``:
   ``band_along_x`` (across a north-south road) or ``band_along_y``.
+- ``tiles.cobbles`` (``tile.cobbles``, precinct ``:``; SSP-101): courses ``course_px`` tall of
+  rounded stones (their four corner pixels left as gap) whose pitch (stone plus a 1 px gap) is
+  drawn from ``stone_px``, 04 with some tinted 05, 03 gaps (ART_BIBLE §9.1). Each course starts at
+  a random x and wraps, so its joints never line up with the tile edge.
+- ``tiles.open_manhole`` (``haz.open_manhole``, ENTITY_CATALOG §10 "tile variant of the manhole
+  ground tile"; SSP-101): an asphalt ground with a 00 hole in a ``rim.width_px`` 03 rim, the
+  hole's far (south-east) inner wall lit 01, and the 04 lid (05 lit north-west edge, 03 pattern)
+  slid aside to the south-east, casting a 1 px 01 shadow (ART_BIBLE §8.7).
 - ``tiles.markings`` (overlays: ``tile.lane_marking``, ``tile.double_yellow``,
   ``tile.parking_bay``): transparent tiles holding straight lines, each ``{along, offset_px,
   width_px, index, dash_px?}``, worn by ``wear``. One ``layouts`` entry (a list of lines) per
@@ -79,12 +87,14 @@ __all__ = [
     "apron",
     "asphalt",
     "blob_table",
+    "cobbles",
     "grass",
     "kerb_blob",
     "kerb_dependencies",
     "kerb_distance",
     "kerb_frame",
     "markings",
+    "open_manhole",
     "pavement",
     "reduce_mask",
     "seam_ok",
@@ -479,6 +489,123 @@ def speed_bump(params: Mapping[str, object], rng: Generator, cell: tuple[int, in
     return _seamless(params, draw)
 
 
+def cobbles(params: Mapping[str, object], rng: Generator, cell: tuple[int, int], variant: int) -> U8Array:
+    """Cobbles: courses of rounded stones of random width, 04 or 05, with 1 px gaps."""
+    w, h = cell
+    course_px = _positive(params, "course_px")
+    if course_px < 3:
+        raise ProceduralError(f"params.course_px {course_px} leaves no stone between the gaps (needs >= 3)")
+    _check_period(h, course_px, "a cobble course")
+    widths = params.get("stone_px")
+    if not (
+        isinstance(widths, list)
+        and len(widths) == 2
+        and all(isinstance(v, int) and not isinstance(v, bool) for v in widths)
+        and 3 <= widths[0] <= widths[1] <= w
+    ):
+        raise ProceduralError("params.stone_px must be [lo, hi] stone pitches (stone plus gap) with 3 <= lo <= hi <= the tile width")
+    base = _index(params, "base_index")
+    gap = _index(params, "gap_index")
+    tint = _object(params, "tint")
+    tint_idx = _index(tint, "index", "tint.")
+    tint_p = _fraction(tint, "probability", "tint.")
+    lo, hi = widths
+
+    def course_widths() -> list[int]:
+        """Random stone pitches that fill one course exactly.
+
+        The last pitch is cut to fit; a cut shorter than ``lo`` joins the stone before it.
+        """
+        out: list[int] = []
+        while sum(out) < w:
+            out.append(int(rng.integers(lo, hi + 1)))
+        out[-1] -= sum(out) - w
+        if out[-1] < lo and len(out) > 1:
+            last = out.pop()
+            out[-1] += last
+        if sum(out) != w:
+            raise ProceduralError(f"tiles.cobbles: stone pitches {out} do not fill the {w} px course")
+        return out
+
+    def draw() -> U8Array:
+        out = np.full((h, w), gap, dtype=np.uint8)
+        for course in range(h // course_px):
+            y0 = course * course_px
+            x = int(rng.integers(0, w))  # the course starts anywhere: its joints wrap
+            for pitch in course_widths():
+                colour = tint_idx if rng.random() < tint_p else base
+                stone_w = pitch - 1
+                for dy in range(course_px - 1):
+                    for dx in range(stone_w):
+                        corner = dy in (0, course_px - 2) and dx in (0, stone_w - 1)
+                        if not corner or stone_w < 3:
+                            out[y0 + dy, (x + dx) % w] = colour
+                x += pitch
+        return out
+
+    return _seamless(params, draw)
+
+
+def open_manhole(params: Mapping[str, object], rng: Generator, cell: tuple[int, int], variant: int) -> U8Array:
+    """Open manhole: asphalt ground, a 00 hole in an 03 rim, the 04 lid slid aside to the south-east."""
+    w, h = cell
+    hole = _object(params, "hole")
+    hole_idx = _index(hole, "index", "hole.")
+    hole_r = _positive(hole, "radius_px", "hole.")
+    hole_c = _xy(hole, "centre_px", "hole.", cell)
+    wall_idx = _index(hole, "wall_index", "hole.")
+    rim = _object(params, "rim")
+    rim_idx = _index(rim, "index", "rim.")
+    rim_px = _positive(rim, "width_px", "rim.")
+    lid = _object(params, "lid")
+    lid_idx = _index(lid, "index", "lid.")
+    lid_r = _positive(lid, "radius_px", "lid.")
+    lid_c = _xy(lid, "centre_px", "lid.", cell)
+    lit_idx = _index(lid, "lit_index", "lid.")
+    pattern_idx = _index(lid, "pattern_index", "lid.")
+    shadow_idx = _index(lid, "shadow_index", "lid.")
+    ys, xs = np.mgrid[0:h, 0:w]
+
+    def disc(c: tuple[int, int], r: int) -> BoolArray:
+        return 4 * ((xs - c[0]) ** 2 + (ys - c[1]) ** 2) <= (2 * r + 1) ** 2
+
+    hole_px = disc(hole_c, hole_r)
+    rim_ring = disc(hole_c, hole_r + rim_px) & ~hole_px
+    # The far (south-east) inner wall catches the north-west sun: its top pixel row is lit 01.
+    wall = hole_px & ~disc((hole_c[0] - 1, hole_c[1] - 1), hole_r)
+    lid_px = disc(lid_c, lid_r)
+    lid_edge = lid_px & ~disc(lid_c, lid_r - 1)
+    lid_lit = lid_edge & ((xs - lid_c[0]) + (ys - lid_c[1]) < 0)
+    lid_pattern = lid_px & ~lid_edge & ((xs + ys) % 3 == 0)
+    lid_shadow = disc((lid_c[0] + 1, lid_c[1] + 1), lid_r) & ~lid_px & ~hole_px
+
+    def draw() -> U8Array:
+        out = _asphalt_ground(rng, params, cell)
+        out[rim_ring] = rim_idx
+        out[hole_px] = hole_idx
+        out[wall] = wall_idx
+        out[lid_shadow] = shadow_idx
+        out[lid_px] = lid_idx
+        out[lid_pattern] = pattern_idx
+        out[lid_lit] = lit_idx
+        return out
+
+    return _seamless(params, draw)
+
+
+def _xy(spec: Mapping[str, object], key: str, where: str, cell: tuple[int, int]) -> tuple[int, int]:
+    v = spec.get(key)
+    if not (
+        isinstance(v, list)
+        and len(v) == 2
+        and all(isinstance(c, int) and not isinstance(c, bool) for c in v)
+        and 0 <= v[0] < cell[0]
+        and 0 <= v[1] < cell[1]
+    ):
+        raise ProceduralError(f"{_where(where, key)} must be an [x, y] pixel inside the {cell[0]}x{cell[1]} tile, got {v!r}")
+    return v[0], v[1]
+
+
 def _line_mask(line: Mapping[str, object], cell: tuple[int, int], where: str) -> BoolArray:
     w, h = cell
     along = line.get("along")
@@ -523,8 +650,10 @@ def markings(params: Mapping[str, object], rng: Generator, cell: tuple[int, int]
 VARIANT_GENERATORS: Mapping[str, Callable[[Mapping[str, object], Generator, tuple[int, int], int], npt.NDArray[np.integer]]] = {
     "tiles.apron": apron,
     "tiles.asphalt": asphalt,
+    "tiles.cobbles": cobbles,
     "tiles.grass": grass,
     "tiles.markings": markings,
+    "tiles.open_manhole": open_manhole,
     "tiles.pavement": pavement,
     "tiles.setts": setts,
     "tiles.speed_bump": speed_bump,

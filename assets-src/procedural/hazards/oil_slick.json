@@ -1,0 +1,11 @@
+{
+  "id": "haz.oil_slick",
+  "generator": "stains.oil",
+  "seed": 7103,
+  "cell": [32, 32],
+  "variants": 2,
+  "params": {
+    "pool": { "index": 1, "radius_px": [10, 12], "rough_px": 3, "centre_px": [15, 16] },
+    "sheen": { "indices": [30, 29], "inset_px": [2, 3], "fraction": 0.7 }
+  }
+}

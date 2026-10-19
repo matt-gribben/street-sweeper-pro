@@ -1,4 +1,4 @@
-"""Tests for the SSP-052 placeholder grids: pickups, the hydrant and the site markers.
+"""Tests for the SSP-052 placeholder grids (and SSP-101's five other power-ups): pickups, the hydrant and the site markers.
 
 ART_BIBLE §8.5 (pickups: 12x12 icons on a 16x16 cell bobbing 1 px over 2 frames, on a 1 px ground
 halo ring alternating 16/07 with the bob), §8.6 (hydrant 18 with an 06 cap; the skip 17 or 22 steel
@@ -22,6 +22,12 @@ PICKUPS = {
     "pwr.flask_of_tea": ("pickup/flask_of_tea", {26, 7}),
     "collect.false_teeth": ("pickup/false_teeth", {7, 20}),
     "collect.golden_crisp": ("pickup/golden_crisp", {15, 16}),
+    # SSP-101: the other five power-ups.
+    "pwr.bacon_butty": ("pickup/bacon_butty", {12, 18}),
+    "pwr.hi_vis": ("pickup/hi_vis", {17, 7}),
+    "pwr.super_suction": ("pickup/super_suction", {5, 28}),
+    "pwr.wrench": ("pickup/wrench", {5, 6}),
+    "pwr.water_can": ("pickup/water_can", {22, 28}),
 }
 """Pickup ID -> (sprite path stem, colours the icon must show, ART_BIBLE §8.5)."""
 FLATS = {

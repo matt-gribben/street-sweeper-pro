@@ -1,0 +1,12 @@
+{
+  "id": "haz.puddle",
+  "generator": "hazards.puddle",
+  "seed": 7101,
+  "cell": [32, 32],
+  "variants": 2,
+  "params": {
+    "body": { "index": 25, "radius_px": [9, 11], "rough_px": 2, "centre_px": [15, 16] },
+    "rim": { "index": 27, "inset_px": 1 },
+    "glints": { "index": 28, "count": [2, 3] }
+  }
+}

@@ -150,6 +150,47 @@ test('the zoo boots from ?test=1&scene=zoo and draws the default view exactly', 
   expect(errors).toEqual([]);
 });
 
+test('every page of the default view draws exactly', async ({ page }, testInfo) => {
+  // SSP-101's props and power-ups push the default view past one page; each page must match its layout too.
+  const errors = collectPageErrors(page);
+  const { pageCount } = zooLayout(FRAME_IDS, {});
+  for (let n = 0; n < pageCount; n++) {
+    await openTestScene(page, `/?test=1&seed=1&scene=zoo&freeze=1&page=${n}`);
+    const frame = await readTestFrame(page);
+    await capture(testInfo, `zoo_default_p${n}.png`, frame);
+    const diff = mismatches(referenceFrame(zooLayout(FRAME_IDS, { page: n }), 0), frame);
+    expect(diff.count, `page ${n}: first mismatches ${diff.first.join(' ')}`).toBe(0);
+  }
+  expect(errors).toEqual([]);
+});
+
+/** The SSP-101 sprite stacks: the default view shows only slice 0, so each is reviewed in its asset view. */
+const STACK_PROPS = [
+  'prop.a_board',
+  'prop.bollard',
+  'prop.bus_shelter',
+  'prop.litter_bin',
+  'prop.market_stall',
+  'prop.phone_box',
+  'prop.post_box',
+  'prop.roadworks_barrier',
+  'prop.traffic_cone',
+  'prop.tree',
+  'prop.wheelie_bin',
+] as const;
+
+test('asset=<prop> shows every slice of each placeholder stack exactly', async ({ page }, testInfo) => {
+  const errors = collectPageErrors(page);
+  for (const asset of STACK_PROPS) {
+    await openTestScene(page, `/?test=1&seed=1&scene=zoo&freeze=1&asset=${asset}`);
+    const frame = await readTestFrame(page);
+    await capture(testInfo, `zoo_${asset}.png`, frame);
+    const diff = mismatches(referenceFrame(zooLayout(FRAME_IDS, { asset }), 0), frame);
+    expect(diff.count, `${asset}: first mismatches ${diff.first.join(' ')}`).toBe(0);
+  }
+  expect(errors).toEqual([]);
+});
+
 test('asset=veh.sweeper shows every Bessie frame across its pages, Bessie h00 on each', async ({
   page,
 }, testInfo) => {

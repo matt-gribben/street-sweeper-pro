@@ -19,9 +19,10 @@ import type { EventBus } from './events.ts';
 
 /**
  * Every scene ID (§6.2 scene flow, plus the test scenes of §18.5). The first block is the game's flow; the
- * spike scenes are the M0 test scenes `?test=1&scene=<id>` boots (`spike_city` is the default world without a
- * scene parameter until the Boot/Title flow arrives), and `level_preview` is the SSP-045 test scene that draws
- * compiled Puddle Lane from a pinned camera.
+ * spike scenes are the M0 test scenes `?test=1&scene=<id>` boots (`spike_city`, the default world before SSP-046,
+ * is still reachable as `?test=1&scene=spike_city` and the dev-only `?world=spike_city`), and `level_preview` is
+ * the SSP-045 test scene that draws compiled Puddle Lane from a pinned camera. `shift` is the drive-only
+ * ShiftScene (SSP-046), the default boot scene from M1, which `?test=1&scene=district.<name>` also boots.
  */
 export const SCENE_IDS = [
   'boot',
@@ -44,10 +45,15 @@ export const SCENE_IDS = [
 ] as const;
 export type SceneId = (typeof SCENE_IDS)[number];
 
-/** What a scene is entered with. Scenes without a sim ignore the seed. ShiftScene (SSP-046) adds its district. */
+/** What a scene is entered with. Scenes without a sim ignore both fields. */
 export type SceneParams = {
   /** The run seed, uint32 (`?test=1&seed=<n>`, or the shift's seed). */
   readonly seed: number;
+  /**
+   * The district a ShiftScene loads (`district.<name>`, e.g. `district.puddle_lane`, SSP-046). ShiftScene
+   * refuses to enter without one; other scenes ignore it.
+   */
+  readonly district?: string;
 };
 
 /** The scene contract (§6.1). Scenes are classes: they own GPU resources and audio nodes. */

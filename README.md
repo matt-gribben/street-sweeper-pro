@@ -114,7 +114,7 @@ Full pipeline, exact tool invocations and their gotchas: [docs/ASSET_PIPELINE.md
 
 ## Quick start
 
-> These work today. `npm run dev` shows the M0 spike city: Bessie cycling her 32 headings beside the pedestrian, with an F1 speed slider that drives the speed zoom. There is nothing to drive until M1, and the asset zoo URL below arrives in M3 (SSP-298).
+> These work today. `npm run dev` opens straight into Puddle Lane with Bessie at the depot, drivable (M1, SSP-046): W/↑ throttle, S/↓ brake (hold at a standstill to reverse), A/D or ←/→ steer, Space lowers or raises the brush; on a gamepad RT, LT, the left stick and A. There is no timer, litter or HUD until M2, F1 opens the dev panel, and the asset zoo URL below arrives in M3 (SSP-298). The M0 spike city is still at `?world=spike_city` in dev builds.
 
 ### Prerequisites
 

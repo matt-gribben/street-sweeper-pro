@@ -2,7 +2,7 @@
 id: SSP-046
 title: "Add a drive-only ShiftScene that loads Puddle Lane and draws an interpolated Bessie"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:gameplay, area:render, area:platform, size:M, vertical-slice]

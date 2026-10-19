@@ -3,9 +3,11 @@
 // depends on it (CLAUDE.md §5.1).
 //
 // URL parameters, all optional after `test=1`:
-//   seed=<n>    run seed, an unsigned 32-bit integer (no sim reads it until M1);
-//   scene=<id>  boot straight into a scene (`lean_quadrants`, `scale_1440`, `scale_sheet`, src/scenes/SpikeScene.ts;
-//               `level_preview`, src/scenes/LevelPreviewScene.ts; main.ts pushes it onto the SceneManager);
+//   seed=<n>    run seed, an unsigned 32-bit integer (the shift's World is created with it; 0 when absent);
+//   scene=<id>  boot straight into a scene: a district shift (`district.puddle_lane`, src/scenes/ShiftScene.ts,
+//               also the default without `scene`), `spike_city`, `lean_quadrants`, `scale_1440`, `scale_sheet`
+//               (src/scenes/SpikeScene.ts) or `level_preview` (src/scenes/LevelPreviewScene.ts); main.ts pushes
+//               it onto the SceneManager;
 //   tick=<n>    advance n ticks synchronously after load, before `ready` turns true;
 //   freeze=1    the loop (src/app/loop.ts) keeps rendering but never steps;
 //   night=1     the palette pass applies the night remap outside the light mask, and scenes draw their light
@@ -14,20 +16,22 @@
 //
 // `window.__ssp`:
 //   ready         true once assets are loaded and the first complete frame is rendered; specs wait for it;
-//   step(n)       advance n ticks, then render once;
-//   state()       a JSON-safe snapshot;
+//   step(n)       advance n ticks synchronously (also while frozen), then render exactly once;
+//   state()       a JSON-safe snapshot: in a shift, the World's SimSnapshot (src/sim/snapshot.ts: tick,
+//                 bessie { x, y, heading, speed }, hp) plus the camera; in a scene without a sim, the loop's
+//                 tick count plus the camera;
 //   readFrame()   the raw W×270 palette-mapped RGBA frame, row 0 at the top (Renderer.readFrame);
 //   setCamera()   pin the render camera at (x, y) sim metres and height h metres, springs off for good;
-//   perf()        draw calls of the last rendered frame (all passes) plus the frame timings recorded since
-//                 the last perfReset(): rAF timestamp deltas and frame-callback CPU time (perfCounters.ts);
+//   perf()        draw calls of the last rendered frame (all passes), frames rendered since boot, plus the
+//                 frame timings recorded since the last perfReset(): rAF timestamp deltas and frame-callback CPU
+//                 time (perfCounters.ts);
 //   perfReset()   clears the recorded timings (start of a perf sampling window).
 //
-// M0 STUBS, on the M1 loop (SSP-043): no scene holds a World yet, so a "tick" is one fixed 60 Hz loop tick of
-// the spike scene, which advances the counter driving its actors (heading cycle, brush spin). step(n) runs n
-// loop ticks synchronously (loop.runTicks) and renders once (loop.renderNow), and state() returns only
-// { tick, camera }, tick being the loop's tick count. SSP-046 binds state() to the World: step(n) then runs n
-// sim ticks of the ShiftScene and state() returns the full SimSnapshot (score, tidy, hopper, hp, tick,
-// positions).
+// step(n) runs n fixed 60 Hz loop ticks synchronously (loop.runTicks: input → scenes.fixedUpdate → event drain)
+// and renders once (loop.renderNow). In a shift each loop tick is one World tick (ShiftScene.fixedUpdate calls
+// world.step), so state().tick, the World's tick, advances by exactly n (SSP-046). In the spike scenes a tick
+// advances the counter driving their actors (heading cycle, brush spin) and state() reports the loop's tick
+// count. SimSnapshot grows with the sim: M2 adds score, tidy and hopper (SSP-065), M3 complaints (SSP-078).
 //
 // Timings are recorded once `ready` is true, one sample per requestAnimationFrame callback (the loop measures
 // the callback's CPU time and main.ts records it, so performance.now() stays in src/app/loop.ts); they are
@@ -44,6 +48,7 @@ export const TEST_RENDER_STEP_S = 1 / 60;
 /** Largest `seed`: sfc32 seeds are unsigned 32-bit integers. */
 export const MAX_SEED = 0xffff_ffff;
 
+import type { SimSnapshot } from '../sim/snapshot.ts';
 import { createPerfCounters, type PerfSamples } from './perfCounters.ts';
 
 /** Parsed `?test=1` parameters. */
@@ -69,17 +74,30 @@ export type TestCamera = {
   readonly pinned: boolean;
 };
 
-/** M0 stub of the SimSnapshot that state() returns (SSP-046 replaces it with the World's snapshot). */
-export type TestState = {
+/** state() in a scene without a sim (the spike scenes, level_preview). */
+export type SceneTestState = {
   /** Loop ticks run so far (src/app/loop.ts). */
   readonly tick: number;
   readonly camera: TestCamera;
 };
 
+/** state() in a shift: the World's SimSnapshot (tick is the World's tick) plus the camera. */
+export type ShiftTestState = SimSnapshot & { readonly camera: TestCamera };
+
+/** What `__ssp.state()` returns: JSON-safe, so it crosses `page.evaluate`. */
+export type TestState = SceneTestState | ShiftTestState;
+
+/** True when `state` came from a shift (it carries the SimSnapshot fields). */
+export function isShiftTestState(state: TestState): state is ShiftTestState {
+  return 'bessie' in state;
+}
+
 /** What `__ssp.perf()` returns: JSON-safe, so it crosses `page.evaluate`. */
 export type TestPerf = PerfSamples & {
   /** Draw calls of the last rendered frame over every pass (`renderer.info.render.calls`, §12.7). */
   readonly drawCalls: number;
+  /** Frames rendered since boot (Renderer.renderCount): step(n) adds exactly 1. */
+  readonly renders: number;
 };
 
 /** The `window.__ssp` object. */
@@ -97,6 +115,8 @@ export type SspTestApi = {
 export type TestHookHost = {
   /** The loop's tick count. */
   tick(): number;
+  /** The shift's SimSnapshot, or null when the scene has no World. */
+  snapshot(): SimSnapshot | null;
   /** Runs `n` loop ticks synchronously without drawing. */
   advance(n: number): void;
   /** Draws one complete frame now, from the current tick and camera. */
@@ -108,6 +128,8 @@ export type TestHookHost = {
   camera(): TestCamera;
   /** Draw calls of the last rendered frame, all passes (Renderer.drawCalls). */
   drawCalls(): number;
+  /** Frames rendered since boot (Renderer.renderCount). */
+  renders(): number;
 };
 
 /** An object that can carry `__ssp`: the browser's `window`, or a plain object in unit tests. */
@@ -199,11 +221,11 @@ export function installTestHooks(
       host.render();
     },
     state(): TestState {
-      const camera = host.camera();
-      return {
-        tick: host.tick(),
-        camera: { x: camera.x, y: camera.y, h: camera.h, pinned: camera.pinned },
-      };
+      const c = host.camera();
+      const camera: TestCamera = { x: c.x, y: c.y, h: c.h, pinned: c.pinned };
+      const sim = host.snapshot();
+      if (sim !== null) return { ...sim, camera };
+      return { tick: host.tick(), camera };
     },
     readFrame(): Uint8Array {
       return host.readFrame();
@@ -213,7 +235,7 @@ export function installTestHooks(
       host.render();
     },
     perf(): TestPerf {
-      return { drawCalls: host.drawCalls(), ...counters.samples() };
+      return { drawCalls: host.drawCalls(), renders: host.renders(), ...counters.samples() };
     },
     perfReset(): void {
       counters.reset();

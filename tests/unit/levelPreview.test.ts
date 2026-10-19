@@ -66,6 +66,10 @@ describe('LevelPreviewScene', () => {
       pinCamera: (x, y, h) => {
         pins.push([x, y, h]);
       },
+      followCamera: () => {
+        throw new Error('level_preview never follows');
+      },
+      releaseCamera: () => {},
     };
     return { ctx, pins, loaded };
   }

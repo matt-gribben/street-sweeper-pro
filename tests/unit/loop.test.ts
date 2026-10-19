@@ -378,6 +378,8 @@ describe('freeze mode', () => {
       pinCamera: () => {},
       camera: () => ({ x: 0, y: 0, h: 31.5, pinned: false }),
       drawCalls: () => 0,
+      snapshot: () => null,
+      renders: () => 0,
     });
     expect(hooks?.params.freeze).toBe(true);
     loop.start();

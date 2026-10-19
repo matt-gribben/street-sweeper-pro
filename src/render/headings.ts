@@ -67,6 +67,11 @@ export const BESSIE_BODY_FRAMES = HEADING_IDS.map(
   (h) => `veh.sweeper:body:${h}:0` as const,
 ) satisfies readonly FrameId[];
 
+/** Bessie's dented body frame per heading index (drawn below `health.dentedBelowHp`, ART_BIBLE §8.1). */
+export const BESSIE_DENTED_FRAMES = HEADING_IDS.map(
+  (h) => `veh.sweeper:dented:${h}:0` as const,
+) satisfies readonly FrameId[];
+
 /** Spin frames of the brush overlay (ART_BIBLE §8.1: 4 frames, 22.5° of bristle rotation each). */
 export const BRUSH_SPIN_FRAMES = 4;
 
@@ -84,6 +89,13 @@ export const BESSIE_BRUSH_FRAMES = HEADING_IDS.map(
 /** Bessie's body frame at heading index 0..31 (throws outside that range). */
 export function bessieBodyFrame(heading: number): FrameId {
   const frame = BESSIE_BODY_FRAMES[heading];
+  if (frame === undefined) throw new Error(`heading index ${heading} is not 0..${HEADING_COUNT - 1}`);
+  return frame;
+}
+
+/** Bessie's dented body frame at heading index 0..31 (throws outside that range). */
+export function bessieDentedFrame(heading: number): FrameId {
+  const frame = BESSIE_DENTED_FRAMES[heading];
   if (frame === undefined) throw new Error(`heading index ${heading} is not 0..${HEADING_COUNT - 1}`);
   return frame;
 }

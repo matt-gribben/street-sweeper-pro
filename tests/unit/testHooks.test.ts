@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   installTestHooks,
+  isShiftTestState,
   MAX_SEED,
   readTestParams,
   TEST_RENDER_STEP_S,
@@ -12,7 +13,7 @@ import {
 } from '../../src/debug/testHooks.ts';
 
 /** A host that records calls: a tick counter, a camera and a 2x1 "frame" holding the tick. */
-function fakeHost(): TestHookHost & { calls: string[] } {
+function fakeHost(snapshot: TestHookHost['snapshot'] = () => null): TestHookHost & { calls: string[] } {
   let tick = 0;
   let camera: TestCamera = { x: 0, y: 0, h: 31.5, pinned: false };
   const calls: string[] = [];
@@ -33,6 +34,8 @@ function fakeHost(): TestHookHost & { calls: string[] } {
     },
     camera: () => camera,
     drawCalls: () => 6,
+    snapshot,
+    renders: () => calls.filter((c) => c === 'render').length,
   };
 }
 
@@ -160,6 +163,43 @@ describe('installTestHooks with test=1', () => {
     expect(Object.keys(target.__ssp?.state() ?? {}).sort()).toEqual(['camera', 'tick']);
   });
 
+  it('in a shift, state() is the SimSnapshot plus the camera, and step(n) renders exactly once', () => {
+    const target: TestHookTarget = {};
+    let simTick = 0;
+    const host = fakeHost(() => ({
+      tick: simTick,
+      bessie: { x: 7, y: 89 - simTick * 0.01, heading: 0, speed: 0.5 },
+      hp: 100,
+    }));
+    const advance = host.advance;
+    host.advance = (n) => {
+      advance(n);
+      simTick += n;
+    };
+    installTestHooks(target, '?test=1&scene=district.puddle_lane&freeze=1', host);
+    const api = target.__ssp;
+    if (api === undefined) throw new Error('hooks not installed');
+    const before = api.perf().renders;
+    api.step(600);
+    expect(api.perf().renders - before).toBe(1);
+    const state = api.state();
+    expect(isShiftTestState(state)).toBe(true);
+    expect(state).toEqual({
+      tick: 600,
+      bessie: { x: 7, y: 83, heading: 0, speed: 0.5 },
+      hp: 100,
+      camera: { x: 0, y: 0, h: 31.5, pinned: false },
+    });
+    expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+  });
+
+  it('outside a shift, state() is { tick, camera } and isShiftTestState is false', () => {
+    const target: TestHookTarget = {};
+    installTestHooks(target, '?test=1', fakeHost());
+    const state = target.__ssp?.state();
+    expect(state === undefined ? true : isShiftTestState(state)).toBe(false);
+  });
+
   it('state() is JSON-safe', () => {
     const target: TestHookTarget = {};
     installTestHooks(target, '?test=1', fakeHost());
@@ -199,11 +239,11 @@ describe('installTestHooks with test=1', () => {
     const hooks = installTestHooks(target, '?test=1', fakeHost());
     expect(typeof target.__ssp?.perf).toBe('function');
     expect(typeof target.__ssp?.perfReset).toBe('function');
-    expect(target.__ssp?.perf()).toEqual({ drawCalls: 6, frameMs: [], workMs: [], overflow: 0 });
+    expect(target.__ssp?.perf()).toEqual({ drawCalls: 6, renders: 0, frameMs: [], workMs: [], overflow: 0 });
     hooks?.recordFrame(8.3, 0.1);
     hooks?.recordFrame(8.4, 0.2);
     const perf = target.__ssp?.perf();
-    expect(perf).toEqual({ drawCalls: 6, frameMs: [8.3, 8.4], workMs: [0.1, 0.2], overflow: 0 });
+    expect(perf).toEqual({ drawCalls: 6, renders: 0, frameMs: [8.3, 8.4], workMs: [0.1, 0.2], overflow: 0 });
     expect(JSON.parse(JSON.stringify(perf))).toEqual(perf);
   });
 
@@ -213,7 +253,7 @@ describe('installTestHooks with test=1', () => {
     const hooks = installTestHooks(target, '?test=1', host);
     hooks?.recordFrame(8.3, 0.1);
     target.__ssp?.perfReset();
-    expect(target.__ssp?.perf()).toEqual({ drawCalls: 6, frameMs: [], workMs: [], overflow: 0 });
+    expect(target.__ssp?.perf()).toEqual({ drawCalls: 6, renders: 0, frameMs: [], workMs: [], overflow: 0 });
     expect(host.calls).toEqual([]);
   });
 

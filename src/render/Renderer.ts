@@ -78,6 +78,7 @@ export class Renderer {
   private readonly blitMaterial: ShaderMaterial;
   private readonly blitOffset: Vector2;
   private scale = 1;
+  private framesRendered = 0;
 
   /**
    * `world` is everything drawn in the world pass (pass 1): the spike city in M0 (spikeCity.ts), or the SSP-016
@@ -176,6 +177,7 @@ export class Renderer {
   render(): void {
     const webgl = this.webgl;
     webgl.info.reset();
+    this.framesRendered += 1;
 
     // Clearing RT_world clears both attachments: mask (0, 0) is unshadowed and unlit.
     webgl.setRenderTarget(this.worldTarget);
@@ -211,6 +213,11 @@ export class Renderer {
       raw,
     );
     return flipRgbaRows(raw, width, INTERNAL_HEIGHT_PX);
+  }
+
+  /** Frames drawn by render() since the renderer was built (`__ssp.perf().renders`, SSP-046). */
+  get renderCount(): number {
+    return this.framesRendered;
   }
 
   /** Draw calls in the last frame over all passes (budget ≤ 10, TECHNICAL_DESIGN §12.7). */

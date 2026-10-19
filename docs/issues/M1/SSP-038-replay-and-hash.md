@@ -2,7 +2,7 @@
 id: SSP-038
 title: "Implement replay format, quantised state hash and the npm run test:replay runner"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:test, area:tooling, size:M, vertical-slice]
@@ -65,12 +65,12 @@ UPDATE: use the threshold(s) recorded in TECHNICAL_DESIGN §17, together with th
 
 ## Acceptance criteria
 
-- [ ] Encoding then decoding a 3,600-tick random input log reproduces it exactly
-- [ ] Running a synthetic replay twice in one process gives identical checkpoint and final hashes
-- [ ] Changing one input on one tick changes every checkpoint from that tick on
-- [ ] `npm run test:replay` exits 0 with no committed replay files (synthetic case only) and non-zero on a hash mismatch, reporting the first diverging checkpoint
-- [ ] The heap check runs in `npm run test:replay` and fails when an allocation is deliberately added inside step() (verified locally, then reverted; noted in the PR)
-- [ ] `--update` rewrites hashes only when explicitly passed; a plain run never writes files
+- [x] Encoding then decoding a 3,600-tick random input log reproduces it exactly
+- [x] Running a synthetic replay twice in one process gives identical checkpoint and final hashes
+- [x] Changing one input on one tick changes every checkpoint from that tick on
+- [x] `npm run test:replay` exits 0 with no committed replay files (synthetic case only) and non-zero on a hash mismatch, reporting the first diverging checkpoint
+- [x] The heap check runs in `npm run test:replay` and fails when an allocation is deliberately added inside step() (verified locally, then reverted; noted in the PR)
+- [x] `--update` rewrites hashes only when explicitly passed; a plain run never writes files
 
 ## Verification
 

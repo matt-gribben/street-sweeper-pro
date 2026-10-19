@@ -70,8 +70,10 @@ export function nextInt(rng: Sfc32, n: number): number {
   return Math.floor(nextU32(rng) * n * UINT32_TO_UNIT);
 }
 
-const FNV1A32_OFFSET = 0x811c9dc5;
-const FNV1A32_PRIME = 0x01000193;
+/** FNV-1a 32-bit offset basis, shared by hash32 and the replay state hash (src/sim/replay.ts). */
+export const FNV1A32_OFFSET = 0x811c9dc5;
+/** FNV-1a 32-bit prime. */
+export const FNV1A32_PRIME = 0x01000193;
 
 function fnvByte(hash: number, byte: number): number {
   return Math.imul(hash ^ byte, FNV1A32_PRIME) >>> 0;

@@ -8,9 +8,24 @@ import viteConfig from './vite.config.ts';
  * for the zero-allocation heap-delta check (TECHNICAL_DESIGN §17, tests/support/heapDelta.ts). Vitest 5.0.5
  * takes `execArgv` at the top level of a project's `test` options (the old `poolOptions.forks.execArgv` is
  * gone); `pool: 'forks'` is the default and is pinned here because the flag needs a child process.
- * The unit project carries it, so `npm test` and CI's `checks` job run the heap tests.
+ * The unit and replay projects carry it, so `npm test`, `npm run test:replay` and CI run the heap tests.
  */
 export const GC_EXPOSED = { pool: 'forks', execArgv: ['--expose-gc'] } as const;
+
+/**
+ * `npm run test:replay -- --update` (or `-u`) re-records replay checkpoint hashes (TECHNICAL_DESIGN §18.3,
+ * SSP-038). Vitest forwards the flag to its own CLI, and test workers cannot read the main process's argv, so
+ * the config reads it here and hands it to the replay project through `provide`; the runner reads it with
+ * `inject('replayUpdate')`. It is false unless the flag is passed explicitly: a plain run never writes files.
+ */
+export const REPLAY_UPDATE: boolean = process.argv.includes('--update') || process.argv.includes('-u');
+
+declare module 'vitest' {
+  export interface ProvidedContext {
+    /** True only when `--update` / `-u` was passed: the replay runner rewrites checkpoint hashes. */
+    replayUpdate: boolean;
+  }
+}
 
 // Vitest requires a default export from its config file (see the note in vite.config.ts).
 export default mergeConfig(
@@ -33,7 +48,13 @@ export default mergeConfig(
         },
         {
           extends: true,
-          test: { name: 'replay', include: ['tests/replay/**/*.test.ts'] },
+          test: {
+            name: 'replay',
+            include: ['tests/replay/**/*.test.ts'],
+            pool: GC_EXPOSED.pool,
+            execArgv: [...GC_EXPOSED.execArgv],
+            provide: { replayUpdate: REPLAY_UPDATE },
+          },
         },
       ],
     },

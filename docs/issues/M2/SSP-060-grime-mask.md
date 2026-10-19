@@ -2,7 +2,7 @@
 id: SSP-060
 title: "Implement dirt.ts grime mask, initial selection, footprint erase and Kerb Hugger"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:sim, area:gameplay, area:perf, size:L, vertical-slice]
@@ -42,12 +42,12 @@ Counters (incremental; nothing rescans the mask): initialCells, cleanedCells, cl
 
 ## Acceptance criteria
 
-- [ ] Puddle Lane initialises exactly 9,000 grime cells for at least 3 different seeds, with gutter cells ≥ 15% of them (unit test)
-- [ ] Initial selection is identical for a given seed and cells never land on grass, aprons, solid props or footways
-- [ ] Property test: driving straight at any speed up to 6.0 m/s and any heading with the brush collecting leaves no uncleaned non-gutter cell whose centre lies inside the swept band
-- [ ] Gutter cells are cleared when a gutter brush centre is 0.19 m from a kerb edge and not at 0.21 m (unit tests)
-- [ ] The per-tick dirty rectangle contains every cell changed that tick (property test)
-- [ ] No `new`, literals or closures inside per-tick functions; GDD §20 Q2 records the single-pass decision
+- [x] Puddle Lane initialises exactly 9,000 grime cells for at least 3 different seeds, with gutter cells ≥ 15% of them (unit test)
+- [x] Initial selection is identical for a given seed and cells never land on grass, aprons, solid props or footways
+- [x] Property test: driving straight at any speed up to 6.0 m/s and any heading with the brush collecting leaves no uncleaned non-gutter cell whose centre lies inside the swept band
+- [x] Gutter cells are cleared when a gutter brush centre is 0.19 m from a kerb edge and not at 0.21 m (unit tests)
+- [x] The per-tick dirty rectangle contains every cell changed that tick (property test)
+- [x] No `new`, literals or closures inside per-tick functions; GDD §20 Q2 records the single-pass decision
 
 ## Verification
 

@@ -1,12 +1,16 @@
-// Renderer (TECHNICAL_DESIGN §12.3, §12.7). M0 frame graph:
+// Renderer (TECHNICAL_DESIGN §12.3, §12.7). Frame graph:
 //   1. world pass (perspective camera) into RT_world, (W+2)×272 MRT: attachment 0 unlit colour, attachment 1
-//      mask (R = shadow, G = light), 24-bit depth;
-//   2. palette pass into RT_final, (W+2)×272: RGB -> Kerbside-32 index via the 64³ OKLab LUT, night and
+//      mask (R = shadow, G = light, B = UI flag), 24-bit depth;
+//   2. UI pass (orthographic camera over internal pixels, SSP-069) into RT_world after a depth clear: the `ui`
+//      root's instanced draws (spriteBatch.ts UiSpriteBatch), each texel writing mask (0, 1, 1): never shadowed,
+//      lit (night never remaps it) and flagged as UI;
+//   3. palette pass into RT_final, (W+2)×272: RGB -> Kerbside-32 index via the 64³ OKLab LUT, night and
 //      shadow remaps, index -> palette RGB (palettePass.ts);
-//   3. integer-scale nearest blit of RT_final's inner W×270 window, shifted by the camera's sub-pixel
-//      remainder, into the letterboxed canvas.
-// The UI pass (M2) slots in between 1 and 2. Nothing here allocates per frame: every three.js object is created
-// up front.
+//   4. integer-scale nearest blit of RT_final's inner W×270 window, shifted by the camera's sub-pixel
+//      remainder, into the letterboxed canvas. UI pixels are exempt from the shift: where the unshifted or the
+//      shifted RT texel carries the UI flag, the blit samples the unshifted texel, so the HUD stays on the whole
+//      internal-pixel grid while the world scrolls smoothly under it (blitUiAwareTexel in upscale.ts mirrors it).
+// Nothing here allocates per frame: every three.js object is created up front.
 import {
   BufferAttribute,
   BufferGeometry,
@@ -45,10 +49,12 @@ void main() {
 }
 `;
 
+// uMask is RT_world's mask attachment: B >= 0.5 marks a UI texel (UiSpriteBatch writes 1, everything else 0).
 const BLIT_FRAGMENT = /* glsl */ `
 precision highp float;
 precision highp int;
 uniform highp sampler2D uSource;
+uniform highp sampler2D uMask;
 uniform int uScale;
 uniform ivec2 uOffset;
 uniform int uCanvasHeight;
@@ -57,17 +63,38 @@ layout(location = 0) out highp vec4 fragColor;
 void main() {
   ivec2 frag = ivec2(gl_FragCoord.xy);
   ivec2 device = ivec2(frag.x, uCanvasHeight - 1 - frag.y);
-  ivec2 texel = (device + uOffset) / uScale + uMargin;
   ivec2 size = textureSize(uSource, 0);
-  fragColor = texelFetch(uSource, ivec2(texel.x, size.y - 1 - texel.y), 0);
+  ivec2 shifted = (device + uOffset) / uScale + uMargin;
+  ivec2 still = device / uScale + uMargin;
+  shifted.y = size.y - 1 - shifted.y;
+  still.y = size.y - 1 - still.y;
+  bool ui = texelFetch(uMask, still, 0).b >= 0.5 || texelFetch(uMask, shifted, 0).b >= 0.5;
+  fragColor = texelFetch(uSource, ui ? still : shifted, 0);
 }
 `;
+
+/**
+ * Points the UI camera at the whole render target in internal pixels: x from −margin (left edge) to W + margin, y
+ * DOWN from −margin (top) to 270 + margin, so internal pixel (x, y) is RT texel (x + 1, y + 1) from the top-left.
+ * Top < bottom flips y; UI quads are double-sided, so the reversed winding does not cull them.
+ */
+function setUiCameraFrame(camera: OrthographicCamera, internalWidth: number): void {
+  camera.left = -RT_MARGIN_PX;
+  camera.right = internalWidth + RT_MARGIN_PX;
+  camera.top = -RT_MARGIN_PX;
+  camera.bottom = INTERNAL_HEIGHT_PX + RT_MARGIN_PX;
+  camera.updateProjectionMatrix();
+}
 
 /** Owns the WebGL2 context, the world render target and the upscale blit. */
 export class Renderer {
   readonly webgl: WebGLRenderer;
   readonly rig: CameraRig;
   private readonly world: Scene;
+  /** UI-pass root (pass 2): scenes add their UiSpriteBatch meshes here (SceneContext.ui). */
+  readonly ui: Scene;
+  /** Orthographic camera over the RT in internal pixels: x right, y down, (0, 0) the frame's top-left. */
+  private readonly uiCamera: OrthographicCamera;
   /** RT_world: MRT, textures[0] = colour, textures[1] = mask (§12.3). */
   private readonly worldTarget: WebGLRenderTarget;
   /** RT_final: the palette-mapped frame the blit samples. */
@@ -104,6 +131,11 @@ export class Renderer {
     this.rig = createCameraRig(DEFAULT_INTERNAL_WIDTH_PX);
     this.world = new Scene();
     this.world.add(world);
+    this.ui = new Scene();
+    this.ui.name = 'uiPass';
+    this.uiCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 2);
+    this.uiCamera.position.set(0, 0, 1);
+    setUiCameraFrame(this.uiCamera, DEFAULT_INTERNAL_WIDTH_PX);
 
     const rtWidth = rtWidthPx(DEFAULT_INTERNAL_WIDTH_PX);
     // RGBA8 attachments (UnsignedByteType, RGBAFormat are the defaults) with no colour space conversion.
@@ -146,6 +178,7 @@ export class Renderer {
       depthWrite: false,
       uniforms: {
         uSource: { value: this.finalTarget.texture },
+        uMask: { value: maskTexture },
         uScale: { value: 1 },
         uOffset: { value: this.blitOffset },
         uCanvasHeight: { value: INTERNAL_HEIGHT_PX },
@@ -166,6 +199,7 @@ export class Renderer {
       this.worldTarget.setSize(rtWidthPx(layout.internalWidth), RT_HEIGHT_PX);
       this.finalTarget.setSize(rtWidthPx(layout.internalWidth), RT_HEIGHT_PX);
       setCameraFrame(this.rig, layout.internalWidth);
+      setUiCameraFrame(this.uiCamera, layout.internalWidth);
     }
     this.scale = layout.scale;
     const uniforms = this.blitMaterial.uniforms;
@@ -182,6 +216,12 @@ export class Renderer {
     // Clearing RT_world clears both attachments: mask (0, 0) is unshadowed and unlit.
     webgl.setRenderTarget(this.worldTarget);
     webgl.render(this.world, this.rig.camera);
+
+    // UI pass: same target, depth cleared, colour and mask kept (autoClear would wipe them).
+    webgl.autoClear = false;
+    webgl.clearDepth();
+    webgl.render(this.ui, this.uiCamera);
+    webgl.autoClear = true;
 
     this.palettePass.render(webgl, this.finalTarget);
 

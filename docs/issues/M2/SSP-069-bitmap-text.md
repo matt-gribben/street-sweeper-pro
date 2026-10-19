@@ -2,7 +2,7 @@
 id: SSP-069
 title: "Implement src/ui/bitmapText.ts and the UI render pass"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:ui, area:render, size:M, vertical-slice]
@@ -41,12 +41,12 @@ Evidence: capture frames with `tests/e2e/helpers/saveFrame.ts` (create it if mis
 
 ## Acceptance criteria
 
-- [ ] Unit test: measuring 'AV' applies the −1 kern; 'Hi!' width uses the narrow advances from the metrics; the outlined variant adds 1 per glyph
-- [ ] A captured frame shows a string in 07 and in 18, plain and outlined, at integer positions (frame Read and attached)
-- [ ] UI text pixels are unchanged when the shadow/night mask would darken the world (mask written as (0, 1))
-- [ ] Total draw calls remain ≤ 10 with text on screen
-- [ ] No `new` or array literals in the per-frame draw path
-- [ ] `npm run test:visual` still passes
+- [x] Unit test: measuring 'AV' applies the −1 kern; 'Hi!' width uses the narrow advances from the metrics; the outlined variant adds 1 per glyph
+- [x] A captured frame shows a string in 07 and in 18, plain and outlined, at integer positions (frame Read and attached)
+- [x] UI text pixels are unchanged when the shadow/night mask would darken the world (mask written as (0, 1))
+- [x] Total draw calls remain ≤ 10 with text on screen
+- [x] No `new` or array literals in the per-frame draw path
+- [x] `npm run test:visual` still passes
 
 ## Verification
 

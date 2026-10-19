@@ -37,11 +37,17 @@ import { EventBus } from './events.ts';
 import { createLoop, type Loop } from './loop.ts';
 import { SceneManager } from './SceneManager.ts';
 
-/** What scenes get from the Game: the renderer (camera rig, night switch) and the world-pass root. */
+/** What scenes get from the Game: the renderer (camera rig, night switch), the world-pass and UI-pass roots. */
 export type SceneContext = {
   readonly renderer: Renderer;
   /** World-pass root: a scene adds its content here in enter() and removes it in exit(). */
   readonly root: Group;
+  /**
+   * UI-pass root (TECHNICAL_DESIGN §12.3 pass 2, SSP-069): orthographic, internal pixels, y down. A scene adds its
+   * UiSpriteBatch meshes here in enter() and removes them in exit(); they draw over the world, never shadowed or
+   * darkened at night.
+   */
+  readonly ui: Group;
   /** Loads one sprite atlas (spriteAtlas.ts loadAtlas). */
   loadAtlas(name: AtlasName): Promise<SpriteAtlas>;
   /**
@@ -110,6 +116,7 @@ export class Game {
    */
   afterFrame: (() => void) | null = null;
   private readonly root: Group;
+  private readonly uiRoot: Group;
   private readonly input: TickInputSource;
   private cameraPinned = false;
   /** True while a scene drives the camera through followCamera. */
@@ -122,6 +129,9 @@ export class Game {
     this.root = new Group();
     this.root.name = 'sceneRoot';
     this.renderer = new Renderer(canvas, this.root);
+    this.uiRoot = new Group();
+    this.uiRoot.name = 'uiRoot';
+    this.renderer.ui.add(this.uiRoot);
     attachUpscaler(canvas, (layout) => this.renderer.resize(layout));
     this.scenes = new SceneManager();
     this.events = new EventBus();
@@ -146,6 +156,7 @@ export class Game {
     this.sceneContext = {
       renderer: this.renderer,
       root: this.root,
+      ui: this.uiRoot,
       loadAtlas: (name) => loadAtlas(name),
       pinCamera: (x, y, h) => this.pinCamera(x, y, h),
       followCamera: (x, y, vx, vy, speedMps) => this.followCamera(x, y, vx, vy, speedMps),

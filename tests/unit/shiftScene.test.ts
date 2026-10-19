@@ -67,6 +67,7 @@ function context() {
   const ctx: SceneContext = {
     renderer: { rig } as unknown as Renderer,
     root: new Group(),
+    ui: new Group(),
     loadAtlas: async (name) => {
       loaded.push(name);
       const files = atlasFiles.get(name);

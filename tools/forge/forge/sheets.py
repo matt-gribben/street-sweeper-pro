@@ -13,7 +13,12 @@ Layout, top to bottom:
   rows of frame tiles. **Bessie h00** (``veh.sweeper:body:h00:0``) is the first tile of every
   group, for scale. A state with one frame per direction is one run of directions, left to
   right; an animated state gets one run of frames per direction, left to right, so a cycle
-  reads in sequence (ART_BIBLE §15.1). Runs wrap at :data:`MAX_ROW_PX`.
+  reads in sequence (ART_BIBLE §15.1). Runs wrap at :data:`MAX_ROW_PX` (a run longer than a
+  row, such as the 47 kerb blob tiles, continues on the next row);
+- for a ``wrap: true`` procedural tile (its params file says so; SSP-040, ASSET_PIPELINE
+  §10.8), a row of **3x3 tiled previews** after its frames: each frame repeated 3x3 at 4x on
+  the light background, labelled ``3x3 <frame id>``, so a seam shows as a line or a break in
+  the pattern at the tile joins.
 
 Each tile is the frame's full ID as its label, then the frame at 4x on the light background
 (palette 06) and again on the dark background (palette 01). Each panel is exactly the cell, so
@@ -40,12 +45,14 @@ from forge import palette as _palette_mod
 from forge.build import BuildError, Frame, build_asset
 from forge.manifest import ATLASES, AssetEntry, ManifestError, load_manifest
 from forge.palette import PALETTE_SIZE, TRANSPARENT, Palette, load_palette
+from forge.procedural import wrap_tile
 from forge.pngio import encode_indexed_png, write_bytes_if_changed
 
 __all__ = [
     "BESSIE_FRAME",
     "BG_DARK",
     "BG_LIGHT",
+    "PREVIEW_REPEAT",
     "SCALE",
     "SHEETS_DIR",
     "Sheet",
@@ -118,6 +125,8 @@ class TilePlacement:
     size: tuple[int, int]
     """The frame's ``(w, h)`` at 1x."""
     scale_ref: bool = False
+    preview: bool = False
+    """A 3x3 tiled preview of a wrap tile (one panel, ``size`` is still the frame at 1x)."""
 
 
 @dataclass
@@ -175,6 +184,7 @@ class _Tile:
     width: int
     height: int
     scale_ref: bool = False
+    preview: bool = False
 
 
 @dataclass
@@ -193,6 +203,27 @@ def _tile(frame: Frame, label: str, scale_ref: bool = False) -> _Tile:
     pw, ph = frame.width * SCALE, frame.height * SCALE
     lw, _ = _text_size(label)
     return _Tile(frame, label, max(2 * pw + PANEL_GAP, lw), _LINE_H + LABEL_GAP + ph, scale_ref)
+
+
+PREVIEW_REPEAT = 3
+"""A wrap tile's preview repeats each frame this many times on both axes."""
+
+
+def _preview_tile(frame: Frame) -> _Tile:
+    label = f"3x3 {frame.frame_id}"
+    pw, ph = frame.width * SCALE * PREVIEW_REPEAT, frame.height * SCALE * PREVIEW_REPEAT
+    lw, _ = _text_size(label)
+    return _Tile(frame, label, max(pw, lw), _LINE_H + LABEL_GAP + ph, preview=True)
+
+
+def _preview_rows(frames: dict[str, Frame]) -> list[list[_Tile]]:
+    rows: list[list[_Tile]] = [[]]
+    for fid in sorted(frames, key=lambda f: (frames[f].state, frames[f].dir, frames[f].n)):
+        t = _preview_tile(frames[fid])
+        if rows[-1] and _row_width([*rows[-1], t]) > MAX_ROW_PX:
+            rows.append([])
+        rows[-1].append(t)
+    return [r for r in rows if r]
 
 
 def _runs(entry: AssetEntry, frames: dict[str, Frame]) -> list[list[Frame]]:
@@ -231,10 +262,14 @@ def _group_rows(entry: AssetEntry, frames: dict[str, Frame], bessie: Frame | Non
             rows.append(current)
             current = []
             continue
-        # An animated run stays on one row; several runs share a row while they fit.
+        # An animated run stays on one row; several runs share a row while they fit. A run longer
+        # than a whole row (the 47 kerb blob tiles) continues on the next rows.
         if current and len(current) + len(run_tiles) > cols:
             rows.append(current)
             current = []
+        while len(run_tiles) > cols:
+            rows.append(run_tiles[:cols])
+            run_tiles = run_tiles[cols:]
         current.extend(run_tiles)
     if current:
         rows.append(current)
@@ -244,7 +279,12 @@ def _group_rows(entry: AssetEntry, frames: dict[str, Frame], bessie: Frame | Non
     return rows
 
 
-def _flow(title: str, groups: Sequence[tuple[AssetEntry, dict[str, Frame]]], bessie: Frame | None) -> list[_Item]:
+def _flow(
+    title: str,
+    groups: Sequence[tuple[AssetEntry, dict[str, Frame]]],
+    bessie: Frame | None,
+    wrap_ids: frozenset[str] = frozenset(),
+) -> list[_Item]:
     items: list[_Item] = []
     tw, th = _text_size(title)
     items.append(_Item("text", th, tw, text=title, ink=HEADER_INK))
@@ -258,7 +298,10 @@ def _flow(title: str, groups: Sequence[tuple[AssetEntry, dict[str, Frame]]], bes
         hw, hh = _text_size(header)
         items.append(_Item("gap", GROUP_GAP, 0))
         items.append(_Item("text", hh, hw, text=header, ink=HEADER_INK))
-        for row in _group_rows(entry, frames, bessie):
+        rows = _group_rows(entry, frames, bessie)
+        if entry.id in wrap_ids:
+            rows += _preview_rows(frames)
+        for row in rows:
             items.append(_Item("tiles", max(t.height for t in row), _row_width(row), tiles=row))
     return items
 
@@ -280,9 +323,13 @@ def compose_sheet(
     title: str,
     groups: Sequence[tuple[AssetEntry, dict[str, Frame]]],
     bessie: Frame | None,
+    wrap_ids: frozenset[str] = frozenset(),
 ) -> Sheet:
-    """Lay out and paint one sheet. ``groups`` are ``(entry, {frame_id: Frame})`` in display order."""
-    items = _flow(title, groups, bessie)
+    """Lay out and paint one sheet. ``groups`` are ``(entry, {frame_id: Frame})`` in display order.
+
+    Every asset in ``wrap_ids`` also gets a row of 3x3 tiled previews after its frames.
+    """
+    items = _flow(title, groups, bessie, wrap_ids)
     width = MARGIN * 2 + max(it.width for it in items)
     height = MARGIN * 2 + sum(it.height for it in items) + ROW_GAP * (len(items) - 1)
     canvas = np.full((height, width), SHEET_BG, dtype=np.uint8)
@@ -307,6 +354,21 @@ def compose_sheet(
                 pw = f.width * SCALE
                 panel_y = y + _LINE_H + LABEL_GAP
                 _paint_mask(canvas, render_text(t.label), x, y, HEADER_INK if t.scale_ref else LABEL_INK)
+                if t.preview:
+                    _paint_frame(canvas, np.tile(f.indices, (PREVIEW_REPEAT, PREVIEW_REPEAT)), x, panel_y, BG_LIGHT)
+                    sheet.tiles.append(
+                        TilePlacement(
+                            label=t.label,
+                            frame_id=f.frame_id,
+                            label_xy=(x, y),
+                            light_xy=(x, panel_y),
+                            dark_xy=(x, panel_y),
+                            size=(f.width, f.height),
+                            preview=True,
+                        )
+                    )
+                    x += t.width + TILE_GAP
+                    continue
                 _paint_frame(canvas, f.indices, x, panel_y, BG_LIGHT)
                 _paint_frame(canvas, f.indices, x + pw + PANEL_GAP, panel_y, BG_DARK)
                 sheet.tiles.append(
@@ -386,8 +448,9 @@ def write_sheets(
     written: list[tuple[Path, Sheet]] = []
     for name, label, group_entries in jobs:
         groups = [(e, _built_frames(e, root, palette)) for e in group_entries]
+        wrap_ids = frozenset(e.id for e in group_entries if e.technique == "procedural" and wrap_tile(root / e.source))
         n = sum(len(fr) for _, fr in groups)
-        sheet = compose_sheet(name, f"{label}: {n} frames at {SCALE}x, light 06 | dark 01", groups, bessie)
+        sheet = compose_sheet(name, f"{label}: {n} frames at {SCALE}x, light 06 | dark 01", groups, bessie, wrap_ids)
         path = out / f"{name}.png"
         write_bytes_if_changed(path, sheet.png(palette))
         written.append((path, sheet))
@@ -408,6 +471,6 @@ def cli(args: argparse.Namespace, repo_root: Path | None = None) -> int:
         return 0
     for path, sheet in written:
         shown = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
-        frames = sum(1 for t in sheet.tiles if not t.scale_ref)
+        frames = sum(1 for t in sheet.tiles if not t.scale_ref and not t.preview)
         print(f"forge sheets: wrote {shown} ({sheet.width}x{sheet.height}, {frames} frames)")
     return 0

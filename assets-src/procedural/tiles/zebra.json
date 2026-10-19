@@ -1,0 +1,18 @@
+{
+  "id": "tile.zebra",
+  "generator": "tiles.zebra",
+  "seed": 1041,
+  "cell": [32, 32],
+  "variants": 2,
+  "params": {
+    "layouts": ["bars_along_y", "bars_along_x"],
+    "ground": {
+      "base_index": 2,
+      "speckle": { "indices": [1, 3], "density": 0.04, "pair_probability": 0.3, "max_fraction": 0.06 }
+    },
+    "bar_index": 7,
+    "bar_px": 8,
+    "wear": { "index": 6, "density": 0.06 },
+    "wrap": true
+  }
+}

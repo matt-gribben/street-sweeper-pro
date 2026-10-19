@@ -12,14 +12,16 @@ A procedural manifest entry's ``source`` is a params file under ``assets-src/pro
 
 ``variant``
     ``fn(params, rng, cell, variant) -> (h, w) uint8`` (the ASSET_PIPELINE §6.4 shape), used by
-    surfaces whose frames are seeded variants (``roofs.*``; ground tiles follow the same shape).
+    surfaces whose frames are seeded variants (``roofs.*``, ``tiles.*``). Overlays (the road
+    markings) return ``int16`` with ``TRANSPARENT`` (-1) for the pixels they leave clear.
     The params file needs an integer ``seed`` and ``variants``; the manifest entry must have the
     single state ``v`` with ``frames.v == variants``. One ``numpy.random.Generator(PCG64(seed))``
     is shared by every variant in order, so variant ``k`` draws after variants ``0..k-1`` and
     appending a variant never changes the earlier ones.
 ``frames``
     ``fn(params, ctx) -> {local frame id: (h, w) int16}``, used where frames are assembled
-    rather than drawn at random (``facades.set``: module grids plus the lit/dark ramp shift).
+    rather than drawn at random (``facades.set``: module grids plus the lit/dark ramp shift;
+    ``tiles.kerb_blob``: the 47 kerb tiles ``blob:-:n`` drawn by rule over the pavement).
     No ``seed`` or ``variants``; the generator reports every extra file it reads through
     :meth:`Context.read_dependency` so the build cache can hash it.
 
@@ -41,7 +43,7 @@ import numpy.typing as npt
 from numpy.random import PCG64, Generator
 
 from forge.palette import PALETTE_SIZE, TRANSPARENT, Palette
-from forge.procedural import facades, roofs
+from forge.procedural import facades, roofs, tiles
 from forge.procedural.common import Context, ProceduralError
 
 __all__ = [
@@ -53,6 +55,7 @@ __all__ = [
     "dependencies",
     "load_params",
     "run_procedural",
+    "wrap_tile",
 ]
 
 I16Array = npt.NDArray[np.int16]
@@ -62,7 +65,11 @@ VARIANT_STATE = "v"
 """The frame state of seeded surface variants (ART_BIBLE §14.4: ``tile.*``, ``roof.*`` -> ``v``)."""
 
 
-VariantFn = Callable[[Mapping[str, object], Generator, tuple[int, int], int], U8Array]
+IndexArray = U8Array | I16Array
+"""A variant frame: ``uint8`` indices for an opaque surface, or ``int16`` with ``TRANSPARENT`` (-1)
+where an overlay (the ``tiles.markings`` road markings) lets the ground below show through."""
+
+VariantFn = Callable[[Mapping[str, object], Generator, tuple[int, int], int], IndexArray]
 FramesFn = Callable[[Mapping[str, object], Context], dict[str, I16Array]]
 DepsFn = Callable[[Mapping[str, object]], list[str]]
 
@@ -82,6 +89,15 @@ GENERATORS: Mapping[str, GeneratorSpec] = {
     "roofs.depot_placeholder": GeneratorSpec("variant", variant=roofs.depot_placeholder),
     "roofs.felt": GeneratorSpec("variant", variant=roofs.felt),
     "roofs.slate": GeneratorSpec("variant", variant=roofs.slate),
+    "tiles.apron": GeneratorSpec("variant", variant=tiles.apron),
+    "tiles.asphalt": GeneratorSpec("variant", variant=tiles.asphalt),
+    "tiles.grass": GeneratorSpec("variant", variant=tiles.grass),
+    "tiles.kerb_blob": GeneratorSpec("frames", frames=tiles.kerb_blob, deps=tiles.kerb_dependencies),
+    "tiles.markings": GeneratorSpec("variant", variant=tiles.markings),
+    "tiles.pavement": GeneratorSpec("variant", variant=tiles.pavement),
+    "tiles.setts": GeneratorSpec("variant", variant=tiles.setts),
+    "tiles.speed_bump": GeneratorSpec("variant", variant=tiles.speed_bump),
+    "tiles.zebra": GeneratorSpec("variant", variant=tiles.zebra),
 }
 """Generator name (``<module>.<function>``) -> :class:`GeneratorSpec`, sorted by name."""
 
@@ -191,3 +207,19 @@ def dependencies(source: Path, repo_root: Path) -> list[Path]:
     except ProceduralError:
         return []
     return [repo_root / r for r in rels]
+
+
+def wrap_tile(source: Path) -> bool:
+    """Whether a procedural params file promises a seamless tile (``params.wrap`` is ``true``).
+
+    ``forge sheets`` draws a 3x3 tiled preview for these (ASSET_PIPELINE §10.8). An unreadable
+    file is not a wrap tile; the build reports it.
+    """
+    try:
+        data: object = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    params = data.get("params")
+    return isinstance(params, dict) and params.get("wrap") is True

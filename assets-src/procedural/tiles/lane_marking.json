@@ -1,0 +1,17 @@
+{
+  "id": "tile.lane_marking",
+  "generator": "tiles.markings",
+  "seed": 1045,
+  "cell": [32, 32],
+  "variants": 4,
+  "params": {
+    "layouts": [
+      [{ "along": "y", "offset_px": 15, "width_px": 2, "index": 7 }],
+      [{ "along": "x", "offset_px": 15, "width_px": 2, "index": 7 }],
+      [{ "along": "y", "offset_px": 30, "width_px": 2, "index": 7 }],
+      [{ "along": "x", "offset_px": 30, "width_px": 2, "index": 7 }]
+    ],
+    "wear": { "index": 6, "density": 0.1 },
+    "wrap": false
+  }
+}

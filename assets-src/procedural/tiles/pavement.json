@@ -1,0 +1,15 @@
+{
+  "id": "tile.pavement",
+  "generator": "tiles.pavement",
+  "seed": 1033,
+  "cell": [32, 32],
+  "variants": 4,
+  "params": {
+    "base_index": 5,
+    "joint_index": 4,
+    "joints_px": [0, 11, 22],
+    "tint": { "indices": [6, 4], "probability": 0.15 },
+    "speckle": { "index": 4, "density": 0.02 },
+    "wrap": true
+  }
+}

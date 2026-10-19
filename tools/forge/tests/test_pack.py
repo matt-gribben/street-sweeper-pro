@@ -26,6 +26,7 @@ from forge.outputs import (
 from forge.pack import (
     EXTRUDE,
     EXTRUDED_CLASSES,
+    EXTRUDED_IDS,
     MAX_ATLAS_SIZE,
     PADDING,
     AtlasFrame,
@@ -399,8 +400,9 @@ def blocks_of(frames: tuple[AtlasFrame, ...]) -> list[Placement]:
 def test_extruded_classes_are_tiles_facades_and_roofs() -> None:
     assert EXTRUDE == 1
     assert EXTRUDED_CLASSES == {"tile", "facade", "roof"}
-    assert [extrusion(a) for a in ("tile.asphalt", "facade.terrace_brick", "roof.slate")] == [1, 1, 1]
-    assert [extrusion(a) for a in ("stain.oil", "veh.sweeper", "npc.cat", "litter.can", "prop.bin")] == [0] * 5
+    assert EXTRUDED_IDS == {"haz.speed_bump"}, "a hazard drawn as a ground tile (SSP-040)"
+    assert [extrusion(a) for a in ("tile.asphalt", "facade.terrace_brick", "roof.slate", "haz.speed_bump")] == [1] * 4
+    assert [extrusion(a) for a in ("stain.oil", "veh.sweeper", "npc.cat", "litter.can", "prop.bin", "haz.puddle")] == [0] * 6
 
 
 def test_extrude_duplicates_edges_and_corners() -> None:

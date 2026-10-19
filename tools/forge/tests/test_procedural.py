@@ -421,7 +421,7 @@ def test_module_grids_are_source_ids_that_never_collide_with_manifest_ids() -> N
 def test_every_generator_is_registered_under_its_module_name() -> None:
     assert list(GENERATORS) == sorted(GENERATORS)
     for name in GENERATORS:
-        assert name.split(".")[0] in {"facades", "roofs"}
+        assert name.split(".")[0] in {"facades", "roofs", "tiles"}
 
 
 def test_repo_facades_and_roofs_build_identically_twice(tmp_path: Path) -> None:

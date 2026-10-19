@@ -23,7 +23,8 @@ M0 scope (SSP-010): frames are packed untrimmed at their cell size, and the atla
 SSP-113 (M4).
 
 Extrusion (SSP-039, ART_BIBLE §14.6). Frames of the tiling surface classes
-(:data:`EXTRUDED_CLASSES`: ground tiles, facade modules and roof surfaces) are packed with a
+(:data:`EXTRUDED_CLASSES`: ground tiles, facade modules and roof surfaces, plus the ground-tile
+hazard :data:`EXTRUDED_IDS`) are packed with a
 :data:`EXTRUDE` px border of duplicated edge pixels (corners repeat the corner pixel), so a
 sampler that strays past the cell edge reads the surface, never a transparent seam. The atlas
 rect ``{x, y, w, h}`` of an extruded frame is the **interior cell only**: the border lies
@@ -48,6 +49,7 @@ __all__ = [
     "ATLASES",
     "EXTRUDE",
     "EXTRUDED_CLASSES",
+    "EXTRUDED_IDS",
     "MAX_ATLAS_SIZE",
     "MIN_ATLAS_SIZE",
     "PADDING",
@@ -88,6 +90,13 @@ ART_BIBLE §14.6 names ground tiles and facade modules. Roof surfaces were added
 lead decision: they also tile across building footprints (16 px/m on the tile grid,
 ART_BIBLE §9.5) and are magnified up to 1.91x. Roof furniture shares the ``roof`` class, but
 its cell edges are transparent, so its extruded border is transparent and acts as padding.
+"""
+
+EXTRUDED_IDS = frozenset({"haz.speed_bump"})
+"""Assets of other classes that are drawn as ground cells, so they are extruded like ``tile.*``.
+
+``haz.speed_bump`` is "rendered as a ground tile variant" (ENTITY_CATALOG §10): groundLayer
+draws it as a whole cell like any ground tile (SSP-040). Decal hazards and stains stay padded.
 """
 
 I16Array = npt.NDArray[np.int16]
@@ -286,8 +295,9 @@ class PackableFrame(Protocol):
 
 
 def extrusion(asset_id: str) -> int:
-    """The extruded border of an asset's frames: :data:`EXTRUDE` for :data:`EXTRUDED_CLASSES`, else 0."""
-    return EXTRUDE if asset_id.split(".", 1)[0] in EXTRUDED_CLASSES else 0
+    """The extruded border of an asset's frames: :data:`EXTRUDE` for :data:`EXTRUDED_CLASSES` and
+    :data:`EXTRUDED_IDS`, else 0."""
+    return EXTRUDE if asset_id.split(".", 1)[0] in EXTRUDED_CLASSES or asset_id in EXTRUDED_IDS else 0
 
 
 def extrude(indices: I16Array, border: int) -> I16Array:

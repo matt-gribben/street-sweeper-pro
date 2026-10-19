@@ -2,7 +2,7 @@
 id: SSP-040
 title: "Generate placeholder ground tiles and the 47-tile kerb blob set with tiles.py"
 milestone: M1
-status: todo
+status: done
 type: asset
 estimate: L
 labels: [type:asset, area:assets, area:tooling, area:test, size:L, vertical-slice]

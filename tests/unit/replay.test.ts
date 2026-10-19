@@ -55,6 +55,7 @@ import { nextInt, nextU32, sfc32 } from '../../src/sim/rng.ts';
 import { addStain } from '../../src/sim/stains.ts';
 import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import type { VehicleState } from '../../src/sim/vehicle.ts';
+import { addVehicle, VEHICLE_PLAN_EDGES } from '../../src/sim/vehicleStore.ts';
 import { createWorld, type World } from '../../src/sim/world.ts';
 import { syntheticInputLog, syntheticLevel } from '../replay/synthetic.ts';
 import { createInvariantMonitor, invariantFailures } from '../support/replayCheck.ts';
@@ -294,6 +295,21 @@ describe('state hash', () => {
     world.bodies.omega[b] = 2.125;
     world.bodies.knocks = 1;
     world.bodies.bodiesKnocked = 1;
+    // A vehicle with a two-edge plan, held by Bessie mid-block, so the SSP-089 traffic section has a record.
+    const v = addVehicle(world.vehicles, 1, 0);
+    world.vehicles.x[v] = 2.125;
+    world.vehicles.y[v] = 6.75;
+    world.vehicles.heading[v] = 1.5;
+    world.vehicles.speed[v] = 0.25;
+    world.vehicles.along[v] = 0.625;
+    world.vehicles.planLen[v] = 2;
+    world.vehicles.plan[v * VEHICLE_PLAN_EDGES] = 4;
+    world.vehicles.plan[v * VEHICLE_PLAN_EDGES + 1] = 9;
+    world.vehicles.blocker[v] = 1;
+    world.vehicles.gapM[v] = 2.5;
+    world.vehicles.blockTicks[v] = 200;
+    world.vehicles.honks[v] = 1;
+    world.traffic.carHorns = 1;
     return world;
   }
 
@@ -302,6 +318,35 @@ describe('state hash', () => {
     absorbTick(hasher, world);
     return stateHash(hasher);
   }
+
+  it('absorbs the traffic state (SSP-089): the vehicle columns, its plan and the traffic counters', () => {
+    const base = hashOf(handSetWorld());
+    const edits: [string, (w: World) => void][] = [
+      ['x', (w) => (w.vehicles.x[0] = 2.25)],
+      ['heading', (w) => (w.vehicles.heading[0] = 1.25)],
+      ['speed', (w) => (w.vehicles.speed[0] = 0.5)],
+      ['along', (w) => (w.vehicles.along[0] = 0.75)],
+      ['state', (w) => (w.vehicles.state[0] = 2)],
+      ['plan[1]', (w) => (w.vehicles.plan[1] = 10)],
+      ['planLen', (w) => (w.vehicles.planLen[0] = 1)],
+      ['blocker', (w) => (w.vehicles.blocker[0] = 2)],
+      ['blockTicks', (w) => (w.vehicles.blockTicks[0] = 201)],
+      ['rageFiled', (w) => (w.vehicles.rageFiled[0] = 1)],
+      ['dwellLeft', (w) => (w.vehicles.dwellLeft[0] = 3)],
+      ['carHorns', (w) => (w.traffic.carHorns = 2)],
+      ['busesDue', (w) => (w.traffic.busesDue = 1)],
+      ['traffic.rng', (w) => (w.traffic.rng.counter += 1)],
+    ];
+    for (const [name, edit] of edits) {
+      const w = handSetWorld();
+      edit(w);
+      expect(hashOf(w), name).not.toBe(base);
+    }
+    // The corners are derived from the pose and not hashed.
+    const derived = handSetWorld();
+    derived.vehicles.corners[0] = 99;
+    expect(hashOf(derived)).toBe(base);
+  });
 
   it('absorbs the steering state (SSP-081): every column, the held path nodes and the zebra occupancy', () => {
     const base = hashOf(handSetWorld());
@@ -1390,8 +1435,10 @@ describe('state hash', () => {
  * SSP-082 appended the reaction model (the shared rules' state, then each NPC's contact window and state limit)
  * and gave the NPC a contact window and a state limit, and the World a hi-vis, a hit and two bumps: bd46e7bd →
  * b31a23d9 (f20bff33 on its branch, before SSP-092 merged).
+ * SSP-089 appended the vehicle store and the traffic state, and gave the hand-set World a vehicle held by Bessie
+ * with a two-edge plan: b31a23d9 → 68d953a7 (fc7651f5 on its branch, before SSP-092 and SSP-082 merged).
  */
-const GOLDEN_HAND_SET_HASH = 'b31a23d9';
+const GOLDEN_HAND_SET_HASH = '68d953a7';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

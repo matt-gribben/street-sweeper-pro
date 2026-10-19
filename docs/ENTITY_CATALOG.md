@@ -402,6 +402,8 @@ stateDiagram-v2
 | `veh.bicycle` | 32×32 | 8×26 px (0.5 × 1.63 m) | 32 headings, rider modelled in |
 | `veh.mobility_scooter` | 32×32 | 14×22 px (0.88 × 1.38 m) | 32 headings, rider modelled in |
 
+The visible body (m) of every lane and pavement vehicle is also its collision OBB in the sim: `entities.json` → `body` (`widthM`, `lengthM`; a parked variant has its parent's), added in SSP-089 for traffic. Bessie's body is `tuning.json` → `vehicle.sweeper.body`.
+
 Bessie's livery (default `upg.livery_council`): body 15 (shade 14), cab 07, stripe 26, brushes 18, beacon 17 (flashes to 16), windscreen 25/27, tyres 00/01. Other liveries are ramp swaps ([§14.2](#142-liveries-upglivery_)).
 
 ### 8.2 Behaviour, collision and districts

@@ -25,7 +25,9 @@ import { BRAKE_MAX, createInputFrame, type InputFrame, STEER_MAX, THROTTLE_MAX }
 import type { Level } from './map.ts';
 import { NPC_PATH_NODES } from './npc/store.ts';
 import { FNV1A32_OFFSET, FNV1A32_PRIME } from './rng.ts';
+import { BOX_SLOTS } from './traffic.ts';
 import type { Tuning } from './tuning.ts';
+import { VEHICLE_PLAN_EDGES } from './vehicleStore.ts';
 import { createWorld, type World } from './world.ts';
 
 /** `format` of a replay file. */
@@ -438,6 +440,13 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     F x, y, heading, prevX, prevY, prevHeading, vx, vy, omega
  *   SSP-082 appends the reaction model (npc/reactions.ts): F reactions.awarenessRadiusM; B ledBeacon;
  *     F minClosingSpeedMps; I ignoreTicks, hiVisUntilTick, hits, bumps; then per NPC: I contactIgnore, stateLimit
+ *   SSP-089 appends the traffic (vehicleStore.ts, traffic.ts):
+ *   I vehicles.count, vehiclesAdded, vehiclesRemoved, parkedCount, then per vehicle: I uid, kind, state,
+ *     stateTicks, flags; F x, y, heading, prevX, prevY, prevHeading, speed, halfWidth, halfLength, along;
+ *     I routeAt, blocker, blockerIndex; F gapM; I blockTicks, clearTicks, honks, rageFiled, dwellLeft,
+ *     servedStop, box0, box1, planLen, then its planLen plan edges
+ *   I traffic.rng a, b, c, counter; I nextBusTick, busesDue, busesSpawned, carHorns, roadRageOffences, then per
+ *     junction box its claim and claim edge and per slot its holder and holder edge
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -446,7 +455,8 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  * tick instead of the whole mask (196,608 bytes for Puddle Lane, 786,432 for the Civic Quarter).
  *
  * Not hashed: world.surface (phase 2 resamples it from the pose every tick) and per-tick scratch that the
- * pose determines (query boxes and hit lists, the water and shift axes). Every new store field joins this
+ * pose determines (query boxes and hit lists, the water and shift axes, the vehicles' OBB corners and spatial
+ * lookup buckets). Every new store field joins this
  * list, appended, in the commit that adds it; that commit re-records the replay hashes. Allocation-free:
  * floats are quantised in place into the hasher's Int32 word buffer, and only the hasher, the World and small
  * integers cross a call (see mixWords).
@@ -495,6 +505,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbComplaints(hasher, world);
   absorbBodies(hasher, world);
   absorbReactions(hasher, world);
+  absorbTraffic(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -518,8 +529,9 @@ function mixWords(hasher: StateHasher, n: number): void {
 }
 
 /**
- * Words a section may write after its last flush check (the longest per-entity record is an NPC's: 28 words
- * plus its path segment, up to NPC_PATH_NODES = 32 more, since SSP-081).
+ * Words a section may write after its last flush check (the longest per-entity records are an NPC's: 28 words
+ * plus its path segment, up to NPC_PATH_NODES = 32 more, since SSP-081; and a vehicle's: 28 words plus its
+ * plan, up to VEHICLE_PLAN_EDGES = 32 more, since SSP-089).
  */
 const SECTION_SLACK = 64;
 const FLUSH_AT = HASH_WORDS - SECTION_SLACK;
@@ -1007,6 +1019,84 @@ function absorbReactions(hasher: StateHasher, world: World): void {
     w[k] = (npc.contactIgnore[i] as number) | 0;
     w[k + 1] = (npc.stateLimit[i] as number) | 0;
     k += 2;
+  }
+  mixWords(hasher, k);
+}
+
+function absorbTraffic(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const q = HASH_QUANTUM;
+  const s = world.vehicles;
+  w[0] = s.count | 0;
+  w[1] = s.vehiclesAdded | 0;
+  w[2] = s.vehiclesRemoved | 0;
+  w[3] = s.parkedCount | 0;
+  let k = 4;
+  for (let i = 0; i < s.count; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (s.uid[i] as number) | 0;
+    w[k + 1] = (s.kind[i] as number) | 0;
+    w[k + 2] = (s.state[i] as number) | 0;
+    w[k + 3] = (s.stateTicks[i] as number) | 0;
+    w[k + 4] = (s.flags[i] as number) | 0;
+    w[k + 5] = Math.round((s.x[i] as number) * q) | 0;
+    w[k + 6] = Math.round((s.y[i] as number) * q) | 0;
+    w[k + 7] = Math.round((s.heading[i] as number) * q) | 0;
+    w[k + 8] = Math.round((s.prevX[i] as number) * q) | 0;
+    w[k + 9] = Math.round((s.prevY[i] as number) * q) | 0;
+    w[k + 10] = Math.round((s.prevHeading[i] as number) * q) | 0;
+    w[k + 11] = Math.round((s.speed[i] as number) * q) | 0;
+    w[k + 12] = Math.round((s.halfWidth[i] as number) * q) | 0;
+    w[k + 13] = Math.round((s.halfLength[i] as number) * q) | 0;
+    w[k + 14] = Math.round((s.along[i] as number) * q) | 0;
+    w[k + 15] = (s.routeAt[i] as number) | 0;
+    w[k + 16] = (s.blocker[i] as number) | 0;
+    w[k + 17] = (s.blockerIndex[i] as number) | 0;
+    w[k + 18] = Math.round((s.gapM[i] as number) * q) | 0;
+    w[k + 19] = (s.blockTicks[i] as number) | 0;
+    w[k + 20] = (s.clearTicks[i] as number) | 0;
+    w[k + 21] = (s.honks[i] as number) | 0;
+    w[k + 22] = (s.rageFiled[i] as number) | 0;
+    w[k + 23] = (s.dwellLeft[i] as number) | 0;
+    w[k + 24] = (s.servedStop[i] as number) | 0;
+    w[k + 25] = (s.box0[i] as number) | 0;
+    w[k + 26] = (s.box1[i] as number) | 0;
+    const len = s.planLen[i] as number;
+    w[k + 27] = len | 0;
+    k += 28;
+    const base = i * VEHICLE_PLAN_EDGES;
+    for (let p = 0; p < len; p += 1) w[k + p] = (s.plan[base + p] as number) | 0;
+    k += len;
+  }
+  mixWords(hasher, k);
+  const t = world.traffic;
+  const r = t.rng;
+  w[0] = r.a | 0;
+  w[1] = r.b | 0;
+  w[2] = r.c | 0;
+  w[3] = r.counter | 0;
+  w[4] = t.nextBusTick | 0;
+  w[5] = t.busesDue | 0;
+  w[6] = t.busesSpawned | 0;
+  w[7] = t.carHorns | 0;
+  w[8] = t.roadRageOffences | 0;
+  k = 9;
+  for (let b = 0; b < t.boxCount; b += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (t.boxClaim[b] as number) | 0;
+    w[k + 1] = (t.boxClaimEdge[b] as number) | 0;
+    k += 2;
+    for (let slot = 0; slot < BOX_SLOTS; slot += 1) {
+      w[k] = (t.boxHolder[b * BOX_SLOTS + slot] as number) | 0;
+      w[k + 1] = (t.boxHolderEdge[b * BOX_SLOTS + slot] as number) | 0;
+      k += 2;
+    }
   }
   mixWords(hasher, k);
 }

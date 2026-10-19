@@ -175,7 +175,16 @@
     "splash": { "minSpeedMps": 3, "radiusM": 1.5, "pts": -50, "complaintEvery": 3 },
     "actorHit": { "minClosingSpeedMps": 1.0, "ignoreContactS": 1.5 },
     "npcRadius": { "humanM": 0.3, "catM": 0.2, "dogM": 0.25 },
-    "traffic": { "honkAfterBlockedS": 3 },
+    "traffic": {
+      "honkAfterBlockedS": 3,
+      "accelMps2": 2.5,
+      "followDecelMps2": 3.0,
+      "followGapM": 2.5,
+      "blockedBelowMps": 0.5,
+      "clearAfterS": 0.5,
+      "crossingGapS": 3,
+      "firstBusS": 20
+    },
     "laneSpeed": {
       "residentialMps": 7,
       "mainRoadMps": 9,

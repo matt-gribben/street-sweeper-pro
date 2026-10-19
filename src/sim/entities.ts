@@ -527,12 +527,20 @@ export type NpcEntity<K extends NpcId = NpcId> = EntityBase &
     readonly rules: Rules<(typeof NPC_RULES)[K]>;
   };
 
+/** A vehicle body: width (across, local x) and length (along, local y), metres. */
+export type VehicleBody = { readonly widthM: number; readonly lengthM: number };
+
 export type VehicleEntity<K extends VehicleId = VehicleId> = EntityBase &
   Sprited & {
     readonly id: K;
     readonly class: 'veh';
     readonly behaviour: VehicleBehaviour;
     readonly collision: VehicleCollision;
+    /**
+     * The visible body in metres (ENTITY_CATALOG §8.1): the collision OBB traffic.ts and SSP-090 use, centred
+     * on the body centre. A parked variant has its parent's body.
+     */
+    readonly body: VehicleBody;
     /** A fixed cruising speed, or null where the lane graph's speed limit sets it (and for parked cars). */
     readonly speedMps: number | null;
     /** The actor-hit penalty; null for solid vehicles (moving traffic costs HP only, §17 Q3). */
@@ -928,8 +936,16 @@ function readNpc<K extends NpcId>(raw: unknown, id: K): NpcEntity<K> {
   };
 }
 
+function readVehicleBody(raw: unknown, path: string): VehicleBody {
+  const obj = readObject(raw, path, ['widthM', 'lengthM']);
+  return {
+    widthM: readNumber(obj.widthM, `${path}.widthM`, 'positive'),
+    lengthM: readNumber(obj.lengthM, `${path}.lengthM`, 'positive'),
+  };
+}
+
 function readVehicle<K extends VehicleId>(raw: unknown, id: K): VehicleEntity<K> {
-  const keys = [...BASE_KEYS, 'behaviour', 'collision', 'speed', 'hit', 'sfx', 'rules'];
+  const keys = [...BASE_KEYS, 'behaviour', 'collision', 'body', 'speed', 'hit', 'sfx', 'rules'];
   const obj = readObject(raw, id, keys);
   checkClass(obj, id, 'veh');
   const spec: (typeof VEHICLE_RULES)[K] = VEHICLE_RULES[id];
@@ -954,6 +970,7 @@ function readVehicle<K extends VehicleId>(raw: unknown, id: K): VehicleEntity<K>
       `one of ${quoted(VEHICLE_BEHAVIOURS)}`,
     ),
     collision,
+    body: readVehicleBody(obj.body, `${id}.body`),
     speedMps: obj.speed === null ? null : readNumber(obj.speed, `${id}.speed`, 'positive'),
     hit,
     sfx: readSfxMap(obj.sfx, `${id}.sfx`, VEHICLE_SFX_KEYS),

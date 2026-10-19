@@ -2,7 +2,7 @@
 id: SSP-089
 title: "Implement traffic.ts: lane following, queuing behind Bessie, honk, Road Rage, bus stops"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:sim, area:ai-npc, area:gameplay, area:test, size:L, vertical-slice]

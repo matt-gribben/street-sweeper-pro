@@ -26,6 +26,7 @@ import { pushStimulus } from '../../src/sim/npc/stimuli.ts';
 import {
   NO_NPC_HANDLE,
   NPC_CAPACITY,
+  NPC_FLAG,
   npcHandle,
   setNpcState,
   updateNpcCell,
@@ -89,6 +90,11 @@ const LITTERBUG_KIND = NPC_IDS.indexOf('npc.litterbug');
 const AHEAD_M = 1.625 + 2;
 /** Bessie is only aimed at NPCs at least this far inside the map, metres. */
 const AIM_MARGIN_M = 24;
+/**
+ * Where the Doris rig puts a litterbug as each spray ends: this far to Bessie's right of her centre, metres, inside
+ * the litterbug's 6 m Caught! radius, so the horn pushed on the same tick catches him (SSP-085 review).
+ */
+const CAUGHT_SIDE_M = 3;
 /** Bessie's half length, plus a little: where the harness puts an NPC in her way, metres ahead of her centre. */
 const NOSE_M = DEFAULT_TUNING.vehicle.sweeper.body.lengthM / 2 + 0.6;
 
@@ -109,7 +115,10 @@ function putInPath(world: World, i: number, aheadM: number, rightM: number): voi
  * shoppers' sidesteps, the businessmen's 2 m startles, the litterbugs' drops and, under the harness's horn, their
  * Caught! (EV.Caught, the bonus in phase 9) and slinking off, and the dog walkers' Lead Tangles and dog mess. `doris`
  * adds Doris (SSP-083) to the mix and sprays for 2 s of every 4 (the tank topped up), so her glare, fist shake,
- * chase and handbag whacks run too; Bessie's HP is restored every tick so the whacks never get her TOWED.
+ * chase and handbag whacks run too; Bessie's HP is restored every tick so the whacks never get her TOWED. As each
+ * spray ends it also puts a litterbug not yet caught 3 m to her right, so the harness's horn catches him there and
+ * the Doris window holds Caught! bonuses by construction (the every-10 s aim skips litterbugs, so without this
+ * whether the crowd brought one within 6 m of her in the window was chance: none did at the SSP-085 merge).
  */
 function npcRig(
   generic = false,
@@ -201,6 +210,15 @@ function npcRig(
           break;
         }
       }
+      if (t % 240 === 120) {
+        // The spray has ended: put a litterbug beside her for the horn below (t % 30 === 0) to catch.
+        const npc = world.npc;
+        for (let i = 0; i < npc.count; i++) {
+          if (npc.kind[i] !== LITTERBUG_KIND || ((npc.flags[i] as number) & NPC_FLAG.LEAVING) !== 0) continue;
+          putInPath(world, i, 0, CAUGHT_SIDE_M);
+          break;
+        }
+      }
       v.water = 100;
       v.hp = 100;
     }
@@ -285,20 +303,17 @@ function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
     expect(world.litter.count).toBe(world.litter.capacity);
     expect(world.litter.litterSpawned).toBe(world.litter.capacity);
   }
-  if (generic && !doris) {
+  if (generic) {
     expect(reactions.hits - before.hits).toBeGreaterThan(0);
-    // SSP-086: the harness's dog walkers either side of her path tangle her in their leads.
-    expect((tangles[0] as number) - before.tangles).toBeGreaterThan(0);
     // SSP-084: the harness's horn caught some litterbugs (the town has no kerbs, so the only style bonus is
-    // Caught!).
+    // Caught!). In the Doris rig, the litterbug it puts beside Bessie as each spray ends.
     expect(world.scoring.bonusPts - before.bonusPts).toBeGreaterThan(0);
   }
-  if (doris) {
-    // Bessie stands still to spray half the time, and since SSP-084 the shoppers sidestep her predicted path, so
-    // the Doris window's actor contacts are bumps rather than hits; the work under test is Doris's whacks.
-    expect(reactions.hits + reactions.bumps - before.hits - before.bumps).toBeGreaterThan(0);
-    expect(whacks).toBeGreaterThan(0);
+  if (generic && !doris) {
+    // SSP-086: the harness's dog walkers either side of her path tangle her in their leads.
+    expect((tangles[0] as number) - before.tangles).toBeGreaterThan(0);
   }
+  if (doris) expect(whacks).toBeGreaterThan(0);
   assertHeapDeltaWithinThresholds(delta);
 }
 

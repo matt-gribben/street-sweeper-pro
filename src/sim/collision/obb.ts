@@ -78,6 +78,21 @@ export function setObb(
   return out;
 }
 
+/**
+ * Recompute the unit axes from `obb.headingRad` after the caller has written the heading (and centre and half
+ * extents) directly. The per-tick form of setObb: it takes no number arguments, so it never boxes a double
+ * when V8 does not inline it (SSP-036; see eventQueue.ts). Returns `obb`.
+ */
+export function refreshObbAxes(obb: Obb): Obb {
+  const s = sin(obb.headingRad);
+  const c = cos(obb.headingRad);
+  obb.rightX = c;
+  obb.rightY = s;
+  obb.forwardX = s;
+  obb.forwardY = -c;
+  return obb;
+}
+
 /** Write the OBB's unit right axis (local +x) into `out` and return it. */
 export function obbRightAxis(obb: Obb, out: Vec2): Vec2 {
   out.x = obb.rightX;
@@ -125,8 +140,9 @@ export function obbExtentY(obb: Obb): number {
 
 /** Write the tightest axis-aligned box around the OBB into `out` and return it (the grid query box, §9.2). */
 export function obbAabb(obb: Obb, out: Aabb): Aabb {
-  const ex = obbExtentX(obb);
-  const ey = obbExtentY(obb);
+  // obbExtentX/Y written out: a helper's double return is boxed when V8 does not inline it (SSP-036).
+  const ex = Math.abs(obb.rightX) * obb.halfWidthM + Math.abs(obb.forwardX) * obb.halfLengthM;
+  const ey = Math.abs(obb.rightY) * obb.halfWidthM + Math.abs(obb.forwardY) * obb.halfLengthM;
   out.minX = obb.cx - ex;
   out.minY = obb.cy - ey;
   out.maxX = obb.cx + ex;

@@ -349,7 +349,7 @@ Vehicle-local coordinates: origin at body centre, +y forward, metres.
 | **Inlet** | Rect 1.0 × 0.4 m at y +1.2 | An item whose centre enters it is collected |
 | **Grime footprint** | The 2.6 m swept band | Erases grime cells while the brush is down and RPM ≥ 80% |
 
-- **Kerb Hugger:** a gutter brush within 0.2 m of a kerb edge collects **gutter grime** (a dense strip along kerbs worth 2× points). Holding kerb contact continuously scores +50 per 3 s.
+- **Kerb Hugger:** a gutter brush whose centre is within 0.2 m of a raised kerb edge (measured to the edge segment; `sweeping.kerbHugger.maxKerbDistanceM`) collects **gutter grime** (a dense strip along kerbs worth 2× points) under its circle. Holding kerb contact continuously, with the brush collecting, scores +50 per 3 s (decided in SSP-060).
 - **Fling:** items that fail the speed check are knocked sideways 1.5 to 3 m on a kinematic arc that lasts 0.5 s (decided in SSP-057; tunable), and cannot be collected until they land. Flung items stay on the ground and can be collected on a later pass, *except* a flung `litter.glass_bottle`, which smashes into `haz.broken_glass` (−5 HP/s to drive on; sweep it for +20).
 
 ```
@@ -389,7 +389,7 @@ stateDiagram-v2
 | Lowering / Raising (0.5 s) | No | No | 6.0 m/s: the cap applies from the tick lowering starts until the brush is fully raised (SSP-059) | `sfx.brush_lower` / `sfx.brush_raise` |
 | Spinning up (0.6 s) | No | No | 6.0 m/s | Brush whirr pitch rising |
 | Collecting | Yes | Yes, subject to the fling check | 6.0 m/s | Brush whirr, pickup SFX |
-| Bulldozing (hopper full) | Yes (proposed: grime is not stored in the hopper) | Pushed ahead, not collected: an item reaching the inlet is pinned 0.1 m ahead of the front bumper | 6.0 m/s | Clunk, `sfx.hopper_full` |
+| Bulldozing (hopper full) | Yes (decided in SSP-060: grime is not stored in the hopper) | Pushed ahead, not collected: an item reaching the inlet is pinned 0.1 m ahead of the front bumper | 6.0 m/s | Clunk, `sfx.hopper_full` |
 
 The 1.1 s from pressing Space to full RPM (0.5 s lower + 0.6 s spin-up) is deliberate: it makes raising the brush for a short transit hop a real decision, not a free action. Collecting starts as soon as RPM reaches 80%, 29 of the 36 spin-up ticks, so the first pickup can come 59 ticks (≈ 0.98 s) after the press.
 
@@ -469,8 +469,8 @@ Design intent: the depot is the "proper" dump (faster, pays, refills water) but 
 ### 9.1 Grime
 
 - Each 32 px tile holds an **8×8 grid of 4 px grime cells**. A district's grime is a `Uint8` mask uploaded as a texture, so cleaning is visible at near-pixel resolution.
-- Grime is erased by the 2.6 m swept band while the brush is down and RPM ≥ 80%. A single pass clears a cell (proposed, M2; multi-pass "heavy grime" is listed as an open question in §20).
-- **Gutter grime** is a dense strip along kerbs. It is collected only by a gutter brush within 0.2 m of the kerb edge (Kerb Hugger) and is worth 2×.
+- Grime is erased by the 2.6 m swept band while the brush is down and RPM ≥ 80%, in Collecting and in Bulldozing. A single pass clears a cell (decided in SSP-060, §20 Q2; no multi-pass "heavy grime" in 1.0).
+- **Gutter grime** is a dense strip along kerbs (the 0.5 m gutter band on the road side of a raised kerb). It is collected only by a gutter brush whose centre is within 0.2 m of the kerb edge (Kerb Hugger): that brush's 0.45 m circle clears the gutter cells under it. The rest of the swept band clears only ordinary grime and passes over gutter grime (decided in SSP-060). It is worth 2×.
 - Grime scores **1 pt per cell** (2 pts for gutter grime). Grime neither builds nor breaks the combo chain.
 
 Initial grime layout and density are authored per district (see [LEVEL_DESIGN.md](LEVEL_DESIGN.md)). As a scale reference, one fully grimy road tile is 64 cells = 64 pts. A full-width pass at 4.0 m/s over fully grimy road clears about 166 cells/s (10.4 cells wide × 16 rows/s), which is 166 pts/s, or about 90 pts/s at typical route density. Grime is therefore the bulk of a shift's score (about two thirds on Monday; see [LEVEL_DESIGN §6.3](LEVEL_DESIGN.md#63-target-score-bands)). Litter's role is the combo multiplier, the hopper trade-off and 40% of Tidy %.
@@ -1063,7 +1063,7 @@ Tracked here until resolved; resolutions go into the relevant section and data f
 | # | Question | Owner milestone | Current leaning |
 |---|---|---|---|
 | 1 | **Economy total:** the facts sheet says buying everything costs £7,350, but the listed prices sum to £6,500. Raise L2 prices, add a third livery price, or correct the total? | M6 | **Deferred (owner, 2026-10-18):** a tunable gameplay number, not a design blocker. Revisit in M6 economy tuning |
-| 2 | Does a single brush pass clear a grime cell, or do some districts have "heavy" grime needing two passes? | M2 | Single pass for 1.0; heavy grime would strengthen Pillar 3 but complicates readability |
+| 2 | Does a single brush pass clear a grime cell, or do some districts have "heavy" grime needing two passes? | M2 | **Resolved in M2 (SSP-060): single pass.** One tick of the footprint over a cell clears it, so the clean edge behind the brush is crisp and the Tidy % numerator is a plain count. Heavy grime would strengthen Pillar 3 but makes the reveal harder to read; it stays out of 1.0 (§9.1, [TECHNICAL_DESIGN §10.3](TECHNICAL_DESIGN.md#103-grime-mask-srcsimdirtts)) |
 | 3 | Do style bonuses (near miss, Kerb Hugger) extend or multiply the chain? | M2 | Neither (§10.3) |
 | 4 | Is the chain timer frozen during a dump? | M2 | Yes (§8.7) |
 | 5 | Does the Shift map overlay pause? | M3 | No (§6.2); revisit if playtests show frustration |

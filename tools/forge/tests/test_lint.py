@@ -25,7 +25,18 @@ from PIL import Image
 from forge.blender import script_sha256
 from forge.genai import prompt_sha256
 from forge.build import build
-from forge.lint import Finding, cli, lint, pixel_violations, retro_allowed
+from forge.lint import (
+    Finding,
+    cli,
+    darkest_step_shares,
+    lint,
+    outline_ink,
+    pixel_violations,
+    ramp_steps,
+    retro_allowed,
+    rotation_shading_problems,
+)
+from forge.sprite import parse_sprite
 from forge.palette import PALETTE_PATH, REPO_ROOT, load_palette
 
 PALETTE = load_palette()
@@ -434,6 +445,176 @@ def test_grid_technique_needs_no_origin(repo: Path) -> None:
     grid.write_text(GRID.replace("origin: ai/ref.toy_style#cell=0,1\n", ""), encoding="utf-8")
     write_manifest(repo, [grid_entry(technique="grid"), blender_entry()])
     assert lint(repo).findings == []
+
+
+# ---------------------------------------------------------------------------------------------
+# Ramps and rotation-symmetric litter shading (SSP-051)
+
+LITTER_TOPLIT = """\
+id: litter.toy
+cell: 8x8
+palette: kerbside32
+
+frame idle:h00:0
+........
+.000000.
+.055550.
+.056650.
+.056650.
+.055550.
+.000000.
+........
+"""
+"""Top-lit litter: ink outline, slab (05) base, one centred kerb (06) highlight."""
+
+LITTER_NW_SHADED = """\
+id: litter.toy
+cell: 8x8
+palette: kerbside32
+
+frame idle:h00:0
+........
+.000000.
+.066660.
+.065540.
+.065540.
+.064440.
+.000000.
+........
+"""
+"""The deliberately NW-shaded fixture: a lighter (06) NW bevel and a darker (04) SE bevel on a 05 base."""
+
+LITTER_NW_GLINT = """\
+id: litter.toy
+cell: 8x8
+palette: kerbside32
+
+frame idle:h00:0
+........
+.000000.
+.066650.
+.065550.
+.065550.
+.055550.
+.000000.
+........
+"""
+"""Only a lighter NW glint (06 on the N and W rims) on a 05 base, no darker edge."""
+
+
+def litter_grid_entry(**over: Any) -> dict[str, Any]:
+    e = grid_entry(
+        id="litter.toy",
+        technique="grid",
+        source="assets-src/sprites/litter/toy.sprite.txt",
+        cell=[8, 8],
+        states=["idle"],
+        dirs="rot4",
+        frames={"idle": 1},
+        atlas="items",
+    )
+    e["class"] = "litter"
+    e.update(over)
+    return e
+
+
+def frame_of(text: str) -> np.ndarray:
+    return parse_sprite(text).frames["idle:h00:0"]
+
+
+def add_litter(repo: Path, text: str, **over: Any) -> None:
+    path = repo / "assets-src" / "sprites" / "litter" / "toy.sprite.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    write_manifest(repo, [litter_grid_entry(**over), grid_entry(), blender_entry()])
+    publish(repo)
+
+
+def test_outline_ink_is_ink_next_to_transparency_or_the_cell_edge() -> None:
+    a = np.array([[0, 0, 0, -1], [0, 0, 5, 0], [0, 5, 5, 0], [0, 0, 0, 0]], dtype=np.int16)
+    mask = outline_ink(a)
+    assert mask[0, 0] and mask[3, 3] and mask[1, 3]
+    assert not mask[1, 1], "ink enclosed by body and ink is interior fill"
+    assert ramp_steps(a, PALETTE)["neutral_grey"] == (0, 5)
+
+
+def test_toplit_litter_has_no_rotation_shading_problem() -> None:
+    a = frame_of(LITTER_TOPLIT)
+    assert ramp_steps(a, PALETTE) == {"neutral_grey": (5, 6)}
+    darkest, shares = darkest_step_shares(a, PALETTE)["neutral_grey"]
+    assert darkest == 5 and shares == {"N": 1.0, "E": 1.0, "S": 1.0, "W": 1.0}
+    for k in range(4):
+        assert rotation_shading_problems(np.rot90(a, k), PALETTE) == []
+
+
+@pytest.mark.parametrize("text", [LITTER_NW_SHADED, LITTER_NW_GLINT], ids=["nw-bevel-se-shade", "nw-glint"])
+def test_nw_shaded_litter_fails_the_rotation_symmetry_check(text: str) -> None:
+    a = frame_of(text)
+    problems = rotation_shading_problems(a, PALETTE)
+    assert problems and all("neutral_grey" in p and "90° turn" in p for p in problems)
+    # A 90° turn really does move the darkest step to another edge: the rotated frame's shares differ.
+    _, shares = darkest_step_shares(a, PALETTE)["neutral_grey"]
+    _, turned = darkest_step_shares(np.rot90(a, -1), PALETTE)["neutral_grey"]
+    assert shares != turned
+
+
+def test_single_step_ramps_and_edges_without_the_ramp_are_not_compared() -> None:
+    # A can: council_blue (26) body with a centred sky (27) stripe and kerb (06) ends. The blue
+    # ramp has no E or W rim (the silver ends sit there), so only N and S are compared.
+    text = (
+        "id: litter.toy\ncell: 8x7\npalette: kerbside32\n\nframe idle:h00:0\n"
+        ".000000.\n06qqqq60\n06rrrr60\n06qqqq60\n.000000.\n........\n........\n"
+    )
+    a = frame_of(text)
+    assert darkest_step_shares(a, PALETTE)["blue"] == (26, {"N": 1.0, "E": None, "S": 1.0, "W": None})
+    assert rotation_shading_problems(a, PALETTE) == []
+
+
+def test_litter_lint_passes_a_toplit_grid(repo: Path) -> None:
+    add_litter(repo, LITTER_TOPLIT)
+    report = lint(repo)
+    assert report.findings == [], [f.line() for f in report.findings]
+    assert "litter.toy" in report.assets
+
+
+def test_nw_shaded_litter_fixture_is_a_litter_shading_error(repo: Path) -> None:
+    add_litter(repo, LITTER_NW_SHADED)
+    report = lint(repo)
+    assert rules(report.findings) == {"litter-shading"}
+    assert {f.subject for f in report.errors} == {"litter.toy:idle:h00:0"}, "only the authored h00 frame is reported"
+    assert run_cli(repo) == 1
+
+
+def test_litter_dirs_must_be_rot4(repo: Path) -> None:
+    add_litter(repo, LITTER_TOPLIT, dirs=["h00"])
+    errors = lint(repo).by_rule("litter-shading")
+    assert [f.subject for f in errors] == ["litter.toy"] and '"rot4"' in errors[0].message
+
+
+def test_more_than_four_steps_of_a_ramp_is_a_ramps_error(repo: Path) -> None:
+    five = LITTER_TOPLIT.replace(".056650.\n.056650.", ".023450.\n.056650.")  # 02 03 04 05 06
+    add_litter(repo, five)
+    ramps = lint(repo).by_rule("ramps")
+    assert [f.subject for f in ramps] == [f"litter.toy:idle:{d}:0" for d in ("h00", "h08", "h16", "h24")]
+    assert "5 steps of ramp neutral_grey (02 03 04 05 06)" in ramps[0].message
+
+
+def test_outline_ink_does_not_count_as_a_ramp_step_but_interior_ink_does(repo: Path) -> None:
+    four = LITTER_TOPLIT.replace(".056650.\n.056650.", ".034650.\n.056650.")  # 03 04 05 06 + outline ink
+    add_litter(repo, four)
+    assert lint(repo).by_rule("ramps") == []
+    interior = four.replace(".056650.\n.055550.", ".050650.\n.055550.")  # one enclosed ink pixel
+    add_litter(repo, interior)
+    assert "litter.toy:idle:h00:0" in {f.subject for f in lint(repo).by_rule("ramps")}
+
+
+def test_ramps_rule_checks_grid_and_ai_ingest_entries_only(repo: Path) -> None:
+    # The clean fixture's toy vehicle is a blender entry: SSP-115 (M4) extends the rule to every technique.
+    assert lint(repo).by_rule("ramps") == []
+    grid = repo / "assets-src" / "sprites" / "npc" / "toy.sprite.txt"
+    grid.write_text(GRID.replace(".0cf0.", ".23456"), encoding="utf-8")  # 02-06: 5 neutral steps in walk:sw:0
+    publish(repo)
+    assert {f.subject for f in lint(repo).by_rule("ramps")} == {"npc.toy:walk:sw:0", "npc.toy:walk:se:0"}
 
 
 # ---------------------------------------------------------------------------------------------

@@ -23,6 +23,8 @@ __all__ = [
     "ATLASES",
     "COMPASS_DIRS",
     "MANIFEST_PATH",
+    "ROTATION_DIRS",
+    "ROTATION_SPEC",
     "TECHNIQUES",
     "AssetEntry",
     "ManifestError",
@@ -45,6 +47,14 @@ TECHNIQUES = ("grid", "procedural", "blender", "ai-ingest", "ai-art")
 ATLASES = ("world", "actors", "items", "ui", "fx")
 COMPASS_DIRS = ("s", "sw", "w", "nw", "n", "ne", "e", "se")
 """Actor directions (CLAUDE.md §5.4), in the canonical authoring order."""
+
+ROTATION_SPEC = "rot4"
+"""The ``dirs`` value of code-rotated sprites (litter, ENTITY_CATALOG §1.3): ``h00`` is authored
+and ``forge build`` generates ``h08``/``h16``/``h24`` as exact 90° clockwise rotations."""
+
+ROTATION_DIRS: dict[str, int] = {"h00": 0, "h08": 1, "h16": 2, "h24": 3}
+"""The ``rot4`` headings and their clockwise quarter turns from ``h00`` (``h00`` = north, headings
+step clockwise, TECHNICAL_DESIGN §4)."""
 
 FIELDS = ("id", "class", "technique", "source", "cell", "states", "dirs", "frames", "atlas", "outline", "swaps")
 
@@ -80,6 +90,11 @@ class AssetEntry:
         return self.cell[0]
 
     @property
+    def rotated(self) -> bool:
+        """True when only ``h00`` is authored and the build generates the other rotations (``rot4``)."""
+        return self.dirs_spec == ROTATION_SPEC
+
+    @property
     def height(self) -> int:
         return self.cell[1]
 
@@ -95,14 +110,16 @@ class AssetEntry:
 
 
 def expand_dirs(dirs: object, where: str = "dirs") -> tuple[str, ...]:
-    """``"h32"`` -> h00..h31, ``"h4"`` -> h00..h03, ``"-"`` -> ("-",), a list -> compass dirs, or a
-    list of vehicle headings ``hNN`` (00-31) in increasing order, e.g. ``["h00"]`` for a litter item
-    whose only authored rotation is ``h00`` (ENTITY_CATALOG §4; the code-generated h08/h16/h24
-    rotations arrive with the litter grids in M2/M4). A list never mixes the two kinds."""
+    """``"h32"`` -> h00..h31, ``"h4"`` -> h00..h03, ``"rot4"`` -> h00, h08, h16, h24 (only ``h00`` is
+    authored; :data:`ROTATION_SPEC`, used by litter), ``"-"`` -> ("-",), a list -> compass dirs, or a
+    list of headings ``hNN`` (00-31) in increasing order, all authored. A list never mixes the two
+    kinds."""
     if dirs == "h32":
         return tuple(f"h{i:02d}" for i in range(32))
     if dirs == "h4":
         return tuple(f"h{i:02d}" for i in range(4))
+    if dirs == ROTATION_SPEC:
+        return tuple(ROTATION_DIRS)
     if dirs == "-":
         return ("-",)
     if isinstance(dirs, list) and dirs:
@@ -119,7 +136,7 @@ def expand_dirs(dirs: object, where: str = "dirs") -> tuple[str, ...]:
             out.append(d)
         return tuple(out)
     raise ManifestError(
-        f'{where}: expected "h32", "h4", "-" or a non-empty list of compass dirs or of hNN headings, got {dirs!r}'
+        f'{where}: expected "h32", "h4", "rot4", "-" or a non-empty list of compass dirs or of hNN headings, got {dirs!r}'
     )
 
 

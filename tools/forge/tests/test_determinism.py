@@ -1,11 +1,12 @@
 """Determinism and acceptance checks over a real build of the committed M0 assets (SSP-009, SSP-010, SSP-014,
-SSP-020, SSP-024, SSP-040, SSP-041).
+SSP-020, SSP-024, SSP-040, SSP-041, SSP-051).
 
 Builds ``assets-src/manifest.json`` twice with the cache off, into two temp dirs, and checks
 that every output file has the same SHA-256 (frames, atlas PNG/JSON, ``src/gen/assets.ts``,
-``asset-hashes.json``); then inspects the built frames: 317 of them, 64x64 Bessie / 96x96
+``asset-hashes.json``); then inspects the built frames: 496 of them, 64x64 Bessie / 96x96
 brush / 24x24 npc.old_woman (8 idle directions, 3 of them mirrored) / 32x32 prop.lamp_post
-(4 sprite-stack slices) / 16x16 litter.banana_skin (the D-07 scale sample, h00 only) / the
+(4 sprite-stack slices) / the 15 16x16 litter items (SSP-051: idle x1 + wobble x2 in the
+h00/h08/h16/h24 rotations, 12 frames each, 180 in all; the banana skin is the D-07 sample) / the
 SSP-041 Puddle Lane facade sets (64x80 lit/base/dark bays) and roof surfaces (32x32 variants) /
 the SSP-040 ground tiles (32x32 variants, the 47 kerb blob tiles and the road-marking overlays),
 Kerbside-32 colours only with binary alpha, the outline rule, no metadata chunks, and a palette
@@ -52,20 +53,41 @@ TILE_FRAMES = {
     "tile.zebra": 2,
 }
 OVERLAYS = ("tile.double_yellow", "tile.lane_marking", "tile.parking_bay")
+LITTER = tuple(
+    f"litter.{name}"
+    for name in (
+        "banana_skin",
+        "bin_bag",
+        "chip_wrapper",
+        "cigarette_butts",
+        "crisp_packet",
+        "dog_mess",
+        "drink_can",
+        "glass_bottle",
+        "kebab_wrapper",
+        "leaf_pile",
+        "lolly_stick",
+        "newspaper",
+        "pizza_box",
+        "plastic_bottle",
+        "spilled_shopping",
+    )
+)
+"""The 15 litter IDs (ENTITY_CATALOG §4.1), 12 frame IDs each."""
 CELLS = {
     **{f: (64, 80) for f in FACADES},
     **{r: (32, 32) for r in ROOF_VARIANTS},
     **{t: (32, 32) for t in TILE_FRAMES},
-    "litter.banana_skin": (16, 16),
+    **{li: (16, 16) for li in LITTER},
     "npc.old_woman": (24, 24),
     "prop.lamp_post": (32, 32),
     "veh.sweeper": (64, 64),
     "veh.sweeper_brush": (96, 96),
 }
-FRAME_COUNT = 317
+FRAME_COUNT = 496
 ATLAS_OF = {
     **{a: "world" for a in (*FACADES, *ROOF_VARIANTS, *TILE_FRAMES)},
-    "litter.banana_skin": "items",
+    **{li: "items" for li in LITTER},
     "npc.old_woman": "actors",
     "prop.lamp_post": "items",
     "veh.sweeper": "actors",
@@ -105,7 +127,7 @@ def test_builds_all_m0_frames(builds: tuple[BuildResult, Path, Path]) -> None:
         **{f: 3 for f in FACADES},
         **ROOF_VARIANTS,
         **TILE_FRAMES,
-        "litter.banana_skin": 1,
+        **{li: 12 for li in LITTER},
         "npc.old_woman": 8,
         "prop.lamp_post": 4,
         "veh.sweeper": 64,
@@ -223,7 +245,7 @@ def test_two_clean_builds_give_byte_identical_atlas_png_and_json(builds: tuple[B
     assert names == ["actors.json", "actors.png", "items.json", "items.png", "world.json", "world.png"]
 
 
-@pytest.mark.parametrize(("name", "count"), [("world", 112), ("actors", 200), ("items", 5)])
+@pytest.mark.parametrize(("name", "count"), [("world", 112), ("actors", 200), ("items", 184)])
 def test_atlas_holds_every_frame_at_its_rect(
     builds: tuple[BuildResult, Path, Path], name: str, count: int
 ) -> None:

@@ -1,0 +1,62 @@
+id: litter.pizza_box
+cell: 16x16
+palette: kerbside32
+
+# Placeholder (SSP-051, technique grid): umber (13) cardboard square, terracotta (11) printed ring centred, soot_brown (08) grease spots.
+# Visible body 14x14 px including the ink outline. Top-lit, rotation-symmetric shading (litter is
+# turned by code: h08/h16/h24 are generated from h00). Wobble: the idle frame moved 1 px east (0) and
+# 1 px west (1) (ART_BIBLE 8.4). Real art replaces this behind the same frame IDs in M4.
+
+frame idle:h00:0
+................
+..000000000000..
+.0dddddddddddd0.
+.0dddddddddddd0.
+.0dd8ddddddddd0.
+.0ddddbbbbdddd0.
+.0dddbbddbbddd0.
+.0dddbddddbddd0.
+.0dddbddddbddd0.
+.0dddbbddbbddd0.
+.0ddddbbbbdddd0.
+.0dddddddddddd0.
+.0dddddddd88dd0.
+.0dddddddddddd0.
+..000000000000..
+................
+
+frame wobble:h00:0
+................
+...000000000000.
+..0dddddddddddd0
+..0dddddddddddd0
+..0dd8ddddddddd0
+..0ddddbbbbdddd0
+..0dddbbddbbddd0
+..0dddbddddbddd0
+..0dddbddddbddd0
+..0dddbbddbbddd0
+..0ddddbbbbdddd0
+..0dddddddddddd0
+..0dddddddd88dd0
+..0dddddddddddd0
+...000000000000.
+................
+
+frame wobble:h00:1
+................
+.000000000000...
+0dddddddddddd0..
+0dddddddddddd0..
+0dd8ddddddddd0..
+0ddddbbbbdddd0..
+0dddbbddbbddd0..
+0dddbddddbddd0..
+0dddbddddbddd0..
+0dddbbddbbddd0..
+0ddddbbbbdddd0..
+0dddddddddddd0..
+0dddddddd88dd0..
+0dddddddddddd0..
+.000000000000...
+................

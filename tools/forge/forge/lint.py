@@ -27,6 +27,16 @@ Rules implemented here, each reported as a :class:`Finding` tagged with its rule
     "re-render needed". A missing script or ``render.json`` is an error.
 ``blender-snap``
     The build's palette snap changed a pixel of a render (``snap_changed_px``, SSP-009).
+``ramps``
+    A built frame of a hand-authored sprite (``grid`` / ``ai-ingest``) uses more than
+    :data:`MAX_RAMP_STEPS` steps of one ramp (ART_BIBLE §5.4; SSP-051). Ink used as the outline
+    (an index-00 pixel 4-adjacent to transparency or the cell edge) does not count; interior ink
+    does. ``accents`` is a list of unrelated hues, not a light ramp, so it is not counted.
+    Procedural and Blender assets are left to the complete rule (SSP-115, M4).
+``litter-shading``
+    An authored ``h00`` frame of a ``litter.*`` entry whose shading is not rotation-symmetric
+    (ASSET_PIPELINE §6.2, ART_BIBLE §6.2; SSP-051), see :func:`rotation_shading_problems`. Also a
+    ``litter.*`` entry whose ``dirs`` is not ``"rot4"``.
 
 ``assets-src/_probe/`` is never read: AI folders are only looked for in ``assets-src/ai/``
 and a manifest entry pointing into the probe is a ``manifest`` error that skips the entry.
@@ -56,26 +66,32 @@ from PIL import Image
 
 from forge import palette as _palette_mod
 from forge.build import BuildError, build_asset
-from forge.manifest import ASSET_CLASSES, AssetEntry, ManifestError, entry_from_data
+from forge.manifest import ASSET_CLASSES, ROTATION_SPEC, AssetEntry, ManifestError, entry_from_data
 from forge.palette import PALETTE_SIZE, TRANSPARENT, Palette, PaletteError, load_palette
 from forge.sprite import SpriteError, read_sprite
 
 __all__ = [
     "AI_DIR",
+    "MAX_RAMP_STEPS",
     "META_FIELDS",
     "PROBE_DIR",
     "RULES",
+    "SHADING_TOLERANCE",
     "Finding",
     "LintReport",
     "cli",
+    "darkest_step_shares",
     "lint",
+    "outline_ink",
     "pixel_violations",
+    "ramp_steps",
     "retro_allowed",
+    "rotation_shading_problems",
 ]
 
 Severity = Literal["error", "warning"]
 
-RULES = ("manifest", "shape", "palette", "provenance", "blender-drift", "blender-snap")
+RULES = ("manifest", "shape", "palette", "ramps", "litter-shading", "provenance", "blender-drift", "blender-snap")
 """Rule names, in report order."""
 
 PROBE_DIR = Path("assets-src") / "_probe"
@@ -294,6 +310,137 @@ def _check_published_pngs(ctx: _Ctx, entries: Sequence[AssetEntry], only: set[st
 
 
 # ---------------------------------------------------------------------------------------------
+# Ramps and rotation-symmetric litter shading
+
+MAX_RAMP_STEPS = 4
+"""At most 4 steps of any one ramp per sprite (ART_BIBLE §5.4)."""
+
+SHADING_TOLERANCE = 0.5
+"""Largest allowed change of an edge's darkest-step share under a 90° turn (:func:`rotation_shading_problems`)."""
+
+UNRAMPED = frozenset({"accents"})
+"""Palette ``ramps`` entries that are not light ramps (unrelated accent hues), so they have no steps."""
+
+SIDES = ("N", "E", "S", "W")
+"""Cell edges in clockwise order: a 90° clockwise turn moves each edge's pixels to the next one."""
+
+IntArray = npt.NDArray[np.integer]
+
+
+def outline_ink(indices: IntArray) -> BoolArray:
+    """Ink (index 00) pixels used as the outline: 4-adjacent to transparency or to the cell edge."""
+    clear = np.pad(indices == TRANSPARENT, 1, constant_values=True)
+    near = clear[:-2, 1:-1] | clear[2:, 1:-1] | clear[1:-1, :-2] | clear[1:-1, 2:]
+    return (indices == 0) & near
+
+
+def _body(indices: IntArray) -> BoolArray:
+    """Opaque pixels that are not outline ink."""
+    return (indices != TRANSPARENT) & ~outline_ink(indices)
+
+
+def ramp_steps(indices: IntArray, palette: Palette) -> dict[str, tuple[int, ...]]:
+    """The steps of each light ramp that a frame's body uses (outline ink excluded), sorted."""
+    used = set(np.unique(indices[_body(indices)]).tolist())
+    out: dict[str, tuple[int, ...]] = {}
+    for name, members in palette.ramps.items():
+        if name in UNRAMPED:
+            continue
+        steps = tuple(sorted(used & set(members)))
+        if steps:
+            out[name] = steps
+    return out
+
+
+def _rims(body: BoolArray) -> dict[str, BoolArray]:
+    """Body pixels whose N/E/S/W neighbour is not body (outline ink, transparency or off-cell)."""
+    outside = np.pad(~body, 1, constant_values=True)
+    return {
+        "N": body & outside[:-2, 1:-1],
+        "E": body & outside[1:-1, 2:],
+        "S": body & outside[2:, 1:-1],
+        "W": body & outside[1:-1, :-2],
+    }
+
+
+def darkest_step_shares(indices: IntArray, palette: Palette) -> dict[str, tuple[int, dict[str, float | None]]]:
+    """Per light ramp with at least 2 steps in the body: ``(darkest step, {edge: share})``.
+
+    The darkest step is the used step with the lowest OKLab L. An edge's share is the fraction of
+    that edge's rim pixels of the ramp (body pixels whose neighbour on that side is not body) that
+    are the darkest step, or ``None`` when the edge has no rim pixel of the ramp.
+    """
+    body = _body(indices)
+    rims = _rims(body)
+    out: dict[str, tuple[int, dict[str, float | None]]] = {}
+    for name, steps in ramp_steps(indices, palette).items():
+        if len(steps) < 2:
+            continue
+        darkest = min(steps, key=lambda i: (float(palette.oklab[i, 0]), i))
+        in_ramp = np.isin(indices, steps)
+        shares: dict[str, float | None] = {}
+        for side in SIDES:
+            rim = rims[side] & in_ramp
+            n = int(rim.sum())
+            shares[side] = None if n == 0 else int((rim & (indices == darkest)).sum()) / n
+        out[name] = (darkest, shares)
+    return out
+
+
+def rotation_shading_problems(indices: IntArray, palette: Palette) -> list[str]:
+    """Why a litter frame's shading is not rotation-symmetric (empty when it is).
+
+    Litter is turned in 90° steps by code (``rot4``), so its shading must not depend on the
+    light direction: outline, base and one centred highlight, no NW glint and no darker SE edge
+    (ASSET_PIPELINE §6.2). The check is the documented one, "a 90° rotation changes which edge
+    carries the ramp's darkest step": for every light ramp with at least 2 steps, the share of
+    each edge's rim that is the darkest step (:func:`darkest_step_shares`) is compared with the
+    share of the edge a 90° clockwise turn moves onto it (W -> N, N -> E, E -> S, S -> W). A
+    difference above :data:`SHADING_TOLERANCE` is a problem. An edge without rim pixels of the
+    ramp (a can's silver end has no red rim) is not compared. Directional shading fails it both
+    ways: a darker SE edge makes the darkest step's share high on S and E and low on N and W, and
+    a lighter NW glint leaves the base as the darkest step everywhere except on N and W.
+    """
+    problems: list[str] = []
+    for name, (darkest, shares) in darkest_step_shares(indices, palette).items():
+        for i, side in enumerate(SIDES):
+            prev = SIDES[i - 1]
+            a, b = shares[side], shares[prev]
+            if a is None or b is None or abs(a - b) <= SHADING_TOLERANCE:
+                continue
+            problems.append(
+                f"ramp {name}: darkest step {darkest:02d} covers {a:.0%} of the {side} rim but {b:.0%} of the "
+                f"{prev} rim, so a 90° turn moves it to another edge (litter shading must be top-lit and "
+                "rotation-symmetric: outline, base, one centred highlight; ASSET_PIPELINE §6.2)"
+            )
+    return problems
+
+
+def _check_sprite_rules(ctx: _Ctx, entry: AssetEntry, frames: Sequence[tuple[str, IntArray]]) -> None:
+    """``ramps`` for grid / ai-ingest entries and ``litter-shading`` for litter entries."""
+    if entry.technique in ("grid", "ai-ingest"):
+        for fid, indices in frames:
+            for name, steps in ramp_steps(indices, ctx.palette).items():
+                if len(steps) > MAX_RAMP_STEPS:
+                    shown = " ".join(f"{i:02d}" for i in steps)
+                    ctx.error(
+                        "ramps",
+                        fid,
+                        f"uses {len(steps)} steps of ramp {name} ({shown}); the limit is {MAX_RAMP_STEPS} "
+                        "(ART_BIBLE §5.4; outline ink does not count)",
+                    )
+    if entry.asset_class != "litter":
+        return
+    if entry.dirs_spec != ROTATION_SPEC:
+        ctx.error("litter-shading", entry.id, f'litter dirs must be "{ROTATION_SPEC}" (h00 authored, h08/h16/h24 generated)')
+    for fid, indices in frames:
+        if fid.split(":")[2] != "h00":
+            continue  # generated rotations of a checked h00 frame
+        for problem in rotation_shading_problems(indices, ctx.palette):
+            ctx.error("litter-shading", fid, problem)
+
+
+# ---------------------------------------------------------------------------------------------
 # Manifest
 
 
@@ -367,6 +514,7 @@ def _check_build(ctx: _Ctx, entry: AssetEntry) -> None:
         prefix = f"{entry.id}: "
         ctx.error("shape", entry.id, msg[len(prefix) :] if msg.startswith(prefix) else msg)
         return
+    _check_sprite_rules(ctx, entry, [(f.frame_id, f.indices) for f in built.frames])
     expected = entry.frame_ids()
     got = [f.frame_id for f in built.frames]
     if sorted(got) != expected:

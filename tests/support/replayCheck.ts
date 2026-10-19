@@ -167,15 +167,20 @@ export function measureReplayHeap(
   ticks: number,
   prewarmTicks: number = REPLAY_HEAP_PREWARM_TICKS,
 ): HeapDelta {
+  // Every World (pre-warm and both measured passes) is created before the first tick. Creating one after the
+  // pre-warm hands createWorld a VehicleState whose map the run has since generalised (Smi → double fields), so
+  // World.vehicle's field type changes and every optimised function that reads it is deoptimised; the tick then
+  // re-tiers through Maglev inside the measured window, which allocates (SSP-036 integration: ~120 KB
+  // pre-final-GC once phase 3 made the tick big enough that TurboFan did not come back in time).
+  const windowTicks = HEAP_WARMUP_TICKS + HEAP_MEASURED_TICKS;
   const prewarm = createReplayStepper(level, tuning, seed, log, ticks, prewarmTicks);
+  const passes = [0, 1].map(() => createReplayStepper(level, tuning, seed, log, ticks, windowTicks));
   for (let tick = 0; tick < prewarmTicks; tick++) prewarm(tick);
   // Two passes of the same measurement; the first is discarded. The first measureHeapDelta call in a process
   // reads one-off noise from V8 compiling the harness itself inside the window (measured under Vitest: ~100 KB
   // pre-final-GC for a no-op step).
-  const windowTicks = HEAP_WARMUP_TICKS + HEAP_MEASURED_TICKS;
   let delta: HeapDelta | null = null;
-  for (let pass = 0; pass < 2; pass++) {
-    const step = createReplayStepper(level, tuning, seed, log, ticks, windowTicks);
+  for (const step of passes) {
     delta = measureHeapDelta(step, { warmupTicks: HEAP_WARMUP_TICKS, ticks: HEAP_MEASURED_TICKS });
   }
   return delta as HeapDelta;

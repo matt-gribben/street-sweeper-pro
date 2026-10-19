@@ -332,6 +332,8 @@ Technique for all animals: **`grid`**, written directly in `assets-src/sprites/n
 
 Animals with 8 directions author S, SW, W, NW, N and mirror the rest, like humans. The 4-direction birds author S, W, N and mirror E from W.
 
+**Until M4:** `npc.cat`, `npc.pigeon` and the `npc.dog_loose` grid (drawn for the dog walker's dog with a coat swap) ship as placeholder grids under their final frame IDs (SSP-099: `technique: "grid"`, atlas `actors`, `placeholder: true`, `assets-src/sprites/npc/<name>.sprite.txt`). The dog's patches use only the skin key 12/11, so the SSP-114 coat swap applies. SSP-146 (cat) and SSP-147 (pigeon, dog) hand-author the final frames behind the same IDs.
+
 ### 7.2 Cat (`npc.cat`)
 
 The cat is the game's other recurring gag. Every behaviour must be readable a beat before it happens.

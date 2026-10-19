@@ -2,7 +2,7 @@
 id: SSP-099
 title: "Author placeholder grids for the cat, pigeon and dog (npc.dog_loose grid)"
 milestone: M3
-status: todo
+status: done
 type: asset
 estimate: M
 labels: [type:asset, area:assets, area:test, size:M, vertical-slice]

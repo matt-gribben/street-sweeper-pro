@@ -424,6 +424,34 @@
       "placeholder": true
     },
     {
+      "id": "npc.cat",
+      "class": "npc",
+      "technique": "grid",
+      "source": "assets-src/sprites/npc/cat.sprite.txt",
+      "cell": [16, 16],
+      "states": ["walk", "sit", "dart", "leap"],
+      "dirs": ["s", "sw", "w", "nw", "n", "ne", "e", "se"],
+      "frames": { "walk": 4, "sit": 2, "dart": 2, "leap": 3 },
+      "atlas": "actors",
+      "outline": true,
+      "swaps": [],
+      "placeholder": true
+    },
+    {
+      "id": "npc.dog_loose",
+      "class": "npc",
+      "technique": "grid",
+      "source": "assets-src/sprites/npc/dog_loose.sprite.txt",
+      "cell": [20, 20],
+      "states": ["walk", "sit", "bark"],
+      "dirs": ["s", "sw", "w", "nw", "n", "ne", "e", "se"],
+      "frames": { "walk": 4, "sit": 2, "bark": 2 },
+      "atlas": "actors",
+      "outline": true,
+      "swaps": [],
+      "placeholder": true
+    },
+    {
       "id": "npc.dog_walker",
       "class": "npc",
       "technique": "grid",
@@ -504,6 +532,20 @@
       "frames": { "walk": 4, "idle": 2, "startle": 2, "fall": 3, "angry": 2 },
       "atlas": "actors",
       "outline": false,
+      "swaps": [],
+      "placeholder": true
+    },
+    {
+      "id": "npc.pigeon",
+      "class": "npc",
+      "technique": "grid",
+      "source": "assets-src/sprites/npc/pigeon.sprite.txt",
+      "cell": [12, 12],
+      "states": ["peck", "fly"],
+      "dirs": ["s", "w", "n", "e"],
+      "frames": { "peck": 2, "fly": 3 },
+      "atlas": "actors",
+      "outline": true,
       "swaps": [],
       "placeholder": true
     },

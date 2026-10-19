@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { NPC_IDS, type NpcId } from '../../src/sim/entities.ts';
 import { createInputFrame, THROTTLE_MAX } from '../../src/sim/inputFrame.ts';
 import type { NpcSpawn } from '../../src/sim/map.ts';
+import { noopBehaviour } from '../../src/sim/npc/behaviours/noop.ts';
 import {
   NPC_DESPAWN_M,
   NPC_MAX_CHANGES,
@@ -161,6 +162,9 @@ describe('NPC spawner (LEVEL_DESIGN §9.4)', () => {
       loop: false,
     };
     const world = createWorld(town.level, 7, DEFAULT_TUNING);
+    // Inert people (SSP-082 gave them the generic pedestrian, which walks off on its first tick): this checks
+    // where the spawner puts Doris.
+    world.npcAi.behaviours.fill(noopBehaviour);
     const npc = world.npc;
     const named = (): number[] => {
       const out: number[] = [];

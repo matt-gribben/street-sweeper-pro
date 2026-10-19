@@ -20,7 +20,7 @@
 // payload per type, copy-on-write listener lists.
 
 import { Offence } from '../sim/complaints.ts';
-import { LITTER_IDS, type LitterId, STAIN_IDS, type StainId } from '../sim/entities.ts';
+import { LITTER_IDS, type LitterId, NPC_IDS, type NpcId, STAIN_IDS, type StainId } from '../sim/entities.ts';
 import {
   EV,
   type EventType,
@@ -202,6 +202,19 @@ export type HornEvent = SimEventBase & {
   readonly radiusM: number;
 };
 
+/**
+ * Bessie knocked a pedestrian or animal over (phase 7, npc/reactions.ts, SSP-082): once per hit contact episode.
+ * The hit SFX (entities.json sfx.hit, M5), the impact star (SSP-155) and the juice (SSP-241) read it.
+ */
+export type NpcHitEvent = SimEventBase & {
+  readonly type: typeof EV.NpcHit;
+  /** The NPC's centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** Its kind (a companion dog carries its walker's). */
+  readonly kind: NpcId;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -219,6 +232,7 @@ export type SimEventByType = {
   [EV.ComboTier]: ComboTierEvent;
   [EV.Complaint]: ComplaintEvent;
   [EV.Horn]: HornEvent;
+  [EV.NpcHit]: NpcHitEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -295,6 +309,7 @@ function createPayloads(): Payloads {
     },
     [EV.Complaint]: { type: EV.Complaint, tick: 0, entity: -1, x: 0, y: 0, reason: Offence.Hit },
     [EV.Horn]: { type: EV.Horn, tick: 0, entity: -1, x: 0, y: 0, radiusM: 0 },
+    [EV.NpcHit]: { type: EV.NpcHit, tick: 0, entity: -1, x: 0, y: 0, kind: 'npc.shopper' },
   };
 }
 
@@ -309,6 +324,14 @@ function litterKindOf(c: number, type: EventType, tick: number): LitterId {
   const id = Number.isInteger(c) ? LITTER_IDS[c] : undefined;
   if (id === undefined)
     throw new Error(`EventBus: event type ${type} at tick ${tick} carries unknown litter kind ${c}`);
+  return id;
+}
+
+/** The NPC id carried in an NpcHit event's `c` (an NPC_IDS index); throws on anything else. */
+function npcKindOf(c: number, tick: number): NpcId {
+  const id = Number.isInteger(c) ? NPC_IDS[c] : undefined;
+  if (id === undefined)
+    throw new Error(`EventBus: event type ${EV.NpcHit} at tick ${tick} carries unknown NPC kind ${c}`);
   return id;
 }
 
@@ -338,7 +361,8 @@ function isEventType(type: number): type is EventType {
     type === EV.HazardStop ||
     type === EV.ComboTier ||
     type === EV.Complaint ||
-    type === EV.Horn
+    type === EV.Horn ||
+    type === EV.NpcHit
   );
 }
 
@@ -407,6 +431,7 @@ export class EventBus implements UiEventSink {
     [EV.ComboTier]: [],
     [EV.Complaint]: [],
     [EV.Horn]: [],
+    [EV.NpcHit]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -642,6 +667,16 @@ export class EventBus implements UiEventSink {
         e.y = b;
         e.radiusM = c;
         this.emit(EV.Horn, e);
+        return;
+      }
+      case EV.NpcHit: {
+        const e = this.payloads[EV.NpcHit];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.kind = npcKindOf(c, tick);
+        this.emit(EV.NpcHit, e);
         return;
       }
     }

@@ -21,7 +21,7 @@ export const EVENTS_PER_TICK = 512;
  * Event type ids (`type`, Uint16). 0 is never a valid type. The values are hashed into replays: append new
  * types, never renumber. M1 holds the first four, SSP-058 appended HopperFull, SSP-059 LitterCollected and
  * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd, SSP-093 HazardJolt and HazardStop, SSP-063
- * ComboTier, SSP-078 Complaint and Horn; later issues append the rest of the §7.2 list (NpcHit, ...).
+ * ComboTier, SSP-078 Complaint and Horn, SSP-082 NpcHit; later issues append the rest of the §7.2 list.
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036).
@@ -61,6 +61,10 @@ export const EVENTS_PER_TICK = 512;
  * - Horn: a = x, b = y (Bessie's body centre as the tick starts, m), c = the horn radius (m: 8, or 12 with the
  *   two-tone horn); entity −1. Phase 1 (complaints.ts stepHornInput, SSP-078), on the tick whose InputFrame
  *   carries the HORN pressed edge. Phase 7 delivers it to the NPCs in range (SSP-082); sfx.horn (M5).
+ * - NpcHit: entity = the NPC's store index, a = x, b = y (the NPC's centre, m), c = its kind (NPC_IDS index).
+ *   Phase 7 (npc/reactions.ts stepActorContacts, SSP-082), once per contact episode in which Bessie's closing
+ *   speed toward the actor is at least streetLife.actorHit.minClosingSpeedMps (1.0 m/s); the penalty fact is
+ *   recorded with it. The hit SFX (entities.json sfx.hit, M5), VFX and juice read it.
  */
 export const EV = {
   Impact: 1,
@@ -78,6 +82,7 @@ export const EV = {
   ComboTier: 13,
   Complaint: 14,
   Horn: 15,
+  NpcHit: 16,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

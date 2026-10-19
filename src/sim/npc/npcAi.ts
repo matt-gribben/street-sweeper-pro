@@ -4,11 +4,15 @@
 //   2. updateViewRect (viewRect.ts): world.viewRect around Bessie's pose after phase 3;
 //   3. stepNpcSpawner (spawner.ts): named arrivals, then once a second the placed cats and flocks and the
 //      ambient population (at most 2 spawns or retirements);
-//   4. deliverStimuli (stimuli.ts): every queued stimulus, to the behaviours' onStimulus;
-//   5. perceiveNpcs (perception.ts): the perception query of the quarter of the store on this tick's phase;
-//   6. tickNpcBehaviours (here): each live NPC's behaviour tick, in index order, then its state clock;
-//   7. updateZebraOccupancy (steering.ts, SSP-081): world.zebras from where the NPCs ended up.
-// Steering (steering.ts, SSP-081) and the shared reaction model (SSP-082) plug into the behaviours' ticks.
+//   4. stepReactions (reactions.ts, SSP-082): pushReactionStimuli, the tick's Horn (from EV.Horn), HiVis and
+//      BeaconYield, then stepActorContacts, Bessie against the actors' circles: hits (penalty, EV.NpcHit, drops,
+//      a Hit stimulus) and bumps (a Bump stimulus);
+//   5. deliverStimuli (stimuli.ts): every queued stimulus, to the behaviours' onStimulus;
+//   6. perceiveNpcs (perception.ts): the perception query of the quarter of the store on this tick's phase;
+//   7. tickNpcBehaviours (here): each live NPC's behaviour tick, in index order, then its state clock;
+//   8. updateZebraOccupancy (steering.ts, SSP-081): world.zebras from where the NPCs ended up.
+// Steering (steering.ts, SSP-081) and the generic pedestrian (behaviours/pedestrian.ts, SSP-082) plug into the
+// behaviours' ticks.
 //
 // Hot path: tickNpcBehaviours allocates nothing.
 import type { StaticGrid } from '../collision/grid.ts';
@@ -18,6 +22,7 @@ import { createStream, type Sfc32 } from '../rng.ts';
 import type { Tuning } from '../tuning.ts';
 import type { World } from '../world.ts';
 import type { Behaviour } from './behaviour.ts';
+import { createReactions, type Reactions } from './reactions.ts';
 import { behavioursByKind } from './registry.ts';
 import { createNpcSpawner, type NpcSpawner } from './spawner.ts';
 import { createSteering, type Steering, type Zebras } from './steering.ts';
@@ -38,6 +43,8 @@ export type NpcAi = {
   readonly steering: Steering;
   /** The validated entities.json the World runs on (the kinds' behaviour keys and radius classes). */
   readonly entities: Entities;
+  /** The shared reaction rules' state: awareness radius, hi-vis, the per-kind hit tables (reactions.ts). */
+  readonly reactions: Reactions;
 };
 
 /**
@@ -60,6 +67,7 @@ export function createNpcAi(
     spawner: createNpcSpawner(level, tuning, entities),
     steering: createSteering(level, grid, zebras, tuning, capacity),
     entities,
+    reactions: createReactions(tuning, entities, capacity),
   };
 }
 

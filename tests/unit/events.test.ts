@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { EventBus, type SimEvent } from '../../src/app/events.ts';
 import { Offence } from '../../src/sim/complaints.ts';
-import { LITTER_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
+import { LITTER_IDS, NPC_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
 import {
   createEventQueue,
   EV,
@@ -57,9 +57,10 @@ describe('EventBus', () => {
       [EV.ComboTier, -1, 2, 1, 10],
       [EV.Horn, -1, 7.5, 88.25, 8],
       [EV.Complaint, -1, 7.5, 88.25, Offence.Noise],
+      [EV.NpcHit, 12, 30.5, 9.25, NPC_IDS.indexOf('npc.old_woman')],
       [EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0],
     ]);
-    expect(bus.drain(queue)).toBe(16);
+    expect(bus.drain(queue)).toBe(17);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -84,6 +85,7 @@ describe('EventBus', () => {
       { type: EV.ComboTier, tick: 42, entity: -1, multiplier: 2, previousMultiplier: 1, chain: 10 },
       { type: EV.Horn, tick: 42, entity: -1, x: 7.5, y: 88.25, radiusM: 8 },
       { type: EV.Complaint, tick: 42, entity: -1, x: 7.5, y: 88.25, reason: Offence.Noise },
+      { type: EV.NpcHit, tick: 42, entity: 12, x: 30.5, y: 9.25, kind: 'npc.old_woman' },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.TimeUp },
     ]);
   });
@@ -201,6 +203,9 @@ describe('EventBus', () => {
     expect(() => bus.drain(sealedQueue(16, [[EV.DumpEnd, 0, 0, 10, 1]]))).toThrow(/dump site 0/);
     expect(() => bus.drain(sealedQueue(17, [[EV.Complaint, -1, 0, 0, 0]]))).toThrow(/unknown offence 0/);
     expect(() => bus.drain(sealedQueue(18, [[EV.Complaint, -1, 0, 0, 99]]))).toThrow(/unknown offence 99/);
+    expect(() => bus.drain(sealedQueue(19, [[EV.NpcHit, 0, 0, 0, NPC_IDS.length]]))).toThrow(
+      /unknown NPC kind/,
+    );
   });
 
   it('decodes every EV id the sim defines (a new EV type must be wired into the bus)', () => {

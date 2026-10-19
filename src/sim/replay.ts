@@ -433,6 +433,8 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *   I complaints.count, max; B complaints.twoToneHorn; F complaints.hornRadiusM; I complaints.maxHonks,
  *     windowTicks, noiseComplaints; B complaints.hornThisTick, hornCaught; I complaints.honks, honksCaught,
  *     noiseOffences, honkCount, then the window's honk ticks oldest first; I penalties.count, penalties.applied
+ *   SSP-082 appends the reaction model (npc/reactions.ts): F reactions.awarenessRadiusM; B ledBeacon;
+ *     F minClosingSpeedMps; I ignoreTicks, hiVisUntilTick, hits, bumps; then per NPC: I contactIgnore, stateLimit
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -488,6 +490,7 @@ export function absorbTick(hasher: StateHasher, world: World): void {
   absorbShift(hasher, world);
   absorbNpcs(hasher, world);
   absorbComplaints(hasher, world);
+  absorbReactions(hasher, world);
 }
 
 // absorbTick writes each section's Int32 words into the hasher's word buffer and mixes them in with mixWords,
@@ -945,6 +948,30 @@ function absorbComplaints(hasher: StateHasher, world: World): void {
   w[k] = p.count | 0;
   w[k + 1] = p.applied | 0;
   mixWords(hasher, k + 2);
+}
+
+function absorbReactions(hasher: StateHasher, world: World): void {
+  const w = hasher.words;
+  const npc = world.npc;
+  const r = world.npcAi.reactions;
+  w[0] = Math.round(r.awarenessRadiusM * HASH_QUANTUM) | 0;
+  w[1] = r.ledBeacon ? 1 : 0;
+  w[2] = Math.round(r.minClosingSpeedMps * HASH_QUANTUM) | 0;
+  w[3] = r.ignoreTicks | 0;
+  w[4] = r.hiVisUntilTick | 0;
+  w[5] = r.hits | 0;
+  w[6] = r.bumps | 0;
+  let k = 7;
+  for (let i = 0; i < npc.count; i += 1) {
+    if (k > FLUSH_AT) {
+      mixWords(hasher, k);
+      k = 0;
+    }
+    w[k] = (npc.contactIgnore[i] as number) | 0;
+    w[k + 1] = (npc.stateLimit[i] as number) | 0;
+    k += 2;
+  }
+  mixWords(hasher, k);
 }
 
 /** The hasher's current value as a uint32. */

@@ -2,7 +2,7 @@
 id: SSP-077
 title: "Compile NPC, traffic, hazard, knockable and power-up spawn specs from level.json"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:tooling, area:sim, area:test, size:M, vertical-slice]
@@ -57,13 +57,13 @@ Par report line (LEVEL_DESIGN §10.4): `peak NPC n/80   peak vehicles n/30`. Pea
 
 ## Acceptance criteria
 
-- [ ] Unit test with an injected entities table: a level spawning a test entity whose milestone is M6 and whose districts include the level fails with L007.
-- [ ] A fixture that spawns npc.pigeon in Puddle Lane fails with L005 (pigeon districts are Tue, Fri, Sun).
-- [ ] Fixtures with 4 SSP-096, or with a peak of 81 NPCs, fail with L040 and L050 respectively.
-- [ ] A named NPC whose route refers to an undefined anchor fails with L080; a fixture whose last event is at 210 s prints L081 as a warning and still compiles.
-- [ ] A fixture with two errors reports both.
-- [ ] The par report shows the peak NPC and peak vehicle lines.
-- [ ] Compilation stays byte-deterministic and the round-trip property test still passes.
+- [x] Unit test with an injected entities table: a level spawning a test entity whose milestone is M6 and whose districts include the level fails with L007.
+- [x] A fixture that spawns npc.pigeon in Puddle Lane fails with L005 (pigeon districts are Tue, Fri, Sun).
+- [x] Fixtures with 4 SSP-096, or with a peak of 81 NPCs, fail with L040 and L050 respectively.
+- [x] A named NPC whose route refers to an undefined anchor fails with L080; a fixture whose last event is at 210 s prints L081 as a warning and still compiles.
+- [x] A fixture with two errors reports both.
+- [x] The par report shows the peak NPC and peak vehicle lines.
+- [x] Compilation stays byte-deterministic and the round-trip property test still passes.
 
 ## Verification
 

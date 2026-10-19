@@ -7,12 +7,14 @@
 // half the maps carry litter and grime specs, and the spawn layers hold their invariants on every map.
 // SSP-076: the maps carry a legal road network (a 3-tile road across the map, two-way or one-way, and often a
 // 3-tile side road that dead-ends or leaves the map), so the lane checks L011–L013 stay on; the lane and nav
-// graphs round-trip with everything else and hold their invariants on every map.
+// graphs round-trip with everything else and hold their invariants on every map. SSP-077: the maps with spawn
+// specs also carry npcs, traffic, hazards, knockables and events, which round-trip, and the hazard candidate
+// tiles keep off the LEVEL_DESIGN §9.3 exclusions on every map.
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { decodeLevel, encodeLevel } from '../../src/sim/map.ts';
+import { decodeLevel, encodeLevel, HAZARD_RULE_ALL_BITS } from '../../src/sim/map.ts';
 import { compileLevel, DEFAULT_LEGEND, formatDiagnostic } from '../../tools/levels/compile-level.ts';
 import { KERB_BLOB_PATH, readKerbBlob } from '../../tools/levels/kerbBlob.ts';
 import { graphViolations, spawnLayerViolations, tileLayerViolations } from '../support/levelInvariants.ts';
@@ -177,6 +179,12 @@ function pick(set: readonly string[], n: number): string {
 
 /** Build the map rows and level.json text for a spec. */
 function build(spec: Spec): { rows: string[]; levelText: string } {
+  const rows = build0(spec);
+  return { rows, levelText: levelTextOf(spec, rows) };
+}
+
+/** The map rows of a spec. */
+function build0(spec: Spec): string[] {
   const { w, h } = spec;
   const rows: string[] = [];
   for (let y = 0; y < h; y += 1) {
@@ -208,6 +216,12 @@ function build(spec: Spec): { rows: string[]; levelText: string } {
     }
     rows.push(row);
   }
+  return rows;
+}
+
+/** The level.json text of a spec and its rows. */
+function levelTextOf(spec: Spec, rows: readonly string[]): string {
+  const { w, h } = spec;
   const used = new Set(rows.join(''));
   const buildings: Record<string, unknown> = {};
   LETTERS.forEach((letter, i) => {
@@ -244,7 +258,7 @@ function build(spec: Spec): { rows: string[]; levelText: string } {
     anchors,
     ...(spec.spawns ? spawnSpecs(spec) : {}),
   };
-  return { rows, levelText: `${JSON.stringify(level, null, 2)}\n` };
+  return `${JSON.stringify(level, null, 2)}\n`;
 }
 
 /**
@@ -253,7 +267,37 @@ function build(spec: Spec): { rows: string[]; levelText: string } {
  */
 function spawnSpecs(spec: Spec): Record<string, unknown> {
   const d = spec.dial / 100;
+  const used = new Set(build0(spec).join(''));
+  const t = spec.skipRun ? 45 : 240;
   return {
+    // SSP-077: specs every legal map can satisfy. Doris walks from anchor 1 back to it (one nav node); the
+    // cats perch on the road (every map has lanes); the knockable stands on row 1's plain pavement at x 0.
+    npcs: {
+      population: [
+        { from: 0, to: t / 2, target: Math.round(d * 20) },
+        { from: t / 2, to: t, target: Math.round(d * 30) },
+      ],
+      mix: { 'npc.shopper': 3, 'npc.dog_walker': 1 },
+      caps: { 'npc.dog_walker': 1 },
+      ...(used.has('1')
+        ? { named: [{ id: 'npc.old_woman', anchor: '1', spawnAt: t / 3, route: ['1'] }] }
+        : {}),
+      perches: { id: 'npc.cat', count: 1 + Math.round(d * 3), on: ['road'] },
+    },
+    traffic: {
+      densityPerKm: Math.round(d * 100) / 10,
+      mix: { 'veh.hatchback': 2, 'veh.saloon': 1 },
+      parkedFill: d,
+      parkedMix: { 'veh.hatchback_parked': 1 },
+      pavement: { 'veh.mobility_scooter': 1 },
+    },
+    hazards: { place: [], random: [] },
+    knockables: [{ id: 'prop.wheelie_bin', at: [0.5, 1.5] }],
+    events: [
+      { type: 'dawn', at: 0, durationS: 20 },
+      { type: 'population_wave', at: t / 4, untilS: t / 2, npc: 'npc.shopper', delta: 2 },
+      { type: 'tutorial_beat', trigger: 'shift_start', text: 'Morning, rookie.' },
+    ],
     litter: {
       initial: Math.round(d * 50),
       table: { 'litter.crisp_packet': 3, 'litter.dog_mess': 1, 'litter.leaf_pile': 1 },
@@ -315,6 +359,27 @@ describe('level compiler round trip (TECHNICAL_DESIGN §18.2)', () => {
         expect(decoded.litter === null).toBe(!spec.spawns);
         expect(decoded.grime === null).toBe(!spec.spawns);
         expect(decoded.music === undefined).toBe(!spec.audio);
+        // SSP-077: the M3 specs compile on every map that carries them, and the hazard candidates keep off
+        // the §9.3 exclusions (3 tiles round @, zebras, school crossings, depot bays, skips, hydrants, bays).
+        for (const kind of [decoded.npc, decoded.traffic, decoded.hazards, decoded.knockables])
+          expect(kind === null).toBe(!spec.spawns);
+        expect(decoded.schedules).toHaveLength(spec.spawns ? 3 : 0);
+        const candidates = decoded.hazards?.candidates;
+        if (candidates !== undefined) {
+          const [sx, sy] = spec.start;
+          for (let i = 0; i < spec.w * spec.h; i += 1) {
+            const b = candidates[i] ?? 0;
+            expect(b & ~HAZARD_RULE_ALL_BITS).toBe(0);
+            if (b === 0) continue;
+            const x = i % spec.w;
+            const y = Math.floor(i / spec.w);
+            expect(Math.max(Math.abs(x - sx), Math.abs(y - sy))).toBeGreaterThan(3);
+            expect('zkp$sh='.includes(rows[y]?.[x] ?? ' ')).toBe(false);
+            expect(output.map.drivable[i]).toBe(1);
+            for (let dy = -1; dy <= 1; dy += 1)
+              for (let dx = -1; dx <= 1; dx += 1) expect(rows[y + dy]?.[x + dx] === 'h').toBe(false);
+          }
+        }
       }),
       { seed: SEED, numRuns: RUNS },
     );

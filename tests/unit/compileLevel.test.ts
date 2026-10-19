@@ -212,6 +212,10 @@ describe('one failing fixture per implemented code', () => {
       'l005_music',
       'l005_music.level.json:27:3 L005 music "puddle_lane" is not a canonical id (must match /^mus\\.[a-z0-9_]+$/)',
     ],
+    [
+      'l005_pigeon',
+      'l005_pigeon.level.json:38:24 L005 npcs.flocks[0].id npc.pigeon is not allowed in district.puddle_lane (entities.json districts)',
+    ],
     ['l006_timer', 'l006_timer.level.json:9:3 L006 timer is 200; a shift level must use 240'],
     [
       'l010_disconnected',
@@ -257,8 +261,16 @@ describe('one failing fixture per implemented code', () => {
       'l050_litter.level.json:47:5 L050 litter.initial 1001 + expected dynamic litter 0 = 1001 is over the budget of 1000',
     ],
     [
+      'l050_npcs',
+      'l050_npcs.level.json:35:3 L050 peak NPCs 81 is over the budget of 80 (ambient 81, named 0, dogs 0, cats 0, flock birds 0, market traders 0)',
+    ],
+    [
       'l051_grime',
       'l051_grime.level.json:75:5 L051 grime.cells 6000 exceeds the 5716 route-area grime cells available',
+    ],
+    [
+      'l080_anchor',
+      'l080_anchor.level.json:38:90 L080 npcs.named[0].route names anchor "9", which level.json anchors does not define',
     ],
   ] as const;
 

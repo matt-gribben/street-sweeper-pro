@@ -472,7 +472,7 @@ Each milestone has the same shape:
 - `bodies.ts` (knockable impulse bodies), `complaints.ts`, and the end states SACKED and TOWED.
 - Horn, near-miss detection, dust coughing, puddle splashing, power-ups.
 - Reaction animations: placeholder grids allowed, but every state (walk, idle, startle, fall, angry) exists as frames under the final frame IDs.
-- `npm run levels` also compiles a first grey-box High Street (80×60), so Tuesday's NPCs have a home.
+- `npm run levels` also compiles a first grey-box High Street (80×60), so Tuesday's NPCs have a home. *(Compiler support, SSP-077: the NPC, traffic, hazard, knockable, power-up and event specs compile to `spawns` and `schedules`, with L005/L007 membership and milestones, the L050 peaks, L073, L080, L081 and the par report's peak lines. The High Street itself is SSP-105.)*
 
 **Exit criteria (canonical).**
 

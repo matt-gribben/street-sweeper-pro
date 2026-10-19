@@ -268,6 +268,79 @@ export const NAV_FLAG_CROSSING = NAV_FLAG.ZEBRA | NAV_FLAG.SCHOOL_CROSSING | NAV
 export const NAV_FLAG_ALL_BITS = NAV_FLAG_CROSSING;
 
 /**
+ * The named random-hazard placement rules (LEVEL_DESIGN §9.3; SSP-077), in HAZARD_RULE bit order: bit n of a
+ * `spawns.hazards.candidates` tile is HAZARD_RULES[n]. Append new rules, never renumber.
+ */
+export const HAZARD_RULES = ['kerbside_low_points', 'carriageway', 'near_parking'] as const;
+export type HazardRule = (typeof HAZARD_RULES)[number];
+
+/**
+ * Bits of the `spawns.hazards.candidates` tile layer (SSP-077): a tile where a random hazard of that rule may
+ * be placed at shift start. The compiler has already removed every tile the exclusions forbid (LEVEL_DESIGN
+ * §9.3: within 3 tiles of `@`, a zebra or school crossing, a depot bay or skip, a hydrant or the 8 tiles round
+ * it; and a parking bay, a prop or speed-bump tile, or a tile Bessie cannot drive on).
+ * - KERBSIDE_LOW_POINTS: a road tile with a raised kerb edge: the gutter, where puddles collect.
+ * - CARRIAGEWAY: a road tile under a traffic lane node: the wheel tracks, where potholes are.
+ * - NEAR_PARKING: a road or yard tile (not a bay) within 2 tiles of a parking bay or of a unit's yard.
+ */
+export const HAZARD_RULE = {
+  KERBSIDE_LOW_POINTS: 1 << 0,
+  CARRIAGEWAY: 1 << 1,
+  NEAR_PARKING: 1 << 2,
+} as const;
+
+/** Every defined hazard candidate bit. */
+export const HAZARD_RULE_ALL_BITS = (1 << HAZARD_RULES.length) - 1;
+
+/** The candidate bit of a named hazard rule. */
+export function hazardRuleBit(rule: HazardRule): number {
+  return 1 << HAZARD_RULES.indexOf(rule);
+}
+
+/** Where a level's cats may perch (LEVEL_DESIGN §9.4; level.json → npcs.perches.on), in canonical order. */
+export const PERCH_SURFACES = ['walls', 'carRoofs', 'road'] as const;
+export type PerchSurface = (typeof PERCH_SURFACES)[number];
+
+/** The event types of LEVEL_DESIGN §4.3, in catalogue order (level.json → events[].type; SSP-077). */
+export const EVENT_TYPES = [
+  'dawn',
+  'tutorial_beat',
+  'market',
+  'market_close',
+  'bin_round',
+  'rain',
+  'leaf_fall',
+  'school_out',
+  'gust',
+  'vehicle_stop',
+  'rival_cameo',
+  'kicking_out',
+  'crossing_patrol',
+  'parade',
+  'inspection',
+  'population_wave',
+] as const;
+export type EventType = (typeof EVENT_TYPES)[number];
+
+/**
+ * The event params that name anchors (LEVEL_DESIGN §4.3) and the graph each one's actor moves on: `lane` for
+ * vehicles (the bin lorry, Sid's sweeper, the ice cream van, the parade's road closure) and `nav` for people.
+ * `anchor` is one anchor; `route` and `anchors` are lists. The compiler resolves each anchor to a node of that
+ * graph (L080 when it cannot), so a compiled schedule holds node indices where level.json held anchors.
+ */
+export const EVENT_ANCHOR_PARAMS: {
+  readonly [T in EventType]?: { readonly [param: string]: 'lane' | 'nav' };
+} = {
+  bin_round: { route: 'lane' },
+  school_out: { anchor: 'nav' },
+  vehicle_stop: { anchor: 'lane' },
+  rival_cameo: { route: 'lane' },
+  kicking_out: { anchors: 'nav' },
+  parade: { route: 'lane' },
+  inspection: { route: 'nav' },
+};
+
+/**
  * The asset id (`roof.*` or `facade.*`) a roof/wall layer value names, or null for STYLE_NONE.
  * Throws if the value is past the end of the table.
  */
@@ -480,8 +553,118 @@ export type GrimeSpawn = {
   speckle: number;
 };
 
-/** Spawn kinds with a typed field on Level (`litter`, `grime`); `Level.spawns` may not use these names. */
-export const TYPED_SPAWN_KINDS: readonly string[] = ['grime', 'litter'];
+/** A canonical id and its relative weight (a level.json `Weights` table, compiled sorted by id). */
+export type WeightEntry = { id: string; weight: number };
+
+/** A position in metres (sim coordinates). */
+export type PointM = [x: number, y: number];
+
+/** An ambient population window (SSP-077): from `fromS` up to `toS` elapsed seconds the target is `target`. */
+export type PopulationWindow = { fromS: number; toS: number; target: number };
+
+/**
+ * A named NPC (SSP-077; LEVEL_DESIGN §9.4): `count` of `id` spawn at nav node `anchor` at `spawnAtS` elapsed
+ * seconds and walk the nav nodes of `route` in order (round again when `loop`). Named NPCs never despawn.
+ */
+export type NamedNpc = {
+  id: string;
+  count: number;
+  spawnAtS: number;
+  anchor: number;
+  route: number[];
+  loop: boolean;
+};
+
+/**
+ * The cats' perches (SSP-077): `count` cats on the listed surfaces. `walls` are the centres (metres) of every
+ * `w` wall tile, listed when `on` includes walls; parked-car roofs and road grooming spots are found at
+ * runtime from the parked cars (SSP-090) and the lane graph.
+ */
+export type NpcPerches = { id: string; count: number; on: PerchSurface[]; walls: PointM[] };
+
+/** A bird flock spec (SSP-077): `count` flocks of `size[0]`..`size[1]` birds near one of `points` (metres). */
+export type NpcFlock = { id: string; count: number; size: [min: number, max: number]; points: PointM[] };
+
+/**
+ * The compiled NPC spawn spec (`spawns.npc`, SSP-077; LEVEL_DESIGN §9.4). The spawner (SSP-080) runs it with
+ * the `npc` stream: `mix` (sorted by id) picks ambient types within `caps` (sorted by id) towards the current
+ * `population` window's target (windows ascend and never overlap).
+ */
+export type NpcSpawn = {
+  population: PopulationWindow[];
+  mix: WeightEntry[];
+  caps: { id: string; cap: number }[];
+  named: NamedNpc[];
+  perches: NpcPerches | null;
+  flocks: NpcFlock[];
+};
+
+/**
+ * The compiled traffic spawn spec (`spawns.traffic`, SSP-077; LEVEL_DESIGN §9.5). `laneKm` is the length of
+ * the compiled lane graph (every directed edge, km) and `moving` = ceil(densityPerKm × laneKm), the moving
+ * vehicles traffic.ts (SSP-089) aims for, drawn from `mix`. `parkedBays` counts the `p` cells of
+ * `lanes.bays` and `parked` = ceil(parkedBays × parkedFill), drawn from `parkedMix` (SSP-090). `pavement`
+ * vehicles (the mobility scooter) follow the nav graph instead, `count` of each at once (SSP-091). `taxiRank`
+ * positions are metres; `busRoute` lists lane nodes, one per anchor; `busEveryS` is null without a bus route.
+ */
+export type TrafficSpawn = {
+  densityPerKm: number;
+  laneKm: number;
+  moving: number;
+  mix: WeightEntry[];
+  parkedFill: number;
+  parkedBays: number;
+  parked: number;
+  parkedMix: WeightEntry[];
+  pavement: { id: string; count: number }[];
+  taxiRank: PointM[];
+  busRoute: number[];
+  busEveryS: number | null;
+};
+
+/** The compiled power-up spec (`spawns.pickups`, SSP-077; LEVEL_DESIGN §9.6): positions in metres. */
+export type PickupSpawn = { count: number; table: WeightEntry[]; at: PointM[] };
+
+/** A hazard placed by level.json → hazards.place (metres). */
+export type PlacedHazard = { id: string; x: number; y: number };
+
+/** A random hazard: `count` of `id` on tiles whose candidate bit for `rule` is set. */
+export type RandomHazard = { id: string; count: number; rule: HazardRule };
+
+/**
+ * The compiled hazard spec (`spawns.hazards`, SSP-077; LEVEL_DESIGN §9.3): the fixed placements, the random
+ * requests in level.json order, and `candidates`, HAZARD_RULE bits per tile (w·h, row-major), which the
+ * hazard spawner (SSP-093) samples with the `hazards` stream.
+ */
+export type HazardSpawn = { place: PlacedHazard[]; random: RandomHazard[]; candidates: Uint8Array };
+
+/** A knockable prop placed by level.json → knockables (`spawns.knockables`, SSP-077), in metres. */
+export type KnockableSpawn = { id: string; x: number; y: number };
+
+/**
+ * A compiled level.json event (`schedules`, SSP-077; LEVEL_DESIGN §4.3), in level.json order. `atS` lists the
+ * elapsed seconds it fires at, ascending ([] for an event on a `trigger` or for the whole shift); `untilS` and
+ * `trigger` are null when absent. `params` holds every other field, keys sorted, with the EVENT_ANCHOR_PARAMS
+ * anchors replaced by node indices of their graph.
+ */
+export type ScheduledEvent = {
+  type: EventType;
+  atS: number[];
+  untilS: number | null;
+  trigger: string | null;
+  params: { [key: string]: JsonValue };
+};
+
+/** Spawn kinds with a typed field on Level; `Level.spawns` may not use these names. */
+export const TYPED_SPAWN_KINDS: readonly string[] = [
+  'grime',
+  'hazards',
+  'knockables',
+  'litter',
+  'npc',
+  'pickups',
+  'traffic',
+];
 
 /** Compiled weather. `inherit` (the Depot Yard) takes the weather of the day it is played on. */
 export type Weather = 'clear' | 'rain' | 'wind' | 'gusts' | 'inherit';
@@ -514,16 +697,26 @@ export type Level = {
   lanes: LaneGraph;
   nav: NavGraph;
   /**
-   * Spawn lists by kind (npc, traffic, pickups); entry shape defined in M3 (SSP-077). Litter and grime are
-   * the typed `litter` and `grime` fields below, written under `spawns.litter` and `spawns.grime`.
+   * Spawn lists of kinds a later milestone defines (opaque entries, keys sorted on encode). Every kind so far
+   * has a typed field below, written under `spawns.<kind>` (TYPED_SPAWN_KINDS).
    */
   spawns: { [kind: string]: JsonValue[] };
   /** The litter weight field (`spawns.litter`), or null when level.json has no `litter`. */
   litter: LitterSpawn | null;
   /** The grime selection counts (`spawns.grime`), or null when level.json has no `grime`. */
   grime: GrimeSpawn | null;
-  /** NPC schedules; entry shape defined in M3. */
-  schedules: JsonValue[];
+  /** The NPC spawn spec (`spawns.npc`, SSP-077), or null when level.json has no `npcs`. */
+  npc: NpcSpawn | null;
+  /** The traffic spawn spec (`spawns.traffic`), or null without `traffic` or with `{ none: true }`. */
+  traffic: TrafficSpawn | null;
+  /** The power-up spec (`spawns.pickups`), or null when level.json has no `powerups`. */
+  pickups: PickupSpawn | null;
+  /** The hazard spec (`spawns.hazards`), or null when level.json has no `hazards`. */
+  hazards: HazardSpawn | null;
+  /** The knockable props (`spawns.knockables`), or null when level.json has no `knockables`. */
+  knockables: KnockableSpawn[] | null;
+  /** The level.json events, compiled (SSP-077). */
+  schedules: ScheduledEvent[];
   weather: Weather;
   timerS: number;
   /** Level music (`mus.*`, MUSIC_ID_PATTERN); absent when the level names none (the Depot Yard, SSP-033). */
@@ -581,6 +774,11 @@ export function createBlankLevel(id: string, w: number, h: number): Level {
     spawns: {},
     litter: null,
     grime: null,
+    npc: null,
+    traffic: null,
+    pickups: null,
+    hazards: null,
+    knockables: null,
     schedules: [],
     weather: 'clear',
     timerS: SHIFT_S,
@@ -1051,6 +1249,281 @@ function litterOut(litter: LitterSpawn, w: number, h: number): JsonValue {
   };
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// M3 spawn specs and schedules (SSP-077): one semantic check shared by the encoder and the decoder
+// ---------------------------------------------------------------------------------------------------------
+
+/** What the M3 spawn checks need to know about the level: its size and graph node counts. */
+type SpawnFrame = { w: number; h: number; laneNodes: number; navNodes: number };
+
+function specFail(where: string, path: string, message: string): never {
+  throw new Error(`${where}: ${path} ${message}`);
+}
+
+function checkId(where: string, path: string, id: string, prefix: string): void {
+  if (typeof id !== 'string' || !new RegExp(`^${prefix}\\.[a-z0-9_]+$`).test(id))
+    specFail(where, path, `must be a ${prefix}.* id (got ${JSON.stringify(id)})`);
+}
+
+function checkInt(where: string, path: string, n: number, min: number): void {
+  if (!Number.isInteger(n) || n < min) specFail(where, path, `must be an integer ≥ ${min} (got ${n})`);
+}
+
+function checkSeconds(where: string, path: string, s: number): void {
+  if (!Number.isFinite(s) || s < 0)
+    specFail(where, path, `must be a non-negative number of seconds (got ${s})`);
+}
+
+function checkPointM(where: string, path: string, p: PointM, frame: SpawnFrame): void {
+  if (p.length !== 2) specFail(where, path, 'must be [x, y] in metres');
+  checkGraphNode(where, path, p[0], p[1], frame.w, frame.h);
+}
+
+/** Sorted by unique id, each id of `prefix`, each weight a positive finite number. */
+function checkWeights(where: string, path: string, entries: readonly WeightEntry[], prefix: string): void {
+  entries.forEach((e, i) => {
+    checkId(where, `${path}[${i}].id`, e.id, prefix);
+    if (i > 0 && !(e.id > (entries[i - 1]?.id ?? ''))) specFail(where, path, 'must be sorted by unique id');
+    if (!Number.isFinite(e.weight) || e.weight <= 0)
+      specFail(where, `${path}[${i}].weight`, `must be a positive number (got ${e.weight})`);
+  });
+}
+
+function checkNpcSpawn(where: string, npc: NpcSpawn, frame: SpawnFrame): void {
+  let lastTo = 0;
+  npc.population.forEach((p, i) => {
+    const path = `npc.population[${i}]`;
+    checkSeconds(where, `${path}.fromS`, p.fromS);
+    checkSeconds(where, `${path}.toS`, p.toS);
+    if (p.toS <= p.fromS || p.fromS < lastTo)
+      specFail(where, path, 'windows must ascend without overlapping (fromS < toS, fromS ≥ previous toS)');
+    lastTo = p.toS;
+    checkInt(where, `${path}.target`, p.target, 0);
+  });
+  checkWeights(where, 'npc.mix', npc.mix, 'npc');
+  npc.caps.forEach((c, i) => {
+    checkId(where, `npc.caps[${i}].id`, c.id, 'npc');
+    if (i > 0 && !(c.id > (npc.caps[i - 1]?.id ?? '')))
+      specFail(where, 'npc.caps', 'must be sorted by unique id');
+    checkInt(where, `npc.caps[${i}].cap`, c.cap, 0);
+  });
+  npc.named.forEach((n, i) => {
+    const path = `npc.named[${i}]`;
+    checkId(where, `${path}.id`, n.id, 'npc');
+    checkInt(where, `${path}.count`, n.count, 1);
+    checkSeconds(where, `${path}.spawnAtS`, n.spawnAtS);
+    checkNodeRef(where, `${path}.anchor`, n.anchor, frame.navNodes);
+    if (n.route.length === 0) specFail(where, `${path}.route`, 'must list at least one node');
+    n.route.forEach((node, j) => {
+      checkNodeRef(where, `${path}.route[${j}]`, node, frame.navNodes);
+    });
+    if (typeof n.loop !== 'boolean') specFail(where, `${path}.loop`, 'must be a boolean');
+  });
+  if (npc.perches !== null) {
+    const p = npc.perches;
+    checkId(where, 'npc.perches.id', p.id, 'npc');
+    checkInt(where, 'npc.perches.count', p.count, 1);
+    const order = p.on.map((s) => PERCH_SURFACES.indexOf(s));
+    if (p.on.length === 0 || order.some((o, i) => o < 0 || (i > 0 && o <= (order[i - 1] ?? -1))))
+      specFail(
+        where,
+        'npc.perches.on',
+        `must list surfaces from ${PERCH_SURFACES.join(', ')}, in that order`,
+      );
+    p.walls.forEach((pt, i) => {
+      checkPointM(where, `npc.perches.walls[${i}]`, pt, frame);
+    });
+    if (p.walls.length > 0 && !p.on.includes('walls'))
+      specFail(where, 'npc.perches.walls', 'must be empty unless on includes walls');
+  }
+  npc.flocks.forEach((f, i) => {
+    const path = `npc.flocks[${i}]`;
+    checkId(where, `${path}.id`, f.id, 'npc');
+    checkInt(where, `${path}.count`, f.count, 1);
+    if (f.size.length !== 2) specFail(where, `${path}.size`, 'must be [min, max]');
+    checkInt(where, `${path}.size[0]`, f.size[0], 1);
+    checkInt(where, `${path}.size[1]`, f.size[1], f.size[0]);
+    if (f.points.length === 0) specFail(where, `${path}.points`, 'must list at least one point');
+    f.points.forEach((pt, j) => {
+      checkPointM(where, `${path}.points[${j}]`, pt, frame);
+    });
+  });
+}
+
+function checkTrafficSpawn(where: string, t: TrafficSpawn, frame: SpawnFrame): void {
+  for (const [key, value] of [
+    ['densityPerKm', t.densityPerKm],
+    ['laneKm', t.laneKm],
+  ] as const) {
+    if (!Number.isFinite(value) || value < 0) specFail(where, `traffic.${key}`, `must be ≥ 0 (got ${value})`);
+  }
+  checkInt(where, 'traffic.moving', t.moving, 0);
+  checkWeights(where, 'traffic.mix', t.mix, 'veh');
+  if (!(t.parkedFill >= 0 && t.parkedFill <= 1))
+    specFail(where, 'traffic.parkedFill', `must be 0..1 (got ${t.parkedFill})`);
+  checkInt(where, 'traffic.parkedBays', t.parkedBays, 0);
+  checkInt(where, 'traffic.parked', t.parked, 0);
+  if (t.parked > t.parkedBays) specFail(where, 'traffic.parked', 'must not exceed parkedBays');
+  checkWeights(where, 'traffic.parkedMix', t.parkedMix, 'veh');
+  t.pavement.forEach((p, i) => {
+    checkId(where, `traffic.pavement[${i}].id`, p.id, 'veh');
+    if (i > 0 && !(p.id > (t.pavement[i - 1]?.id ?? '')))
+      specFail(where, 'traffic.pavement', 'must be sorted by unique id');
+    checkInt(where, `traffic.pavement[${i}].count`, p.count, 1);
+  });
+  t.taxiRank.forEach((pt, i) => {
+    checkPointM(where, `traffic.taxiRank[${i}]`, pt, frame);
+  });
+  t.busRoute.forEach((node, i) => {
+    checkNodeRef(where, `traffic.busRoute[${i}]`, node, frame.laneNodes);
+  });
+  if ((t.busRoute.length === 0) !== (t.busEveryS === null))
+    specFail(where, 'traffic.busEveryS', 'must be set exactly when there is a bus route');
+  if (t.busEveryS !== null && !(Number.isFinite(t.busEveryS) && t.busEveryS > 0))
+    specFail(where, 'traffic.busEveryS', `must be a positive number of seconds (got ${t.busEveryS})`);
+}
+
+function checkPickupSpawn(where: string, p: PickupSpawn, frame: SpawnFrame): void {
+  checkInt(where, 'pickups.count', p.count, 0);
+  checkWeights(where, 'pickups.table', p.table, 'pwr');
+  p.at.forEach((pt, i) => {
+    checkPointM(where, `pickups.at[${i}]`, pt, frame);
+  });
+}
+
+function checkHazardSpawn(where: string, hz: HazardSpawn, frame: SpawnFrame): void {
+  hz.place.forEach((p, i) => {
+    checkId(where, `hazards.place[${i}].id`, p.id, 'haz');
+    checkPointM(where, `hazards.place[${i}]`, [p.x, p.y], frame);
+  });
+  hz.random.forEach((r, i) => {
+    checkId(where, `hazards.random[${i}].id`, r.id, 'haz');
+    checkInt(where, `hazards.random[${i}].count`, r.count, 1);
+    if (!HAZARD_RULES.includes(r.rule))
+      specFail(where, `hazards.random[${i}].rule`, `must be one of ${HAZARD_RULES.join(', ')}`);
+  });
+  if (hz.candidates.length !== frame.w * frame.h)
+    specFail(
+      where,
+      'hazards.candidates',
+      `has ${hz.candidates.length} entries, expected ${frame.w * frame.h}`,
+    );
+  for (let i = 0; i < hz.candidates.length; i += 1) {
+    if (((hz.candidates[i] ?? 0) & ~HAZARD_RULE_ALL_BITS) !== 0)
+      specFail(where, 'hazards.candidates', `has unknown rule bits at tile ${i}`);
+  }
+}
+
+function checkKnockables(where: string, list: readonly KnockableSpawn[], frame: SpawnFrame): void {
+  list.forEach((k, i) => {
+    checkId(where, `knockables[${i}].id`, k.id, 'prop');
+    checkPointM(where, `knockables[${i}]`, [k.x, k.y], frame);
+  });
+}
+
+function checkSchedules(where: string, list: readonly ScheduledEvent[], frame: SpawnFrame): void {
+  list.forEach((e, i) => {
+    const path = `schedules[${i}]`;
+    if (!EVENT_TYPES.includes(e.type))
+      specFail(where, `${path}.type`, `must be one of ${EVENT_TYPES.join(', ')}`);
+    e.atS.forEach((s, j) => {
+      checkSeconds(where, `${path}.atS[${j}]`, s);
+      if (j > 0 && s < (e.atS[j - 1] ?? 0)) specFail(where, `${path}.atS`, 'must ascend');
+    });
+    if (e.untilS !== null) checkSeconds(where, `${path}.untilS`, e.untilS);
+    if (e.trigger !== null && (typeof e.trigger !== 'string' || e.trigger.length === 0))
+      specFail(where, `${path}.trigger`, 'must be a non-empty string or null');
+    for (const [param, graph] of Object.entries(EVENT_ANCHOR_PARAMS[e.type] ?? {})) {
+      const value = e.params[param];
+      if (value === undefined) continue;
+      const count = graph === 'lane' ? frame.laneNodes : frame.navNodes;
+      const nodes = Array.isArray(value) ? value : [value];
+      nodes.forEach((node, j) => {
+        if (typeof node !== 'number') specFail(where, `${path}.params.${param}`, 'must hold node indices');
+        checkNodeRef(where, `${path}.params.${param}[${j}]`, node, count);
+      });
+    }
+  });
+}
+
+/** Check every typed M3 spawn field and the schedules of a level (throws naming the field). */
+function checkM3Spawns(where: string, level: Level): void {
+  const frame: SpawnFrame = {
+    w: level.size[0],
+    h: level.size[1],
+    laneNodes: level.lanes.nodeCount,
+    navNodes: level.nav.nodeCount,
+  };
+  if (level.npc !== null) checkNpcSpawn(where, level.npc, frame);
+  if (level.traffic !== null) checkTrafficSpawn(where, level.traffic, frame);
+  if (level.pickups !== null) checkPickupSpawn(where, level.pickups, frame);
+  if (level.hazards !== null) checkHazardSpawn(where, level.hazards, frame);
+  if (level.knockables !== null) checkKnockables(where, level.knockables, frame);
+  checkSchedules(where, level.schedules, frame);
+}
+
+const weightsOut = (list: readonly WeightEntry[]): JsonValue =>
+  list.map((e) => ({ id: e.id, weight: e.weight }));
+const pointsOut = (list: readonly PointM[]): JsonValue => list.map(([x, y]) => [x, y]);
+
+function npcOut(npc: NpcSpawn): JsonValue {
+  return {
+    population: npc.population.map((p) => ({ fromS: p.fromS, toS: p.toS, target: p.target })),
+    mix: weightsOut(npc.mix),
+    caps: npc.caps.map((c) => ({ id: c.id, cap: c.cap })),
+    named: npc.named.map((n) => ({
+      id: n.id,
+      count: n.count,
+      spawnAtS: n.spawnAtS,
+      anchor: n.anchor,
+      route: [...n.route],
+      loop: n.loop,
+    })),
+    perches:
+      npc.perches === null
+        ? null
+        : {
+            id: npc.perches.id,
+            count: npc.perches.count,
+            on: [...npc.perches.on],
+            walls: pointsOut(npc.perches.walls),
+          },
+    flocks: npc.flocks.map((f) => ({
+      id: f.id,
+      count: f.count,
+      size: [f.size[0], f.size[1]],
+      points: pointsOut(f.points),
+    })),
+  };
+}
+
+function trafficOut(t: TrafficSpawn): JsonValue {
+  return {
+    densityPerKm: t.densityPerKm,
+    laneKm: t.laneKm,
+    moving: t.moving,
+    mix: weightsOut(t.mix),
+    parkedFill: t.parkedFill,
+    parkedBays: t.parkedBays,
+    parked: t.parked,
+    parkedMix: weightsOut(t.parkedMix),
+    pavement: t.pavement.map((p) => ({ id: p.id, count: p.count })),
+    taxiRank: pointsOut(t.taxiRank),
+    busRoute: [...t.busRoute],
+    busEveryS: t.busEveryS,
+  };
+}
+
+function scheduleOut(e: ScheduledEvent, i: number): JsonValue {
+  return {
+    type: e.type,
+    atS: [...e.atS],
+    untilS: e.untilS,
+    trigger: e.trigger,
+    params: canonicalJson(e.params, `schedules[${i}].params`),
+  };
+}
+
 /** The `lanes` JSON (SSP-076), re-validated through buildLaneGraph so a mutated typed array cannot slip out. */
 function lanesOut(g: LaneGraph, w: number, h: number): JsonValue {
   const lists = laneGraphLists(g);
@@ -1109,6 +1582,23 @@ export function encodeLevel(level: Level): string {
   }
   if (level.grime !== null) spawnKinds.grime = grimeOut(level.grime, w, h);
   if (level.litter !== null) spawnKinds.litter = litterOut(level.litter, w, h);
+  checkM3Spawns('encodeLevel', level);
+  if (level.npc !== null) spawnKinds.npc = npcOut(level.npc);
+  if (level.traffic !== null) spawnKinds.traffic = trafficOut(level.traffic);
+  if (level.pickups !== null)
+    spawnKinds.pickups = {
+      count: level.pickups.count,
+      table: weightsOut(level.pickups.table),
+      at: pointsOut(level.pickups.at),
+    };
+  if (level.hazards !== null)
+    spawnKinds.hazards = {
+      place: level.hazards.place.map((p) => ({ id: p.id, x: p.x, y: p.y })),
+      random: level.hazards.random.map((r) => ({ id: r.id, count: r.count, rule: r.rule })),
+      candidates: encodeBase64(level.hazards.candidates),
+    };
+  if (level.knockables !== null)
+    spawnKinds.knockables = level.knockables.map((k) => ({ id: k.id, x: k.x, y: k.y }));
   const spawns: { [key: string]: JsonValue } = {};
   for (const kind of Object.keys(spawnKinds).sort()) spawns[kind] = spawnKinds[kind] ?? null;
   const doc: JsonValue = {
@@ -1140,7 +1630,7 @@ export function encodeLevel(level: Level): string {
     lanes: lanesOut(level.lanes, w, h),
     nav: navOut(level.nav, w, h),
     spawns,
-    schedules: canonicalJson(level.schedules, 'schedules'),
+    schedules: level.schedules.map(scheduleOut),
     weather: level.weather,
     timerS: finite(level.timerS, 'timerS'),
     ...audioIdOut(level.music, 'music', MUSIC_ID_PATTERN),
@@ -1300,6 +1790,154 @@ function litterIn(value: unknown, w: number, h: number): LitterSpawn {
   return { initial, minSpacingM, table, places, weights };
 }
 
+function weightsIn(value: unknown, path: string): WeightEntry[] {
+  return arr(value, path).map((v, i) => {
+    const e = obj(v, `${path}[${i}]`);
+    return { id: str(e.id, `${path}[${i}].id`), weight: num(e.weight, `${path}[${i}].weight`) };
+  });
+}
+
+function pointsIn(value: unknown, path: string): PointM[] {
+  return arr(value, path).map((v, i) => xyIn(v, `${path}[${i}]`));
+}
+
+function nullable<T>(value: unknown, read: (v: unknown) => T): T | null {
+  return value === null ? null : read(value);
+}
+
+function npcIn(value: unknown): NpcSpawn {
+  const n = obj(value, 'spawns.npc');
+  return {
+    population: arr(n.population, 'spawns.npc.population').map((v, i) => {
+      const p = obj(v, `spawns.npc.population[${i}]`);
+      const path = `spawns.npc.population[${i}]`;
+      return {
+        fromS: num(p.fromS, `${path}.fromS`),
+        toS: num(p.toS, `${path}.toS`),
+        target: int(p.target, `${path}.target`),
+      };
+    }),
+    mix: weightsIn(n.mix, 'spawns.npc.mix'),
+    caps: arr(n.caps, 'spawns.npc.caps').map((v, i) => {
+      const c = obj(v, `spawns.npc.caps[${i}]`);
+      return { id: str(c.id, `spawns.npc.caps[${i}].id`), cap: int(c.cap, `spawns.npc.caps[${i}].cap`) };
+    }),
+    named: arr(n.named, 'spawns.npc.named').map((v, i): NamedNpc => {
+      const path = `spawns.npc.named[${i}]`;
+      const e = obj(v, path);
+      return {
+        id: str(e.id, `${path}.id`),
+        count: int(e.count, `${path}.count`),
+        spawnAtS: num(e.spawnAtS, `${path}.spawnAtS`),
+        anchor: int(e.anchor, `${path}.anchor`),
+        route: arr(e.route, `${path}.route`).map((r, j) => int(r, `${path}.route[${j}]`)),
+        loop: bool(e.loop, `${path}.loop`),
+      };
+    }),
+    perches: nullable(n.perches, (v): NpcPerches => {
+      const p = obj(v, 'spawns.npc.perches');
+      return {
+        id: str(p.id, 'spawns.npc.perches.id'),
+        count: int(p.count, 'spawns.npc.perches.count'),
+        on: arr(p.on, 'spawns.npc.perches.on').map((s, i) =>
+          oneOf(s, PERCH_SURFACES, `spawns.npc.perches.on[${i}]`),
+        ),
+        walls: pointsIn(p.walls, 'spawns.npc.perches.walls'),
+      };
+    }),
+    flocks: arr(n.flocks, 'spawns.npc.flocks').map((v, i): NpcFlock => {
+      const path = `spawns.npc.flocks[${i}]`;
+      const f = obj(v, path);
+      const [min = 0, max = 0] = tuple(f.size, 2, `${path}.size`, int);
+      return {
+        id: str(f.id, `${path}.id`),
+        count: int(f.count, `${path}.count`),
+        size: [min, max],
+        points: pointsIn(f.points, `${path}.points`),
+      };
+    }),
+  };
+}
+
+function trafficIn(value: unknown): TrafficSpawn {
+  const t = obj(value, 'spawns.traffic');
+  const p = 'spawns.traffic';
+  return {
+    densityPerKm: num(t.densityPerKm, `${p}.densityPerKm`),
+    laneKm: num(t.laneKm, `${p}.laneKm`),
+    moving: int(t.moving, `${p}.moving`),
+    mix: weightsIn(t.mix, `${p}.mix`),
+    parkedFill: num(t.parkedFill, `${p}.parkedFill`),
+    parkedBays: int(t.parkedBays, `${p}.parkedBays`),
+    parked: int(t.parked, `${p}.parked`),
+    parkedMix: weightsIn(t.parkedMix, `${p}.parkedMix`),
+    pavement: arr(t.pavement, `${p}.pavement`).map((v, i) => {
+      const e = obj(v, `${p}.pavement[${i}]`);
+      return { id: str(e.id, `${p}.pavement[${i}].id`), count: int(e.count, `${p}.pavement[${i}].count`) };
+    }),
+    taxiRank: pointsIn(t.taxiRank, `${p}.taxiRank`),
+    busRoute: arr(t.busRoute, `${p}.busRoute`).map((v, i) => int(v, `${p}.busRoute[${i}]`)),
+    busEveryS: nullable(t.busEveryS, (v) => num(v, `${p}.busEveryS`)),
+  };
+}
+
+function pickupsIn(value: unknown): PickupSpawn {
+  const p = obj(value, 'spawns.pickups');
+  return {
+    count: int(p.count, 'spawns.pickups.count'),
+    table: weightsIn(p.table, 'spawns.pickups.table'),
+    at: pointsIn(p.at, 'spawns.pickups.at'),
+  };
+}
+
+function hazardsIn(value: unknown): HazardSpawn {
+  const hz = obj(value, 'spawns.hazards');
+  let candidates: Uint8Array;
+  try {
+    candidates = decodeBase64(str(hz.candidates, 'spawns.hazards.candidates'));
+  } catch (error) {
+    throw new Error(`decodeLevel: spawns.hazards: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return {
+    place: arr(hz.place, 'spawns.hazards.place').map((v, i) => {
+      const e = obj(v, `spawns.hazards.place[${i}]`);
+      const path = `spawns.hazards.place[${i}]`;
+      return { id: str(e.id, `${path}.id`), x: num(e.x, `${path}.x`), y: num(e.y, `${path}.y`) };
+    }),
+    random: arr(hz.random, 'spawns.hazards.random').map((v, i) => {
+      const e = obj(v, `spawns.hazards.random[${i}]`);
+      const path = `spawns.hazards.random[${i}]`;
+      return {
+        id: str(e.id, `${path}.id`),
+        count: int(e.count, `${path}.count`),
+        rule: oneOf(e.rule, HAZARD_RULES, `${path}.rule`),
+      };
+    }),
+    candidates,
+  };
+}
+
+function knockablesIn(value: unknown): KnockableSpawn[] {
+  return arr(value, 'spawns.knockables').map((v, i) => {
+    const path = `spawns.knockables[${i}]`;
+    const e = obj(v, path);
+    return { id: str(e.id, `${path}.id`), x: num(e.x, `${path}.x`), y: num(e.y, `${path}.y`) };
+  });
+}
+
+function scheduleIn(value: unknown, i: number): ScheduledEvent {
+  const path = `schedules[${i}]`;
+  const e = obj(value, path);
+  const params = jsonIn(obj(e.params, `${path}.params`), `${path}.params`);
+  return {
+    type: oneOf(e.type, EVENT_TYPES, `${path}.type`),
+    atS: arr(e.atS, `${path}.atS`).map((v, j) => num(v, `${path}.atS[${j}]`)),
+    untilS: nullable(e.untilS, (v) => num(v, `${path}.untilS`)),
+    trigger: nullable(e.trigger, (v) => str(v, `${path}.trigger`)),
+    params: isObject(params) ? params : {},
+  };
+}
+
 /** Decode `lanes` (SSP-076) into the typed LaneGraph (buildLaneGraph checks the references and order). */
 function lanesIn(value: unknown, w: number, h: number): LaneGraph {
   const lanes = obj(value, 'lanes');
@@ -1410,12 +2048,14 @@ export function decodeLevel(input: unknown): Level {
   }
   const grime = spawnSrc.grime === undefined ? null : grimeIn(spawnSrc.grime, w, h);
   const litter = spawnSrc.litter === undefined ? null : litterIn(spawnSrc.litter, w, h);
+  const optional = <T>(kind: string, read: (v: unknown) => T): T | null =>
+    spawnSrc[kind] === undefined ? null : read(spawnSrc[kind]);
   const player = obj(root.player, 'player');
   const audio: { music?: string; ambience?: string } = {};
   if (root.music !== undefined) audio.music = audioIdIn(root.music, 'music', MUSIC_ID_PATTERN);
   if (root.ambience !== undefined) audio.ambience = audioIdIn(root.ambience, 'ambience', AMBIENCE_ID_PATTERN);
 
-  return {
+  const level: Level = {
     id,
     size: [w, h],
     roofIds,
@@ -1455,7 +2095,12 @@ export function decodeLevel(input: unknown): Level {
     spawns,
     litter,
     grime,
-    schedules: arr(root.schedules, 'schedules').map((v, i) => jsonIn(v, `schedules[${i}]`)),
+    npc: optional('npc', npcIn),
+    traffic: optional('traffic', trafficIn),
+    pickups: optional('pickups', pickupsIn),
+    hazards: optional('hazards', hazardsIn),
+    knockables: optional('knockables', knockablesIn),
+    schedules: arr(root.schedules, 'schedules').map(scheduleIn),
     weather: oneOf(root.weather, WEATHERS, 'weather'),
     timerS: num(root.timerS, 'timerS'),
     ...audio,
@@ -1465,4 +2110,6 @@ export function decodeLevel(input: unknown): Level {
       heading: num(player.heading, 'player.heading'),
     },
   };
+  checkM3Spawns('decodeLevel', level);
+  return level;
 }

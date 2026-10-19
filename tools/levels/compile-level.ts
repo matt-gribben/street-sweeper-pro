@@ -9,7 +9,10 @@
 // pledge resolution, one site per depot bay and skip, the depot.rect rules of L020, the frontageWidth,
 // pledges, powerups and collectibles guards, and L030/L031 (pledges), L040 (power-ups) and L041
 // (collectibles). SSP-076 adds the traffic lane graph and L011–L013 (laneGraph.ts), the pavement nav graph
-// (navGraph.ts) and the level.json → junctions guard. M3/M6 add the other spawns and the remaining budgets.
+// (navGraph.ts) and the level.json → junctions guard. SSP-077 adds the M3 spawn specs (spawnSpecs.ts): the
+// npcs, traffic, hazards, knockables and events guards, `spawns.npc`/`traffic`/`pickups`/`hazards`/
+// `knockables` and `schedules`, L005/L007 over every spawn list (with an injectable entity table), L050's NPC
+// and vehicle peaks and dynamic litter, L073, L080, L081 and the par report (parReport.ts). M6 adds the rest.
 //
 // Run: node tools/levels/compile-level.ts [--out <dir>] [--src <dir>] [--manifest <file>]
 //   --out <dir>       output ROOT; levels go to <dir>/public/assets/levels/ (forge verify passes build/tmp/verify)
@@ -46,12 +49,9 @@ import {
   type Weather,
 } from '../../src/sim/map.ts';
 import {
-  COLLECTIBLE_IDS,
   DEFAULT_ENTITIES,
   DEFAULT_TUNING,
-  DISTRICT_IDS,
   LITTER_IDS,
-  POWERUP_IDS,
   type PropFootprint,
   STATIC_PROP_IDS,
 } from '../../src/sim/tuning.ts';
@@ -66,8 +66,9 @@ import {
 } from './frontages.ts';
 import { KERB_BLOB_PATH, type KerbBlob, readKerbBlob } from './kerbBlob.ts';
 import { computeLaneGraph, type JunctionSpec, type LaneCode, type Side } from './laneGraph.ts';
-import { checkLayout, groups, type LayoutCode } from './layoutChecks.ts';
+import { checkLayout, groups, type LayoutCode, pathSteps } from './layoutChecks.ts';
 import { computeNavGraph } from './navGraph.ts';
+import { formatParReport, type ParReport } from './parReport.ts';
 import type { Building, BuildingUse, Day, GroundName, LegendEntry, Mode, TimeOfDay } from './schema.ts';
 import {
   computeGrimeCells,
@@ -79,6 +80,24 @@ import {
   type ResolvedZone,
   type SpawnContext,
 } from './spawnLayers.ts';
+import {
+  type CheckedEvent,
+  type CheckedHazards,
+  type CheckedNpcs,
+  type CheckedTraffic,
+  checkEvents,
+  checkHazards,
+  checkKnockables,
+  checkNpcs,
+  checkTraffic,
+  compileSpawnSpecs,
+  DEFAULT_ENTITY_TABLE,
+  type EntityTable,
+  entityProblem,
+  type SpawnCode,
+  type SpecContext,
+  type SpecProblem,
+} from './spawnSpecs.ts';
 import { computeTileLayers, isRoadGround } from './tileLayers.ts';
 
 export { isRoadGround };
@@ -211,7 +230,8 @@ function isPlainGround(def: LegendDef): boolean {
  * L011–L013 are the lane graph checks (laneGraph.ts, SSP-076). L014, L015 and L020–L022 are the layout checks
  * (layoutChecks.ts, SSP-034). L050 (the litter part) and
  * L051 are the SSP-054 budgets. L030/L031 (pledges), L040 (power-ups) and L041 (collectibles) are SSP-055;
- * L031 is the only warning.
+ * L031 is a warning. SSP-077 adds L005 and L007 over every spawn list, L050's NPC and vehicle peaks, L073
+ * (hazard placement), L080 (anchors and routes) and the L081 warning (spawnSpecs.ts).
  */
 export type LevelCode =
   | 'L000'
@@ -221,6 +241,7 @@ export type LevelCode =
   | 'L004'
   | 'L005'
   | 'L006'
+  | 'L007'
   | 'L010'
   | 'L030'
   | 'L031'
@@ -228,6 +249,7 @@ export type LevelCode =
   | 'L041'
   | 'L050'
   | 'L051'
+  | SpawnCode
   | LaneCode
   | LayoutCode;
 
@@ -401,12 +423,6 @@ export const DEFAULT_LITTER_SPACING_M = 0.5;
 /** Most a `grime.speckle` may be (LEVEL_DESIGN §8.4: background density 0..0.1). */
 export const MAX_SPECKLE = 0.1;
 
-/**
- * Expected dynamic litter (NPC drops, events, burst bin bags) for L050. It is derived from the NPC and event
- * specs, which arrive in M3 (SSP-077), so it is 0 until then.
- */
-export const EXPECTED_DYNAMIC_LITTER = 0;
-
 /** A litter hotspot after the guards; `near` is resolved to points once the map is known. */
 type CheckedHotspot = { near: string; radius: number; mult: number };
 
@@ -446,10 +462,16 @@ type CheckedCollectibles = {
   goldenCrisp: CheckedPlacement | null;
 };
 
-/** The level.json fields the M1 compiler consumes, after the guards. */
+/** The level.json fields the compiler consumes, after the guards. */
 type CheckedLevel = {
   id: string;
   mode: Mode;
+  seed: number;
+  /**
+   * Errors in the fields the map stages need (identity, size, depot, legend, buildings, anchors). Any of them
+   * stops the compile before the map is read; an error in a spawn spec does not, so every problem is reported.
+   */
+  coreErrors: number;
   size: [number, number];
   timer: number;
   weather: Weather;
@@ -477,6 +499,14 @@ type CheckedLevel = {
    * The rest of TrafficSpec is guarded by SSP-077.
    */
   noTraffic: boolean;
+  /** The M3 spawn specs (SSP-077), after their guards; null (or empty) when absent or invalid. */
+  npcs: CheckedNpcs | null;
+  traffic: CheckedTraffic | null;
+  hazards: CheckedHazards | null;
+  knockables: { id: string; at: [number, number] }[] | null;
+  events: CheckedEvent[];
+  /** What the spawn guards knew (compileSpawnSpecs reuses it). */
+  specContext: SpecContext;
 };
 
 class Reporter {
@@ -507,6 +537,14 @@ class Reporter {
   /** Number of errors (warnings excluded). */
   get errors(): number {
     return this.diagnostics.filter((d) => d.severity === 'error').length;
+  }
+  /** Report spawn-spec findings (spawnSpecs.ts), each at its key or at its string value after the key. */
+  spec(problems: readonly SpecProblem[]): void {
+    for (const q of problems) {
+      if (q.warning === true) this.warnKey(q.path, q.code, q.message);
+      else if (q.value !== undefined) this.string(q.path, q.value, q.code, q.message);
+      else this.key(q.path, q.code, q.message);
+    }
   }
 }
 
@@ -735,6 +773,7 @@ function checkLitter(
   value: unknown,
   districtId: unknown,
   anchorNames: ReadonlySet<string>,
+  table: EntityTable,
 ): CheckedLitter | null {
   if (value === undefined) return null;
   if (!isObject(value)) {
@@ -750,22 +789,22 @@ function checkLitter(
   );
   const at = (field: string): readonly string[] =>
     value[field] === undefined ? ['litter'] : ['litter', field];
-  const { initial, table, gutterBias, minSpacingM, hotspots } = value;
+  const { initial, table: litterTable, gutterBias, minSpacingM, hotspots } = value;
   if (!isInt(initial) || initial < 0) {
     r.key(at('initial'), 'L000', 'litter.initial must be a non-negative integer');
     ok = false;
   }
   const entries: { id: string; weight: number }[] = [];
-  if (!isObject(table)) {
+  if (!isObject(litterTable)) {
     r.key(at('table'), 'L000', 'litter.table must be an object of litter.* id → weight');
     ok = false;
   } else {
-    for (const id of Object.keys(table)) {
-      const weight = table[id];
+    for (const id of Object.keys(litterTable)) {
+      const weight = litterTable[id];
       if (!isNum(weight) || weight <= 0) {
         r.key(['litter', 'table', id], 'L000', `litter.table ${id} weight must be a positive number`);
         ok = false;
-      } else if (!LITTER_IDS.some((l) => l === id)) {
+      } else if (table[id]?.class !== 'litter') {
         r.key(
           ['litter', 'table', id],
           'L005',
@@ -773,14 +812,9 @@ function checkLitter(
         );
         ok = false;
       } else {
-        const known = DISTRICT_IDS.find((d) => d === districtId);
-        const entity = DEFAULT_ENTITIES.litter[id as keyof typeof DEFAULT_ENTITIES.litter];
-        if (known !== undefined && !entity.districts.includes(known)) {
-          r.key(
-            ['litter', 'table', id],
-            'L005',
-            `litter.table ${id} is not allowed in ${known} (entities.json districts)`,
-          );
+        const problem = entityProblem(table, id, 'litter', districtId, 'litter.table');
+        if (problem !== null) {
+          r.key(['litter', 'table', id], problem.code, problem.message);
           ok = false;
         } else entries.push({ id, weight });
       }
@@ -945,12 +979,6 @@ function checkFrontageWidth(r: Reporter, value: unknown): { [use in FrontageUse]
   return out;
 }
 
-/** Whether an entity with these entities.json districts may appear in `districtId` (any for an unknown one). */
-function allowedIn(districts: readonly string[], districtId: unknown): boolean {
-  const known = DISTRICT_IDS.find((d) => d === districtId);
-  return known === undefined || districts.includes(known);
-}
-
 /** `[x, y]` tile coordinates (finite numbers); with `size`, inside the map. */
 function isXY(v: unknown, size: readonly [number, number] | null): v is [number, number] {
   if (!Array.isArray(v) || v.length !== 2 || !v.every(isNum)) return false;
@@ -964,6 +992,7 @@ function checkPowerups(
   value: unknown,
   districtId: unknown,
   size: readonly [number, number] | null,
+  entities: EntityTable,
 ): CheckedPowerups | null {
   if (value === undefined) return null;
   if (!isObject(value)) {
@@ -992,19 +1021,15 @@ function checkPowerups(
     for (const id of Object.keys(table)) {
       const weight = table[id];
       const path = ['powerups', 'table', id];
-      const known = POWERUP_IDS.find((p) => p === id);
+      const problem = entityProblem(entities, id, 'pwr', districtId, 'powerups.table');
       if (!isNum(weight) || weight <= 0) {
         r.key(path, 'L000', `powerups.table ${id} weight must be a positive number`);
         ok = false;
-      } else if (known === undefined) {
+      } else if (entities[id]?.class !== 'pwr') {
         r.key(path, 'L005', `powerups.table ${JSON.stringify(id)} is not a pwr id in src/data/entities.json`);
         ok = false;
-      } else if (!allowedIn(DEFAULT_ENTITIES.powerups[known].districts, districtId)) {
-        r.key(
-          path,
-          'L005',
-          `powerups.table ${id} is not allowed in ${String(districtId)} (entities.json districts)`,
-        );
+      } else if (problem !== null) {
+        r.key(path, problem.code, problem.message);
         ok = false;
       } else entries.push({ id, weight });
     }
@@ -1026,7 +1051,12 @@ function checkPowerups(
 }
 
 /** Guard level.json → collectibles (schema.ts) and the Lost Property id (L005). Missing entries stay null. */
-function checkCollectibles(r: Reporter, value: unknown, districtId: unknown): CheckedCollectibles | null {
+function checkCollectibles(
+  r: Reporter,
+  value: unknown,
+  districtId: unknown,
+  entities: EntityTable,
+): CheckedCollectibles | null {
   if (value === undefined) return null;
   if (!isObject(value)) {
     r.key(['collectibles'], 'L000', 'collectibles must be an object');
@@ -1035,7 +1065,7 @@ function checkCollectibles(r: Reporter, value: unknown, districtId: unknown): Ch
   let ok = onlyKeys(r, value, ['lostProperty', 'goldenCrisp'], ['collectibles'], 'collectibles');
   const out: CheckedCollectibles = { lostProperty: null, goldenCrisp: null };
   for (const kind of ['lostProperty', 'goldenCrisp'] as const) {
-    const entry = value[kind];
+    const entry: unknown = value[kind];
     const path = ['collectibles', kind];
     if (entry === undefined) continue;
     if (!isObject(entry)) {
@@ -1060,7 +1090,6 @@ function checkCollectibles(r: Reporter, value: unknown, districtId: unknown): Ch
       continue;
     }
     const id = entry.id;
-    const known = COLLECTIBLE_IDS.find((c) => c === id);
     if (typeof id !== 'string' || !/^collect\.[a-z0-9_]+$/.test(id)) {
       r.key(
         id === undefined ? path : [...path, 'id'],
@@ -1068,21 +1097,20 @@ function checkCollectibles(r: Reporter, value: unknown, districtId: unknown): Ch
         'collectibles.lostProperty.id must be a collect.* id',
       );
       ok = false;
-    } else if (known === undefined || DEFAULT_ENTITIES.collectibles[known].kind !== 'lostProperty') {
+    } else if (entities[id]?.class !== 'collect' || entities[id]?.kind !== 'lostProperty') {
       r.key(
         [...path, 'id'],
         'L005',
         `collectibles.lostProperty.id ${id} is not a lostProperty collectible in src/data/entities.json`,
       );
       ok = false;
-    } else if (!allowedIn(DEFAULT_ENTITIES.collectibles[known].districts, districtId)) {
-      r.key(
-        [...path, 'id'],
-        'L005',
-        `collectibles.lostProperty.id ${id} is not allowed in ${String(districtId)} (entities.json districts)`,
-      );
-      ok = false;
-    } else out.lostProperty = { id, at };
+    } else {
+      const problem = entityProblem(entities, id, 'collect', districtId, 'collectibles.lostProperty.id');
+      if (problem !== null) {
+        r.key([...path, 'id'], problem.code, problem.message);
+        ok = false;
+      } else out.lostProperty = { id, at };
+    }
   }
   return ok ? out : null;
 }
@@ -1142,6 +1170,7 @@ function checkLevelFile(
   root: unknown,
   name: string,
   known: ReadonlySet<string>,
+  entities: EntityTable,
 ): CheckedLevel | null {
   if (!isObject(root)) {
     r.at(1, 1, 'L000', 'level.json must be an object');
@@ -1210,6 +1239,7 @@ function checkLevelFile(
   const legend = checkLegend(r, root.legend);
   const buildings = checkBuildings(r, root.buildings, known);
   const anchors = checkAnchors(r, root.anchors);
+  const coreErrors = r.errors;
 
   let pledges: string[] | null = null;
   if (root.pledges !== undefined) {
@@ -1226,10 +1256,10 @@ function checkLevelFile(
   }
   const anchorNames = new Set(Object.values(anchors));
   const mapSize: [number, number] | null = sizeOk ? [size[0], size[1]] : null;
-  const litter = checkLitter(r, root.litter, id, anchorNames);
+  const litter = checkLitter(r, root.litter, id, anchorNames, entities);
   const grime = checkGrime(r, root.grime, mapSize, anchorNames);
   const frontageWidth = checkFrontageWidth(r, root.frontageWidth);
-  const powerups = checkPowerups(r, root.powerups, id, mapSize);
+  const powerups = checkPowerups(r, root.powerups, id, mapSize, entities);
   // L040: a shift level places 1..3 power-ups.
   if (
     powerups !== null &&
@@ -1241,8 +1271,24 @@ function checkLevelFile(
       'L040',
       `powerups.count ${powerups.count} is outside ${MIN_POWERUPS}–${MAX_POWERUPS}`,
     );
-  const collectibles = checkCollectibles(r, root.collectibles, id);
+  const collectibles = checkCollectibles(r, root.collectibles, id, entities);
   const junctions = checkJunctions(r, root.junctions, mapSize);
+  // The M3 spawn specs (SSP-077).
+  const specContext: SpecContext = {
+    districtId: id,
+    mode: mode ?? 'shift',
+    timerS: typeof timer === 'number' && Number.isFinite(timer) && timer > 0 ? timer : SHIFT_S,
+    size: mapSize,
+    anchors,
+    entities,
+  };
+  const problems: SpecProblem[] = [];
+  const npcs = checkNpcs(root.npcs, specContext, problems, (near) => nearOk(near, anchorNames));
+  const traffic = checkTraffic(root.traffic, specContext, problems);
+  const hazards = checkHazards(root.hazards, specContext, problems);
+  const knockables = checkKnockables(root.knockables, specContext, problems);
+  const events = checkEvents(root.events, specContext, problems);
+  r.spec(problems);
 
   if (typeof id !== 'string' || mode === undefined || !sizeOk || timer === undefined || weather === undefined)
     return null;
@@ -1250,6 +1296,8 @@ function checkLevelFile(
   return {
     id,
     mode,
+    seed: isInt(root.seed) ? root.seed : 0,
+    coreErrors,
     size: [size[0], size[1]],
     timer: typeof timer === 'number' ? timer : SHIFT_S,
     weather,
@@ -1267,6 +1315,12 @@ function checkLevelFile(
     collectibles,
     junctions,
     noTraffic: isObject(root.traffic) && root.traffic.none === true,
+    npcs,
+    traffic,
+    hazards,
+    knockables,
+    events,
+    specContext,
   };
 }
 
@@ -1521,6 +1575,11 @@ export type CompileInput = {
    * without two depot bays, a hydrant or a legal road network; the CLI always checks everything.
    */
   skipCodes?: readonly (LayoutCode | LaneCode)[];
+  /**
+   * The entities spawn lists are checked against (L005, L007). Defaults to src/data/entities.json; unit tests
+   * inject a table with an entity the real data does not have (SSP-077).
+   */
+  entities?: EntityTable;
 };
 
 export type CompileOutput = {
@@ -1530,6 +1589,8 @@ export type CompileOutput = {
   buildings: BuildingInstance[];
   anchors: AnchorPoint[];
   map: ResolvedMap;
+  /** The par report's numbers (LEVEL_DESIGN §10.4). */
+  report: ParReport;
 };
 
 export type CompileResult = {
@@ -1552,7 +1613,13 @@ export function compileLevel(input: CompileInput): CompileResult {
 
   const root = parseJsonText(lr);
   if (root === undefined) return finish(null);
-  const lvl = checkLevelFile(lr, root, input.name, input.knownAssetIds);
+  const lvl = checkLevelFile(
+    lr,
+    root,
+    input.name,
+    input.knownAssetIds,
+    input.entities ?? DEFAULT_ENTITY_TABLE,
+  );
   if (lvl === null) return finish(null);
   const [w, h] = lvl.size;
 
@@ -1584,7 +1651,8 @@ export function compileLevel(input: CompileInput): CompileResult {
     else if (x < dx || y < dy || x >= dx + dw || y >= dy + dh)
       mr.at(y + 1, x + 1, 'L003', `${START_CHAR} lies outside depot.rect [${lvl.depot.join(', ')}]`);
   }
-  if (mr.errors > 0 || lr.errors > 0) return finish(null);
+  // A spawn-spec error does not stop here, so it is reported together with any later map or spawn problem.
+  if (mr.errors > 0 || lvl.coreErrors > 0) return finish(null);
   const [sx, sy] = starts[0] ?? [0, 0];
 
   const { map, buildings } = resolveMap(rows, w, h, lvl);
@@ -1634,7 +1702,7 @@ export function compileLevel(input: CompileInput): CompileResult {
     : computeLaneGraph(map, DEFAULT_TUNING.streetLife.laneSpeed, lvl.junctions);
   for (const f of lanes.findings) if (!skip.has(f.code)) mr.at(f.y + 1, f.x + 1, f.code, f.message);
   for (const p of lanes.junctionProblems) lr.key(['junctions'], 'L000', p.message);
-  if (mr.errors > 0 || lr.errors > 0) return finish(null);
+  if (mr.errors > 0 || lanes.junctionProblems.length > 0) return finish(null);
 
   // Layout checks (L014, L015, L020–L022) over the route mask.
   const route = new Uint8Array(w * h);
@@ -1771,13 +1839,6 @@ export function compileLevel(input: CompileInput): CompileResult {
   }
   if (lvl.litter !== null) {
     const spec = lvl.litter;
-    const total = spec.initial + EXPECTED_DYNAMIC_LITTER;
-    if (total > LITTER_BUDGET)
-      lr.key(
-        ['litter', 'initial'],
-        'L050',
-        `litter.initial ${spec.initial} + expected dynamic litter ${EXPECTED_DYNAMIC_LITTER} = ${total} is over the budget of ${LITTER_BUDGET}`,
-      );
     const table: LitterTableEntry[] = spec.table.map((e) => ({
       id: e.id,
       weight: e.weight,
@@ -1826,9 +1887,138 @@ export function compileLevel(input: CompileInput): CompileResult {
   // The pavement nav graph (SSP-076), with portal, door and anchor tags.
   level.nav = buildNavGraph(computeNavGraph(map, frontages, anchors), w, h, 'compileLevel');
 
-  // A budget or content error (L030, L041, L050, L051) fails the level before it is encoded.
+  // The M3 spawn specs (SSP-077): power-ups, NPCs, traffic, hazards, knockables and schedules, the L050 peaks and
+  // budgets, L073 and L080.
+  if (lvl.powerups !== null)
+    level.pickups = {
+      count: lvl.powerups.count,
+      table: lvl.powerups.table,
+      at: lvl.powerups.at.map(([x, y]): [number, number] => [x * TILE_M, y * TILE_M]),
+    };
+  const anchorTiles: { [digit: string]: [number, number][] } = {};
+  for (const a of anchors) {
+    const tiles = anchorTiles[a.char] ?? [];
+    tiles.push(a.tile);
+    anchorTiles[a.char] = tiles;
+  }
+  const spawned = compileSpawnSpecs(
+    {
+      npcs: lvl.npcs,
+      traffic: lvl.traffic,
+      hazards: lvl.hazards,
+      knockables: lvl.knockables,
+      events: lvl.events,
+    },
+    {
+      map,
+      level,
+      start: [sx, sy],
+      anchorTiles,
+      buildingUse: buildings.map((b) => b.use),
+      resolveNear,
+    },
+    lvl.specContext,
+  );
+  lr.spec(spawned.problems);
+  level.npc = spawned.npc;
+  level.traffic = spawned.traffic;
+  level.hazards = spawned.hazards;
+  level.knockables = spawned.knockables;
+  level.schedules = spawned.schedules;
+  // L050's litter part: the initial litter plus the expected dynamic litter of the NPC and event specs.
+  if (lvl.litter !== null) {
+    const total = lvl.litter.initial + spawned.dynamicLitter;
+    if (total > LITTER_BUDGET)
+      lr.key(
+        ['litter', 'initial'],
+        'L050',
+        `litter.initial ${lvl.litter.initial} + expected dynamic litter ${spawned.dynamicLitter} = ${total} is over the budget of ${LITTER_BUDGET}`,
+      );
+  }
+
+  // A budget or content error (L030, L041, L050, L051, L073, L080, a spawn guard) fails the level before it is
+  // encoded.
   if (lr.errors > 0) return finish(null);
-  return finish({ level, text: encodeLevel(level), buildings, anchors, map });
+  const report = parReportOf(level, lvl, map, route, spawned, frontages.length, pledged.size);
+  report.warnings = [...mr.diagnostics, ...lr.diagnostics]
+    .filter((d) => d.severity === 'warning')
+    .map((d) => d.code);
+  return finish({ level, text: encodeLevel(level), buildings, anchors, map, report });
+}
+
+/**
+ * The par report's numbers (LEVEL_DESIGN §10.4) for a compiled level. Path distances are BFS steps over the
+ * drivable tiles (layoutChecks.ts pathSteps), 2 m each, from the dump sites (depot bays and skips) and the water
+ * sources (hydrants and depot bays) to the farthest reachable route tile. LU is the litter table's mean `lu`
+ * (weighted) × (initial + dynamic) items.
+ */
+function parReportOf(
+  level: Level,
+  lvl: CheckedLevel,
+  map: ResolvedMap,
+  route: Uint8Array,
+  spawned: ReturnType<typeof compileSpawnSpecs>,
+  frontages: number,
+  pledges: number,
+): ParReport {
+  const { w, h } = map;
+  const bays: number[] = [];
+  const skips: number[] = [];
+  const hydrants: number[] = [];
+  let routeTiles = 0;
+  for (let i = 0; i < w * h; i += 1) {
+    const def = map.defs[i] ?? null;
+    if (def?.site === 'site.depot_bay') bays.push(i);
+    if (def?.site === 'site.skip') skips.push(i);
+    if (def?.prop === 'prop.hydrant') hydrants.push(i);
+    routeTiles += route[i] ?? 0;
+  }
+  const farthest = (sources: readonly number[]): number | null => {
+    if (sources.length === 0) return null;
+    const dist = pathSteps(map, sources);
+    let worst = -1;
+    for (let i = 0; i < w * h; i += 1) if (route[i] === 1) worst = Math.max(worst, dist[i] ?? -1);
+    return worst < 0 ? null : worst * TILE_M;
+  };
+  const isBay = (c: number): boolean => map.defs[c]?.site === 'site.depot_bay';
+  const isSkip = (c: number): boolean => map.defs[c]?.site === 'site.skip';
+  let lu: number | null = null;
+  if (level.litter !== null && level.litter.table.length > 0) {
+    let weight = 0;
+    let sum = 0;
+    for (const e of level.litter.table) {
+      weight += e.weight;
+      sum += e.weight * luOf(e.id);
+    }
+    lu = weight > 0 ? Math.round((sum / weight) * (level.litter.initial + spawned.dynamicLitter)) : null;
+  }
+  return {
+    id: level.id,
+    size: level.size,
+    seed: lvl.seed,
+    routeTiles,
+    grimeCells: level.grime?.cells ?? null,
+    gutterCells: level.grime?.gutterCells ?? null,
+    litter: level.litter?.initial ?? null,
+    dynamicLitter: spawned.dynamicLitter,
+    litterLu: lu,
+    depotBays: groups(map, isBay).length,
+    skips: groups(map, isSkip).length,
+    hydrants: hydrants.length,
+    maxDumpM: farthest([...bays, ...skips]),
+    maxWaterM: farthest([...hydrants, ...bays]),
+    frontages,
+    pledges,
+    peakNpc: spawned.peaks.npc,
+    peakVehicles: spawned.peaks.vehicles,
+    warnings: [],
+  };
+}
+
+/** The `lu` of a litter id in src/data/entities.json, or 0 for any other id. */
+function luOf(id: string): number {
+  const known = LITTER_IDS.find((l) => l === id);
+  return known === undefined ? 0 : DEFAULT_ENTITIES.litter[known].lu;
 }
 
 /** Bounding box `[x0, y0, x1, y1]` (x1/y1 exclusive) of tile indices in a w-wide grid. */
@@ -2128,6 +2318,7 @@ export function runCompileLevel(
     writeFileSync(target, result.output.text);
     const { level } = result.output;
     io.log(`compile-level: ${level.id} ${level.size[0]}x${level.size[1]} → ${shown(target)}`);
+    for (const line of formatParReport(result.output.report)) io.log(line);
     compiled += 1;
   }
   const listed = syncLevelHashes(outRoot);

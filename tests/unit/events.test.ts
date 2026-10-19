@@ -53,9 +53,10 @@ describe('EventBus', () => {
       [EV.DumpEnd, 5, DumpSite.Skip, 12.25, 0],
       [EV.HazardJolt, 4, 22.5, 7.25, 2],
       [EV.HazardStop, 9, 61, 7, 5.5],
+      [EV.ComboTier, -1, 2, 1, 10],
       [EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0],
     ]);
-    expect(bus.drain(queue)).toBe(13);
+    expect(bus.drain(queue)).toBe(14);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -77,6 +78,7 @@ describe('EventBus', () => {
       { type: EV.DumpEnd, tick: 42, entity: 5, site: DumpSite.Skip, luDumped: 12.25, completed: false },
       { type: EV.HazardJolt, tick: 42, entity: 4, x: 22.5, y: 7.25, spilledLU: 2 },
       { type: EV.HazardStop, tick: 42, entity: 9, x: 61, y: 7, speedMps: 5.5 },
+      { type: EV.ComboTier, tick: 42, entity: -1, multiplier: 2, previousMultiplier: 1, chain: 10 },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.TimeUp },
     ]);
   });

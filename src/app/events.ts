@@ -13,6 +13,7 @@
 // subscribe() and unsubscribing copy the listener list (copy-on-write), so a listener may unsubscribe itself,
 // or subscribe another, during dispatch: the change takes effect from the next event.
 
+import { LITTER_IDS, type LitterId } from '../sim/entities.ts';
 import {
   EV,
   type EventType,
@@ -73,6 +74,26 @@ export type HopperFullEvent = SimEventBase & {
   readonly capacityLU: number;
 };
 
+/** The brush inlet collected a litter item (phase 5, SSP-059). `entity` is its index before removal. */
+export type LitterCollectedEvent = SimEventBase & {
+  readonly type: typeof EV.LitterCollected;
+  /** Where the item was collected, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The item's litter id. */
+  readonly kind: LitterId;
+};
+
+/** The brush's fling roll knocked a litter item sideways (phase 5, SSP-059). */
+export type FlingEvent = SimEventBase & {
+  readonly type: typeof EV.Fling;
+  /** Where the fling arc starts, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The item's litter id. */
+  readonly kind: LitterId;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -80,6 +101,8 @@ export type SimEventByType = {
   [EV.ReverseBeeper]: ReverseBeeperEvent;
   [EV.ShiftEnd]: ShiftEndEvent;
   [EV.HopperFull]: HopperFullEvent;
+  [EV.LitterCollected]: LitterCollectedEvent;
+  [EV.Fling]: FlingEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -109,7 +132,24 @@ function createPayloads(): Payloads {
     [EV.ReverseBeeper]: { type: EV.ReverseBeeper, tick: 0, entity: -1, x: 0, y: 0 },
     [EV.ShiftEnd]: { type: EV.ShiftEnd, tick: 0, entity: -1, reason: ShiftEndReason.Towed },
     [EV.HopperFull]: { type: EV.HopperFull, tick: 0, entity: -1, x: 0, y: 0, capacityLU: 0 },
+    [EV.LitterCollected]: {
+      type: EV.LitterCollected,
+      tick: 0,
+      entity: -1,
+      x: 0,
+      y: 0,
+      kind: 'litter.crisp_packet',
+    },
+    [EV.Fling]: { type: EV.Fling, tick: 0, entity: -1, x: 0, y: 0, kind: 'litter.crisp_packet' },
   };
+}
+
+/** The litter id carried in an event's `c` (a LITTER_IDS index); throws on anything else. */
+function litterKindOf(c: number, type: EventType, tick: number): LitterId {
+  const id = Number.isInteger(c) ? LITTER_IDS[c] : undefined;
+  if (id === undefined)
+    throw new Error(`EventBus: event type ${type} at tick ${tick} carries unknown litter kind ${c}`);
+  return id;
 }
 
 function isEventType(type: number): type is EventType {
@@ -118,7 +158,9 @@ function isEventType(type: number): type is EventType {
     type === EV.KerbJolt ||
     type === EV.ReverseBeeper ||
     type === EV.ShiftEnd ||
-    type === EV.HopperFull
+    type === EV.HopperFull ||
+    type === EV.LitterCollected ||
+    type === EV.Fling
   );
 }
 
@@ -134,6 +176,8 @@ export class EventBus {
     [EV.ReverseBeeper]: [],
     [EV.ShiftEnd]: [],
     [EV.HopperFull]: [],
+    [EV.LitterCollected]: [],
+    [EV.Fling]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -242,6 +286,26 @@ export class EventBus {
         e.y = b;
         e.capacityLU = c;
         this.emit(EV.HopperFull, e);
+        return;
+      }
+      case EV.LitterCollected: {
+        const e = this.payloads[EV.LitterCollected];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.kind = litterKindOf(c, type, tick);
+        this.emit(EV.LitterCollected, e);
+        return;
+      }
+      case EV.Fling: {
+        const e = this.payloads[EV.Fling];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.kind = litterKindOf(c, type, tick);
+        this.emit(EV.Fling, e);
         return;
       }
     }

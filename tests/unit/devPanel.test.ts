@@ -91,7 +91,7 @@ describe('tuning fields', () => {
         : [],
     );
     expect(fields.map((f) => f.path)).toEqual(expected);
-    expect(fields.length).toBe(44);
+    expect(fields.length).toBe(45);
     expect(fields.map((f) => f.path)).toContain('steering.maxSteerDeg');
     expect(fields.map((f) => f.path)).toContain('drive.topSpeedTransitMps');
     expect(fields.some((f) => f.group === 'provisional')).toBe(false);

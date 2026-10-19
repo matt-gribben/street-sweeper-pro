@@ -150,8 +150,10 @@ const HEALTH_SPEC = {
 } as const satisfies GroupSpec;
 
 /**
- * GDD §7.1 and TECHNICAL_DESIGN §8.3 brush timings (consumed in M2). Collects only at rpm >= collectMinRpm
- * while lowered. Fling probability rises linearly from 0 at cleanPickupMaxMps to 1 at flingCertainMps.
+ * GDD §7.1, §8.2 and TECHNICAL_DESIGN §8.3 brush timings (brush.ts, SSP-059). Collects only at
+ * rpm >= collectMinRpm while lowered. Fling probability rises linearly from 0 at cleanPickupMaxMps to 1 at
+ * flingCertainMps. RPM spins up only while the brush is fully lowered and otherwise spins down from full
+ * over spinDownS (0: it drops to 0 the moment Raising starts; SSP-059).
  */
 const BRUSH_SPEC = {
   raiseLowerS: 'positive',
@@ -159,6 +161,7 @@ const BRUSH_SPEC = {
   collectMinRpm: 'unit',
   cleanPickupMaxMps: 'positive',
   flingCertainMps: 'positive',
+  spinDownS: 'nonNegative',
 } as const satisfies GroupSpec;
 
 /** Every numeric group of vehicle.sweeper, in JSON order. `provisional` is the one non-numeric key. */
@@ -186,11 +189,16 @@ type SweeperGroupName = keyof typeof SWEEPER_GROUPS;
 // Geometry is vehicle-local metres: origin at the body centre, +y forward.
 // ---------------------------------------------------------------------------------------------------------
 
-/** GDD §8.1: the two gutter brush circles, centred at (±centreXM, centreYM). */
+/**
+ * GDD §8.1: the two gutter brush circles, centred at (±centreXM, centreYM). While collecting, an item inside
+ * a circle is pushed toward x = 0 at sweepInMps and backward at sweepBackMps (SSP-059).
+ */
 const GUTTER_BRUSH_SPEC = {
   radiusM: 'positive',
   centreXM: 'positive',
   centreYM: 'finite',
+  sweepInMps: 'positive',
+  sweepBackMps: 'nonNegative',
 } as const satisfies GroupSpec;
 
 /**
@@ -236,6 +244,14 @@ const FLING_SPEC = {
   arcDurationS: 'positive',
 } as const satisfies GroupSpec;
 
+/**
+ * TECHNICAL_DESIGN §10.2: at a full hopper, items reaching the inlet are pinned pinAheadM ahead of the front
+ * bumper (body.lengthM / 2) and pushed along (SSP-059).
+ */
+const BULLDOZER_SPEC = {
+  pinAheadM: 'nonNegative',
+} as const satisfies GroupSpec;
+
 const SWEEPING_GROUPS = {
   gutterBrush: GUTTER_BRUSH_SPEC,
   suction: SUCTION_SPEC,
@@ -243,6 +259,7 @@ const SWEEPING_GROUPS = {
   grimeFootprint: GRIME_FOOTPRINT_SPEC,
   kerbHugger: KERB_HUGGER_SPEC,
   fling: FLING_SPEC,
+  bulldozer: BULLDOZER_SPEC,
 } as const;
 
 /** GDD §8.4: base capacity in litter units (upg.hopper raises it later) and the HUD warning fill fraction. */
@@ -513,6 +530,7 @@ export type SweepingTuning = {
   readonly grimeFootprint: Group<typeof GRIME_FOOTPRINT_SPEC>;
   readonly kerbHugger: Group<typeof KERB_HUGGER_SPEC>;
   readonly fling: Group<typeof FLING_SPEC>;
+  readonly bulldozer: Group<typeof BULLDOZER_SPEC>;
 };
 
 /** Hopper capacity and HUD warning fraction (GDD §8.4); hopper.ts reads it. */
@@ -777,6 +795,7 @@ function readSweeping(raw: unknown, path: string): SweepingTuning {
     grimeFootprint: readGroup(obj.grimeFootprint, `${path}.grimeFootprint`, g.grimeFootprint),
     kerbHugger: readGroup(obj.kerbHugger, `${path}.kerbHugger`, g.kerbHugger),
     fling: readGroup(obj.fling, `${path}.fling`, g.fling),
+    bulldozer: readGroup(obj.bulldozer, `${path}.bulldozer`, g.bulldozer),
   };
   checkRect(sweeping.suction, `${path}.suction`);
   checkRect(sweeping.grimeFootprint, `${path}.grimeFootprint`);

@@ -3,8 +3,9 @@
 // canonical: changing it changes replay hashes and must be called out in the commit (§5.2).
 //
 //   1 Input             copy the InputFrame into the sim; hand it to the replay recorder (SSP-038)
-//   2 Vehicle (+hopper) surface sample → stepVehicle (handling scaled by the hopper fill) → EV.ReverseBeeper →
-//                       kerb crossing (§8.2 steps 1–9)
+//   2 Vehicle (+hopper) brush state machine (the BRUSH edge, lower/raise and spin timers; brush.ts) → surface
+//                       sample → stepVehicle (handling scaled by the hopper fill, top speed by the brush state)
+//                       → EV.ReverseBeeper → kerb crossing (§8.2 steps 1–9)
 //   3 Static collision  Bessie vs merged solids, map boundary and props: SAT/MTV, restitution, damage, EV.Impact
 //                       (collision/resolveStatic.ts over collision/grid.ts, SSP-036)
 //   4 Bodies            empty until M3
@@ -22,6 +23,7 @@
 //
 // Hot path: stepWorld allocates nothing. Scratch objects live on the World, created once by createWorld.
 
+import { type Brush, type BrushView, createBrush, stepBrushState } from './brush.ts';
 import { createStaticGrid, type StaticGrid } from './collision/grid.ts';
 import {
   createStaticResolver,
@@ -99,6 +101,11 @@ export type World = {
    * (phase 10) drains it once SSP-065 wires those systems in.
    */
   readonly hopper: Hopper;
+  /**
+   * Bessie's brush (brush.ts, SSP-059). Phase 2 runs its state machine (and so the brush-down top speed); its
+   * litter step (gutter, suction, fling, inlet, bulldozer) joins phase 5 with the LitterField in SSP-065.
+   */
+  readonly brush: Brush;
   /** The surface sample phase 2 used this tick (average grip k and rolling-drag multiplier). */
   readonly surface: VehicleSurface;
   readonly events: EventQueue;
@@ -130,6 +137,7 @@ export type WorldView = {
   readonly input: Readonly<InputFrame>;
   readonly vehicle: Readonly<VehicleState>;
   readonly hopper: HopperView;
+  readonly brush: BrushView;
   readonly surface: Readonly<VehicleSurface>;
   readonly events: ReadonlyEventQueue;
   readonly staticGrid: StaticGrid;
@@ -158,6 +166,7 @@ export function createWorld(level: Level, seed: number, tuning: Tuning): World {
     vehicle,
     vehicleParams,
     hopper: createHopper(vehicle, vehicleParams, tuning.hopper),
+    brush: createBrush(tuning, seed >>> 0),
     surface: { gripPerS: sweeper.lateralGripPerS.asphalt, rollMult: 1 },
     events: createEventQueue(),
     staticGrid: createStaticGrid(level, tuning.propFootprints),
@@ -204,6 +213,7 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   if (world.vehicle.hp > sweeper.health.maxHp) world.vehicle.hp = sweeper.health.maxHp;
   world.hopper.tuning = tuning.hopper;
   setHopperCapacity(world.hopper, tuning.hopper.capacityLu);
+  world.brush.tuning = tuning;
 }
 
 /** Advance the world by one tick (DT_S) under `input`, running the 11 phases of §5.2 in order. */
@@ -264,7 +274,9 @@ function phaseInput(world: World, input: Readonly<InputFrame>): void {
 }
 
 /**
- * Phase 2 (§8.2): sample the surface under the wheels at the pose the tick starts from, integrate the vehicle
+ * Phase 2 (§8.2): run the brush state machine (the BRUSH pressed edge and the lower/raise and spin timers, which
+ * set vehicle.brushDown and so the top speed; the hopper's full flag moves it between Collecting and
+ * Bulldozing), sample the surface under the wheels at the pose the tick starts from, integrate the vehicle
  * (steps 1–8, with step 1 scaling the handling by the hopper's fill fraction through hopperFillFraction), turn
  * the reverse-engage flag into EV.ReverseBeeper, then apply kerb crossings (step 9). The hopper changes only
  * in phases 5 (collection) and 10 (dump drain), so this phase sees last tick's fill.
@@ -272,6 +284,7 @@ function phaseInput(world: World, input: Readonly<InputFrame>): void {
 function phaseVehicle(world: World): void {
   const v = world.vehicle;
   const sweeper = world.tuning.vehicle.sweeper;
+  stepBrushState(world.brush, v, world.input, world.hopper.full);
   sampleSurface(world.level, world.surfaceTable, sweeper, v, world.surface);
   stepVehicle(v, world.input, world.surface, world.vehicleParams);
   if (v.reverseEngaged) {
@@ -347,7 +360,10 @@ function phaseBodies(_world: World): void {
   // Filled in M3.
 }
 
-/** Phase 5: brush, litter and water. SSP-065 wires brush.ts, litter.ts and water.ts in. */
+/**
+ * Phase 5: brush, litter and water. SSP-065 wires in beginLitterTick → stepBrushLitter (brush.ts) → stepLitter
+ * (litter.ts), and water.ts.
+ */
 function phaseBrushLitter(_world: World): void {
   // Filled by SSP-065.
 }

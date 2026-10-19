@@ -2,7 +2,7 @@
 id: SSP-059
 title: "Implement brush.ts state machine, suction, inlet collection and fling roll"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:sim, area:gameplay, area:test, size:L, vertical-slice]
@@ -44,13 +44,13 @@ Performance: one rotation per candidate item into vehicle-local space; no alloca
 
 ## Acceptance criteria
 
-- [ ] Unit tests assert the gutter circle centres/radius, 2.6 m swept width, suction rect y +1.6 to +2.8 and inlet 1.0 × 0.4 m at y +1.2
-- [ ] An item placed in the inlet at rpm = 1 and brushPos = 1 is collected in one tick; no item is collected while rpm < 0.8 or brushPos < 1
-- [ ] From a Space press, lowering takes 30 ticks and spin-up 36 ticks (unit test)
-- [ ] Fling property test, 10,000 seeded trials per speed: 0 flings at v = 3.0 and 4.0 m/s, all flung at 6.0 m/s, and fling rate 0.25 ± 0.02 at 4.5, 0.50 ± 0.02 at 5.0, 0.75 ± 0.02 at 5.5 m/s
-- [ ] Each item rolls at most once per contact episode (unit test)
-- [ ] With the hopper full, inlet items become PINNED and are pushed ahead instead of collected, and no LU is added
-- [ ] Same seed and inputs give identical collection/fling results
+- [x] Unit tests assert the gutter circle centres/radius, 2.6 m swept width, suction rect y +1.6 to +2.8 and inlet 1.0 × 0.4 m at y +1.2
+- [x] An item placed in the inlet at rpm = 1 and brushPos = 1 is collected in one tick; no item is collected while rpm < 0.8 or brushPos < 1
+- [x] From a Space press, lowering takes 30 ticks and spin-up 36 ticks (unit test)
+- [x] Fling property test, 10,000 seeded trials per speed: 0 flings at v = 3.0 and 4.0 m/s, all flung at 6.0 m/s, and fling rate 0.25 ± 0.02 at 4.5, 0.50 ± 0.02 at 5.0, 0.75 ± 0.02 at 5.5 m/s
+- [x] Each item rolls at most once per contact episode (unit test)
+- [x] With the hopper full, inlet items become PINNED and are pushed ahead instead of collected, and no LU is added
+- [x] Same seed and inputs give identical collection/fling results
 
 ## Verification
 

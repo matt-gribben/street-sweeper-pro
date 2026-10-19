@@ -268,12 +268,22 @@ const HOPPER_SPEC = {
   warnFraction: 'fraction',
 } as const satisfies GroupSpec;
 
-/** GDD §8.5: tank size, spray use over a cone ahead of Bessie, and the hydrant refill rate (water units). */
+/**
+ * GDD §8.5: tank size, spray use over a cone ahead of Bessie, and the hydrant refill rate (water units). The
+ * cone geometry and the hydrant 'stopped adjacent' test were decided in SSP-061 (src/sim/water.ts): the cone's
+ * apex sits on the centre line sprayConeApexYM ahead of the body centre (the front bumper) and it widens to
+ * sprayConeEndWidthM over sprayConeLengthM; a hydrant refills when Bessie is below hydrantMaxSpeedMps with the
+ * hydrant's centre within hydrantReachM of her body OBB.
+ */
 const WATER_SPEC = {
   tankUnits: 'positive',
   sprayUnitsPerS: 'positive',
   sprayConeLengthM: 'positive',
+  sprayConeApexYM: 'finite',
+  sprayConeEndWidthM: 'positive',
   hydrantRefillUnitsPerS: 'positive',
+  hydrantMaxSpeedMps: 'positive',
+  hydrantReachM: 'positive',
 } as const satisfies GroupSpec;
 
 /** GDD §8.7: the depot bay needs Bessie below maxSpeedMps; hold Dump for holdS, then drain for drainS. */
@@ -536,6 +546,9 @@ export type SweepingTuning = {
 /** Hopper capacity and HUD warning fraction (GDD §8.4); hopper.ts reads it. */
 export type HopperTuning = Group<typeof HOPPER_SPEC>;
 
+/** tuning.json → water (GDD §8.5; the cone and hydrant adjacency decided in SSP-061). */
+export type WaterTuning = Group<typeof WATER_SPEC>;
+
 /** Depot bay and skip dumping (GDD §8.7, TECHNICAL_DESIGN §10.5). */
 export type DumpingTuning = {
   readonly depotBay: Group<typeof DEPOT_BAY_SPEC>;
@@ -570,7 +583,7 @@ export type Tuning = {
   readonly propFootprints: PropFootprints;
   readonly sweeping: SweepingTuning;
   readonly hopper: HopperTuning;
-  readonly water: Group<typeof WATER_SPEC>;
+  readonly water: WaterTuning;
   readonly dumping: DumpingTuning;
   readonly combo: ComboTuning;
   readonly scoring: Group<typeof SCORING_SPEC>;

@@ -235,7 +235,7 @@ stateDiagram-v2
 | `stain.milkshake` | Milkshake | 20 | 1.5 s | Tue, **Fri**, Sun | |
 | `stain.oil` | Oil stain | 30 | 2.0 s | **Wed**, Sun | **Same tile as `haz.oil_slick`.** Spraying the slick cleans this stain; the +30 is awarded once. |
 | `stain.chalk_art` | Chalk art | 30 | 2.0 s | **Thu**, Sun | Drawn by `npc.kid_chalk`. **Cleaning it while its kid is present: −100 + 1 complaint ("WAAAH!", `kid_waah`).** Wait until the kid leaves (60–90 s) to score the +30. |
-| `stain.splat` | Splat | 0 | 1.0 s | Any | Created by driving brush-up over `litter.dog_mess` (−20). Cleaning it removes −20 grime. |
+| `stain.splat` | Splat | 0 | 1.0 s | Any | Created by driving brush-up over `litter.dog_mess` (−20; "driven over" is defined in [GDD §8.2](GDD.md#82-brush-states)). Cleaning it scores 0 and refunds nothing ([§17](#17-open-questions) Q8). |
 
 ---
 
@@ -704,7 +704,7 @@ Each item is resolved in the milestone named, then this section and the tables a
 | 5 | Do **stain cleans** and **style bonuses** take the combo multiplier and refresh the chain, or only litter pickups? | Litter and stains refresh the chain; style bonuses are not multiplied | M2 |
 | 6 | Does litter removed by a **seagull** or **Spotless Sid** reduce "litter spawned" in the Tidy % denominator? | Stolen litter is removed from both numerator and denominator (it was taken off the street), so the compiler's 3★ par, which does not model theft, stays valid. A "Pinched by Sid/gulls" count shows on the Mercury. | M6 |
 | 7 | How many `litter.spilled_shopping` do other carrying NPCs (shopper, postie) drop when hit? Only Doris (6) is specified. | **Resolved (M3, SSP-075): the default.** 0 for everyone except Doris (`hit.drops` is `{}`) | M3 ✓ |
-| 8 | `stain.splat`: "Cleaning it removes −20 grime" is ambiguous (refund of the −20 penalty, or just removal of the grime). | No refund; cleaning clears the grime cells only | M2 |
+| 8 | `stain.splat`: "Cleaning it removes −20 grime" is ambiguous (refund of the −20 penalty, or just removal of the grime). | **Resolved (M2, SSP-061).** No refund, as the default said: spraying a splat clean (1.0 s, like gum) scores 0 and only removes the splat. A splat is a stain decal, not grime cells, so cleaning it does not touch the grime mask or Tidy % ([§5](#5-stains-stain)) | M2 ✓ |
 | 9 | Thursday's weather is "wind + leaf fall" but `haz.wind_gust` is listed as a Friday event. Does Thursday get gusts too? | No: Thursday wind only drives leaf fall | M6 |
 | 10 | Missing values: Doris's post-horn speed (0.4 m/s proposed), handbag whack interval (1.0 s) and give-up distance (8 m), lollipop crossing duration (6 s), knockable masses for A-board/trolley/recycling box, prop slice counts, animation frame rates. | M3 values chosen in SSP-075: Doris 0.4 m/s, 1.0 s and 8 m (the proposed defaults; [§6.3](#63-doris-npcold_woman)), masses A-board 8 kg, trolley 15 kg, recycling box 5 kg ([§9.1](#91-knockable-props)), all marked *chosen in M3 tuning*. The lollipop crossing stays TBD (M6 tuning), 6 s proposed. Stain spray times were settled in M2 (SSP-053: 1.0 / 1.5 / 2.0 s, splat = gum; [§5](#5-stains-stain)). Slice counts: decided in M0 (§9, [ART_BIBLE §8.6](ART_BIBLE.md#86-props)). Frame rates: [ART_BIBLE §10.2](ART_BIBLE.md#102-timing-table). | M0–M6 |
 | 11 | SFX gaps with no ID in the canonical list: banana spin-out, Lead Tangle, seagull snatch, handbag whack, pothole/speed-bump spill. Currently mapped to the nearest existing ID or silent. | Reuse existing IDs | M5 ([AUDIO_DESIGN](AUDIO_DESIGN.md)) |

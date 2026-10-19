@@ -62,7 +62,7 @@ export type VehicleState = {
   hp: number;
   /** Litter units in the hopper, 0..VehicleParams.hopperCapacityLU. Only hopper.ts writes it (SSP-058). */
   hopperLU: number;
-  /** Spray water units. Stays 0 in M1; the spray system (M2) owns the tank capacity and fills it. */
+  /** Spray water units, 0..tuning water.tankUnits. Only water.ts writes it (SSP-061), which owns the tank. */
   water: number;
   /** Mass for the current hopper fill, kg (step 1). Collision response (SSP-036) reads it. */
   massKg: number;

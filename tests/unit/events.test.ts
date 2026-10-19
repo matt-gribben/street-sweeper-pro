@@ -3,7 +3,7 @@
 // dispatch, and the errors for an unsealed queue or an event the bus cannot decode.
 import { describe, expect, it } from 'vitest';
 import { EventBus, type SimEvent } from '../../src/app/events.ts';
-import { LITTER_IDS } from '../../src/sim/entities.ts';
+import { LITTER_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
 import {
   createEventQueue,
   EV,
@@ -47,8 +47,9 @@ describe('EventBus', () => {
       [EV.HopperFull, -1, 12.5, 30.25, 100],
       [EV.LitterCollected, 17, 40.5, 12.25, LITTER_IDS.indexOf('litter.bin_bag')],
       [EV.Fling, 3, 41, 13, LITTER_IDS.indexOf('litter.drink_can')],
+      [EV.StainCleaned, STAIN_IDS.indexOf('stain.milkshake'), 20.5, 6.75, 20],
     ]);
-    expect(bus.drain(queue)).toBe(7);
+    expect(bus.drain(queue)).toBe(8);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -57,6 +58,15 @@ describe('EventBus', () => {
       { type: EV.HopperFull, tick: 42, entity: -1, x: 12.5, y: 30.25, capacityLU: 100 },
       { type: EV.LitterCollected, tick: 42, entity: 17, x: 40.5, y: 12.25, kind: 'litter.bin_bag' },
       { type: EV.Fling, tick: 42, entity: 3, x: 41, y: 13, kind: 'litter.drink_can' },
+      {
+        type: EV.StainCleaned,
+        tick: 42,
+        entity: STAIN_IDS.indexOf('stain.milkshake'),
+        x: 20.5,
+        y: 6.75,
+        kind: 'stain.milkshake',
+        pts: 20,
+      },
     ]);
   });
 
@@ -167,6 +177,8 @@ describe('EventBus', () => {
     expect(() => bus.drain(sealedQueue(10, [[EV.ShiftEnd, -1, 77, 0, 0]]))).toThrow(/unknown reason 77/);
     expect(() => bus.drain(sealedQueue(11, [[EV.LitterCollected, 0, 0, 0, 200]]))).toThrow(/litter kind 200/);
     expect(() => bus.drain(sealedQueue(12, [[EV.Fling, 0, 0, 0, 1.5]]))).toThrow(/litter kind 1.5/);
+    expect(() => bus.drain(sealedQueue(13, [[EV.StainCleaned, 5, 0, 0, 10]]))).toThrow(/stain kind 5/);
+    expect(() => bus.drain(sealedQueue(14, [[EV.StainCleaned, -1, 0, 0, 10]]))).toThrow(/stain kind -1/);
   });
 
   it('decodes every EV id the sim defines (a new EV type must be wired into the bus)', () => {
@@ -177,7 +189,17 @@ describe('EventBus', () => {
     bus.drain(
       sealedQueue(
         0,
-        all.map((type) => [type, -1, type === EV.ShiftEnd ? ShiftEndReason.Towed : 0, 0, 0] as const),
+        all.map(
+          (type) =>
+            [
+              type,
+              // StainCleaned carries the stain kind (a STAIN_IDS index) in `entity`.
+              type === EV.StainCleaned ? 0 : -1,
+              type === EV.ShiftEnd ? ShiftEndReason.Towed : 0,
+              0,
+              0,
+            ] as const,
+        ),
       ),
     );
     expect(types).toEqual(all);

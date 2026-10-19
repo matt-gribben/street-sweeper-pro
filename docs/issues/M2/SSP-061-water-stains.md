@@ -2,7 +2,7 @@
 id: SSP-061
 title: "Implement water.ts tank, spray cone, hydrant refill, stains and dog-mess splats"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:gameplay, size:M, vertical-slice]

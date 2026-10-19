@@ -434,7 +434,7 @@ Each milestone has the same shape:
 
 - [ ] Ground shader samples the grime mask texture. The upload is incremental: only dirty chunks are re-uploaded each frame.
 - [ ] `src/render/spriteBatch.ts`: an `items` atlas instance batch for litter. Per-instance 4 rotations and the 2-frame wobble.
-- [ ] `src/ui/bitmapText.ts` with a first draft of `assets-src/fonts/kerbside5x7.glyphs.txt` (ASCII 32–126 plus £ ★ → ← ↑ ↓).
+- [x] `src/ui/bitmapText.ts` with a first draft of `assets-src/fonts/kerbside5x7.glyphs.txt` (ASCII 32–126 plus £ ★ → ← ↑ ↓). *(Glyphs, forge font builder and `ui` atlas: SSP-068. Runtime: SSP-069, `bitmapText.ts` plus the UI pass and `UiSpriteBatch`, text coloured by a per-quad recolour pair, TECHNICAL_DESIGN §12.3/§12.5. Narrow advances wait for SSP-141.)*
 - [ ] `src/ui/hud.ts`: timer, score, combo tier popup text, hopper bar with 80% warning, water, HP.
 - [ ] `TallyScene` (numbers only): Tidy %, items collected, grime cleaned, score, would-be stars.
 - [ ] `ShiftIntroScene` placeholder card (text only).

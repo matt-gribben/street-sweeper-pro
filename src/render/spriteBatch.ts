@@ -31,17 +31,19 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  DataTexture,
   DoubleSide,
   DynamicDrawUsage,
   GLSL3,
   InstancedInterleavedBuffer,
   InstancedMesh,
   InterleavedBufferAttribute,
+  NoBlending,
   ShaderMaterial,
 } from 'three';
 import { FRAME, type FrameId } from '../gen/assets.ts';
 import { PX_PER_M } from '../sim/constants.ts';
-import { createPaletteTexture, KERBSIDE32, type Kerbside32 } from './palettePass.ts';
+import { createPaletteTexture, KERBSIDE32, type Kerbside32, PALETTE_SIZE } from './palettePass.ts';
 import { type AtlasName, type SpriteAtlas, SWAP_ROWS, TRANSPARENT_INDEX } from './spriteAtlas.ts';
 import { DEPTH_LAYER_GLSL, DepthLayer, maskDrawParameters, WORLD_OUTPUTS_GLSL } from './worldMaterial.ts';
 
@@ -436,4 +438,218 @@ export class DropShadowBatch {
   end(): void {
     this.instances.publish(this.mesh);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// UI pass (TECHNICAL_DESIGN §12.3, §12.6, §12.7 draw #7; SSP-069)
+//
+// The UI draws in internal pixel space with an orthographic camera (Renderer.ts) into RT_world after a depth
+// clear: one instanced draw of `ui` atlas quads (text, and from SSP-070 on HUD icons and panels). Positions are
+// whole internal pixels, x right and y DOWN from the frame's top-left; a frame's pivot lands on its position, so
+// a glyph (pivot (1, 1), the top-left of its ink box) sits with its ink box's top-left on the pen.
+//
+// Per-instance attributes, one interleaved Float32 buffer (stride 8):
+//   offset (vec2)    the pivot's position in internal pixels (integers);
+//   frameRect (vec4) x, y, w, h in atlas pixels, from FRAME;
+//   pivot (vec2)     the frame's pivot in frame pixels;
+//   recolour (vec2)  (from, to) palette indices: texels of index `from` draw as index `to`. Text uses it to set
+//                    its colour (glyph ink is 07 chalk in the atlas, ASSET_PIPELINE §6.3); `from` =
+//                    NO_RECOLOUR leaves every texel as authored.
+// Draw order is instance order (one draw, no depth test, no blending: a later instance overwrites an earlier
+// one), and transparent texels (TRANSPARENT_INDEX) are discarded.
+//
+// Mask: every UI texel writes mask (0, 1, 1): R = 0 (never shadowed), G = 1 (lit, so night never remaps it) and
+// B = 1, the UI flag. The upscale blit reads the flag to keep UI pixels off the camera's sub-pixel offset, so the
+// HUD stays on the whole-internal-pixel grid while the world scrolls smoothly under it (Renderer.ts).
+
+/** `recolour.from` value meaning "no recolour" (no palette index is 255). */
+export const NO_RECOLOUR = 255;
+
+/** Mask channel values every UI texel writes: (R shadow, G light, B UI flag). */
+export const UI_MASK = [0, 1, 1] as const;
+
+const U_OFFSET = 0;
+const U_RECT = 2;
+const U_PIVOT = 6;
+const U_RECOLOUR = 8;
+/** Floats per UI instance. */
+export const UI_INSTANCE_STRIDE = 10;
+
+const UI_VERTEX = /* glsl */ `
+in vec2 offset;
+in vec4 frameRect;
+in vec2 pivot;
+in vec2 recolour;
+out vec2 vTexel;
+flat out vec4 vRect;
+flat out ivec2 vRecolour;
+void main() {
+  vec2 texel = position.xy * frameRect.zw;
+  vec2 px = offset + texel - pivot;
+  gl_Position = projectionMatrix * viewMatrix * vec4(px, 0.0, 1.0);
+  vTexel = texel;
+  vRect = frameRect;
+  vRecolour = ivec2(recolour + 0.5);
+}
+`;
+
+const UI_FRAGMENT = /* glsl */ `
+precision highp float;
+precision highp int;
+uniform highp sampler2D uAtlas;
+uniform highp sampler2D uPalette;
+flat in ivec2 vRecolour;
+${SPRITE_TEXEL_GLSL}
+${WORLD_OUTPUTS_GLSL}
+void main() {
+  int idx = indexAt(uAtlas, frameTexel());
+  if (idx == ${TRANSPARENT_INDEX}) discard;
+  if (idx == vRecolour.x) idx = vRecolour.y;
+  outColour = vec4(texelFetch(uPalette, ivec2(idx, 0), 0).rgb, 1.0);
+  outMask = vec4(${UI_MASK[0]}.0, ${UI_MASK[1]}.0, ${UI_MASK[2]}.0, 0.0);
+}
+`;
+
+/**
+ * The UI pass's instanced draw: quads from one atlas (the `ui` atlas) at whole internal pixels. Call begin(),
+ * add() per quad, end() once per frame; nothing in that path allocates. Add the mesh to the renderer's UI root
+ * (SceneContext.ui).
+ */
+export class UiSpriteBatch {
+  readonly atlas: SpriteAtlas;
+  readonly mesh: InstancedMesh;
+  readonly capacity: number;
+  private readonly data: Float32Array;
+  private readonly buffer: InstancedInterleavedBuffer;
+  private instances = 0;
+
+  constructor(atlas: SpriteAtlas, capacity: number, palette: Kerbside32 = KERBSIDE32) {
+    if (!Number.isInteger(capacity) || capacity < 1) throw new Error(`UI batch capacity ${capacity}`);
+    this.atlas = atlas;
+    this.capacity = capacity;
+    this.data = new Float32Array(capacity * UI_INSTANCE_STRIDE);
+    this.buffer = new InstancedInterleavedBuffer(this.data, UI_INSTANCE_STRIDE, 1);
+    this.buffer.setUsage(DynamicDrawUsage);
+    const geometry = new BufferGeometry();
+    // A unit quad in the XY plane: position.xy is the frame-space corner (x right, y down), 0..1.
+    geometry.setAttribute(
+      'position',
+      new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0]), 3),
+    );
+    geometry.setIndex([0, 2, 1, 1, 2, 3]);
+    geometry.setAttribute('offset', new InterleavedBufferAttribute(this.buffer, 2, U_OFFSET));
+    geometry.setAttribute('frameRect', new InterleavedBufferAttribute(this.buffer, 4, U_RECT));
+    geometry.setAttribute('pivot', new InterleavedBufferAttribute(this.buffer, 2, U_PIVOT));
+    geometry.setAttribute('recolour', new InterleavedBufferAttribute(this.buffer, 2, U_RECOLOUR));
+    const material = new ShaderMaterial({
+      glslVersion: GLSL3,
+      vertexShader: UI_VERTEX,
+      fragmentShader: UI_FRAGMENT,
+      side: DoubleSide,
+      blending: NoBlending,
+      depthTest: false,
+      depthWrite: false,
+      uniforms: {
+        uAtlas: { value: atlas.texture },
+        uPalette: { value: createPaletteTexture(palette) },
+      },
+    });
+    this.mesh = new InstancedMesh(geometry, material, capacity);
+    this.mesh.name = `ui:${atlas.name}`;
+    this.mesh.frustumCulled = false;
+    this.mesh.count = 0;
+  }
+
+  /** Quads added since begin(). */
+  get count(): number {
+    return this.instances;
+  }
+
+  /** The instance data (UI_INSTANCE_STRIDE floats per quad); read-only for tests. */
+  get instanceData(): Float32Array {
+    return this.data;
+  }
+
+  // per-frame draw path: begin
+  /** Starts a frame: drops last frame's quads. */
+  begin(): void {
+    this.instances = 0;
+  }
+
+  /**
+   * Adds one quad of `frame` with its pivot at (xPx, yPx), whole internal pixels from the frame's top-left. Texels
+   * of palette index `recolourFrom` draw as `recolourTo` (pass NO_RECOLOUR to keep the frame's colours). Throws for
+   * a frame of another atlas, a non-integer position, a recolour index outside the palette, or a full batch.
+   */
+  add(frame: FrameId, xPx: number, yPx: number, recolourFrom: number = NO_RECOLOUR, recolourTo = 0): void {
+    const f = FRAME[frame];
+    if (
+      f.atlas !== this.atlas.name ||
+      !Number.isInteger(xPx) ||
+      !Number.isInteger(yPx) ||
+      !isRecolourIndex(recolourFrom, true) ||
+      !isRecolourIndex(recolourTo, false) ||
+      this.instances >= this.capacity
+    ) {
+      rejectUiQuad(this, frame, xPx, yPx, recolourFrom, recolourTo);
+    }
+    const d = this.data;
+    const o = this.instances * UI_INSTANCE_STRIDE;
+    d[o + U_OFFSET] = xPx;
+    d[o + U_OFFSET + 1] = yPx;
+    d[o + U_RECT] = f.x;
+    d[o + U_RECT + 1] = f.y;
+    d[o + U_RECT + 2] = f.w;
+    d[o + U_RECT + 3] = f.h;
+    d[o + U_PIVOT] = f.px;
+    d[o + U_PIVOT + 1] = f.py;
+    d[o + U_RECOLOUR] = recolourFrom;
+    d[o + U_RECOLOUR + 1] = recolourTo;
+    this.instances++;
+  }
+
+  /** Ends the frame: sets the draw count and flags the instance buffer for upload (one needsUpdate). */
+  end(): void {
+    this.mesh.count = this.instances;
+    this.buffer.needsUpdate = true;
+  }
+  // per-frame draw path: end
+
+  /** Releases the GPU buffers and the material (not the atlas, which its loader owns). */
+  dispose(): void {
+    this.mesh.geometry.dispose();
+    const material = this.mesh.material;
+    if (material instanceof ShaderMaterial) {
+      const palette = material.uniforms.uPalette?.value;
+      if (palette instanceof DataTexture) palette.dispose();
+      material.dispose();
+    }
+  }
+}
+
+/** Throws the error UiSpriteBatch.add found (kept out of the per-frame path, which builds no objects). */
+function rejectUiQuad(
+  batch: UiSpriteBatch,
+  frame: FrameId,
+  xPx: number,
+  yPx: number,
+  recolourFrom: number,
+  recolourTo: number,
+): never {
+  const atlas = FRAME[frame].atlas;
+  if (atlas !== batch.atlas.name)
+    throw new Error(`frame ${frame} is in atlas '${atlas}', not '${batch.atlas.name}'`);
+  if (!Number.isInteger(xPx) || !Number.isInteger(yPx)) {
+    throw new RangeError(`UI positions are whole internal pixels, got (${xPx}, ${yPx})`);
+  }
+  if (!isRecolourIndex(recolourFrom, true) || !isRecolourIndex(recolourTo, false)) {
+    throw new RangeError(`recolour ${recolourFrom} -> ${recolourTo} is not a palette index pair`);
+  }
+  throw new Error(`UI batch full (capacity ${batch.capacity})`);
+}
+
+/** A palette index 0..31 (or NO_RECOLOUR when `allowNone`). */
+function isRecolourIndex(value: number, allowNone: boolean): boolean {
+  if (allowNone && value === NO_RECOLOUR) return true;
+  return Number.isInteger(value) && value >= 0 && value < PALETTE_SIZE;
 }

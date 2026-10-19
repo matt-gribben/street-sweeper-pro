@@ -56,6 +56,7 @@ describe('LevelPreviewScene', () => {
     const ctx: SceneContext = {
       renderer: {} as Renderer,
       root: new Group(),
+      ui: new Group(),
       loadAtlas: async (name) => {
         loaded.push(name);
         return loadAtlas(name, {

@@ -122,6 +122,36 @@ export function blitSourceTexel(devicePx: number, offsetDevicePx: number, scale:
   return Math.floor((devicePx + offsetDevicePx) / scale) + RT_MARGIN_PX;
 }
 
+/** A render-target texel, top-down/left-right (the blit's coordinates before its row flip). */
+export type RtTexel = { x: number; y: number };
+
+/**
+ * Render-target texel the blit samples for canvas device pixel (dx, dy) when the UI pass is in the frame
+ * (SSP-069). Mirrors the blit fragment shader in Renderer.ts: the world is shifted by the sub-pixel offset
+ * (blitSourceTexel on each axis), but when either the unshifted texel or the shifted one is a UI texel (`isUi`,
+ * the mask's B flag) the unshifted texel is used. UI pixels therefore cover exactly the device block
+ * [x·scale, (x + 1)·scale) × [y·scale, (y + 1)·scale) of their internal pixel (x, y) at every offset; the price
+ * is that up to `offset` device pixels of world beside a UI pixel show the unshifted world texel. Writes `out`.
+ */
+export function blitUiAwareTexel(
+  dx: number,
+  dy: number,
+  offsetX: number,
+  offsetY: number,
+  scale: number,
+  isUi: (x: number, y: number) => boolean,
+  out: RtTexel,
+): RtTexel {
+  const sx = blitSourceTexel(dx, offsetX, scale);
+  const sy = blitSourceTexel(dy, offsetY, scale);
+  const ux = blitSourceTexel(dx, 0, scale);
+  const uy = blitSourceTexel(dy, 0, scale);
+  const ui = isUi(ux, uy) || isUi(sx, sy);
+  out.x = ui ? ux : sx;
+  out.y = ui ? uy : sy;
+  return out;
+}
+
 /** Owner of the canvas size. Calls `onLayout` once immediately and again on every resize or DPR change. */
 export function attachUpscaler(
   canvas: HTMLCanvasElement,

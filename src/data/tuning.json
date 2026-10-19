@@ -113,7 +113,11 @@
     "tankUnits": 100,
     "sprayUnitsPerS": 6,
     "sprayConeLengthM": 2.6,
-    "hydrantRefillUnitsPerS": 25
+    "sprayConeApexYM": 1.625,
+    "sprayConeEndWidthM": 2.6,
+    "hydrantRefillUnitsPerS": 25,
+    "hydrantMaxSpeedMps": 0.5,
+    "hydrantReachM": 1.5
   },
   "dumping": {
     "depotBay": { "holdS": 1.0, "drainS": 2.0, "maxSpeedMps": 0.5 },

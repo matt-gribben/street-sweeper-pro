@@ -402,6 +402,8 @@ The 1.1 s from pressing Space to full RPM (0.5 s lower + 0.6 s spin-up) is delib
 - **Throat:** items between the suction rect's back edge (y +1.6) and the inlet's front edge (y +1.4) are pulled like suction items, so with Bessie stopped the suction still delivers them to the inlet.
 - **Bulldozer:** at a full hopper an item in the inlet mouth (inlet width, from the inlet's back edge to the pin line) is pinned on the pin line **0.1 m** ahead of the front bumper (`sweeping.bulldozer.pinAheadM`) and pushed along. Pinned items are released into the suction (and collected) once a dump takes the hopper below capacity, and left where they are when the brush is raised.
 
+**Decided in SSP-061:** an item is **driven over** when its centre is inside Bessie's body OBB (**1.75 × 3.25 m**, edges inclusive) while the brush is Raised; Lowering and Raising never drive over litter (the table above). A driven-over `litter.dog_mess` is removed, a `stain.splat` appears at its position and the −20 goes through scoring's penalty hook, which also resets the combo chain. The mess is not collected: it stays in Tidy %'s litter-spawned count and can no longer be swept up, which is part of the cost.
+
 ### 8.3 The fling curve (Pillar 3 in one formula)
 
 Fling probability per item touched by the brushes, at speed *v* (m/s):
@@ -447,6 +449,9 @@ Representative LU costs (full table in [ENTITY_CATALOG.md](ENTITY_CATALOG.md)): 
 | Spray | Uses 6 units/s over a 2.6 m cone ahead. A full base tank is about 16.7 s of spray. |
 | Required for | Cleaning `stain.*` (gum, milkshake, oil, chalk art, splat) and suppressing dust |
 | Refill | At `prop.hydrant`: stop adjacent, 25 units/s (a base tank refills in 4 s). At the depot bay: full refill with every dump. `pwr.water_can`: +50. |
+| Spray cone *(decided in SSP-061)* | A triangle from the front bumper: apex on the centre line at y = +1.625 m (vehicle-local), 2.6 m long, widening to the 2.6 m brush band at its far end (y = +4.225). A stain is sprayed while its centre is inside. Holding Spray with an empty tank does nothing; the tank never goes below 0. |
+| Hydrant "stop adjacent" *(decided in SSP-061)* | Speed below 0.5 m/s (the depot bay's "stopped") and the hydrant's centre within 1.5 m of Bessie's body OBB, so she must pull into the near lane beside it. Spraying while refilling is allowed. |
+| Stain cleaning | A stain is cleaned when it has had its spray time in total (1.0 s gum and splat, 1.5 s milkshake, 2.0 s oil and chalk art; [ENTITY_CATALOG §5](ENTITY_CATALOG.md#5-stains-stain)); progress is kept between passes. It is scored once and removed. A splat scores 0 and refunds nothing (ENTITY_CATALOG §17 Q8). |
 | Spraying people | Pedestrians splashed by spray react with a startle (proposed: −50, like a puddle splash). Spraying **Doris** makes her chase you at 1.2 m/s, whacking Bessie with her handbag for 2 HP per hit. |
 
 ### 8.6 Dust

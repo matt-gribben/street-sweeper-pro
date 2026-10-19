@@ -13,7 +13,7 @@
 // subscribe() and unsubscribing copy the listener list (copy-on-write), so a listener may unsubscribe itself,
 // or subscribe another, during dispatch: the change takes effect from the next event.
 
-import { LITTER_IDS, type LitterId } from '../sim/entities.ts';
+import { LITTER_IDS, type LitterId, STAIN_IDS, type StainId } from '../sim/entities.ts';
 import {
   EV,
   type EventType,
@@ -94,6 +94,21 @@ export type FlingEvent = SimEventBase & {
   readonly kind: LitterId;
 };
 
+/**
+ * Bessie's spray cleaned a stain (phase 6, SSP-061). `entity` is the stain's kind index (STAIN_IDS), decoded
+ * into `kind`: the stain was removed as the event was emitted, so it has no store index.
+ */
+export type StainCleanedEvent = SimEventBase & {
+  readonly type: typeof EV.StainCleaned;
+  /** Where the stain was, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The stain's id. */
+  readonly kind: StainId;
+  /** Its points before the combo multiplier (entities.json `pts`; a splat is 0). */
+  readonly pts: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
@@ -103,6 +118,7 @@ export type SimEventByType = {
   [EV.HopperFull]: HopperFullEvent;
   [EV.LitterCollected]: LitterCollectedEvent;
   [EV.Fling]: FlingEvent;
+  [EV.StainCleaned]: StainCleanedEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -141,6 +157,15 @@ function createPayloads(): Payloads {
       kind: 'litter.crisp_packet',
     },
     [EV.Fling]: { type: EV.Fling, tick: 0, entity: -1, x: 0, y: 0, kind: 'litter.crisp_packet' },
+    [EV.StainCleaned]: {
+      type: EV.StainCleaned,
+      tick: 0,
+      entity: -1,
+      x: 0,
+      y: 0,
+      kind: 'stain.gum',
+      pts: 0,
+    },
   };
 }
 
@@ -152,6 +177,16 @@ function litterKindOf(c: number, type: EventType, tick: number): LitterId {
   return id;
 }
 
+/** The stain id carried in a StainCleaned event's `entity` (a STAIN_IDS index); throws on anything else. */
+function stainKindOf(entity: number, tick: number): StainId {
+  const id = Number.isInteger(entity) ? STAIN_IDS[entity] : undefined;
+  if (id === undefined)
+    throw new Error(
+      `EventBus: event type ${EV.StainCleaned} at tick ${tick} carries unknown stain kind ${entity}`,
+    );
+  return id;
+}
+
 function isEventType(type: number): type is EventType {
   return (
     type === EV.Impact ||
@@ -160,7 +195,8 @@ function isEventType(type: number): type is EventType {
     type === EV.ShiftEnd ||
     type === EV.HopperFull ||
     type === EV.LitterCollected ||
-    type === EV.Fling
+    type === EV.Fling ||
+    type === EV.StainCleaned
   );
 }
 
@@ -178,6 +214,7 @@ export class EventBus {
     [EV.HopperFull]: [],
     [EV.LitterCollected]: [],
     [EV.Fling]: [],
+    [EV.StainCleaned]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -306,6 +343,17 @@ export class EventBus {
         e.y = b;
         e.kind = litterKindOf(c, type, tick);
         this.emit(EV.Fling, e);
+        return;
+      }
+      case EV.StainCleaned: {
+        const e = this.payloads[EV.StainCleaned];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.kind = stainKindOf(entity, tick);
+        e.pts = c;
+        this.emit(EV.StainCleaned, e);
         return;
       }
     }

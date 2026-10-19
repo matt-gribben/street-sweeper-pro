@@ -1,0 +1,227 @@
+// The typed event bus (TECHNICAL_DESIGN §7.2, SSP-043). The sim never calls out: each tick it appends facts
+// to its EventQueue and seals it in phase 11. After every tick the loop (loop.ts) has the bus drain that
+// sealed queue: each event is decoded into a strongly typed object and dispatched to the subscribers of its
+// type, then to the `onAny` subscribers, in emission order, exactly once.
+//
+// The bus is for presentation only: audio cues (audio/sfx.ts, M5), UI popups (ui/popups.ts, M2), render fx
+// (render/fx.ts, M3) and gamepad rumble (input/gamepad.ts, SSP-044). Scoring never uses it: it reads the same
+// facts inside the sim in phase 9. Subscribers get decoded copies and never the queue, so they cannot write
+// sim state (CLAUDE.md hard rule 2).
+//
+// Allocation: drain() creates no objects once optimised. Each event type has one preallocated payload object that is
+// rewritten for every event of that type, so a subscriber must copy what it needs and never keep the object.
+// subscribe() and unsubscribing copy the listener list (copy-on-write), so a listener may unsubscribe itself,
+// or subscribe another, during dispatch: the change takes effect from the next event.
+
+import {
+  EV,
+  type EventType,
+  type ReadonlyEventQueue,
+  ShiftEndReason,
+  type ShiftEndReason as ShiftEndReasonValue,
+} from '../sim/eventQueue.ts';
+
+/** Fields every bus event carries. */
+type SimEventBase = {
+  /** The sim tick that emitted the event (EventQueue.tick). */
+  readonly tick: number;
+  /** Store index of the entity, or −1 for Bessie and for events with no entity. */
+  readonly entity: number;
+};
+
+/** Bessie hit something solid (phase 3, SSP-036). */
+export type ImpactEvent = SimEventBase & {
+  readonly type: typeof EV.Impact;
+  /** Contact point, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** Normal impact speed vn, m/s: drives the sound, the shake and the gamepad rumble. */
+  readonly speedMps: number;
+};
+
+/** An axle crossed a kerb edge (phase 2, §8.2 step 9). */
+export type KerbJoltEvent = SimEventBase & {
+  readonly type: typeof EV.KerbJolt;
+  /** Where the axle midpoint crossed the kerb edge, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** |vLong| just before the crossing, m/s. */
+  readonly speedMps: number;
+};
+
+/** Bessie engaged reverse (phase 2): once per engagement. */
+export type ReverseBeeperEvent = SimEventBase & {
+  readonly type: typeof EV.ReverseBeeper;
+  /** Bessie's body centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+};
+
+/** The shift ended (M1: the TOWED stub, SSP-036). */
+export type ShiftEndEvent = SimEventBase & {
+  readonly type: typeof EV.ShiftEnd;
+  readonly reason: ShiftEndReasonValue;
+};
+
+/** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
+export type SimEventByType = {
+  [EV.Impact]: ImpactEvent;
+  [EV.KerbJolt]: KerbJoltEvent;
+  [EV.ReverseBeeper]: ReverseBeeperEvent;
+  [EV.ShiftEnd]: ShiftEndEvent;
+};
+
+/** Any bus event: a union discriminated by `type`. */
+export type SimEvent = SimEventByType[EventType];
+
+/** A subscriber to one event type. The event object is reused: copy what you need, never keep it. */
+export type SimEventListener<T extends EventType> = (event: SimEventByType[T]) => void;
+
+/** A subscriber to every event. The event object is reused: copy what you need, never keep it. */
+export type AnySimEventListener = (event: SimEvent) => void;
+
+/** Removes the subscription it was returned for. Calling it again does nothing. */
+export type Unsubscribe = () => void;
+
+/** The mutable twin of a payload type, for the bus's own preallocated objects. */
+type Writable<T> = { -readonly [K in keyof T]: T[K] };
+
+/** The preallocated payloads, one per type (the bus rewrites them for every event). */
+type Payloads = { [T in EventType]: Writable<SimEventByType[T]> };
+
+const SHIFT_END_REASONS: ReadonlySet<number> = new Set(Object.values(ShiftEndReason));
+
+function createPayloads(): Payloads {
+  return {
+    [EV.Impact]: { type: EV.Impact, tick: 0, entity: -1, x: 0, y: 0, speedMps: 0 },
+    [EV.KerbJolt]: { type: EV.KerbJolt, tick: 0, entity: -1, x: 0, y: 0, speedMps: 0 },
+    [EV.ReverseBeeper]: { type: EV.ReverseBeeper, tick: 0, entity: -1, x: 0, y: 0 },
+    [EV.ShiftEnd]: { type: EV.ShiftEnd, tick: 0, entity: -1, reason: ShiftEndReason.Towed },
+  };
+}
+
+function isEventType(type: number): type is EventType {
+  return type === EV.Impact || type === EV.KerbJolt || type === EV.ReverseBeeper || type === EV.ShiftEnd;
+}
+
+/** Listener lists per type, each replaced (never mutated) on subscribe/unsubscribe. */
+type ListenerLists = { [T in EventType]: readonly SimEventListener<T>[] };
+
+/** The bus. One per Game; the loop drains each sim tick into it. */
+export class EventBus {
+  private readonly payloads: Payloads = createPayloads();
+  private listeners: ListenerLists = {
+    [EV.Impact]: [],
+    [EV.KerbJolt]: [],
+    [EV.ReverseBeeper]: [],
+    [EV.ShiftEnd]: [],
+  };
+  private anyListeners: readonly AnySimEventListener[] = [];
+  /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
+  private lastQueue: ReadonlyEventQueue | null = null;
+  private lastTick = -1;
+
+  /** Subscribes `listener` to events of `type`. Listeners of one type run in subscription order. */
+  on<T extends EventType>(type: T, listener: SimEventListener<T>): Unsubscribe {
+    const lists = this.listeners as { [K in T]: readonly SimEventListener<T>[] };
+    lists[type] = [...lists[type], listener];
+    let subscribed = true;
+    return () => {
+      if (!subscribed) return;
+      subscribed = false;
+      lists[type] = lists[type].filter((l) => l !== listener);
+    };
+  }
+
+  /** Subscribes `listener` to every event. It runs after the type's own listeners, in subscription order. */
+  onAny(listener: AnySimEventListener): Unsubscribe {
+    this.anyListeners = [...this.anyListeners, listener];
+    let subscribed = true;
+    return () => {
+      if (!subscribed) return;
+      subscribed = false;
+      this.anyListeners = this.anyListeners.filter((l) => l !== listener);
+    };
+  }
+
+  /**
+   * Dispatches the events of one sealed tick in emission order and returns how many it dispatched. A tick
+   * already drained (same queue, same tick) dispatches nothing, so a scene that did not step this frame can
+   * never replay last tick's events. Throws on an unsealed queue (a drain in the middle of World.step) and on
+   * an event type the bus cannot decode.
+   */
+  drain(queue: ReadonlyEventQueue): number {
+    if (!queue.sealed) {
+      throw new Error(
+        `EventBus.drain: the queue for tick ${queue.tick} is not sealed; drain only after World.step returns`,
+      );
+    }
+    if (queue === this.lastQueue && queue.tick === this.lastTick) return 0;
+    this.lastQueue = queue;
+    this.lastTick = queue.tick;
+    const count = queue.count;
+    for (let i = 0; i < count; i += 1) this.dispatchAt(queue, i);
+    return count;
+  }
+
+  private dispatchAt(queue: ReadonlyEventQueue, i: number): void {
+    const type = queue.type[i] ?? 0;
+    const tick = queue.tick;
+    const entity = queue.entity[i] ?? -1;
+    const a = queue.a[i] ?? 0;
+    const b = queue.b[i] ?? 0;
+    const c = queue.c[i] ?? 0;
+    if (!isEventType(type)) {
+      throw new Error(`EventBus: event ${i} of tick ${tick} has type ${type}, which the bus cannot decode`);
+    }
+    switch (type) {
+      case EV.Impact: {
+        const e = this.payloads[EV.Impact];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.speedMps = c;
+        this.emit(EV.Impact, e);
+        return;
+      }
+      case EV.KerbJolt: {
+        const e = this.payloads[EV.KerbJolt];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.speedMps = c;
+        this.emit(EV.KerbJolt, e);
+        return;
+      }
+      case EV.ReverseBeeper: {
+        const e = this.payloads[EV.ReverseBeeper];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        this.emit(EV.ReverseBeeper, e);
+        return;
+      }
+      case EV.ShiftEnd: {
+        if (!SHIFT_END_REASONS.has(a)) {
+          throw new Error(`EventBus: ShiftEnd at tick ${tick} carries unknown reason ${a}`);
+        }
+        const e = this.payloads[EV.ShiftEnd];
+        e.tick = tick;
+        e.entity = entity;
+        e.reason = a as ShiftEndReasonValue;
+        this.emit(EV.ShiftEnd, e);
+        return;
+      }
+    }
+  }
+
+  private emit<T extends EventType>(type: T, event: SimEventByType[T]): void {
+    const typed = (this.listeners as { [K in T]: readonly SimEventListener<T>[] })[type];
+    for (let i = 0; i < typed.length; i += 1) typed[i]?.(event);
+    const any = this.anyListeners;
+    for (let i = 0; i < any.length; i += 1) any[i]?.(event as SimEvent);
+  }
+}

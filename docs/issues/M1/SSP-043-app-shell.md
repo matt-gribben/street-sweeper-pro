@@ -2,7 +2,7 @@
 id: SSP-043
 title: "Add the fixed 60 Hz loop, Game, SceneManager and typed event bus"
 milestone: M1
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:platform, area:sim, area:test, size:M, vertical-slice]

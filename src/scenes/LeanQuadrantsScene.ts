@@ -35,9 +35,9 @@
 // SSP-024 compared 0° and 8° Bessie here (D-02) by serving a temporary 8° actors atlas in place of the committed
 // one (tools/spikes/lookDecisions.ts); 0° was kept.
 //
-// Determinism: everything is a pure function of the render-frame counter. Each Bessie cycles her 32 headings
-// from a fixed per-quadrant offset (north-east h00, south-east h08, south-west h16, north-west h24 at frame 0),
-// so `freeze=1` (which holds the counter) gives one fixed frame. The lamp posts never change. Draw calls: the
+// Determinism: everything is a pure function of the frame counter (the scene's tick count, SpikeScene.ts). Each
+// Bessie cycles her 32 headings from a fixed per-quadrant offset (north-east h00, south-east h08, south-west
+// h16, north-west h24 at frame 0), so `freeze=1` (which holds the counter) gives one fixed frame. The lamp posts never change. Draw calls: the
 // city mesh, building shadows, drop shadows, the actors atlas and the items atlas (5), plus the palette pass and
 // blit: 7 of the 10 allowed (TECHNICAL_DESIGN §12.7); at night the light pools add the fx draw (8).
 import { Group, type Mesh } from 'three';

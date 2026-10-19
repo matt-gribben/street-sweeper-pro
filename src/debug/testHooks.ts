@@ -4,9 +4,10 @@
 //
 // URL parameters, all optional after `test=1`:
 //   seed=<n>    run seed, an unsigned 32-bit integer (no sim reads it until M1);
-//   scene=<id>  boot straight into a scene (`lean_quadrants`, `scale_1440`, `scale_sheet`; main.ts dispatches);
+//   scene=<id>  boot straight into a scene (`lean_quadrants`, `scale_1440`, `scale_sheet`; main.ts pushes it
+//               onto the SceneManager, src/scenes/SpikeScene.ts);
 //   tick=<n>    advance n ticks synchronously after load, before `ready` turns true;
-//   freeze=1    the loop keeps rendering but never steps;
+//   freeze=1    the loop (src/app/loop.ts) keeps rendering but never steps;
 //   night=1     the palette pass applies the night remap outside the light mask, and scenes draw their light
 //               pools (SSP-021; `lean_quadrants` hangs one under each lamp post).
 // Malformed values throw at boot: a test must never run against a silently defaulted parameter.
@@ -21,20 +22,23 @@
 //                 the last perfReset(): rAF timestamp deltas and frame-callback CPU time (perfCounters.ts);
 //   perfReset()   clears the recorded timings (start of a perf sampling window).
 //
-// M0 STUBS: there is no sim yet, so a "tick" is one render frame (the counter that drives the spike actors'
-// heading cycle and brush spin, at a fixed 1/60 s render step). step(n) advances that counter and renders
-// once, and state() returns only { tick, camera }. SSP-046 binds step() and state() to the World in M1:
-// step(n) then runs n fixed sim ticks and state() returns the full SimSnapshot (score, tidy, hopper, hp,
-// tick, positions).
+// M0 STUBS, on the M1 loop (SSP-043): no scene holds a World yet, so a "tick" is one fixed 60 Hz loop tick of
+// the spike scene, which advances the counter driving its actors (heading cycle, brush spin). step(n) runs n
+// loop ticks synchronously (loop.runTicks) and renders once (loop.renderNow), and state() returns only
+// { tick, camera }, tick being the loop's tick count. SSP-046 binds state() to the World: step(n) then runs n
+// sim ticks of the ShiftScene and state() returns the full SimSnapshot (score, tidy, hopper, hp, tick,
+// positions).
 //
-// Timings are recorded by main.ts once `ready` is true, one sample per requestAnimationFrame callback; they are
+// Timings are recorded once `ready` is true, one sample per requestAnimationFrame callback (the loop measures
+// the callback's CPU time and main.ts records it, so performance.now() stays in src/app/loop.ts); they are
 // read-only observations and never feed back into what is drawn. tests/e2e/perf.spec.ts reads them (SSP-023).
 //
-// Test mode also turns off what would make frames depend on timing (main.ts): the speed-zoom spring (and
-// look-ahead, from M1) unless a scene opts in, wall-clock frame times (a fixed 1/60 s render step instead) and
-// the dev panel. There is no audio before M5; M5's mixer must stay silent in test mode.
+// Test mode also turns off what would make frames depend on timing (main.ts, src/app/Game.ts): the speed-zoom
+// spring (and look-ahead, from M1) unless a scene opts in, wall-clock frame times (every frame is a fixed 1/60 s:
+// one tick per frame) and the dev panel. The loop also holds (frozen) until `ready`. There is no audio before
+// M5; M5's mixer must stay silent in test mode.
 
-/** Fixed render step in test mode, in seconds (one "tick" in M0). */
+/** Test mode: every frame lasts this long, in seconds (Game.ts gives it to the loop): one tick per frame. */
 export const TEST_RENDER_STEP_S = 1 / 60;
 
 /** Largest `seed`: sfc32 seeds are unsigned 32-bit integers. */
@@ -67,7 +71,7 @@ export type TestCamera = {
 
 /** M0 stub of the SimSnapshot that state() returns (SSP-046 replaces it with the World's snapshot). */
 export type TestState = {
-  /** Ticks stepped so far: render frames in M0. */
+  /** Loop ticks run so far (src/app/loop.ts). */
   readonly tick: number;
   readonly camera: TestCamera;
 };
@@ -89,11 +93,11 @@ export type SspTestApi = {
   perfReset(): void;
 };
 
-/** What the hooks drive: implemented by main.ts over the renderer and its frame loop. */
+/** What the hooks drive: implemented by main.ts over the Game's loop and renderer. */
 export type TestHookHost = {
-  /** The tick counter (the render-frame counter in M0). */
+  /** The loop's tick count. */
   tick(): number;
-  /** Advances `n` ticks (fixed render steps) without drawing. */
+  /** Runs `n` loop ticks synchronously without drawing. */
   advance(n: number): void;
   /** Draws one complete frame now, from the current tick and camera. */
   render(): void;

@@ -2,8 +2,8 @@
 // and the ingested pedestrian `npc.old_woman` beside her, drawn by the actors sprite batch plus the drop-shadow
 // batch: exactly two draw calls on top of the spike city.
 //
-// Everything is a pure function of a render-frame counter (not wall-clock time), so a frozen counter gives a
-// deterministic frame: `?test=1&freeze=1` holds it (src/debug/testHooks.ts), and dev builds can pin it with `?actorFrame=N`.
+// Everything is a pure function of a frame counter (the scene's tick count since SSP-043, not wall-clock time),
+// so a frozen counter gives a deterministic frame: `?test=1&freeze=1` holds it (src/debug/testHooks.ts), and dev builds can pin it with `?actorFrame=N`.
 //
 // Placement: the north street of the spike city (spikeCity.ts), between the 6- and 3-storey blocks, where no
 // building shadow falls (so both drop shadows land on lit ground) and no leaning wall or roof covers the ground

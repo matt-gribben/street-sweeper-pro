@@ -14,18 +14,19 @@
 // replaces the whole source (then `actions` is null).
 //
 // Camera: a scene that follows something (ShiftScene follows Bessie, SSP-046) calls `followCamera` from its
-// render(), with the interpolated pose, every frame; the rig then moves by that frame's render time. Until a scene
-// does, the camera stands over the origin and pans north at `drive.speedMps` (the dev panel's slider; 0
-// otherwise), which is what the M0 spike scenes see. Test mode pins speed 0 and turns the speed-zoom spring
-// off, so test frames never depend on timing; `__ssp.setCamera` pins it for good (pinCamera), and a pinned
-// camera ignores followCamera.
+// render(), with the interpolated pose and velocity, every frame; the rig then moves by that frame's render time
+// (look-ahead and speed zoom, SSP-047). Until a scene does, the camera stands over the origin and pans north at
+// `drive.speedMps` (the dev panel's slider; 0 otherwise), which is what the M0 spike scenes see. Test mode turns
+// the look-ahead and speed-zoom springs off, so test frames never depend on timing, unless `springs=1` asks for
+// the live camera (its fixed 1/60 s frames keep it deterministic); `__ssp.setCamera` pins it for good
+// (pinCamera), and a pinned camera ignores followCamera. releaseCamera puts the springs back at rest.
 
 import { Group } from 'three';
 import { TEST_RENDER_STEP_S } from '../debug/testHooks.ts';
 import { Actions } from '../input/actions.ts';
 import { browserPadSource, GamepadDevice } from '../input/gamepad.ts';
 import { KeyboardDevice } from '../input/keyboard.ts';
-import { pinCameraRig, updateCameraRig } from '../render/camera.ts';
+import { pinCameraRig, resetCameraSprings, updateCameraRig } from '../render/camera.ts';
 import { Renderer } from '../render/Renderer.ts';
 import { type AtlasName, loadAtlas, type SpriteAtlas } from '../render/spriteAtlas.ts';
 import { attachUpscaler } from '../render/upscale.ts';
@@ -49,12 +50,13 @@ export type SceneContext = {
    */
   pinCamera(x: number, y: number, h: number): void;
   /**
-   * Points the follow camera at (x, y) sim metres, its speed-zoom target taken from `speedMps` (Game.followCamera).
-   * From the first call the Game stops its own pan; call it from render() every frame, or once from enter() to
-   * place the camera before the first frame. Ignored while the camera is pinned.
+   * Points the follow camera at its subject (x, y) sim metres moving at (vx, vy) m/s (look-ahead leads along that
+   * velocity), its speed-zoom target taken from `speedMps` (Bessie's vLong) (Game.followCamera). From the first
+   * call the Game stops its own pan; call it from render() every frame, or once from enter() to place the camera
+   * before the first frame. Ignored while the camera is pinned.
    */
-  followCamera(xM: number, yM: number, speedMps: number): void;
-  /** Hands the camera back to the Game's own pan (a following scene calls it from exit()). */
+  followCamera(xM: number, yM: number, vxMps: number, vyMps: number, speedMps: number): void;
+  /** Hands the camera back to the Game's own pan, springs at rest (a following scene calls it from exit()). */
   releaseCamera(): void;
 };
 
@@ -67,18 +69,21 @@ export type TickInputSource = {
 
 /**
  * Camera and night settings: the Game's own camera pan speed (used only while no scene follows anything, i.e.
- * the M0 spike scenes; ShiftScene follows Bessie, SSP-046), the speed-zoom spring switch (also applied to the
- * follow camera) and night. The dev panel edits it in place outside test mode.
+ * the M0 spike scenes; ShiftScene follows Bessie, SSP-046), the speed-zoom and look-ahead switches (also applied
+ * to the follow camera) and night. The dev panel edits it in place outside test mode.
  */
 export type DriveSettings = {
   speedMps: number;
   zoomEnabled: boolean;
+  lookAheadEnabled: boolean;
   night: boolean;
 };
 
 export type GameOptions = {
-  /** `?test=1`: fixed 1/60 s frames, speed-zoom spring off, frames held until ready (see main.ts). */
+  /** `?test=1`: fixed 1/60 s frames, look-ahead and speed-zoom springs off, frames held until ready (main.ts). */
   readonly testMode: boolean;
+  /** `?test=1&springs=1`: keep the look-ahead and speed-zoom springs on in test mode. Ignored outside it. */
+  readonly testSprings?: boolean;
   /** Start with stepping frozen (test mode holds the loop until `ready`). */
   readonly frozen: boolean;
   /** Night on at boot (`night=1`, SSP-021). */
@@ -131,9 +136,11 @@ export class Game {
       this.actions = null;
       this.input = options.input;
     }
+    const springsOff = options.testMode && options.testSprings !== true;
     this.drive = {
       speedMps: 0,
-      zoomEnabled: options.testMode ? false : this.renderer.rig.zoomEnabled,
+      zoomEnabled: springsOff ? false : this.renderer.rig.zoomEnabled,
+      lookAheadEnabled: springsOff ? false : this.renderer.rig.lookAheadEnabled,
       night: options.night,
     };
     this.sceneContext = {
@@ -141,9 +148,10 @@ export class Game {
       root: this.root,
       loadAtlas: (name) => loadAtlas(name),
       pinCamera: (x, y, h) => this.pinCamera(x, y, h),
-      followCamera: (x, y, speedMps) => this.followCamera(x, y, speedMps),
+      followCamera: (x, y, vx, vy, speedMps) => this.followCamera(x, y, vx, vy, speedMps),
       releaseCamera: () => {
         this.cameraFollowed = false;
+        resetCameraSprings(this.renderer.rig);
       },
     };
     const scenes = this.scenes;
@@ -190,16 +198,18 @@ export class Game {
   }
 
   /**
-   * The follow camera (SceneContext.followCamera): focus (x, y) sim metres, speed-zoom target from `speedMps`,
-   * springs stepped by the current frame's render time (0 when called outside a frame, e.g. from enter()).
-   * The rig snaps to the 1/16 m texel grid and keeps the sub-pixel remainder for the blit (camera.ts).
+   * The follow camera (SceneContext.followCamera): subject (x, y) sim metres moving at (vx, vy) m/s, speed-zoom
+   * target from `speedMps`, springs stepped by the current frame's render time (0 when called outside a frame,
+   * e.g. from enter()). The rig leads the subject along its velocity, snaps to the 1/16 m texel grid and keeps the
+   * sub-pixel remainder for the blit (camera.ts).
    */
-  followCamera(xM: number, yM: number, speedMps: number): void {
+  followCamera(xM: number, yM: number, vxMps: number, vyMps: number, speedMps: number): void {
     this.cameraFollowed = true;
     if (this.cameraPinned) return;
     const rig = this.renderer.rig;
     rig.zoomEnabled = this.drive.zoomEnabled;
-    updateCameraRig(rig, xM, yM, speedMps, this.frameRenderS);
+    rig.lookAheadEnabled = this.drive.lookAheadEnabled;
+    updateCameraRig(rig, xM, yM, vxMps, vyMps, speedMps, this.frameRenderS);
   }
 
   /**
@@ -209,9 +219,12 @@ export class Game {
   private renderFrame(alpha: number, frameS: number): void {
     const renderer = this.renderer;
     if (!this.cameraPinned && !this.cameraFollowed) {
-      this.focusZ -= this.drive.speedMps * frameS;
+      // The pan is the M0 spike scenes' stand-in subject: it moves north (−y) at the slider's speed.
+      const speedMps = this.drive.speedMps;
+      this.focusZ -= speedMps * frameS;
       renderer.rig.zoomEnabled = this.drive.zoomEnabled;
-      updateCameraRig(renderer.rig, 0, this.focusZ, this.drive.speedMps, frameS);
+      renderer.rig.lookAheadEnabled = this.drive.lookAheadEnabled;
+      updateCameraRig(renderer.rig, 0, this.focusZ, 0, -speedMps, speedMps, frameS);
     }
     renderer.night = this.drive.night;
     this.frameRenderS = frameS;

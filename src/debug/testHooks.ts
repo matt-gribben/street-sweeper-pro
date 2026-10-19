@@ -11,15 +11,18 @@
 //   tick=<n>    advance n ticks synchronously after load, before `ready` turns true;
 //   freeze=1    the loop (src/app/loop.ts) keeps rendering but never steps;
 //   night=1     the palette pass applies the night remap outside the light mask, and scenes draw their light
-//               pools (SSP-021; `lean_quadrants` hangs one under each lamp post).
+//               pools (SSP-021; `lean_quadrants` hangs one under each lamp post);
+//   springs=1   keep the follow camera's look-ahead and speed-zoom springs on (SSP-047). Off by default so frames
+//               never depend on timing; with test mode's fixed 1/60 s frames (and step(n) handing the spring n/60 s
+//               of render time) the live camera is still deterministic.
 // Malformed values throw at boot: a test must never run against a silently defaulted parameter.
 //
 // `window.__ssp`:
 //   ready         true once assets are loaded and the first complete frame is rendered; specs wait for it;
 //   step(n)       advance n ticks synchronously (also while frozen), then render exactly once;
 //   state()       a JSON-safe snapshot: in a shift, the World's SimSnapshot (src/sim/snapshot.ts: tick,
-//                 bessie { x, y, heading, speed }, hp) plus the camera; in a scene without a sim, the loop's
-//                 tick count plus the camera;
+//                 bessie { x, y, heading, speed }, hp) plus the camera (focus x, y, height h, look-ahead offset
+//                 leadX, leadY, pinned); in a scene without a sim, the loop's tick count plus the camera;
 //   readFrame()   the raw W×270 palette-mapped RGBA frame, row 0 at the top (Renderer.readFrame);
 //   setCamera()   pin the render camera at (x, y) sim metres and height h metres, springs off for good;
 //   perf()        draw calls of the last rendered frame (all passes), frames rendered since boot, plus the
@@ -37,9 +40,9 @@
 // the callback's CPU time and main.ts records it, so performance.now() stays in src/app/loop.ts); they are
 // read-only observations and never feed back into what is drawn. tests/e2e/perf.spec.ts reads them (SSP-023).
 //
-// Test mode also turns off what would make frames depend on timing (main.ts, src/app/Game.ts): the speed-zoom
-// spring (and look-ahead, from M1) unless a scene opts in, wall-clock frame times (every frame is a fixed 1/60 s:
-// one tick per frame) and the dev panel. The loop also holds (frozen) until `ready`. There is no audio before
+// Test mode also turns off what would make frames depend on timing (main.ts, src/app/Game.ts): the look-ahead and
+// speed-zoom springs unless `springs=1`, wall-clock frame times (every frame is a fixed 1/60 s: one tick per
+// frame) and the dev panel. The loop also holds (frozen) until `ready`. There is no audio before
 // M5; M5's mixer must stay silent in test mode.
 
 /** Test mode: every frame lasts this long, in seconds (Game.ts gives it to the loop): one tick per frame. */
@@ -63,13 +66,19 @@ export type TestParams = {
   readonly freeze: boolean;
   /** `night=1`: night remap outside the light mask, light pools drawn (SSP-021). */
   readonly night: boolean;
+  /** `springs=1`: the follow camera's look-ahead and speed-zoom springs stay on (SSP-047). */
+  readonly springs: boolean;
 };
 
-/** Camera part of {@link TestState}: focus in sim metres, height in metres. */
+/** Camera part of {@link TestState}: focus in sim metres, height in metres, look-ahead offset in metres. */
 export type TestCamera = {
+  /** Focus (unsnapped), sim metres: the followed subject plus the look-ahead offset. */
   readonly x: number;
   readonly y: number;
   readonly h: number;
+  /** Look-ahead offset of the focus from the subject, sim metres (0 with the springs off or pinned). */
+  readonly leadX: number;
+  readonly leadY: number;
   /** True once setCamera() pinned it (springs off). */
   readonly pinned: boolean;
 };
@@ -173,7 +182,7 @@ function parseSwitch(name: string, raw: string | null): boolean {
 
 /**
  * Parses the test parameters from a `location.search` string. Returns null unless `test=1` is present (any other
- * value, or none, means test mode is off); throws on a malformed seed, scene, tick, freeze or night.
+ * value, or none, means test mode is off); throws on a malformed seed, scene, tick, freeze, night or springs.
  */
 export function readTestParams(search: string): TestParams | null {
   const query = new URLSearchParams(search);
@@ -192,6 +201,7 @@ export function readTestParams(search: string): TestParams | null {
     tick: tickRaw === null ? 0 : parseCount('tick', tickRaw, Number.MAX_SAFE_INTEGER),
     freeze: parseSwitch('freeze', query.get('freeze')),
     night: parseSwitch('night', query.get('night')),
+    springs: parseSwitch('springs', query.get('springs')),
   };
 }
 
@@ -222,7 +232,14 @@ export function installTestHooks(
     },
     state(): TestState {
       const c = host.camera();
-      const camera: TestCamera = { x: c.x, y: c.y, h: c.h, pinned: c.pinned };
+      const camera: TestCamera = {
+        x: c.x,
+        y: c.y,
+        h: c.h,
+        leadX: c.leadX + 0,
+        leadY: c.leadY + 0,
+        pinned: c.pinned,
+      };
       const sim = host.snapshot();
       if (sim !== null) return { ...sim, camera };
       return { tick: host.tick(), camera };

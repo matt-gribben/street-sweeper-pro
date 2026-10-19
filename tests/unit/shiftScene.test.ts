@@ -60,7 +60,7 @@ beforeAll(() => {
 
 /** A SceneContext over a fake renderer: records follow-camera calls and moves the rig's snapped y with them. */
 function context() {
-  const follows: [x: number, y: number, speed: number][] = [];
+  const follows: [x: number, y: number, vx: number, vy: number, speed: number][] = [];
   const loaded: AtlasName[] = [];
   const rig = { snappedZ: 0 };
   let released = 0;
@@ -76,8 +76,8 @@ function context() {
     pinCamera: () => {
       throw new Error('ShiftScene never pins the camera');
     },
-    followCamera: (x, y, speed) => {
-      follows.push([x, y, speed]);
+    followCamera: (x, y, vx, vy, speed) => {
+      follows.push([x, y, vx, vy, speed]);
       rig.snappedZ = y;
     },
     releaseCamera: () => {
@@ -149,7 +149,7 @@ async function browserLike(search: string, options: ShiftSceneOptions = {}) {
     render: () => loop.renderNow(),
     readFrame: () => new Uint8Array(4),
     pinCamera: () => {},
-    camera: () => ({ x: 0, y: 0, h: 31.5, pinned: false }),
+    camera: () => ({ x: 0, y: 0, h: 31.5, leadX: 0, leadY: 0, pinned: false }),
     drawCalls: () => 6,
     renders: () => renders,
   });
@@ -210,7 +210,7 @@ describe('ShiftScene', () => {
       hp: 100,
     });
     expect(ctx.root.children.map((g) => g.name)).toEqual(['levelCity', 'bessieSprite']);
-    expect(follows).toEqual([[level.player.x, level.player.y, 0]]);
+    expect(follows).toEqual([[level.player.x, level.player.y, 0, 0, 0]]);
     expect(shift.inputLog).toBeNull();
 
     shift.render(0);
@@ -235,6 +235,37 @@ describe('ShiftScene', () => {
       expect(x).toBeCloseTo(v.prevXM + (v.xM - v.prevXM) * alpha, 12);
       expect(y).toBeCloseTo(v.prevYM + (v.yM - v.prevYM) * alpha, 12);
     }
+  });
+
+  it("feeds the follow camera Bessie's real velocity and vLong (look-ahead and speed zoom, SSP-047)", async () => {
+    const { scene: shift, follows } = scene();
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    const input = createInputFrame();
+    input.throttle = 255;
+    for (let i = 0; i < 60; i++) shift.fixedUpdate(input);
+    input.steer = 127;
+    for (let i = 0; i < 20; i++) shift.fixedUpdate(input);
+    const v = shift.worldView?.vehicle;
+    if (v === undefined) throw new Error('no world');
+    expect(v.vLongMps).toBeGreaterThan(1);
+    expect(v.headingRad).toBeGreaterThan(0.05);
+    shift.render(1);
+    const [x, y, vx, vy, speed] = follows[follows.length - 1] ?? [];
+    expect(x).toBe(v.xM);
+    expect(y).toBe(v.yM);
+    // Ground velocity = forward·vLong + right·vLat at the drawn heading (0 = north, clockwise).
+    const s = Math.sin(v.headingRad);
+    const c = Math.cos(v.headingRad);
+    expect(vx).toBeCloseTo(s * v.vLongMps + c * v.vLatMps, 12);
+    expect(vy).toBeCloseTo(-c * v.vLongMps + s * v.vLatMps, 12);
+    // Heading north-east-ish: east (+x) and north (−y) components.
+    expect(vx).toBeGreaterThan(0);
+    expect(vy).toBeLessThan(0);
+    expect(speed).toBe(v.vLongMps);
+    // The scene never writes the World: rendering again changes nothing in the snapshot.
+    const before = shift.snapshot();
+    shift.render(0.5);
+    expect(shift.snapshot()).toEqual(before);
   });
 
   it('draws the brush overlay once the brush is down', async () => {

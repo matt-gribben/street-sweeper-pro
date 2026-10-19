@@ -18,7 +18,8 @@
 // cell's `collide` value.
 //
 // Beyond the map the ground continues as an asphalt skirt (`tile.asphalt:v:-:0` repeated) so a camera at the map
-// edge never shows the clear colour; SSP-047 decides how far the camera may go.
+// edge never shows the clear colour. The camera is not clamped to the map (SSP-047): its focus stays within the
+// 3.0 m look-ahead of Bessie, who stays in the map, and the skirt reaches far past the widest view.
 //
 // Render-only: reads the decoded Level and never writes it.
 import type { FrameId } from '../gen/assets.ts';

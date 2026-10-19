@@ -72,8 +72,9 @@ test('the frozen shift frame is deterministic, within the draw-call budget, with
     tick: 0,
     bessie: { x: DEPOT_START.x, y: DEPOT_START.y, heading: DEPOT_START.heading, speed: 0 },
     hp: 100,
-    // The follow camera stands over Bessie at the sweep height (no look-ahead or zoom until SSP-047).
-    camera: { x: DEPOT_START.x, y: DEPOT_START.y, h: 31.5, pinned: false },
+    // The follow camera stands over Bessie at the sweep height: test mode turns the look-ahead and zoom springs
+    // off (no `springs=1`), and she is parked anyway.
+    camera: { x: DEPOT_START.x, y: DEPOT_START.y, h: 31.5, leadX: 0, leadY: 0, pinned: false },
   });
   await saveCapture(testInfo, 'shift_start.png', first);
 

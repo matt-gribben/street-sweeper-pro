@@ -382,7 +382,7 @@ The sim store of every litter item (`src/sim/litter.ts`). It is a struct-of-arra
 A cosmetic paint scheme for Bessie, applied by [ramp swap](#ramp-swap): `upg.livery_council` (Council Yellow, the default), `upg.livery_racing_green` (£150), `upg.livery_seaside` (£150) and `upg.livery_midnight_gold` (unlocked by all 7 Golden Crisps).
 
 ### Look-ahead
-The camera leads Bessie by up to **3.0 m** along her velocity on a damped spring, so the player sees more road ahead the faster they go.
+The camera leads Bessie by up to **3.0 m** along her velocity on a damped spring, so the player sees more road ahead the faster they go (velocity × 0.75 s, capped at 3.0 m: the full lead from 4.0 m/s; `src/render/camera.ts`).
 
 ### Lost Property
 See [Collectible](#collectible-collect).

@@ -9,14 +9,17 @@
 //                       and Bessie's sprites and places the follow camera over her start pose;
 //   fixedUpdate(input)  world.step(input): one tick of the canonical tick order (§5.2);
 //   render(alpha)       lerps Bessie's pose between the last two ticks (shortest arc for the heading), points the
-//                       follow camera at it and poses her sprites. It reads the World, never writes it.
+//                       follow camera at it with her velocity and speed and poses her sprites. It reads the World,
+//                       never writes it.
 //
 // Draw calls: city (1) + building shadows (1) + Bessie's drop shadow (1) + actors batch (1), then the palette
 // pass and the blit: 6 of the 10 budgeted (§12.7).
 //
-// The camera follows Bessie's interpolated body centre at the sweep height, snapped to the 1/16 m texel grid with
-// the remainder carried by the sub-pixel blit (M0's camera rig). Look-ahead and speed zoom from her real speed
-// are SSP-047, so this scene passes speed 0 and the zoom target stays 31.5 m.
+// The camera (SSP-047, src/render/camera.ts) follows Bessie's interpolated body centre, leads it by up to 3.0 m
+// along her velocity (forward·vLong + right·vLat at the drawn heading) and takes its speed-zoom height from her
+// vLong (31.5 m up to 6.0 m/s, 37.8 m from 11.0 m/s), snapped to the 1/16 m texel grid with the remainder carried
+// by the sub-pixel blit. The velocity and speed are the World's latest tick values: the springs smooth them, so
+// they need no interpolation.
 //
 // Dev builds (`recordInputs`) attach a full-shift input log to the World's phase-1 replay hook (SSP-038), so the
 // dev panel can save the shift as a replay (SSP-048). M1's drive-only shift never ends: once the log is full
@@ -27,12 +30,12 @@
 // remembers whether any recorded tick ran on a tuning that differs from tuning.json (`logMatchesCommittedTuning`);
 // the dev panel's Save replay refuses (or asks twice) when it does.
 //
-// No HUD, timer or shift end (M2), no look-ahead or zoom (SSP-047), no audio (M5).
+// No HUD, timer or shift end (M2), no audio (M5).
 import type { SceneContext } from '../app/Game.ts';
 import { type LevelSource, loadLevel } from '../app/levelLoader.ts';
 import type { Scene, SceneParams } from '../app/SceneManager.ts';
 import { type BessieSprite, createBessieSprite } from '../render/bessieSprite.ts';
-import { createPose, interpolatePose } from '../render/interpolate.ts';
+import { bodyVelocity, createPose, createVelocity, interpolatePose } from '../render/interpolate.ts';
 import { createLevelCity, type LevelCity } from '../render/levelCity.ts';
 import type { SpriteAtlas } from '../render/spriteAtlas.ts';
 import type { ReadonlyEventQueue } from '../sim/eventQueue.ts';
@@ -45,9 +48,6 @@ import { createWorld, setWorldTuning, viewWorld, type World, type WorldView } fr
 
 /** The district `npm run dev` boots into in M1. */
 export const DEFAULT_DISTRICT = 'district.puddle_lane';
-
-/** The speed the follow camera's zoom target gets until SSP-047 feeds Bessie's real speed: 0, i.e. 31.5 m. */
-const M1_CAMERA_SPEED_MPS = 0;
 
 export type ShiftSceneOptions = {
   /** Fetches the compiled level JSON (default: the browser's fetch, levelLoader.ts). Tests inject a file reader. */
@@ -89,6 +89,8 @@ export class ShiftScene implements Scene {
   private districtId: string | null = null;
   /** The pose drawn this frame, reused every frame. */
   private readonly pose = createPose();
+  /** Bessie's ground velocity this frame (the camera's look-ahead direction), reused every frame. */
+  private readonly velocity = createVelocity();
   private frames = 0;
 
   constructor(context: SceneContext, options: ShiftSceneOptions = {}) {
@@ -213,8 +215,10 @@ export class ShiftScene implements Scene {
     this.atlases = atlases;
     this.districtId = district;
     this.context.root.add(city.group, bessie.group);
-    // Place the camera over Bessie before the first frame (no render time passes).
-    this.context.followCamera(sim.vehicle.xM, sim.vehicle.yM, M1_CAMERA_SPEED_MPS);
+    // Place the camera over Bessie before the first frame (no render time passes, so no spring moves).
+    const v = sim.vehicle;
+    bodyVelocity(v.headingRad, v.vLongMps, v.vLatMps, this.velocity);
+    this.context.followCamera(v.xM, v.yM, this.velocity.xMps, this.velocity.yMps, v.vLongMps);
   }
 
   /** The World, the level city and Bessie's sprites; releases whatever it built if a later step throws. */
@@ -261,7 +265,9 @@ export class ShiftScene implements Scene {
     const v = world.vehicle;
     const pose = this.pose;
     interpolatePose(v, alpha, pose);
-    this.context.followCamera(pose.xM, pose.yM, M1_CAMERA_SPEED_MPS);
+    const velocity = this.velocity;
+    bodyVelocity(pose.headingRad, v.vLongMps, v.vLatMps, velocity);
+    this.context.followCamera(pose.xM, pose.yM, velocity.xMps, velocity.yMps, v.vLongMps);
     bessie.update(pose, v.hp, v.brushDown, this.context.renderer.rig.snappedZ);
     this.frames += 1;
   }

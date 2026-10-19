@@ -15,7 +15,7 @@ import {
 /** A host that records calls: a tick counter, a camera and a 2x1 "frame" holding the tick. */
 function fakeHost(snapshot: TestHookHost['snapshot'] = () => null): TestHookHost & { calls: string[] } {
   let tick = 0;
-  let camera: TestCamera = { x: 0, y: 0, h: 31.5, pinned: false };
+  let camera: TestCamera = { x: 0, y: 0, h: 31.5, leadX: 0, leadY: 0, pinned: false };
   const calls: string[] = [];
   return {
     calls,
@@ -30,7 +30,7 @@ function fakeHost(snapshot: TestHookHost['snapshot'] = () => null): TestHookHost
     readFrame: () => new Uint8Array([tick, 0, 0, 255, tick, 0, 0, 255]),
     pinCamera: (x, y, h) => {
       calls.push(`pin ${x} ${y} ${h}`);
-      camera = { x, y, h, pinned: true };
+      camera = { x, y, h, leadX: 0, leadY: 0, pinned: true };
     },
     camera: () => camera,
     drawCalls: () => 6,
@@ -55,18 +55,23 @@ describe('readTestParams', () => {
       tick: 0,
       freeze: false,
       night: false,
+      springs: false,
     });
   });
 
-  it('parses seed, scene, tick, freeze and night', () => {
-    expect(readTestParams('?test=1&seed=1&scene=lean_quadrants&tick=120&freeze=1&night=1')).toEqual({
-      seed: 1,
-      scene: 'lean_quadrants',
-      tick: 120,
-      freeze: true,
-      night: true,
-    });
+  it('parses seed, scene, tick, freeze, night and springs', () => {
+    expect(readTestParams('?test=1&seed=1&scene=lean_quadrants&tick=120&freeze=1&night=1&springs=1')).toEqual(
+      {
+        seed: 1,
+        scene: 'lean_quadrants',
+        tick: 120,
+        freeze: true,
+        night: true,
+        springs: true,
+      },
+    );
     expect(readTestParams('?test=1&night=0')?.night).toBe(false);
+    expect(readTestParams('?test=1&springs=0')?.springs).toBe(false);
     expect(readTestParams('test=1&freeze=0&scene=scale_1440')).toMatchObject({
       scene: 'scale_1440',
       freeze: false,
@@ -85,6 +90,7 @@ describe('readTestParams', () => {
     ['freeze=yes', '?test=1&freeze=yes'],
     ['night=true', '?test=1&night=true'],
     ['an empty night', '?test=1&night='],
+    ['springs=on', '?test=1&springs=on'],
     ['a scene with a slash', '?test=1&scene=../zoo'],
     ['an upper-case scene', '?test=1&scene=Zoo'],
     ['an empty scene', '?test=1&scene='],
@@ -121,6 +127,7 @@ describe('installTestHooks with test=1', () => {
       tick: 0,
       freeze: true,
       night: false,
+      springs: false,
     });
     expect(target.__ssp).toBe(hooks?.api);
     const api = target.__ssp;
@@ -153,7 +160,7 @@ describe('installTestHooks with test=1', () => {
     installTestHooks(target, '?test=1&freeze=1', host);
     expect(target.__ssp?.state()).toEqual({
       tick: 0,
-      camera: { x: 0, y: 0, h: 31.5, pinned: false },
+      camera: { x: 0, y: 0, h: 31.5, leadX: 0, leadY: 0, pinned: false },
     });
     target.__ssp?.step(120);
     expect(host.calls).toEqual(['advance 120', 'render']);
@@ -188,7 +195,7 @@ describe('installTestHooks with test=1', () => {
       tick: 600,
       bessie: { x: 7, y: 83, heading: 0, speed: 0.5 },
       hp: 100,
-      camera: { x: 0, y: 0, h: 31.5, pinned: false },
+      camera: { x: 0, y: 0, h: 31.5, leadX: 0, leadY: 0, pinned: false },
     });
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });
@@ -221,7 +228,7 @@ describe('installTestHooks with test=1', () => {
     installTestHooks(target, '?test=1', host);
     target.__ssp?.setCamera(5, -3, 31.5);
     expect(host.calls).toEqual(['pin 5 -3 31.5', 'render']);
-    expect(target.__ssp?.state().camera).toEqual({ x: 5, y: -3, h: 31.5, pinned: true });
+    expect(target.__ssp?.state().camera).toEqual({ x: 5, y: -3, h: 31.5, leadX: 0, leadY: 0, pinned: true });
   });
 
   it('readFrame() returns the host frame', () => {

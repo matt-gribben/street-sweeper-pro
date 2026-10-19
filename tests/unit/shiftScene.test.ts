@@ -24,6 +24,7 @@ import { GamepadDevice } from '../../src/input/gamepad.ts';
 import { KeyboardDevice } from '../../src/input/keyboard.ts';
 import { createDirtyRect, mergeDirtyRect, type TextureRegionUploader } from '../../src/render/groundLayer.ts';
 import type { Renderer } from '../../src/render/Renderer.ts';
+import { FX_PUDDLE, FxPuddleScene } from '../../src/scenes/FxPuddleScene.ts';
 import {
   DEFAULT_DISTRICT,
   districtLevelName,
@@ -31,6 +32,7 @@ import {
   type ShiftSceneOptions,
 } from '../../src/scenes/ShiftScene.ts';
 import { DEG_TO_RAD, DT_S, SHIFT_TICKS } from '../../src/sim/constants.ts';
+import { EV } from '../../src/sim/eventQueue.ts';
 import { createInputFrame, PRESSED } from '../../src/sim/inputFrame.ts';
 import { decodeLevel, type Level } from '../../src/sim/map.ts';
 import { loadReplay, readInput, runReplay } from '../../src/sim/replay.ts';
@@ -245,7 +247,7 @@ describe('ShiftScene', () => {
       litter: { spawned: 130, collected: 0 },
       grime: { initial: 9000, cleaned: 0 },
     });
-    expect(ctx.root.children.map((g) => g.name)).toEqual(['levelCity', 'bessieSprite', 'items']);
+    expect(ctx.root.children.map((g) => g.name)).toEqual(['levelCity', 'bessieSprite', 'items', 'fx']);
     expect(follows).toEqual([[level.player.x, level.player.y, 0, 0, 0]]);
     expect(shift.inputLog).toBeNull();
 
@@ -782,5 +784,79 @@ describe('__ssp hooks bound to the ShiftScene', () => {
     expect(state.tick).toBe(120);
     expect(state.bessie.speed).toBe(0);
     expect(state.bessie.y).toBe(level.player.y);
+  });
+});
+
+describe('ShiftScene fx (SSP-102)', () => {
+  /** Steps `shift` once with `input` and drains its tick into the scene's bus, as the loop does after each tick. */
+  function tick(shift: ShiftScene, ctx: SceneContext, input = createInputFrame()): void {
+    shift.fixedUpdate(input);
+    const events = shift.simEvents;
+    if (events !== null) ctx.events.drain(events);
+  }
+
+  it('adds the fx draw to the world pass, draws nothing while no effect runs, and releases it on exit', async () => {
+    const { scene: shift, ctx } = scene();
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    const fx = shift.fxParticles;
+    if (fx === null) throw new Error('no fx');
+    expect(ctx.root.children).toContain(fx.mesh);
+    for (let i = 0; i < 30; i++) tick(shift, ctx);
+    shift.render(0.5);
+    expect(fx.spawned).toBe(0);
+    expect(fx.mesh.count).toBe(0);
+    shift.exit();
+    expect(shift.fxParticles).toBeNull();
+    expect(ctx.root.children).not.toContain(fx.mesh);
+  });
+
+  it('fx_puddle: a fast crossing of the placed puddle splashes, and no droplet is ever in front of Bessie', async () => {
+    const c = context();
+    const shift = new FxPuddleScene(c.ctx, checkoutLevels);
+    await shift.enter({ seed: 1 });
+    expect(shift.district).toBe(DEFAULT_DISTRICT);
+    const world = shift.worldView;
+    if (world === null) throw new Error('no world');
+    const fx = shift.fxParticles;
+    if (fx === null) throw new Error('no fx');
+    const splashes: { tick: number; x: number; y: number; speedMps: number }[] = [];
+    c.ctx.events.on(EV.Splash, (e) => splashes.push({ tick: e.tick, x: e.x, y: e.y, speedMps: e.speedMps }));
+    const input = createInputFrame();
+    input.throttle = 255;
+    for (let i = 0; i < 400 && splashes.length === 0; i++) tick(shift, c.ctx, input);
+    expect(splashes).toHaveLength(1);
+    const splash = splashes[0];
+    if (splash === undefined) throw new Error('no splash');
+    expect([splash.x, splash.y]).toEqual([FX_PUDDLE.x, FX_PUDDLE.y]);
+    expect(splash.speedMps).toBeGreaterThan(3);
+    expect(fx.spawned).toBeGreaterThanOrEqual(10);
+    // Keep driving north and look at every frame until the last droplet has gone: none ahead of her front bumper.
+    const halfLength = DEFAULT_TUNING.vehicle.sweeper.body.lengthM / 2;
+    let framesWithDroplets = 0;
+    for (let i = 0; i < 40; i++) {
+      for (const alpha of [0, 0.5]) {
+        shift.render(alpha);
+        const v = world.vehicle;
+        const x = v.prevXM + (v.xM - v.prevXM) * alpha;
+        const y = v.prevYM + (v.yM - v.prevYM) * alpha;
+        const fwdX = Math.sin(v.headingRad);
+        const fwdY = -Math.cos(v.headingRad);
+        const data = fx.instanceData;
+        if (fx.drawn > 0) framesWithDroplets++;
+        for (let k = 0; k < fx.drawn; k++) {
+          const px = data[k * 4] as number;
+          const py = data[k * 4 + 1] as number;
+          const ahead = (px - x) * fwdX + (py - y) * fwdY;
+          expect(ahead, `droplet ${k} on frame ${i}`).toBeLessThan(halfLength);
+          // Around the puddle: within 3 m of its centre.
+          expect(Math.hypot(px - splash.x, py - splash.y)).toBeLessThan(3);
+        }
+      }
+      tick(shift, c.ctx, input);
+    }
+    expect(framesWithDroplets).toBeGreaterThan(10);
+    expect(fx.drawn).toBe(0);
+    expect(fx.mesh.count).toBe(0);
+    shift.exit();
   });
 });

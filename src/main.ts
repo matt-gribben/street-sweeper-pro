@@ -12,6 +12,7 @@ import { installTestHooks, readTestParams } from './debug/testHooks.ts';
 import { NO_MENU_INPUT } from './input/actions.ts';
 import { lutBuildCount } from './render/palettePass.ts';
 import { BootScene, bootRoute, type TestSceneId } from './scenes/BootScene.ts';
+import { FxPuddleScene } from './scenes/FxPuddleScene.ts';
 import { HudSampleScene } from './scenes/HudSampleScene.ts';
 import { LevelPreviewScene } from './scenes/LevelPreviewScene.ts';
 import { PanelSampleScene } from './scenes/PanelSampleScene.ts';
@@ -81,7 +82,8 @@ const game = new Game(canvas, {
 // flow straight into that district's shift, the intro card skipped; it still ends on the tally); `level_preview`
 // (compiled Puddle Lane from a pinned camera, SSP-045), `text_sample` (bitmap text over a shadowed street,
 // SSP-069), `panel_sample` (9-slice panels and button states, SSP-285), `hud_sample` (the HUD at its widest,
-// SSP-070), `zoo` (the test-only asset zoo, SSP-298, with `page=<n>` and `asset=<id>`), `spike_city` or a spike
+// SSP-070), `zoo` (the test-only asset zoo, SSP-298, with `page=<n>` and `asset=<id>`), `fx_puddle` (a Puddle Lane
+// shift with one puddle placed on Mangle Street, for the splash fx, SSP-102), `spike_city` or a spike
 // test scene. An unknown ID throws at once, before the boot; so does `tally`,
 // which needs a finished shift (boot the flow and step to the end). Dev builds keep the M0 spike city for the spike
 // scripts: `?world=spike_city`, `?world=palette_test` (the SSP-016 palette test world for
@@ -145,6 +147,9 @@ function testScene(id: TestSceneId | SpikeTestSceneId): Scene {
     case 'zoo':
       // The test-only asset zoo (SSP-298): reachable only here, from `?test=1&scene=zoo`.
       return new ZooScene(context, { page: testParams?.page ?? 0, asset: testParams?.asset ?? null });
+    case 'fx_puddle':
+      // The splash fx's test shift (SSP-102): Puddle Lane with one puddle placed on Mangle Street.
+      return new FxPuddleScene(context);
     case 'lean_quadrants':
     case 'scale_1440':
     case 'scale_sheet':

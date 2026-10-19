@@ -779,7 +779,7 @@ A frontage is the scoring segment in front of one house or shop.
 
 - Generated for every building edge that faces pavement or a precinct, when the building's `use` is `house`, `shop`, `pub`, `takeaway`, `civic` or `unit`.
 - A facade run is split into segments of `frontageWidth` tiles: house 3, shop 4, pub or takeaway 5, unit 6, civic 8 *(initial)*. A leftover of less than half a width merges into the last segment; otherwise it becomes its own frontage.
-- **Frontage zone** = the pavement tiles in front of the segment (up to 3 tiles deep) plus the first road tile beyond the kerb (the gutter). Its clean % uses the Tidy % formula restricted to the zone.
+- **Frontage zone** = the pavement tiles in front of the segment (up to 3 tiles deep) plus the first road tile beyond the kerb (the gutter). Its clean % uses the Tidy % formula restricted to the zone: the grime cells laid on its tiles and the litter that spawned on them (zones may share tiles; the attribution and empty-zone rules are [GDD §9.3](GDD.md#93-frontages-and-pledges), decided in SSP-064).
 - **Frontage ID** = `fr_<x>_<y>`, from the north-west-most pavement tile of its zone. IDs are stable as long as the building edge does not move, which is what lets `pledges` and the Inspector's route refer to them.
 - **Pledges** (8–20 per district) are listed by frontage ID. Spread them so that no single street holds more than a third of the district's pledges, and put at least two where they compete with something else (a market pitch, a chalk spot, the Inspector's route).
 

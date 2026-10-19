@@ -336,10 +336,15 @@ const STARS_SPEC = {
   star3MinTidy: 'fraction',
 } as const satisfies GroupSpec;
 
-/** GDD §9.2: Tidy % = grimeWeight × grime cleaned share + litterWeight × litter collected share. */
+/**
+ * GDD §9.2: Tidy % = grimeWeight × grime cleaned share + litterWeight × litter collected share. GDD §9.3: a
+ * frontage at frontageGoodMinClean (90%) or above is good: a pledge pays its tip, the Mercury map shows it
+ * green and the Inspector passes it (SSP-064).
+ */
 const TIDY_SPEC = {
   grimeWeight: 'unit',
   litterWeight: 'unit',
+  frontageGoodMinClean: 'fraction',
 } as const satisfies GroupSpec;
 
 // ---------------------------------------------------------------------------------------------------------

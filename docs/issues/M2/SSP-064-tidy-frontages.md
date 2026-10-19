@@ -2,7 +2,7 @@
 id: SSP-064
 title: "Compute Tidy %, per-frontage clean % and Clean Sweep bonuses incrementally"
 milestone: M2
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:gameplay, area:test, size:M, vertical-slice]
@@ -42,12 +42,12 @@ Expose `tidy`, `frontageClean[i]`, `stars` read-only for UI and `__ssp.state()`.
 
 ## Acceptance criteria
 
-- [ ] Unit test: with 9,000 initial cells, 4,500 cleaned, 130 spawned and 65 collected, Tidy % = 0.5
-- [ ] Fixture tests for per-frontage clean % match hand-computed values
-- [ ] A frontage that reaches 100% awards +100 exactly once even if more litter later spawns in it
-- [ ] Property tests: Tidy % stays in [0, 1] and never decreases across ticks with no spawns and no new grime
-- [ ] Stars helper returns 0/1/2/3 at 0.599/0.60/0.80/0.92
-- [ ] Attribution and empty-zone rules are documented in GDD §9.3
+- [x] Unit test: with 9,000 initial cells, 4,500 cleaned, 130 spawned and 65 collected, Tidy % = 0.5
+- [x] Fixture tests for per-frontage clean % match hand-computed values
+- [x] A frontage that reaches 100% awards +100 exactly once even if more litter later spawns in it
+- [x] Property tests: Tidy % stays in [0, 1] and never decreases across ticks with no spawns and no new grime
+- [x] Stars helper returns 0/1/2/3 at 0.599/0.60/0.80/0.92
+- [x] Attribution and empty-zone rules are documented in GDD §9.3
 
 ## Verification
 

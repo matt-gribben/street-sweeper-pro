@@ -39,6 +39,10 @@
 // changed, empty (max < min) when none did; render/groundLayer.ts merges the rects of a frame's ticks and
 // uploads that sub-rectangle (SSP-066). After initGrime it covers the whole mask until the next stepDirt.
 //
+// Frontage counters (SSP-064). When tidy.ts has attached a ZoneTally (attachDirtZones), every erased cell also
+// bumps grimeCleaned for each frontage zone holding its tile (zoneTally.ts), so per-frontage clean % is as
+// incremental as the global counters.
+//
 // Determinism: the selection sorts integer keys, the erase visits cells in row-major order and every branch
 // compares quantised or exactly representable values except the inside tests, which use the same IEEE
 // arithmetic on every V8. The mask and counters join the replay hash with SSP-065.
@@ -52,6 +56,7 @@ import { cos, sin } from './fmath.ts';
 import { COLLIDE, GRIME_CELL, GUTTER_CELLS_PER_TILE, type Level } from './map.ts';
 import { createStream, nextFloat } from './rng.ts';
 import type { Tuning } from './tuning.ts';
+import { tallyGrimeCleaned, type ZoneTally } from './zoneTally.ts';
 
 /** Mask bit 7: the cell holds gutter grime (2 pts, cleared only by a gutter brush hugging a kerb). */
 export const GRIME_GUTTER_BIT = 0x80;
@@ -130,6 +135,8 @@ export type Dirt = {
   dirtyMinY: number;
   dirtyMaxX: number;
   dirtyMaxY: number;
+  /** The frontage zones whose grimeCleaned an erased cell bumps (tidy.ts, SSP-064), or null. */
+  zones: ZoneTally | null;
   /** Per-tick scratch: the pose and the heading's cos and sin. */
   poseX: number;
   poseY: number;
@@ -218,6 +225,7 @@ export function createDirt(level: Level, tuning: Tuning): Dirt {
     dirtyMinY: maskH,
     dirtyMaxX: -1,
     dirtyMaxY: -1,
+    zones: null,
     // Fractional values first so the fields start as doubles (TECHNICAL_DESIGN §17, deprecated maps).
     poseX: 0.5,
     poseY: 0.5,
@@ -236,6 +244,17 @@ export function viewDirt(dirt: Dirt): DirtView {
 /** Hand the Dirt a new tuning between ticks (the dev panel's live tuning; SSP-065 calls it from setWorldTuning). */
 export function setDirtTuning(dirt: Dirt, tuning: Tuning): void {
   applyTuning(dirt, tuning);
+}
+
+/**
+ * Attach the frontage zone tally (tidy.ts initTidy, SSP-064): from now on each erased cell bumps the
+ * grimeCleaned counter of every zone holding its tile. Null detaches. Throws when the map sizes differ.
+ */
+export function attachDirtZones(dirt: Dirt, zones: ZoneTally | null): void {
+  if (zones !== null && (zones.tilesW !== dirt.tilesW || zones.tilesH !== dirt.tilesH)) {
+    throw new Error('attachDirtZones: the zone tally does not match the Dirt map size');
+  }
+  dirt.zones = zones;
 }
 
 /** True when this tick's dirty rectangle is non-empty. */
@@ -535,6 +554,8 @@ export function stepDirt(dirt: Dirt, pose: DirtPose, collecting: boolean): void 
   if (cy1 > maskH - 1) cy1 = maskH - 1;
 
   const mask = dirt.mask;
+  const zones = dirt.zones;
+  const tilesW = dirt.tilesW;
   let cleaned = 0;
   let cleanedGutter = 0;
   let dMinX = maskW;
@@ -564,6 +585,12 @@ export function stepDirt(dirt: Dirt, pose: DirtPose, collecting: boolean): void 
       if (!clear) continue;
       mask[i] = 0;
       cleaned += 1;
+      if (zones !== null) {
+        tallyGrimeCleaned(
+          zones,
+          ((cy / GUTTER_CELLS_PER_TILE) | 0) * tilesW + ((cx / GUTTER_CELLS_PER_TILE) | 0),
+        );
+      }
       if (cx < dMinX) dMinX = cx;
       if (cx > dMaxX) dMaxX = cx;
       if (cy < dMinY) dMinY = cy;

@@ -26,7 +26,10 @@
 //
 // Counters. litterSpawned counts every item ever added this shift (initial and dynamic) and litterCollected
 // every item the brush collected; together they are Tidy %'s litter share (TECHNICAL_DESIGN §10.3). Render,
-// audio and UI read them through LitterFieldView.
+// audio and UI read them through LitterFieldView. Every item also carries `spawnTile`, the map tile it was added
+// on (−1 off the map), which never changes as it moves: a frontage counts an item by where it spawned, wherever
+// it is collected (GDD §9.3, decided in SSP-064). When tidy.ts has attached a ZoneTally (attachLitterZones),
+// addLitter and collectLitter bump the spawned / collected counters of the frontage zones holding that tile.
 //
 // Hot path: stepLitter, beginLitterTick, queryLitter, updateLitterCell, flingLitter, collectLitter and
 // removeLitter allocate nothing (§17): no `new`, literals, closures or map/filter. They take objects and small
@@ -41,6 +44,7 @@ import { cos, sin, sqrt } from './fmath.ts';
 import { type Level, LITTER_CELL_M, LITTER_CELLS_PER_TILE } from './map.ts';
 import { createStream, NEXT_INT_MAX, nextFloat, nextInt, nextRange, nextU32, type Sfc32 } from './rng.ts';
 import type { SweepingTuning } from './tuning.ts';
+import { tallyLitterCollected, tallyLitterSpawned, type ZoneTally } from './zoneTally.ts';
 
 /** Litter store capacity (TECHNICAL_DESIGN §7.1, §17). */
 export const LITTER_CAPACITY = 2000;
@@ -129,6 +133,13 @@ export type LitterField = {
   readonly driftTicks: Int32Array;
   /** Sprite rotation 0..3 (h00, h08, h16, h24). */
   readonly rot: Uint8Array;
+  /** The map tile (row · tilesW + col) the item was added on, or −1 off the map. Fixed for its life. */
+  readonly spawnTile: Int32Array;
+  /** Map size in tiles (for spawnTile). */
+  readonly tilesW: number;
+  readonly tilesH: number;
+  /** The frontage zones whose litter counters addLitter and collectLitter bump (tidy.ts, SSP-064), or null. */
+  zones: ZoneTally | null;
   /** Spatial-hash columns and rows (4 m cells over the level). */
   readonly hashCols: number;
   readonly hashRows: number;
@@ -169,6 +180,7 @@ export type LitterFieldView = {
   readonly arcDur: Float64Array;
   readonly driftTicks: Int32Array;
   readonly rot: Uint8Array;
+  readonly spawnTile: Int32Array;
   readonly hashCols: number;
   readonly hashRows: number;
   readonly cellHead: Int32Array;
@@ -242,6 +254,10 @@ export function createLitterField(
     arcY1: f64(),
     driftTicks: new Int32Array(capacity),
     rot: new Uint8Array(capacity),
+    spawnTile: new Int32Array(capacity).fill(-1),
+    tilesW: level.size[0],
+    tilesH: level.size[1],
+    zones: null,
     hashCols,
     hashRows,
     cellHead: new Int32Array(hashCols * hashRows).fill(-1),
@@ -267,6 +283,19 @@ export function clearLitterField(field: LitterField): void {
   field.cellNext.fill(-1);
   field.cellPrev.fill(-1);
   field.cellOf.fill(-1);
+  field.spawnTile.fill(-1);
+}
+
+/**
+ * Attach the frontage zone tally (tidy.ts initTidy, SSP-064): from now on addLitter and collectLitter bump the
+ * litterSpawned / litterCollected counters of every zone holding the item's spawnTile. Null detaches. Throws
+ * when the map sizes differ.
+ */
+export function attachLitterZones(field: LitterField, zones: ZoneTally | null): void {
+  if (zones !== null && (zones.tilesW !== field.tilesW || zones.tilesH !== field.tilesH)) {
+    throw new Error('attachLitterZones: the zone tally does not match the LitterField map size');
+  }
+  field.zones = zones;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -426,8 +455,14 @@ export function addLitter(field: LitterField, kind: number, xM: number, yM: numb
   field.arcY1[i] = yM;
   field.driftTicks[i] = 0;
   field.rot[i] = rot;
+  const col = Math.floor(xM / TILE_M);
+  const row = Math.floor(yM / TILE_M);
+  const tile =
+    col >= 0 && row >= 0 && col < field.tilesW && row < field.tilesH ? row * field.tilesW + col : -1;
+  field.spawnTile[i] = tile;
   linkCell(field, i, litterCellIndex(field, i));
   field.litterSpawned += 1;
+  if (field.zones !== null) tallyLitterSpawned(field.zones, tile);
   return i;
 }
 
@@ -449,6 +484,7 @@ function copySlot(field: LitterField, from: number, to: number): void {
   field.arcY1[to] = field.arcY1[from] as number;
   field.driftTicks[to] = field.driftTicks[from] as number;
   field.rot[to] = field.rot[from] as number;
+  field.spawnTile[to] = field.spawnTile[from] as number;
 }
 
 /**
@@ -476,6 +512,7 @@ export function removeLitter(field: LitterField, i: number): void {
   field.cellPrev[last] = -1;
   field.cellNext[last] = -1;
   field.cellOf[last] = -1;
+  field.spawnTile[last] = -1;
   field.count = last;
 }
 
@@ -490,8 +527,10 @@ export function isLitterCollectable(field: LitterField, i: number): boolean {
  */
 export function collectLitter(field: LitterField, i: number): boolean {
   if (!isLitterCollectable(field, i)) return false;
+  const tile = field.spawnTile[i] as number;
   removeLitter(field, i);
   field.litterCollected += 1;
+  if (field.zones !== null) tallyLitterCollected(field.zones, tile);
   return true;
 }
 

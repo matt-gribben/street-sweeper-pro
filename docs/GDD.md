@@ -502,6 +502,7 @@ Initial grime layout and density are authored per district (see [LEVEL_DESIGN.md
 - `litter.spilled_shopping` (dropped by pedestrians you knocked over) counts toward litter spawned but scores 0 points: you are cleaning up your own mess.
 - Litter stolen by a seagull or Spotless Sid is removed from both counts (it was taken off the street), and a "Pinched by Sid/gulls" count shows on the Mercury (proposed, M6; [ENTITY_CATALOG](ENTITY_CATALOG.md) Q6).
 - Tidy % alone decides stars (§12.1). Score is for personal bests.
+- *Edge cases (decided in SSP-064):* a share with nothing in it (no grime laid, or no litter spawned) is left out and the other share takes the whole weight; with neither, Tidy % is 100%. Tidy % and every frontage's clean % are rounded to the nearest millionth before any threshold is compared, so a value that is mathematically on a star boundary (0.6 × 100% + 0.4 × 50% = 80%) is on it. Tidy % never falls on a tick in which no litter spawns (nothing adds grime mid-shift).
 
 ### 9.3 Frontages and pledges
 
@@ -510,14 +511,21 @@ Initial grime layout and density are authored per district (see [LEVEL_DESIGN.md
 - **Pledge frontages** (`site.pledge_frontage`, a green rosette on the door, 8–20 per district) are residents who signed the Tidy Pledge. Each pledge at **≥ 90%** at the end of the shift pays a **£10 tip**.
 - The Mercury tally map shows every frontage green (≥ 90%) or red (< 90%) (proposed threshold for non-pledge colouring, matching the pledge and Inspector thresholds).
 - On Sunday the Inspector deducts −100 for each frontage he passes that is below 90% clean.
+- The 90% threshold (pledge tip, green on the map, the Inspector) is `tuning.json` → `tidy.frontageGoodMinClean` (0.9, SSP-064).
 
-Pledges are the main routing puzzle in each district: they tell the player *where* thoroughness pays.
+**Decided in SSP-064** (`src/sim/tidy.ts`, `src/sim/zoneTally.ts`; [TECHNICAL_DESIGN §10.3](TECHNICAL_DESIGN.md#103-grime-mask-srcsimdirtts)):
+
+- **Litter that moves (open question 1).** Every litter item is tagged with the tile it **spawned** on, and counts for the frontage zone(s) holding that tile, wherever it is later collected. A crisp packet flung out of a frontage, blown along by a gust or bulldozed down the street still counts as that frontage's litter, so a fling costs the frontage it came from until the item is swept up anywhere. Items that spawn outside every zone (road centres, precincts) count only toward the district's Tidy %. Where two zones share a tile (facades facing each other across a narrow street share the gutter), its grime cells and its litter count for both.
+- **Empty zones (open question 2).** A zone with no initial grime and no litter spawned in it is shown 100% clean (green, pledge met, never deducted) but is **never eligible for Clean Sweep**: the bonus rewards cleaning, and an empty zone had none to do. A zone that later gets litter (a litterbug drop) stops being empty.
+- **Clean Sweep needs exact counts.** A frontage scores its +100 the first time every grime cell laid in its zone is cleaned and every item spawned in it is collected (not merely a % that rounds to 100). It is awarded at most once per shift: litter that spawns there afterwards lowers its clean % but never re-arms the bonus. An item that is removed without being collected (a dog-mess splat, a leaf pile driven through, §8.2) stays in the zone's litter spawned, so that frontage cannot reach 100% again.
+- **One-share zones.** A zone with grime but no litter (or litter but no grime) is clean in proportion to the share it has, as in §9.2: 45 of 50 cells cleaned is 90%, not 0.6 × 90% + 0.4.
+ in each district: they tell the player *where* thoroughness pays.
 
 ---
 
 ## 10. Scoring and combos
 
-Since SSP-053 the chain timer, combo tiers, grime points and the Kerb Hugger and Clean Sweep bonuses are **mirrored from `src/data/tuning.json`** (`combo`, `scoring`), as are the Tidy % weights of §9.2 (`tidy`) and the star thresholds of §12.1 (`stars`). `tests/unit/tuning.test.ts` checks the §10.2 tier table and the §12.1 thresholds against the file.
+Since SSP-053 the chain timer, combo tiers, grime points and the Kerb Hugger and Clean Sweep bonuses are **mirrored from `src/data/tuning.json`** (`combo`, `scoring`), as are the Tidy % weights of §9.2 and the 90% frontage threshold of §9.3 (`tidy`) and the star thresholds of §12.1 (`stars`). `tests/unit/tuning.test.ts` checks the §10.2 tier table and the §12.1 thresholds against the file.
 
 ### 10.1 Points
 

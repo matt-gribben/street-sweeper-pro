@@ -6,8 +6,11 @@
 // Per frame: the camera rig moves by the frame's render time (render state only: the sim never reads the
 // camera, §7.4), every scene poses its content (bottom first), then the renderer draws the frame once.
 //
-// Input: until the keyboard and gamepad arrive (SSP-044, src/input/actions.ts) the Game samples a neutral
-// InputFrame; `options.input` takes the real source.
+// Input (SSP-044): the Game builds the keyboard (listening on the window) and the standard gamepad, merges them
+// in src/input/actions.ts, polls once per frame (beginFrame) and samples one quantised InputFrame per tick.
+// Gamepad rumble follows EV.Impact on the bus: src/input may not import the bus, so the wiring lives here.
+// Scenes read the frame's pause/map/dev-panel edges from `game.actions.sceneActions`. `options.input`
+// replaces the whole source (then `actions` is null).
 //
 // Camera: until ShiftScene follows Bessie (SSP-046) the camera stands over the origin and pans north at
 // `drive.speedMps` (the dev panel's slider; 0 otherwise). Test mode pins speed 0 and turns the speed-zoom
@@ -15,11 +18,16 @@
 
 import { Group } from 'three';
 import { TEST_RENDER_STEP_S } from '../debug/testHooks.ts';
+import { Actions } from '../input/actions.ts';
+import { browserPadSource, GamepadDevice } from '../input/gamepad.ts';
+import { KeyboardDevice } from '../input/keyboard.ts';
 import { pinCameraRig, updateCameraRig } from '../render/camera.ts';
 import { Renderer } from '../render/Renderer.ts';
 import { type AtlasName, loadAtlas, type SpriteAtlas } from '../render/spriteAtlas.ts';
 import { attachUpscaler } from '../render/upscale.ts';
-import { createInputFrame, type InputFrame } from '../sim/inputFrame.ts';
+import { DT_S } from '../sim/constants.ts';
+import { EV } from '../sim/eventQueue.ts';
+import type { InputFrame } from '../sim/inputFrame.ts';
 import { EventBus } from './events.ts';
 import { createLoop, type Loop } from './loop.ts';
 import { SceneManager } from './SceneManager.ts';
@@ -33,8 +41,10 @@ export type SceneContext = {
   loadAtlas(name: AtlasName): Promise<SpriteAtlas>;
 };
 
-/** One InputFrame per tick, edges latched (src/input/actions.ts from SSP-044). */
+/** One InputFrame per tick, edges latched (src/input/actions.ts, SSP-044). */
 export type TickInputSource = {
+  /** Once per display frame, before its ticks (device polling). Optional. */
+  beginFrame?(): void;
   sampleForTick(): Readonly<InputFrame>;
 };
 
@@ -57,15 +67,9 @@ export type GameOptions = {
   readonly night: boolean;
   /** Per-frame timing observer (test mode's `__ssp.perf()`), or null. */
   readonly onFrameTimed: ((nowMs: number, workMs: number) => void) | null;
-  /** The input source; defaults to a neutral frame every tick until SSP-044. */
+  /** The input source; defaults to the keyboard and gamepad merged by src/input/actions.ts. */
   readonly input?: TickInputSource;
 };
-
-/** A neutral InputFrame every tick: the stand-in until src/input/actions.ts (SSP-044). */
-function neutralInput(): TickInputSource {
-  const frame: Readonly<InputFrame> = Object.freeze(createInputFrame());
-  return { sampleForTick: () => frame };
-}
 
 /** Owns the renderer, scene stack, event bus and loop for the page's lifetime. */
 export class Game {
@@ -74,6 +78,8 @@ export class Game {
   readonly events: EventBus;
   readonly loop: Loop;
   readonly drive: DriveSettings;
+  /** The keyboard + gamepad merge, or null when `options.input` replaced it. */
+  readonly actions: Actions | null;
   readonly sceneContext: SceneContext;
   private readonly root: Group;
   private readonly input: TickInputSource;
@@ -87,7 +93,17 @@ export class Game {
     attachUpscaler(canvas, (layout) => this.renderer.resize(layout));
     this.scenes = new SceneManager();
     this.events = new EventBus();
-    this.input = options.input ?? neutralInput();
+    if (options.input === undefined) {
+      const keyboard = new KeyboardDevice(DT_S);
+      keyboard.attach(window);
+      const gamepad = new GamepadDevice(browserPadSource(navigator));
+      this.events.on(EV.Impact, (event) => gamepad.rumbleImpact(event.speedMps));
+      this.actions = new Actions([keyboard, gamepad]);
+      this.input = this.actions;
+    } else {
+      this.actions = null;
+      this.input = options.input;
+    }
     this.drive = {
       speedMps: 0,
       zoomEnabled: options.testMode ? false : this.renderer.rig.zoomEnabled,
@@ -103,6 +119,7 @@ export class Game {
     const input = this.input;
     this.loop = createLoop(
       {
+        beginFrame: () => input.beginFrame?.(),
         sampleForTick: () => input.sampleForTick(),
         fixedUpdate: (frame) => scenes.fixedUpdate(frame),
         drainEvents: () => scenes.drainEvents(events),

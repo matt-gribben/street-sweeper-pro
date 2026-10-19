@@ -4,7 +4,8 @@
 //
 //   input = sampleForTick()  →  fixedUpdate(input)  →  drainEvents()
 //
-// (actions.sampleForTick, scenes.fixedUpdate, events.drain in §5.1), and the frame ends with
+// (actions.sampleForTick, scenes.fixedUpdate, events.drain in §5.1). The frame starts with beginFrame() (the
+// gamepad poll, SSP-044) and ends with
 // render(acc / DT_S, frameS). 60, 120 and 144 Hz displays all run 60 ticks per second. Below 12 fps the cap
 // drops the backlog (acc is cut to DT_S), so the game slows down instead of spiralling.
 //
@@ -86,6 +87,11 @@ export function browserClock(): LoopClock {
 
 /** What the loop drives. Game.ts implements it over the input, the SceneManager, the event bus and the renderer. */
 export type LoopTarget = {
+  /**
+   * Called at the start of every display frame, before its ticks and also while frozen (actions.beginFrame:
+   * the gamepad poll and the frame's scene-layer actions, §13.2). Optional.
+   */
+  beginFrame?(): void;
   /** One InputFrame per tick, edges latched (actions.sampleForTick, TECHNICAL_DESIGN §13.1). */
   sampleForTick(): Readonly<InputFrame>;
   /** Runs one tick (scenes.fixedUpdate: the ShiftScene steps its World). */
@@ -169,6 +175,7 @@ export function createLoop(target: LoopTarget, options: LoopOptions = {}): Loop 
     const workStartMs = onFrameTimed === null ? 0 : clock.now();
     const rawS = fixedFrameS ?? (nowMs - lastMs) / 1000;
     lastMs = nowMs;
+    target.beginFrame?.();
     let frameS = 0;
     if (!frozen) {
       frameS = clampFrameS(rawS);

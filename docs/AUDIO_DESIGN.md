@@ -961,14 +961,16 @@ Audio is never compared by ear in CI. The listening pass is human (§11.5).
 | Milestone | Audio deliverables |
 |---|---|
 | **M0 — Foundations & Look Spike** | Vendor ZzFX `buildSamples` into `tools/audio/synth/zzfx.ts` and confirm it and jsfxr 1.4.1 (`jsfxr/sfxr.mjs`) run in Node 24 with no browser globals (§5.3). Confirm ffmpeg 9.0.2 determinism on macOS vs `ubuntu-latest` (§11.4). Measure AAC/Opus encoder delay per browser. (SSP-025: D-11 decided WAV only, and the Linux half is pending. Encoder delay was measured in Chromium and WebKit, and the rest moves to M5; see A1 and A2.) |
-| **M1 — Drivable Bessie** | A placeholder engine (one oscillator) so handling can be felt. `bump_wall` and `bump_kerb` as inline presets. |
-| **M2 — Sweeping Core** | Placeholder `pickup_small` with the pitch ladder, `hopper_full`, `dump`, `brush_lower`/`brush_raise`, and the spray noise |
-| **M3 — Living Street** | Placeholder barks and animal sounds, `complaint_stamp`, `crash` |
+| **M1 — Drivable Bessie** | No audio. Each sim event that a later sound hangs off is on the event bus: `EV.Impact` and `EV.KerbJolt` (for `bump_wall`, `bump_kerb`), plus Bessie's speed and gear for the engine synth. |
+| **M2 — Sweeping Core** | No audio. Each sim event or state that a later sound hangs off is on the event bus or in the read-only world view: `EV.LitterCollected` and the combo chain (for `pickup_small` and its pitch ladder), `EV.HopperFull`, `EV.DumpStart`/`EV.DumpEnd`, the brush state and RPM (for `brush_lower`/`brush_raise` and the brush whirr), and the spray flag. |
+| **M3 — Living Street** | No audio. `EV.Complaint`, `EV.Horn`, `EV.Impact` and the NPC states (in the read-only world view) are there for the barks, animal sounds, `complaint_stamp` and `crash`. |
 | **M5 — Sound & Music** | **All `sfx.*` rendered.** Live engine, brush, spray and beeper synths. Mixer with ducking. **`mus.title`, `mus.puddle_lane`, `mus.high_street`** with adaptive stems. **`jng.tally`, `jng.sacked`**, `jng.shift_start` (vertical slice). Ambience beds for Mon–Tue (`amb.town_morning`). Captions. |
 | **M6 — Tidy Town Week** | `mus.workshop` (Free Sweep, the Workshop and the fallback track), `mus.gasworks`, `mus.conker_hill`, plus `amb.rain`, `amb.wind_leaves`, `amb.seafront` and `amb.night_town` as those districts land. `jng.star`, `jng.towed`. |
 | **M7 — 1.0 Web Release** | **All songs:** `mus.promenade`, `mus.kebab_mile`, `mus.civic_quarter`, `jng.trophy`. Accessibility settings complete. Mix pass on a full playthrough. |
 | **M8 — Touch & Mobile Web** | iOS Safari unlock verified. Decoded-memory budget checked on a mid-range phone. |
 | **M9 — Desktop & Extra Modes** | Rival Sweep and Daily Shift reuse existing songs. Tauri audio parity check. |
+
+*Aligned with the ROADMAP at the M2 close (SSP-074, a lead call pending owner review).* This table used to list placeholder sounds for M1, M2 and M3. The [ROADMAP](ROADMAP.md) owns milestones, and it has no audio task before M5: M0 defers "audio of any kind" to M5, M1 defers the engine sound, and M2 defers the pickup pitch rise. No `src/audio/` exists, and `npm run audio` is a 0-source guard. So all of those sounds, as placeholders or finished, are M5 work. They are rendered from the events and state these milestones already expose, so nothing has to be retrofitted. If a playtest needs sound earlier, pull the M5 tooling forward as [ROADMAP §2.1](ROADMAP.md#21-dependency-graph) allows, and add the task to the ROADMAP first.
 
 ### 15.2 Open questions
 

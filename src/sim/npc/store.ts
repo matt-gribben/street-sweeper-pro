@@ -45,14 +45,14 @@ export const NPC_PATH_NODES = 32;
  * awareness radius) sets AWARE, one that takes HiVis (pwr.hi_vis running) sets HI_VIS. A FALLEN or ON_ROOF NPC
  * cannot be hit (actor contact skips it). SSP-084 appends DODGED, a per-approach latch (the shopper's 4 m
  * sidestep and the businessman's 2 m startle fire once per approach of Bessie, and the latch clears once she is
- * outside the trigger distance), and LEAVING: the NPC is on its way off the map (the caught litterbug slinking
- * off), and the spawner retires it on its next run with its circle off the view, whatever its origin. SSP-086
- * appends LEAD_CROSSED, on a dog walker: Bessie's body overlaps its lead this tick (behaviours/dogWalker.ts). A
- * Lead Tangle counts only on the tick it is set, so Bessie must clear the whole lead before another one counts.
- * SSP-088 appends GHOST: nothing collides with the NPC (ENTITY_CATALOG §3.2's ghost response; the pigeons, set as
- * each bird spawns): steering's NPC-vs-NPC separation and constraints skip it, and it never counts as someone on
- * a zebra (steering.ts updateZebraOccupancy, zebraOffence.ts). Bessie's actor contact already skips every kind
- * without an entities.json `hit`.
+ * outside the trigger distance; SSP-087's cat uses it as its once-per-approach dart latch, cleared beyond 10 m),
+ * and LEAVING: the NPC is on its way off the map (the caught litterbug slinking off), and the spawner retires it on
+ * its next run with its circle off the view, whatever its origin. SSP-086 appends LEAD_CROSSED, on a dog walker:
+ * Bessie's body overlaps its lead this tick (behaviours/dogWalker.ts). A Lead Tangle counts only on the tick it is
+ * set, so Bessie must clear the whole lead before another one counts. SSP-088 appends GHOST: nothing collides with
+ * the NPC (ENTITY_CATALOG §3.2's ghost response; the pigeons, set as each bird spawns): steering's NPC-vs-NPC
+ * separation and constraints skip it, and it never counts as someone on a zebra (steering.ts updateZebraOccupancy,
+ * zebraOffence.ts). Bessie's actor contact already skips every kind without an entities.json `hit`.
  */
 export const NPC_FLAG = {
   FALLEN: 1,
@@ -151,9 +151,11 @@ export type NpcStore = {
    * Two tick counters a kind's behaviour module owns (SSP-083), 0 at spawn; each module documents its use. Doris
    * (behaviours/oldWoman.ts): timerA = slowed-walk ticks left after a fist shake; timerB = the Glare's
    * clear-path ticks, or the Chase's ticks until her handbag can whack again. The litterbug
-   * (behaviours/litterbug.ts, SSP-084): timerA = ticks to his next drop; timerB unused. A pigeon
-   * (behaviours/pigeon.ts, SSP-088): timerA, timerB = the x, y of its landing spot in whole millimetres while it
-   * flies.
+   * (behaviours/litterbug.ts, SSP-084): timerA = ticks to his next drop; timerB unused. The cat
+   * (behaviours/cat.ts, SSP-087): timerA = its state's countdown (the groom idle timer, the groom, the hop-off
+   * side); timerB = where it sits or runs to (a perch index, a tile target −2 − tile, or −1; npc/catPerches.ts). A
+   * pigeon (behaviours/pigeon.ts, SSP-088): timerA, timerB = the x, y of its landing spot in whole millimetres
+   * while it flies.
    */
   readonly timerA: Int32Array;
   readonly timerB: Int32Array;

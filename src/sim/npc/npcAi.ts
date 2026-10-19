@@ -22,10 +22,12 @@ import type { Entities } from '../entities.ts';
 import type { Level } from '../map.ts';
 import { createStream, type Sfc32 } from '../rng.ts';
 import type { Tuning } from '../tuning.ts';
+import { createVehicleStore, type VehicleStore } from '../vehicleStore.ts';
 import type { World } from '../world.ts';
 import type { Behaviour } from './behaviour.ts';
 import { createOldWomanParams, type OldWomanParams } from './behaviours/oldWoman.ts';
 import { createPigeonFlocks, type PigeonFlocks } from './behaviours/pigeon.ts';
+import { type CatTables, createCatTables } from './catPerches.ts';
 import { createDoorRound, type DoorRound } from './doorRound.ts';
 import { createReactions, type Reactions } from './reactions.ts';
 import { behavioursByKind } from './registry.ts';
@@ -59,11 +61,17 @@ export type NpcAi = {
   readonly splash: PuddleSplash;
   /** The pigeon flocks' shared state, one slot per flock the level can place (behaviours/pigeon.ts, SSP-088). */
   readonly flocks: PigeonFlocks;
+  /**
+   * The cat's numbers and shift tables (catPerches.ts, SSP-087): its perches (the walls and the parked cars'
+   * roofs), the grooming spots, the tile classes its runs read.
+   */
+  readonly cat: CatTables;
 };
 
 /**
  * Phase 7's state for a shift on `level` with `seed`; steering takes the props from `grid`, the zebras from
- * `zebras` and sizes its neighbour buffer for `capacity` NPCs. Setup only.
+ * `zebras` and sizes its neighbour buffer for `capacity` NPCs; the cats perch on the parked cars already placed
+ * in `vehicles` (createWorld places them first; an empty store when omitted). Setup only.
  */
 export function createNpcAi(
   level: Level,
@@ -73,13 +81,15 @@ export function createNpcAi(
   grid: StaticGrid,
   zebras: Zebras,
   capacity: number,
+  vehicles: VehicleStore = createVehicleStore(level, entities),
 ): NpcAi {
   const steering = createSteering(level, grid, zebras, tuning, capacity, entities);
+  const spawner = createNpcSpawner(level, tuning, entities);
   return {
     rng: createStream(seed >>> 0, 'npc'),
     stimuli: createStimulusQueue(),
     behaviours: behavioursByKind(entities),
-    spawner: createNpcSpawner(level, tuning, entities),
+    spawner,
     steering,
     entities,
     reactions: createReactions(tuning, entities, capacity),
@@ -87,6 +97,7 @@ export function createNpcAi(
     doorRound: createDoorRound(level, steering),
     splash: createPuddleSplash(tuning, entities, capacity),
     flocks: createPigeonFlocks(level, entities),
+    cat: createCatTables(level, entities, spawner, vehicles, tuning.streetLife.npcRadius.catM),
   };
 }
 

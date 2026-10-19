@@ -13,10 +13,13 @@
 //      allowing after the named NPCs still to come. They persist for the shift. This step runs even for a level
 //      without `spawns.npc`.
 // Then, on every NPC_SPAWN_EVERY_TICKS-th tick (tick mod 60 == 0, so once in every 60-tick window):
-//   2. Placed NPCs still waiting: each perched cat on a free wall perch (`perches.walls`) that does not touch
-//      the view (on a nav spawn point when the level lists no wall perches; car roofs and road grooming spots
-//      are SSP-087/SSP-090), and each flock of `size` birds (drawn per flock) scattered within FLOCK_SPREAD_M
-//      of a flock point whose whole spread is off screen. Placed NPCs persist for the shift too.
+//   2. Placed NPCs still waiting: each perched cat (SSP-087, npc/catPerches.ts) on the surfaces of `perches.on`
+//      in turn (the k-th cat placed on on[k mod n], skipping a surface the level has no place on, so Puddle
+//      Lane's 4 cats on walls and car roofs are 2 and 2): uniformly (one draw) on a free `w` wall perch, a free
+//      parked car roof or a grooming spot no cat grooms at, that does not touch the view; it waits for the next
+//      run while that surface has none off screen; on a nav spawn point when no listed surface has a place.
+//      Then each flock of `size` birds (drawn per flock) scattered within FLOCK_SPREAD_M of a flock point whose
+//      whole spread is off screen. Placed NPCs persist for the shift too.
 //   3. Leavers (SSP-084): every NPC its behaviour marked LEAVING (NPC_FLAG; the caught litterbug slinking off the
 //      map) whose circle, and its dog's, is off the view leaves, whatever its origin. Leavers take none of the
 //      ambient budget below; an ambient one counts toward the population and its caps until it has left.
@@ -55,6 +58,7 @@ import type { Tuning } from '../tuning.ts';
 import { circleTouchesViewRect } from '../viewRect.ts';
 import type { World } from '../world.ts';
 import type { Behaviour } from './behaviour.ts';
+import { claimCatPerch, NO_TARGET, nextCatSurface, pickCatPlacement } from './catPerches.ts';
 import { largestNpcRadiusM, npcKindRadiusM } from './footprint.ts';
 import {
   addNpc,
@@ -102,7 +106,10 @@ export type NpcSpawner = {
   readonly namedNode: Int32Array;
   readonly namedX: Float64Array;
   readonly namedY: Float64Array;
-  /** Perched cats: kind, how many still wait, the wall perches and which hold a cat. */
+  /**
+   * Perched cats: kind, how many still wait, the wall perches and which hold a cat (perchUsed: 1 while a cat sits
+   * on it or runs to it; the cats claim and free them, npc/catPerches.ts, SSP-087).
+   */
   readonly perchKind: number;
   perchPending: number;
   readonly perchCount: number;
@@ -410,22 +417,19 @@ function placePerches(w: World, sp: NpcSpawner): void {
   const view = w.viewRect;
   const rs = sp.radiusByKind;
   const kind = sp.perchKind;
+  const cats = w.npcAi.cat;
   while (sp.perchPending > 0 && npc.count + 1 + namedReserve(sp) <= npc.capacity) {
-    let n = 0;
-    if (sp.perchCount > 0) {
-      for (let p = 0; p < sp.perchCount; p += 1) {
-        if ((sp.perchUsed[p] as number) !== 0) continue;
-        if (circleTouchesViewRect(view, sp.perchX, sp.perchY, p, rs, kind)) continue;
-        sp.eligible[n] = p;
-        n += 1;
-      }
-      if (n === 0) return;
-      const p = sp.eligible[nextInt(w.npcAi.rng, n)] as number;
-      sp.perchUsed[p] = 1;
-      spawnAt(w, kind, NpcOrigin.Perch, p, sp.perchX, sp.perchY, p, -1);
+    const surface = nextCatSurface(cats, cats.placedTotal - sp.perchPending);
+    if (surface >= 0) {
+      // Walls, car roofs and grooming spots in perches.on order, in turn (SSP-087).
+      const place = pickCatPlacement(w, surface);
+      if (place === NO_TARGET) return;
+      const i = spawnAt(w, kind, NpcOrigin.Perch, place, cats.px, cats.py, 0, -1);
+      // The cat's onSpawn claims its perch too; claiming here keeps it taken whatever behaviour runs it.
+      if (i >= 0 && place >= 0) claimCatPerch(cats, place, npcHandle(npc, i));
     } else {
-      // No wall perches listed: a provisional perch on a nav spawn point (SSP-087 moves cats to car roofs and
-      // grooming spots).
+      // Nowhere listed to perch (a level without walls, parked cars or lanes there): on a nav spawn point.
+      let n = 0;
       for (let p = 0; p < sp.pointCount; p += 1) {
         if (circleTouchesViewRect(view, sp.pointX, sp.pointY, p, rs, kind)) continue;
         sp.eligible[n] = p;

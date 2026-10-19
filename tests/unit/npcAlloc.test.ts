@@ -1,7 +1,7 @@
 // Phase 7 allocates nothing per tick with the NPC store full (SSP-080; TECHNICAL_DESIGN §17): the §17 heap-delta
 // check (tests/support/heapDelta.ts: 600 warm-up ticks, forced GC, 3,600 ticks, forced GC; retained and
 // pre-final-GC growth each ≤ 32,768 B) over a World holding 80 NPCs (ambient people, dog walkers with their
-// dogs, a pigeon flock and two perched cats) on the open district of tests/support/npcTown.ts, 192 m square.
+// dogs, a pigeon flock and two cats) on the open district of tests/support/npcTown.ts, 192 m square.
 //
 // Everything phase 7 does runs inside the window: the spawner spawns and retires people every second as
 // Bessie circles and is moved round four spots of the map every 20 s (and, between those, driven at an NPC
@@ -111,10 +111,11 @@ function putInPath(world: World, i: number, aheadM: number, rightM: number): voi
 /**
  * The rig: `generic` keeps the registry's behaviours (the SSP-082 generic pedestrian for the people, the SSP-084
  * shopper, businessman and litterbug, the SSP-085 old man, mum and postie, the SSP-086 dog walker and its dog, the
- * SSP-088 pigeons, the no-op for the cats) instead of the test walker, so the reaction model's states run in the
- * window, with the shoppers' sidesteps, the businessmen's 2 m startles, the litterbugs' drops and, under the
- * harness's horn, their Caught! (EV.Caught, the bonus in phase 9) and slinking off, and the dog walkers' Lead
- * Tangles and dog mess. `doris`
+ * SSP-087 cat, the SSP-088 pigeons) instead of the test walker, so the reaction model's states run in the window,
+ * with the shoppers' sidesteps, the businessmen's 2 m startles, the litterbugs' drops and, under the harness's
+ * horn, their Caught! (EV.Caught, the bonus in phase 9) and slinking off, the dog walkers' Lead Tangles and dog
+ * mess, and the cats bolting at the horn and, hit by the harness, leaping onto Bessie's roof, riding it and hopping
+ * off. `doris`
  * adds Doris (SSP-083) to the mix and sprays for 2 s of every 4 (the tank topped up), so her glare, fist shake,
  * chase and handbag whacks run too; Bessie's HP is restored every tick so the whacks never get her TOWED. As each
  * spray ends it also puts a litterbug not yet caught 3 m to her right, so the harness's horn catches him there and
@@ -261,7 +262,20 @@ function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
   const { world, step, tangles } = npcRig(generic, doris);
   const sp = world.npcAi.spawner;
   const reactions = world.npcAi.reactions;
-  for (let t = 0; t < PREWARM_TICKS; t++) step(t);
+  // SSP-087: count the pre-warm's ticks with a cat on Bessie's roof (outside the measured window: a loop in the
+  // window's callback shifted V8's inlining enough to show in the check), so the cats' leap, ride and hop off are
+  // known to be among the paths warmed up and run.
+  let roofTicks = 0;
+  for (let t = 0; t < PREWARM_TICKS; t++) {
+    step(t);
+    const npc = world.npc;
+    for (let i = 0; i < npc.count; i++) {
+      if (((npc.flags[i] as number) & NPC_FLAG.ON_ROOF) !== 0) {
+        roofTicks++;
+        break;
+      }
+    }
+  }
   const before = {
     spawned: sp.ambientSpawned,
     retired: sp.ambientRetired,
@@ -293,6 +307,7 @@ function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
       `+${sp.ambientSpawned - before.spawned}, retired +${sp.ambientRetired - before.retired}, stimuli ` +
       `delivered +${world.npcAi.stimuli.delivered - before.delivered}, actor hits ` +
       `+${reactions.hits - before.hits}, bumps +${reactions.bumps - before.bumps}, handbag whacks ${whacks}, ` +
+      `a cat on the roof on ${roofTicks} pre-warm ticks, ` +
       `Caught! bonus ` +
       `+${world.scoring.bonusPts - before.bonusPts}, litter dropped +${world.litter.litterSpawned - before.litterSpawned}, ` +
       `lead tangles +${(tangles[0] as number) - before.tangles}`,
@@ -311,6 +326,8 @@ function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
     expect(world.litter.count).toBe(world.litter.capacity);
     expect(world.litter.litterSpawned).toBe(world.litter.capacity);
   }
+  // SSP-087: the harness's Hit stimuli send the cats onto Bessie's roof.
+  if (generic) expect(roofTicks).toBeGreaterThan(0);
   if (generic) {
     expect(reactions.hits - before.hits).toBeGreaterThan(0);
     // SSP-084: the harness's horn caught some litterbugs (the town has no kerbs, so the only style bonus is

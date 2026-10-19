@@ -41,7 +41,8 @@
 // approaching-vehicle query), then crosses (NavState.Crossing) to the far node. Jaywalkers take a crossing edge
 // without stopping and may leave the graph anywhere. world.zebras counts, after phase 7's behaviours, the NPCs
 // whose centre is on each zebra (updateZebraOccupancy): a zebra is OCCUPIED while its count is above 0, which
-// traffic (SSP-089) and the running-an-occupied-zebra penalty (SSP-085) read.
+// traffic (SSP-089) and the running-an-occupied-zebra penalty (SSP-085) read. A cat riding Bessie's roof
+// (NPC_FLAG.ON_ROOF, SSP-087) is off the ground: it counts on no zebra and separation and the constraints skip it.
 //
 // Hot path: everything except createZebras, createSteering and setSteeringTuning allocates nothing, and no
 // double crosses a call: positions and vectors go through typed arrays (the `v` scratch and the store's
@@ -773,7 +774,9 @@ export function steerSeparate(w: World, i: number): void {
   const fy = -cos(h);
   for (let k = 0; k < n; k += 1) {
     const j = st.neighbours[k] as number;
-    if (j === i || ((npc.flags[j] as number) & NPC_FLAG.GHOST) !== 0) continue;
+    // A ghost (a pigeon, SSP-088) is never steered round; nor is a cat on Bessie's roof (ON_ROOF, SSP-087), up
+    // off the ground.
+    if (j === i || ((npc.flags[j] as number) & (NPC_FLAG.GHOST | NPC_FLAG.ON_ROOF)) !== 0) continue;
     const range = r + (npc.radius[j] as number) + gap;
     let dx = x - (npc.x[j] as number);
     let dy = y - (npc.y[j] as number);
@@ -1167,7 +1170,7 @@ function resolveCandidate(w: World, i: number): void {
   const n = queryNpcs(npc, box, st.neighbours);
   for (let k = 0; k < n; k += 1) {
     const j = st.neighbours[k] as number;
-    if (j === i || ((npc.flags[j] as number) & NPC_FLAG.GHOST) !== 0) continue;
+    if (j === i || ((npc.flags[j] as number) & (NPC_FLAG.GHOST | NPC_FLAG.ON_ROOF)) !== 0) continue;
     const min = r + (npc.radius[j] as number);
     let dx = cx - (npc.x[j] as number);
     let dy = cy - (npc.y[j] as number);
@@ -1403,7 +1406,7 @@ export function walkNpc(w: World, i: number, sidestep: boolean): number {
 
 /**
  * Phase 7, after the behaviours: count the NPCs whose centre is on each zebra (world.zebras.occupancy), ghosts
- * (NPC_FLAG.GHOST, the pigeons; SSP-088) excepted.
+ * (NPC_FLAG.GHOST, the pigeons; SSP-088) and ON_ROOF cats (SSP-087) excepted.
  */
 export function updateZebraOccupancy(w: World): void {
   const z = w.zebras;
@@ -1412,8 +1415,9 @@ export function updateZebraOccupancy(w: World): void {
   if (z.count === 0) return;
   const npc = w.npc;
   for (let i = 0; i < npc.count; i += 1) {
-    // A ghost (a pigeon, SSP-088) is nobody crossing: it never holds a zebra.
-    if (((npc.flags[i] as number) & NPC_FLAG.GHOST) !== 0) continue;
+    // A ghost (a pigeon, SSP-088) is nobody crossing, and a cat riding Bessie's roof (ON_ROOF, SSP-087) is not on
+    // the zebra she drives over: neither holds a zebra.
+    if (((npc.flags[i] as number) & (NPC_FLAG.GHOST | NPC_FLAG.ON_ROOF)) !== 0) continue;
     const x = npc.x[i] as number;
     const y = npc.y[i] as number;
     for (let k = 0; k < z.count; k += 1) {

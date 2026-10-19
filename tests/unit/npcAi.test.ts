@@ -7,11 +7,12 @@ import { createInputFrame } from '../../src/sim/inputFrame.ts';
 import { createBlankLevel } from '../../src/sim/map.ts';
 import { type Behaviour, Stimulus } from '../../src/sim/npc/behaviour.ts';
 import { businessmanBehaviour } from '../../src/sim/npc/behaviours/businessman.ts';
+import { catBehaviour } from '../../src/sim/npc/behaviours/cat.ts';
 import { dogWalkerBehaviour } from '../../src/sim/npc/behaviours/dogWalker.ts';
 import { litterbugBehaviour } from '../../src/sim/npc/behaviours/litterbug.ts';
 import { marketTraderBehaviour } from '../../src/sim/npc/behaviours/marketTrader.ts';
 import { mumPushchairBehaviour } from '../../src/sim/npc/behaviours/mumPushchair.ts';
-import { NOOP, noopBehaviour, noopJaywalkBehaviour } from '../../src/sim/npc/behaviours/noop.ts';
+import { NOOP, noopBehaviour } from '../../src/sim/npc/behaviours/noop.ts';
 import { oldManFrameBehaviour } from '../../src/sim/npc/behaviours/oldManFrame.ts';
 import { oldWomanBehaviour } from '../../src/sim/npc/behaviours/oldWoman.ts';
 import { pigeonBehaviour } from '../../src/sim/npc/behaviours/pigeon.ts';
@@ -44,8 +45,8 @@ describe('behaviour registry', () => {
   it('maps every entities.json behaviour key to a module: its own, or the generic pedestrian or the no-op until it lands', () => {
     expect(Object.keys(BEHAVIOUR_REGISTRY).sort()).toEqual([...NPC_BEHAVIOURS].sort());
     // SSP-083: Doris has her own module; SSP-084: so do the shopper, the businessman (an M3 jaywalker) and the
-    // litterbug; SSP-085: so do the old man, the mum and the postie; SSP-086: so does the dog walker; SSP-088: so
-    // do the market trader and the pigeon. The cat keeps the no-op (SSP-081: it jaywalks).
+    // litterbug; SSP-085: so do the old man, the mum and the postie; SSP-086: so does the dog walker; SSP-087: so
+    // does the cat (the other M3 jaywalker); SSP-088: so do the market trader and the pigeon.
     const expected: { readonly [K in (typeof NPC_BEHAVIOURS)[number]]: Behaviour } = {
       shopper: shopperBehaviour,
       old_woman: oldWomanBehaviour,
@@ -56,7 +57,7 @@ describe('behaviour registry', () => {
       mum_pushchair: mumPushchairBehaviour,
       postie: postieBehaviour,
       market_trader: marketTraderBehaviour,
-      cat: noopJaywalkBehaviour,
+      cat: catBehaviour,
       pigeon: pigeonBehaviour,
     };
     // The pigeon flies straight over everything (it never uses the steering constraints at all).

@@ -461,7 +461,21 @@
       "district.kebab_mile",
       "district.civic_quarter"
     ],
-    "rules": { "dartMinM": 6, "dartMaxM": 10, "dartChance": 0.4, "rideS": 3 },
+    "rules": {
+      "dartMinM": 6,
+      "dartMaxM": 10,
+      "dartChance": 0.4,
+      "rideS": 3,
+      "runReachM": 16,
+      "walkSpeedMps": 1.0,
+      "groomIdleMinS": 20,
+      "groomIdleMaxS": 40,
+      "groomS": 10,
+      "groomReachM": 8,
+      "boltNearM": 4,
+      "boltSpeedMps": 7.0,
+      "seatForwardM": 0.5
+    },
     "milestone": "M3"
   },
   "npc.pigeon": {

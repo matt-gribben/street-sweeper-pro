@@ -350,7 +350,7 @@ Vehicle-local coordinates: origin at body centre, +y forward, metres.
 | **Grime footprint** | The 2.6 m swept band | Erases grime cells while the brush is down and RPM ≥ 80% |
 
 - **Kerb Hugger:** a gutter brush within 0.2 m of a kerb edge collects **gutter grime** (a dense strip along kerbs worth 2× points). Holding kerb contact continuously scores +50 per 3 s.
-- **Fling:** items that fail the speed check are knocked sideways 1.5 to 3 m on a kinematic arc. Flung items stay on the ground and can be collected on a later pass, *except* a flung `litter.glass_bottle`, which smashes into `haz.broken_glass` (−5 HP/s to drive on; sweep it for +20).
+- **Fling:** items that fail the speed check are knocked sideways 1.5 to 3 m on a kinematic arc that lasts 0.5 s (decided in SSP-057; tunable), and cannot be collected until they land. Flung items stay on the ground and can be collected on a later pass, *except* a flung `litter.glass_bottle`, which smashes into `haz.broken_glass` (−5 HP/s to drive on; sweep it for +20).
 
 ```
             suction zone (2.6 m wide, y +1.6 .. +2.8)

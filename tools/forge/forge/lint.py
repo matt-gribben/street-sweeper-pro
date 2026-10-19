@@ -65,7 +65,7 @@ import numpy.typing as npt
 from PIL import Image
 
 from forge import palette as _palette_mod
-from forge.build import BuildError, build_asset
+from forge.build import BuildError, build_asset, font_outputs, is_font
 from forge.manifest import ASSET_CLASSES, ROTATION_SPEC, AssetEntry, ManifestError, entry_from_data
 from forge.palette import PALETTE_SIZE, TRANSPARENT, Palette, PaletteError, load_palette
 from forge.sprite import SpriteError, read_sprite
@@ -561,6 +561,23 @@ def _check_atlas_json(ctx: _Ctx, entries: Sequence[AssetEntry]) -> None:
                     ctx.error("shape", fid, f"{rel} has it at {r['w']}x{r['h']}, manifest cell is {e.width}x{e.height}")
 
 
+def _check_font_metrics(ctx: _Ctx, entries: Sequence[AssetEntry]) -> None:
+    """Shape: every font entry's metrics JSON is committed and matches its glyph file (SSP-068)."""
+    for e in entries:
+        if not is_font(e):
+            continue
+        try:
+            expected = font_outputs([e], ctx.root)
+        except BuildError:
+            continue  # already reported by the build check
+        for rel, data in expected.items():
+            path = ctx.root / rel
+            if not path.is_file():
+                ctx.error("shape", e.id, f"{rel} is missing; run npm run assets")
+            elif ctx.read_bytes(path) != data:
+                ctx.error("shape", e.id, f"{rel} does not match the glyph file; run npm run assets")
+
+
 # ---------------------------------------------------------------------------------------------
 # Provenance
 
@@ -742,6 +759,7 @@ def lint(repo_root: Path | None = None, only: Iterable[str] | None = None) -> Li
         if entry.technique == "ai-ingest":
             _check_origin(ctx, entry, valid)
     _check_atlas_json(ctx, entries)
+    _check_font_metrics(ctx, entries)
     _check_published_pngs(ctx, entries, only_set)
 
     order = {r: i for i, r in enumerate(RULES)}

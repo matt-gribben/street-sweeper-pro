@@ -12,6 +12,10 @@ Techniques built here (M0):
   otherwise). An entry with ``dirs: "rot4"`` (litter, SSP-051) authors ``h00`` only, and the
   build generates ``h08``/``h16``/``h24`` as exact 90°/180°/270° clockwise rotations of it
   (:func:`rotate_frames`) before the outline step.
+- ``grid`` with a ``.glyphs.txt`` source (SSP-068): the font builder (:mod:`forge.glyphs`)
+  parses the glyph file, checks the 101-glyph character set, renders the ``glyph`` and
+  ``outline`` (8-connected) frames with their pivot on the glyph's top-left, and
+  :func:`font_outputs` writes the metrics JSON to ``public/assets/fonts/``.
 - ``blender``: read ``assets-src/rendered/<id>/`` -> block-mode 4x4 -> 1 px -> palette snap ->
   alpha 128 -> 1 px ink outline (:mod:`forge.outline`) -> pivots from ``render.json``.
 
@@ -60,6 +64,18 @@ import numpy as np
 import numpy.typing as npt
 from PIL import Image
 
+from forge.glyphs import (
+    GLYPHS_SUFFIX,
+    ORIGIN,
+    GlyphError,
+    GlyphFont,
+    check_charset,
+    font_frames,
+    frame_size,
+    metrics_json,
+    metrics_path,
+    read_glyphs,
+)
 from forge.manifest import ROTATION_DIRS, AssetEntry, ManifestError, load_manifest
 from forge.outline import add_outline, outline_gaps
 from forge.outputs import generated_files, write_outputs
@@ -84,6 +100,8 @@ __all__ = [
     "build",
     "build_asset",
     "cli",
+    "font_outputs",
+    "is_font",
     "parse_render_name",
     "reduce_render",
     "rotate_frames",
@@ -420,10 +438,72 @@ def rotate_frames(entry_id: str, rendered: dict[str, I16Array]) -> dict[str, I16
     return {fid: out[fid] for fid in sorted(out)}
 
 
+def _read_font(entry: AssetEntry, repo_root: Path) -> GlyphFont:
+    path = repo_root / entry.source
+    if not path.is_file():
+        raise BuildError(f"{entry.id}: glyph file {path} does not exist")
+    try:
+        font = read_glyphs(path, entry.source)
+        check_charset(font)
+    except GlyphError as exc:
+        raise BuildError(f"{entry.id}: {exc}") from None
+    return font
+
+
+def _build_font(entry: AssetEntry, repo_root: Path) -> AssetBuild:
+    """Font builder (SSP-068, ASSET_PIPELINE §6.3): glyph file -> ``glyph`` and ``outline`` frames."""
+    if entry.technique != "grid":
+        raise BuildError(f"{entry.id}: a {GLYPHS_SUFFIX} source needs technique 'grid', got {entry.technique!r}")
+    if entry.outline:
+        raise BuildError(
+            f"{entry.id}: a font entry must have outline: false (the font builder makes its own 8-connected "
+            "outline state)"
+        )
+    if entry.dirs != ("-",):
+        raise BuildError(f'{entry.id}: a font entry must have dirs "-"')
+    font = _read_font(entry, repo_root)
+    if frame_size(font) != entry.cell:
+        fw, fh = frame_size(font)
+        raise BuildError(
+            f"{entry.id}: manifest cell {entry.width}x{entry.height} != the font's frame {fw}x{fh} "
+            f"(glyph {font.glyph_w}x{font.glyph_h} grown by 1 px per side)"
+        )
+    rendered = font_frames(font)
+    _check_frame_list(entry, rendered, "glyph file")
+    frames: list[Frame] = []
+    for local in sorted(rendered):
+        fid, state, d, n = _split_local(entry.id, local)
+        indices = _finish_frame(entry, local, rendered[local])
+        frames.append(
+            Frame(frame_id=fid, asset_id=entry.id, state=state, dir=d, n=n, indices=indices, pivot=ORIGIN, atlas=entry.atlas)
+        )
+    return AssetBuild(entry=entry, frames=frames)
+
+
+def is_font(entry: AssetEntry) -> bool:
+    """A manifest entry built by the font builder (a ``.glyphs.txt`` source)."""
+    return entry.source.endswith(GLYPHS_SUFFIX)
+
+
+def font_outputs(entries: Sequence[AssetEntry], repo_root: Path = REPO_ROOT) -> dict[str, bytes]:
+    """The metrics JSON of every font entry, keyed by its root-relative output path."""
+    out: dict[str, bytes] = {}
+    for entry in sorted(entries, key=lambda e: e.id):
+        if is_font(entry):
+            font = _read_font(entry, repo_root)
+            out[metrics_path(entry.id)] = metrics_json(font, entry.id, entry.atlas, entry.source)
+    return out
+
+
 def _build_grid(entry: AssetEntry, repo_root: Path) -> AssetBuild:
+    if is_font(entry):
+        return _build_font(entry, repo_root)
     path = repo_root / entry.source
     if not entry.source.endswith(".sprite.txt"):
-        raise BuildError(f"{entry.id}: {entry.technique} source must be a .sprite.txt file, got {entry.source}")
+        raise BuildError(
+            f"{entry.id}: {entry.technique} source must be a .sprite.txt (or, for a font, {GLYPHS_SUFFIX}) file, "
+            f"got {entry.source}"
+        )
     if not path.is_file():
         raise BuildError(f"{entry.id}: grid {path} does not exist")
     try:
@@ -720,7 +800,9 @@ def build(
             result.atlases = pack_atlases(pack_frames)
         except PackError as exc:
             raise BuildError(str(exc)) from None
-        result.outputs = generated_files(result.atlases, [e.id for e in entries], palette)
+        result.outputs = generated_files(
+            result.atlases, [e.id for e in entries], palette, extra=font_outputs(entries, repo_root)
+        )
         result.publish_root = publish_root
         result.changed_outputs = write_outputs(publish_root, result.outputs)
     return result

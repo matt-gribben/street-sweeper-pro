@@ -1,0 +1,898 @@
+{
+  "id": "font.kerbside5x7",
+  "font": "Kerbside 5x7",
+  "source": "assets-src/fonts/kerbside5x7.glyphs.txt",
+  "atlas": "ui",
+  "glyph": {
+    "w": 5,
+    "h": 7
+  },
+  "cell": {
+    "w": 6,
+    "h": 8
+  },
+  "frame": {
+    "w": 7,
+    "h": 9
+  },
+  "origin": {
+    "x": 1,
+    "y": 1
+  },
+  "baseline": 7,
+  "fallback": "?",
+  "colours": {
+    "ink": 7,
+    "outline": 0
+  },
+  "variants": {
+    "plain": {
+      "state": "glyph",
+      "advance": 6,
+      "lineHeight": {
+        "hud": 8,
+        "paragraph": 9
+      },
+      "glyphs": {
+        " ": {
+          "advance": 6,
+          "frame": null
+        },
+        "!": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:0"
+        },
+        "\"": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:1"
+        },
+        "#": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:2"
+        },
+        "$": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:3"
+        },
+        "%": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:4"
+        },
+        "&": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:5"
+        },
+        "'": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:6"
+        },
+        "(": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:7"
+        },
+        ")": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:8"
+        },
+        "*": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:9"
+        },
+        "+": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:10"
+        },
+        ",": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:11"
+        },
+        "-": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:12"
+        },
+        ".": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:13"
+        },
+        "/": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:14"
+        },
+        "0": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:15"
+        },
+        "1": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:16"
+        },
+        "2": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:17"
+        },
+        "3": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:18"
+        },
+        "4": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:19"
+        },
+        "5": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:20"
+        },
+        "6": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:21"
+        },
+        "7": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:22"
+        },
+        "8": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:23"
+        },
+        "9": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:24"
+        },
+        ":": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:25"
+        },
+        ";": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:26"
+        },
+        "<": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:27"
+        },
+        "=": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:28"
+        },
+        ">": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:29"
+        },
+        "?": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:30"
+        },
+        "@": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:31"
+        },
+        "A": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:32"
+        },
+        "B": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:33"
+        },
+        "C": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:34"
+        },
+        "D": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:35"
+        },
+        "E": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:36"
+        },
+        "F": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:37"
+        },
+        "G": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:38"
+        },
+        "H": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:39"
+        },
+        "I": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:40"
+        },
+        "J": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:41"
+        },
+        "K": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:42"
+        },
+        "L": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:43"
+        },
+        "M": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:44"
+        },
+        "N": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:45"
+        },
+        "O": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:46"
+        },
+        "P": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:47"
+        },
+        "Q": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:48"
+        },
+        "R": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:49"
+        },
+        "S": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:50"
+        },
+        "T": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:51"
+        },
+        "U": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:52"
+        },
+        "V": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:53"
+        },
+        "W": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:54"
+        },
+        "X": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:55"
+        },
+        "Y": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:56"
+        },
+        "Z": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:57"
+        },
+        "[": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:58"
+        },
+        "\\": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:59"
+        },
+        "]": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:60"
+        },
+        "^": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:61"
+        },
+        "_": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:62"
+        },
+        "`": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:63"
+        },
+        "a": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:64"
+        },
+        "b": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:65"
+        },
+        "c": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:66"
+        },
+        "d": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:67"
+        },
+        "e": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:68"
+        },
+        "f": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:69"
+        },
+        "g": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:70"
+        },
+        "h": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:71"
+        },
+        "i": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:72"
+        },
+        "j": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:73"
+        },
+        "k": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:74"
+        },
+        "l": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:75"
+        },
+        "m": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:76"
+        },
+        "n": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:77"
+        },
+        "o": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:78"
+        },
+        "p": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:79"
+        },
+        "q": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:80"
+        },
+        "r": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:81"
+        },
+        "s": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:82"
+        },
+        "t": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:83"
+        },
+        "u": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:84"
+        },
+        "v": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:85"
+        },
+        "w": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:86"
+        },
+        "x": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:87"
+        },
+        "y": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:88"
+        },
+        "z": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:89"
+        },
+        "{": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:90"
+        },
+        "|": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:91"
+        },
+        "}": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:92"
+        },
+        "~": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:93"
+        },
+        "£": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:94"
+        },
+        "←": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:95"
+        },
+        "↑": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:96"
+        },
+        "→": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:97"
+        },
+        "↓": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:98"
+        },
+        "★": {
+          "advance": 6,
+          "frame": "font.kerbside5x7:glyph:-:99"
+        }
+      },
+      "kerning": {
+        "AT": -1,
+        "AV": -1,
+        "AW": 0,
+        "AY": -1,
+        "Fo": -1,
+        "LT": -1,
+        "LY": -1,
+        "PA": 0,
+        "TA": -1,
+        "Te": -1,
+        "To": -1,
+        "Ty": -1,
+        "VA": -1,
+        "WA": 0,
+        "YA": -1,
+        "r,": -1,
+        "r.": -1,
+        "££": 0
+      }
+    },
+    "outline": {
+      "state": "outline",
+      "advance": 7,
+      "lineHeight": {
+        "hud": 9,
+        "paragraph": 10
+      },
+      "glyphs": {
+        " ": {
+          "advance": 7,
+          "frame": null
+        },
+        "!": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:0"
+        },
+        "\"": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:1"
+        },
+        "#": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:2"
+        },
+        "$": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:3"
+        },
+        "%": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:4"
+        },
+        "&": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:5"
+        },
+        "'": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:6"
+        },
+        "(": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:7"
+        },
+        ")": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:8"
+        },
+        "*": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:9"
+        },
+        "+": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:10"
+        },
+        ",": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:11"
+        },
+        "-": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:12"
+        },
+        ".": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:13"
+        },
+        "/": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:14"
+        },
+        "0": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:15"
+        },
+        "1": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:16"
+        },
+        "2": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:17"
+        },
+        "3": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:18"
+        },
+        "4": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:19"
+        },
+        "5": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:20"
+        },
+        "6": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:21"
+        },
+        "7": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:22"
+        },
+        "8": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:23"
+        },
+        "9": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:24"
+        },
+        ":": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:25"
+        },
+        ";": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:26"
+        },
+        "<": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:27"
+        },
+        "=": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:28"
+        },
+        ">": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:29"
+        },
+        "?": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:30"
+        },
+        "@": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:31"
+        },
+        "A": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:32"
+        },
+        "B": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:33"
+        },
+        "C": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:34"
+        },
+        "D": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:35"
+        },
+        "E": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:36"
+        },
+        "F": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:37"
+        },
+        "G": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:38"
+        },
+        "H": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:39"
+        },
+        "I": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:40"
+        },
+        "J": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:41"
+        },
+        "K": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:42"
+        },
+        "L": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:43"
+        },
+        "M": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:44"
+        },
+        "N": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:45"
+        },
+        "O": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:46"
+        },
+        "P": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:47"
+        },
+        "Q": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:48"
+        },
+        "R": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:49"
+        },
+        "S": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:50"
+        },
+        "T": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:51"
+        },
+        "U": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:52"
+        },
+        "V": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:53"
+        },
+        "W": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:54"
+        },
+        "X": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:55"
+        },
+        "Y": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:56"
+        },
+        "Z": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:57"
+        },
+        "[": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:58"
+        },
+        "\\": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:59"
+        },
+        "]": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:60"
+        },
+        "^": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:61"
+        },
+        "_": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:62"
+        },
+        "`": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:63"
+        },
+        "a": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:64"
+        },
+        "b": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:65"
+        },
+        "c": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:66"
+        },
+        "d": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:67"
+        },
+        "e": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:68"
+        },
+        "f": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:69"
+        },
+        "g": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:70"
+        },
+        "h": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:71"
+        },
+        "i": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:72"
+        },
+        "j": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:73"
+        },
+        "k": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:74"
+        },
+        "l": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:75"
+        },
+        "m": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:76"
+        },
+        "n": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:77"
+        },
+        "o": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:78"
+        },
+        "p": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:79"
+        },
+        "q": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:80"
+        },
+        "r": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:81"
+        },
+        "s": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:82"
+        },
+        "t": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:83"
+        },
+        "u": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:84"
+        },
+        "v": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:85"
+        },
+        "w": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:86"
+        },
+        "x": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:87"
+        },
+        "y": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:88"
+        },
+        "z": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:89"
+        },
+        "{": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:90"
+        },
+        "|": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:91"
+        },
+        "}": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:92"
+        },
+        "~": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:93"
+        },
+        "£": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:94"
+        },
+        "←": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:95"
+        },
+        "↑": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:96"
+        },
+        "→": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:97"
+        },
+        "↓": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:98"
+        },
+        "★": {
+          "advance": 7,
+          "frame": "font.kerbside5x7:outline:-:99"
+        }
+      },
+      "kerning": {
+        "AT": -1,
+        "AV": -1,
+        "AW": 0,
+        "AY": -1,
+        "Fo": -1,
+        "LT": -1,
+        "LY": -1,
+        "PA": 0,
+        "TA": -1,
+        "Te": -1,
+        "To": -1,
+        "Ty": -1,
+        "VA": -1,
+        "WA": 0,
+        "YA": -1,
+        "r,": -1,
+        "r.": -1,
+        "££": 0
+      }
+    }
+  }
+}

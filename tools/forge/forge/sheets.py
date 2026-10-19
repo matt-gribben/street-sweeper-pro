@@ -18,7 +18,11 @@ Layout, top to bottom:
 - for a ``wrap: true`` procedural tile (its params file says so; SSP-040, ASSET_PIPELINE
   §10.8), a row of **3x3 tiled previews** after its frames: each frame repeated 3x3 at 4x on
   the light background, labelled ``3x3 <frame id>``, so a seam shows as a line or a break in
-  the pattern at the tile joins.
+  the pattern at the tile joins;
+- for a font (a ``.glyphs.txt`` source; SSP-068), **specimen rows** after its frames: the whole
+  character set, the kerning pairs and a sample line typeset with the font's metrics
+  (:func:`forge.glyphs.typeset`), plain and outlined, once at **1x** (the legibility check)
+  and once at 4x, each on the light and the dark background.
 
 Each tile is the frame's full ID as its label, then the frame at 4x on the light background
 (palette 06) and again on the dark background (palette 01). Each panel is exactly the cell, so
@@ -42,7 +46,8 @@ import numpy.typing as npt
 from PIL import Image, ImageDraw, ImageFont
 
 from forge import palette as _palette_mod
-from forge.build import BuildError, Frame, build_asset
+from forge.build import BuildError, Frame, build_asset, is_font
+from forge.glyphs import GLYPH_STATE, OUTLINE_STATE, GlyphError, read_glyphs, specimen_lines, typeset
 from forge.manifest import ATLASES, AssetEntry, ManifestError, load_manifest
 from forge.palette import PALETTE_SIZE, TRANSPARENT, Palette, load_palette
 from forge.procedural import wrap_tile
@@ -60,6 +65,7 @@ __all__ = [
     "TilePlacement",
     "cli",
     "compose_sheet",
+    "font_specimens",
     "render_text",
     "write_sheets",
 ]
@@ -127,6 +133,10 @@ class TilePlacement:
     scale_ref: bool = False
     preview: bool = False
     """A 3x3 tiled preview of a wrap tile (one panel, ``size`` is still the frame at 1x)."""
+    specimen: bool = False
+    """A font specimen (typeset text, not a frame of the atlas)."""
+    scale: int = SCALE
+    """How many sheet pixels each frame pixel takes (1 for the 1x font specimens)."""
 
 
 @dataclass
@@ -185,6 +195,8 @@ class _Tile:
     height: int
     scale_ref: bool = False
     preview: bool = False
+    specimen: bool = False
+    scale: int = SCALE
 
 
 @dataclass
@@ -199,10 +211,33 @@ class _Item:
     tiles: list[_Tile] = field(default_factory=list)
 
 
-def _tile(frame: Frame, label: str, scale_ref: bool = False) -> _Tile:
-    pw, ph = frame.width * SCALE, frame.height * SCALE
+def _tile(frame: Frame, label: str, scale_ref: bool = False, scale: int = SCALE, specimen: bool = False) -> _Tile:
+    pw, ph = frame.width * scale, frame.height * scale
     lw, _ = _text_size(label)
-    return _Tile(frame, label, max(2 * pw + PANEL_GAP, lw), _LINE_H + LABEL_GAP + ph, scale_ref)
+    return _Tile(
+        frame, label, max(2 * pw + PANEL_GAP, lw), _LINE_H + LABEL_GAP + ph, scale_ref, specimen=specimen, scale=scale
+    )
+
+
+def font_specimens(entry: AssetEntry, root: Path) -> list[list[_Tile]]:
+    """Specimen rows of a font entry: plain and outlined text at 1x, then at 4x."""
+    try:
+        font = read_glyphs(root / entry.source, entry.source)
+    except GlyphError as exc:
+        raise SheetError(f"{entry.id}: {exc}") from None
+    lines = specimen_lines(font)
+    rows: list[list[_Tile]] = []
+    for scale in (1, SCALE):
+        row: list[_Tile] = []
+        for state, outlined in ((GLYPH_STATE, False), (OUTLINE_STATE, True)):
+            indices = typeset(font, lines, outlined=outlined)
+            label = f"specimen {entry.id} {state} {scale}x"
+            frame = Frame(
+                frame_id=label, asset_id=entry.id, state=state, dir="-", n=0, indices=indices, pivot=(0, 0), atlas=entry.atlas
+            )
+            row.append(_tile(frame, label, scale=scale, specimen=True))
+        rows.append(row)
+    return rows
 
 
 PREVIEW_REPEAT = 3
@@ -284,6 +319,7 @@ def _flow(
     groups: Sequence[tuple[AssetEntry, dict[str, Frame]]],
     bessie: Frame | None,
     wrap_ids: frozenset[str] = frozenset(),
+    specimens: dict[str, list[list[_Tile]]] | None = None,
 ) -> list[_Item]:
     items: list[_Item] = []
     tw, th = _text_size(title)
@@ -301,6 +337,7 @@ def _flow(
         rows = _group_rows(entry, frames, bessie)
         if entry.id in wrap_ids:
             rows += _preview_rows(frames)
+        rows += (specimens or {}).get(entry.id, [])
         for row in rows:
             items.append(_Item("tiles", max(t.height for t in row), _row_width(row), tiles=row))
     return items
@@ -312,8 +349,8 @@ def _paint_mask(canvas: U8Array, mask: npt.NDArray[np.bool_], x: int, y: int, in
     region[mask[: region.shape[0], : region.shape[1]]] = ink
 
 
-def _paint_frame(canvas: U8Array, indices: I16Array, x: int, y: int, bg: int) -> None:
-    big = np.repeat(np.repeat(indices, SCALE, axis=0), SCALE, axis=1)
+def _paint_frame(canvas: U8Array, indices: I16Array, x: int, y: int, bg: int, scale: int = SCALE) -> None:
+    big = np.repeat(np.repeat(indices, scale, axis=0), scale, axis=1)
     h, w = big.shape
     canvas[y : y + h, x : x + w] = np.where(big == TRANSPARENT, bg, big).astype(np.uint8)
 
@@ -324,12 +361,14 @@ def compose_sheet(
     groups: Sequence[tuple[AssetEntry, dict[str, Frame]]],
     bessie: Frame | None,
     wrap_ids: frozenset[str] = frozenset(),
+    specimens: dict[str, list[list[_Tile]]] | None = None,
 ) -> Sheet:
     """Lay out and paint one sheet. ``groups`` are ``(entry, {frame_id: Frame})`` in display order.
 
-    Every asset in ``wrap_ids`` also gets a row of 3x3 tiled previews after its frames.
+    Every asset in ``wrap_ids`` also gets a row of 3x3 tiled previews after its frames, and
+    every asset in ``specimens`` (fonts) gets those rows after its frames.
     """
-    items = _flow(title, groups, bessie, wrap_ids)
+    items = _flow(title, groups, bessie, wrap_ids, specimens)
     width = MARGIN * 2 + max(it.width for it in items)
     height = MARGIN * 2 + sum(it.height for it in items) + ROW_GAP * (len(items) - 1)
     canvas = np.full((height, width), SHEET_BG, dtype=np.uint8)
@@ -351,7 +390,7 @@ def compose_sheet(
             x = MARGIN
             for t in it.tiles:
                 f = t.frame
-                pw = f.width * SCALE
+                pw = f.width * t.scale
                 panel_y = y + _LINE_H + LABEL_GAP
                 _paint_mask(canvas, render_text(t.label), x, y, HEADER_INK if t.scale_ref else LABEL_INK)
                 if t.preview:
@@ -369,8 +408,8 @@ def compose_sheet(
                     )
                     x += t.width + TILE_GAP
                     continue
-                _paint_frame(canvas, f.indices, x, panel_y, BG_LIGHT)
-                _paint_frame(canvas, f.indices, x + pw + PANEL_GAP, panel_y, BG_DARK)
+                _paint_frame(canvas, f.indices, x, panel_y, BG_LIGHT, t.scale)
+                _paint_frame(canvas, f.indices, x + pw + PANEL_GAP, panel_y, BG_DARK, t.scale)
                 sheet.tiles.append(
                     TilePlacement(
                         label=t.label,
@@ -380,6 +419,8 @@ def compose_sheet(
                         dark_xy=(x + pw + PANEL_GAP, panel_y),
                         size=(f.width, f.height),
                         scale_ref=t.scale_ref,
+                        specimen=t.specimen,
+                        scale=t.scale,
                     )
                 )
                 x += t.width + TILE_GAP
@@ -449,8 +490,11 @@ def write_sheets(
     for name, label, group_entries in jobs:
         groups = [(e, _built_frames(e, root, palette)) for e in group_entries]
         wrap_ids = frozenset(e.id for e in group_entries if e.technique == "procedural" and wrap_tile(root / e.source))
+        specimens = {e.id: font_specimens(e, root) for e in group_entries if is_font(e)}
         n = sum(len(fr) for _, fr in groups)
-        sheet = compose_sheet(name, f"{label}: {n} frames at {SCALE}x, light 06 | dark 01", groups, bessie, wrap_ids)
+        sheet = compose_sheet(
+            name, f"{label}: {n} frames at {SCALE}x, light 06 | dark 01", groups, bessie, wrap_ids, specimens
+        )
         path = out / f"{name}.png"
         write_bytes_if_changed(path, sheet.png(palette))
         written.append((path, sheet))
@@ -471,6 +515,6 @@ def cli(args: argparse.Namespace, repo_root: Path | None = None) -> int:
         return 0
     for path, sheet in written:
         shown = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
-        frames = sum(1 for t in sheet.tiles if not t.scale_ref and not t.preview)
+        frames = sum(1 for t in sheet.tiles if not t.scale_ref and not t.preview and not t.specimen)
         print(f"forge sheets: wrote {shown} ({sheet.width}x{sheet.height}, {frames} frames)")
     return 0

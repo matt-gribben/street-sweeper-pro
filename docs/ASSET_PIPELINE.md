@@ -167,7 +167,7 @@ tools/forge/
 
 public/assets/                      # GENERATED, committed
 ├─ atlas/  world.png world.json actors.png actors.json items.png items.json ui.png ui.json fx.png fx.json
-├─ fonts/  kerbside5x7.json kerbsidebold8x8.json (+ outlined variants)
+├─ fonts/  kerbside5x7.json kerbsidebold8x8.json (metrics of the plain and outlined variants, §6.3)
 ├─ art/    title.png portrait_big_pam.png …        # asset IDs art.title, portrait.big_pam
 └─ asset-hashes.json
 src/gen/assets.ts                   # GENERATED, committed
@@ -429,7 +429,7 @@ glyph "£"
 ..##.
 .#..#
 .#...
-###..
+####.
 .#...
 .#...
 #####
@@ -439,6 +439,55 @@ kern "LT" -1
 ```
 
 The forge renders the atlas, builds an outlined variant automatically, and writes the metrics JSON (`public/assets/fonts/kerbside5x7.json`) consumed by `src/ui/bitmapText.ts`. Glyph design rules and specimens are in [ART_BIBLE.md](ART_BIBLE.md). **Never use AI image generation for fonts.**
+
+**Grammar as built (SSP-068, `tools/forge/forge/glyphs.py`).**
+
+- The five header lines come first, each exactly once: `font:` (display name), `glyph: WxH` (the ink box), `cell: WxH` (the layout cell, at least the glyph size), `baseline:` (rows from the glyph top, 1..H) and `advance:` (the default pen advance). Any other header is an error.
+- `glyph "<c>"` starts a block, and exactly H rows of W characters (`#` or `.`) follow it directly, with no blank or comment line inside the block. The character is the single one between the quotes, with no escapes: `glyph """` is the double quote and `glyph "\"` the backslash.
+- `kern "<c><c>" <int>` gives one pair a signed integer adjustment in pixels, added to the left glyph's advance. Both characters must be glyphs of the file, and a pair may appear only once.
+- Blank lines are ignored. `//` starts a comment line (`#` is ink, so it cannot start a comment).
+- Every error names the file and the line. The build also requires exactly the 101-glyph character set.
+- Per-glyph advances (narrow i, l, !, .) are not in the grammar yet. Every glyph uses the header advance until SSP-141 adds the override syntax.
+
+**Manifest entry and frames.** A font is a `grid` entry whose `source` is the `.glyphs.txt` file, with `outline: false` (the forge's own outline, below, is not the 4-connected actor outline) and `dirs: "-"`. Kerbside 5×7 is `font.kerbside5x7` in the `ui` atlas, with states `glyph` (plain) and `outline` (outlined variant):
+
+```json
+{ "id": "font.kerbside5x7", "class": "font", "technique": "grid",
+  "source": "assets-src/fonts/kerbside5x7.glyphs.txt", "cell": [7, 9],
+  "states": ["glyph", "outline"], "dirs": "-", "frames": { "glyph": 100, "outline": 100 },
+  "atlas": "ui", "outline": false, "swaps": [] }
+```
+
+- **Frame `n`** is the glyph's position among the *inked* glyphs in code-point order: `!` is 0, `~` is 93, then £ 94, ← 95, ↑ 96, → 97, ↓ 98 and ★ 99. The space has no ink, so it has no frame (an empty frame is a build and lint error). The metrics map each character to its frame, so nothing else depends on this numbering.
+- **Frame size.** Both states use the outlined box, the glyph grown by 1 px on every side, so the manifest cell is `[glyph w + 2, glyph h + 2]` (7×9). The glyph's top-left sits at (1, 1) in either frame, and that point is also the frame pivot (`px`, `py`). A renderer places the pivot on the pen position, the top-left of the glyph box on the line.
+- **Colours.** Glyph pixels are 07 `chalk` on transparent. The `outline` state adds a 1 px 00 `ink` ring that is **8-connected**: every empty pixel with glyph ink among its 8 neighbours. It grows each glyph by exactly 1 px per side (ART_BIBLE §12.5). Text is recoloured at runtime by palette index (SSP-069).
+- When outlined glyphs sit close together, draw every outline before any ink, so that one glyph's ring never covers a diagonal neighbour's ink. `forge sheets` typesets its specimens this way.
+
+**Metrics JSON** (`public/assets/fonts/<name>.json`, where `<name>` is the asset ID minus its class). The forge owns `public/assets/fonts/` the way it owns `public/assets/atlas/`: it removes files there that the build did not produce, and lists every metrics file in `asset-hashes.json`. Keys are written in a fixed order, glyphs in code-point order and kerning pairs sorted.
+
+```json
+{
+  "id": "font.kerbside5x7", "font": "Kerbside 5x7",
+  "source": "assets-src/fonts/kerbside5x7.glyphs.txt", "atlas": "ui",
+  "glyph": { "w": 5, "h": 7 }, "cell": { "w": 6, "h": 8 },
+  "frame": { "w": 7, "h": 9 }, "origin": { "x": 1, "y": 1 },
+  "baseline": 7, "fallback": "?", "colours": { "ink": 7, "outline": 0 },
+  "variants": {
+    "plain": {
+      "state": "glyph", "advance": 6, "lineHeight": { "hud": 8, "paragraph": 9 },
+      "glyphs": { " ": { "advance": 6, "frame": null },
+                  "A": { "advance": 6, "frame": "font.kerbside5x7:glyph:-:32" } },
+      "kerning": { "AV": -1 }
+    },
+    "outline": { "state": "outline", "advance": 7, "lineHeight": { "hud": 9, "paragraph": 10 }, "…": "…" }
+  }
+}
+```
+
+- `lineHeight.hud` is the cell height and `paragraph` is the cell height + 1 (ART_BIBLE §12.5: 8 / 9).
+- The outlined variant's advances and line heights are the plain values + 1, so the outlines of neighbouring glyphs and lines merge. Kerning is the same in both variants.
+- `forge lint` (Shape) fails a font whose committed metrics file is missing or differs from its glyph file.
+- `forge sheets` adds specimen rows to a font's group: the whole character set, the kerning pairs and a sample line, typeset with these metrics, plain and outlined, at 1× and at 4×.
 
 ### 6.4 Procedural params (`assets-src/procedural/**/*.json`)
 
@@ -1116,6 +1165,7 @@ Notes on each step:
 | Technique | Steps |
 |---|---|
 | `grid` / `ai-ingest` | Parse → validate (size, key, frame list against manifest) → render frames → apply mirrors → litter rotations (`dirs: "rot4"`) → outline if `outline: true` |
+| `grid` with a `.glyphs.txt` source (font builder, SSP-068) | Parse the glyph file → check the 101-glyph character set and the 7×9 cell → render the `glyph` frames and the 8-connected `outline` frames, pivot on the glyph's top-left → write the metrics JSON to `public/assets/fonts/` (§6.3) |
 | `procedural` | Run the generator named in the params file (§6.4) with its seed → palette indices → validate the frame list against the manifest → PNG frames, pivot at the cell centre. Facades: assemble modules into one bay, then derive `lit`/`base`/`dark` by ramp shift (§10.9). |
 | `blender` | Read `assets-src/rendered/<id>/` → block-mode 4×4 → 1 px → palette snap (expected no-op; the lint flags any changed pixel) → alpha 128 → **1 px ink (`#0f0e12`) outline, 4-connected, outside the silhouette** → record pivots. Block mode keys each render pixel by its exact colour (a Kerbside-32 colour by its index, any other colour after all 32), so ties go to the lower palette index and an output pixel is always one of its block's colours; the snap then changes only off-palette winners, and their count is reported per frame (`snap_changed_px`). |
 | `ai-art` | Golden → crop → pixelize (FFT period detection and block-mode at the detected period, exactly as in ingest; `period_override` in `ingest.json`, `null` = auto) → if the result exceeds `size`, centre-crop; never upscale (a result smaller than `size` fails, so regenerate or set `period_override`) → palette map (optional ordered 4×4 Bayer) → 480×270 or 64×64 (`public/assets/art/`) |
@@ -1133,7 +1183,7 @@ Portraits use the same pixelize path: `crop` selects each expression from the 1:
   - **Extrusion** (SSP-039, [ART_BIBLE §14.6](ART_BIBLE.md#146-atlas-packing)): every frame of a ground tile (`tile.*`, plus `haz.speed_bump`, a hazard drawn as a ground cell, SSP-040), facade set (`facade.*`, built from facade modules, §10.9) or roof surface (`roof.*`) is packed with a 1 px border of duplicated edge pixels (corners repeat the corner pixel), not a transparent gutter, so tiling surfaces never show transparent seams. The 1 px padding sits outside that border. Other classes (stains, actors, items) are not extruded.
   - **Interior-rect contract:** the atlas JSON rect `{x, y, w, h}` (and the matching `FRAME` entry) of an extruded frame covers **only the interior cell**, never the duplicated border, so `w`/`h` equal the manifest cell. `groundLayer` and `cityMesh` (SSP-045) sample inside the rect with no special case; the border only catches filtering or UV drift past the cell edge.
   - The atlas PNG is indexed, with the same PLTE/`tRNS` contract as the frame PNGs (§9.2).
-  - `public/assets/atlas/` belongs to the packer: any file there that the build did not produce is removed.
+  - `public/assets/atlas/` belongs to the packer: any file there that the build did not produce is removed. The same holds for `public/assets/fonts/`, which holds the font metrics (§6.3, SSP-068).
 - **Atlases:** 5 atlases of at most 2048×2048:
 
 | Atlas | Contents |
@@ -1209,7 +1259,7 @@ export type AssetId = "veh.sweeper" | "npc.old_woman" | "litter.crisp_packet" /*
 
 `--only <id>` produces a focused sheet, `build/sheets/only_<id>.png`, which is the one to Read during iteration.
 
-**Implementation (SSP-011, `tools/forge/forge/sheets.py`).** Frames are built in memory from the sources, the same way `forge build` builds them, so a sheet never depends on the cache. Each tile is the full frame ID as its label, then the frame at 4× on light (palette 06) and again on dark (palette 01). Each panel is exactly the cell, so diagonal headings can be checked against its edge. A state with one frame per direction runs across the directions. An animated state gets one left-to-right run per direction, and runs wrap at about 6,400 px (a run longer than a row, such as the 47 kerb tiles, continues on the next row). **3×3 previews** (SSP-040): every procedural entry whose params say `"wrap": true` gets a row after its frames with each frame repeated 3×3 at 4× on the light background, labelled `3x3 <frame id>`; a seam shows as a line or a break in the pattern at the joins. Bessie `veh.sweeper:body:h00:0` is the first tile of every group. Every colour is read from `kerbside32.json` by index. Labels use Pillow's built-in bitmap font at 2×, so sheets hold palette colours only and are written as byte-stable indexed PNGs. `--atlas <name>` limits output to one atlas (an atlas with no entries writes nothing). `--only` writes one `only_<id>.png` per ID (a combined multi-ID sheet is SSP-116). Sheets of real atlases are large (actors: 6932×8788), and Read downsamples them. Check labels and edges on 1:1 crops (a throwaway Pillow crop into `build/tmp/`).
+**Implementation (SSP-011, `tools/forge/forge/sheets.py`).** Frames are built in memory from the sources, the same way `forge build` builds them, so a sheet never depends on the cache. Each tile is the full frame ID as its label, then the frame at 4× on light (palette 06) and again on dark (palette 01). Each panel is exactly the cell, so diagonal headings can be checked against its edge. A state with one frame per direction runs across the directions. An animated state gets one left-to-right run per direction, and runs wrap at about 6,400 px (a run longer than a row, such as the 47 kerb tiles, continues on the next row). **3×3 previews** (SSP-040): every procedural entry whose params say `"wrap": true` gets a row after its frames with each frame repeated 3×3 at 4× on the light background, labelled `3x3 <frame id>`; a seam shows as a line or a break in the pattern at the joins. **Font specimens** (SSP-068): a font's group ends with its character set, kerning pairs and a sample line typeset with its metrics, plain and outlined, at 1× (the legibility check) and at 4×, each on light and dark. Bessie `veh.sweeper:body:h00:0` is the first tile of every group. Every colour is read from `kerbside32.json` by index. Labels use Pillow's built-in bitmap font at 2×, so sheets hold palette colours only and are written as byte-stable indexed PNGs. `--atlas <name>` limits output to one atlas (an atlas with no entries writes nothing). `--only` writes one `only_<id>.png` per ID (a combined multi-ID sheet is SSP-116). Sheets of real atlases are large (actors: 6932×8788), and Read downsamples them. Check labels and edges on 1:1 crops (a throwaway Pillow crop into `build/tmp/`).
 
 ---
 

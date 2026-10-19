@@ -67,6 +67,7 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "facade.parade_brick",
         "facade.terrace_brick",
         "facade.terrace_brick_bay",
+        "font.kerbside5x7",
         "haz.speed_bump",
         *LITTER_IDS,
         "npc.old_woman",
@@ -146,8 +147,9 @@ def test_committed_manifest_is_valid_sorted_and_has_the_m0_entries() -> None:
         "swaps": [],
     }
     # 205 M0 frames + 27 SSP-041 facade and roof frames + 85 SSP-040 ground tiles, then SSP-051: the banana
-    # skin's 1 frame becomes 12 and 14 more litter IDs add 12 each (180 litter frames in all).
-    assert sum(len(e.frame_ids()) for e in entries) == 496
+    # skin's 1 frame becomes 12 and 14 more litter IDs add 12 each (180 litter frames in all), + 200 SSP-068
+    # font frames.
+    assert sum(len(e.frame_ids()) for e in entries) == 696
     assert sum(len(e.frame_ids()) for e in entries if e.asset_class == "litter") == 180
     for e in raw["assets"]:
         assert list(e) == list(FIELDS), "fields in the documented order"

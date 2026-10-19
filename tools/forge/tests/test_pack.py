@@ -269,14 +269,26 @@ def test_write_outputs_removes_stale_atlas_files_and_skips_unchanged(tmp_path: P
     stale = tmp_path / ATLAS_DIR / "items.png"
     stale.parent.mkdir(parents=True)
     stale.write_bytes(b"old")
-    other = tmp_path / "public" / "assets" / "fonts" / "x.json"
+    stale_font = tmp_path / "public" / "assets" / "fonts" / "x.json"
+    stale_font.parent.mkdir(parents=True)
+    stale_font.write_bytes(b"{}")
+    other = tmp_path / "public" / "assets" / "levels" / "x.json"
     other.parent.mkdir(parents=True)
     other.write_bytes(b"{}")
     files = {f"{ATLAS_DIR}/actors.png": b"png", ASSETS_TS: b"ts"}
     assert write_outputs(tmp_path, files) == [f"{ATLAS_DIR}/actors.png", ASSETS_TS]
     assert not stale.exists()
-    assert other.exists(), "only public/assets/atlas/ is owned by the packer"
+    assert not stale_font.exists(), "public/assets/fonts/ is owned by the forge too (SSP-068)"
+    assert other.exists(), "only public/assets/atlas/ and public/assets/fonts/ are owned by the forge"
     assert write_outputs(tmp_path, files) == []
+
+
+def test_generated_files_take_font_metrics_into_the_hash_listing() -> None:
+    files = generated_files([], [], PALETTE, extra={"public/assets/fonts/f.json": b"{}\n"})
+    assert files["public/assets/fonts/f.json"] == b"{}\n"
+    assert "public/assets/fonts/f.json" in json.loads(files[HASHES_JSON])
+    with pytest.raises(ValueError, match="must be a new file"):
+        generated_files([], [], PALETTE, extra={"public/assets/other.json": b"{}"})
 
 
 # ---------------------------------------------------------------------------------------------

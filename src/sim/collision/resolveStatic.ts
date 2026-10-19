@@ -1,7 +1,8 @@
 // Phase 3: Bessie vs the static world (TECHNICAL_DESIGN §9.2, SSP-036).
 //
 //   1. Bessie's OBB (body.widthM × body.lengthM, 1.75 × 3.25 m) at the pose phase 2 integrated.
-//   2. Sub-step the move from the tick's start pose when it exceeds 1.0 m: ceil(d / 1.0) steps (sweep.ts).
+//   2. Sub-step the move from the tick's start pose when it exceeds grid.subStepMaxM: 1.0 m, or half the
+//      thinnest prop's smallest extent (0.15 m with a bollard, SSP-037); ceil(d / step) steps (sweep.ts).
 //   3. At each step, query the grid cells under the OBB's AABB into the grid's candidate list.
 //   4. SAT against every candidate (grid.ts staticContact; merged rects use the ghost-edge mask).
 //   5. Push out along the DEEPEST contact's MTV, then re-query and repeat, at most 4 times per step (inside
@@ -19,8 +20,9 @@
 // between two merged rects harmless: the wall the OBB is really pressed into goes first and leaves the
 // neighbour merely touching. Ties between equally deep contacts go to the lower shape index (grid order).
 //
-// The pose correction is accumulated across sub-steps and added to the end pose; heading is never changed
-// (no angular response in M1). Allocation-free: all scratch lives in the StaticResolver, created once.
+// The pose correction is accumulated across sub-steps and added to the end pose. There is no angular response
+// in M1: phase 3 never turns Bessie, except to undo phase 2's turn when it cannot be resolved (the fallback
+// below resolveStatic, SSP-037). Allocation-free: all scratch lives in the StaticResolver, created once.
 import { EV, type EventQueue, emitEvent } from '../eventQueue.ts';
 import { cos, sin } from '../fmath.ts';
 import type { VehicleParams, VehicleState } from '../vehicle.ts';
@@ -31,6 +33,17 @@ import { createPose, createSweep, type Pose, type Sweep, sweepPose, sweepStepCou
 
 /** MTV iterations per sub-step (§9.2 step 5). */
 export const MAX_RESOLVE_ITERATIONS = 4;
+
+/**
+ * How a tick's resolve ended (SSP-037). Clear: the integrated move resolved (the normal case). HeadingHeld:
+ * the turn could not be resolved by translation, so the heading was held at the tick's start heading.
+ * Stopped: neither resolved, so Bessie stopped at the furthest clear point of her move, velocity zeroed.
+ */
+export const ResolveOutcome = { Clear: 0, HeadingHeld: 1, Stopped: 2 } as const;
+export type ResolveOutcome = (typeof ResolveOutcome)[keyof typeof ResolveOutcome];
+
+/** Bisection steps for ResolveOutcome.Stopped: a 0.29 m move is cut to within 0.29 m / 2^16 ≈ 4.4 µm. */
+export const STOP_BISECTION_STEPS = 16;
 
 /** Contacts the per-tick log keeps; later ones in the same tick are resolved but not logged. */
 export const CONTACT_LOG_CAPACITY = 64;
@@ -89,6 +102,13 @@ export type StaticResolver = {
   /** Contact point of the current push. */
   pointX: number;
   pointY: number;
+  /** How this tick's resolve ended (ResolveOutcome). */
+  outcome: ResolveOutcome;
+  /** State saved before an attempt, restored if the attempt is undone. */
+  savedVLongMps: number;
+  savedVLatMps: number;
+  savedHp: number;
+  savedEventCount: number;
 };
 
 /** Allocate the resolver. Once per World. */
@@ -116,6 +136,11 @@ export function createStaticResolver(): StaticResolver {
     bestDepth: 0,
     pointX: 0,
     pointY: 0,
+    outcome: ResolveOutcome.Clear,
+    savedVLongMps: 0,
+    savedVLatMps: 0,
+    savedHp: 0,
+    savedEventCount: 0,
   };
 }
 
@@ -203,41 +228,61 @@ function contactPoint(grid: StaticGrid, r: StaticResolver, s: number): void {
 }
 
 /**
- * Resolve Bessie against `grid` for this tick (§9.2 steps 1–5): moves `v` out of every static shape, reflects
- * and damages on approaching contacts and emits EV.Impact for each. Reads the move from v.prevXM/prevYM/
- * prevHeadingRad (the tick's start pose, copied by stepVehicle) to v.xM/yM/headingRad. Allocation-free.
+ * Snapshot the state an attempt may change (velocity, HP, event and log counts) so a failed attempt can be
+ * undone. Kept on the resolver, not in locals passed around, so no double crosses a call boundary.
  */
-export function resolveStatic(
+function saveAttempt(r: StaticResolver, v: VehicleState, events: EventQueue): void {
+  r.savedVLongMps = v.vLongMps;
+  r.savedVLatMps = v.vLatMps;
+  r.savedHp = v.hp;
+  r.savedEventCount = events.count;
+}
+
+/** Undo an attempt: restore velocity and HP, drop its events (zeroing their slots) and its log entries. */
+function undoAttempt(r: StaticResolver, v: VehicleState, events: EventQueue): void {
+  v.vLongMps = r.savedVLongMps;
+  v.vLatMps = r.savedVLatMps;
+  v.hp = r.savedHp;
+  for (let i = r.savedEventCount; i < events.count; i += 1) {
+    events.type[i] = 0;
+    events.entity[i] = 0;
+    events.a[i] = 0;
+    events.b[i] = 0;
+    events.c[i] = 0;
+  }
+  events.count = r.savedEventCount;
+  r.log.count = 0;
+}
+
+/**
+ * One resolve attempt over `r.sweep` (§9.2 steps 1–5): sub-step the move, push the OBB out of the deepest
+ * contact up to MAX_RESOLVE_ITERATIONS times per step, respond to approaching contacts, and write the end
+ * position into v.xM/yM. The velocity frame is the sweep's end heading. Returns true when the end pose
+ * overlaps nothing; false when the last step ran out of iterations with an overlap left.
+ */
+function resolveSweep(
   grid: StaticGrid,
   r: StaticResolver,
   v: VehicleState,
   params: VehicleParams,
   events: EventQueue,
-): void {
+): boolean {
   const t = params.tuning;
   const col = t.collision;
   const restitution = col.restitution;
   const log = r.log;
-  log.count = 0;
 
   // Heading frame for the velocity response (the end-of-tick heading; phase 3 never turns Bessie).
-  const fx = sin(v.headingRad);
-  const fy = -cos(v.headingRad);
+  const sweep = r.sweep;
+  const fx = sin(sweep.heading1Rad);
+  const fy = -cos(sweep.heading1Rad);
   const rx = -fy;
   const ry = fx;
-
-  // The move phase 2 made, split into ≤ 1 m sub-steps (sweep.ts).
-  const sweep = r.sweep;
-  sweep.x0 = v.prevXM;
-  sweep.y0 = v.prevYM;
-  sweep.heading0Rad = v.prevHeadingRad;
-  sweep.x1 = v.xM;
-  sweep.y1 = v.yM;
-  sweep.heading1Rad = v.headingRad;
   const steps = sweepStepCount(sweep);
 
   let corrX = 0;
   let corrY = 0;
+  let clear = true;
   const pose = r.pose;
   const obb = r.obb;
   obb.halfWidthM = t.body.widthM * 0.5;
@@ -248,7 +293,8 @@ export function resolveStatic(
     obb.cy = pose.y + corrY;
     obb.headingRad = pose.headingRad;
     refreshObbAxes(obb);
-    for (let iter = 0; iter < MAX_RESOLVE_ITERATIONS; iter += 1) {
+    let iter = 0;
+    for (; iter < MAX_RESOLVE_ITERATIONS; iter += 1) {
       if (!findDeepest(grid, r)) break;
       const nx = r.bestNx;
       const ny = r.bestNy;
@@ -291,10 +337,93 @@ export function resolveStatic(
         log.count = i + 1;
       }
     }
+    // Only the end pose is judged: an earlier step may stay unresolved and be cleared by the next.
+    if (step === steps && iter === MAX_RESOLVE_ITERATIONS) clear = !findDeepest(grid, r);
     corrX = obb.cx - pose.x;
     corrY = obb.cy - pose.y;
   }
-  // The last sub-step pose is the integrated pose exactly, so the end position is it plus the correction.
+  // The last sub-step pose is the sweep's end pose exactly, so the end position is it plus the correction.
   v.xM = sweep.x1 + corrX;
   v.yM = sweep.y1 + corrY;
+  return clear;
+}
+
+/**
+ * Set the resolver's OBB to Bessie at the sweep's start pose (the pose the tick started from) and return
+ * whether it overlaps nothing.
+ */
+function startPoseClear(grid: StaticGrid, r: StaticResolver, params: VehicleParams): boolean {
+  const obb = r.obb;
+  obb.halfWidthM = params.tuning.body.widthM * 0.5;
+  obb.halfLengthM = params.tuning.body.lengthM * 0.5;
+  obb.cx = r.sweep.x0;
+  obb.cy = r.sweep.y0;
+  obb.headingRad = r.sweep.heading0Rad;
+  refreshObbAxes(obb);
+  return !findDeepest(grid, r);
+}
+
+/**
+ * Resolve Bessie against `grid` for this tick (§9.2 steps 1–5): moves `v` out of every static shape, reflects
+ * and damages on approaching contacts and emits EV.Impact for each. Reads the move from v.prevXM/prevYM/
+ * prevHeadingRad (the tick's start pose, copied by stepVehicle) to v.xM/yM/headingRad. Allocation-free.
+ *
+ * MTV push-out cannot resolve every move (SSP-037's property 1 found both cases): with no angular response a
+ * turn can leave Bessie in an orientation no translation frees (turning in a pocket barely wider than she
+ * is), and a move into a gap narrower than her rotated width pushes her back and forth between its sides.
+ * When the end pose still overlaps after the last iteration, the attempt is undone and the move is resolved
+ * again with the heading held at the tick's start heading and the yaw rate zeroed (ResolveOutcome.
+ * HeadingHeld). If that still overlaps and the start pose was clear, Bessie stops at the furthest point of the
+ * straight move from the start pose that overlaps nothing, found by bisection, with her velocity zeroed and
+ * no impact (ResolveOutcome.Stopped). Either way a tick that starts clear never ends inside a solid.
+ */
+export function resolveStatic(
+  grid: StaticGrid,
+  r: StaticResolver,
+  v: VehicleState,
+  params: VehicleParams,
+  events: EventQueue,
+): void {
+  r.log.count = 0;
+  r.outcome = ResolveOutcome.Clear;
+  const sweep = r.sweep;
+  sweep.x0 = v.prevXM;
+  sweep.y0 = v.prevYM;
+  sweep.heading0Rad = v.prevHeadingRad;
+  sweep.x1 = v.xM;
+  sweep.y1 = v.yM;
+  sweep.heading1Rad = v.headingRad;
+  sweep.maxStepM = grid.subStepMaxM;
+  saveAttempt(r, v, events);
+  if (resolveSweep(grid, r, v, params, events)) return;
+
+  // The turn cannot be resolved by translation: hold the start heading and try again.
+  undoAttempt(r, v, events);
+  r.outcome = ResolveOutcome.HeadingHeld;
+  sweep.heading1Rad = sweep.heading0Rad;
+  v.headingRad = v.prevHeadingRad;
+  v.yawRateRadPerS = 0;
+  if (resolveSweep(grid, r, v, params, events)) return;
+
+  // Still blocked (wedged in a gap): stop at the furthest clear point of the straight move, if the start pose
+  // was clear (else keep the best effort above, so a spawn overlap still works its way out).
+  if (!startPoseClear(grid, r, params)) return;
+  undoAttempt(r, v, events);
+  r.outcome = ResolveOutcome.Stopped;
+  const obb = r.obb; // at the start pose, start heading (startPoseClear)
+  const dx = sweep.x1 - sweep.x0;
+  const dy = sweep.y1 - sweep.y0;
+  let lo = 0; // clear
+  let hi = 1; // blocked
+  for (let i = 0; i < STOP_BISECTION_STEPS; i += 1) {
+    const mid = (lo + hi) * 0.5;
+    obb.cx = sweep.x0 + dx * mid;
+    obb.cy = sweep.y0 + dy * mid;
+    if (findDeepest(grid, r)) hi = mid;
+    else lo = mid;
+  }
+  v.xM = sweep.x0 + dx * lo;
+  v.yM = sweep.y0 + dy * lo;
+  v.vLongMps = 0;
+  v.vLatMps = 0;
 }

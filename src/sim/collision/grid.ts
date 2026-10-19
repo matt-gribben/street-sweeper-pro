@@ -28,6 +28,7 @@ import type { Level, LevelProp } from '../map.ts';
 import type { PropFootprint, PropFootprints } from '../tuning.ts';
 import { type Aabb, createAabb, createObb, type Obb, obbAabb, setObb } from './obb.ts';
 import { type Circle, type Contact, obbVsCircleShape, obbVsObb, obbVsRectMasked, RECT_OPEN } from './sat.ts';
+import { SUBSTEP_MAX_M } from './sweep.ts';
 
 /** Shape kinds. */
 export const ShapeKind = { Rect: 0, Circle: 1, Box: 2 } as const;
@@ -46,6 +47,12 @@ export type StaticGrid = {
   readonly widthTiles: number;
   readonly heightTiles: number;
   readonly shapeCount: number;
+  /**
+   * The largest step a body may move between collision tests against this grid (SSP-037): SUBSTEP_MAX_M
+   * (1.0 m), or half the smallest extent of the thinnest prop footprint when that is less (a circle's
+   * radius, half a box's shorter side). Rects are whole tiles, so they never lower it.
+   */
+  readonly subStepMaxM: number;
   readonly kind: Uint8Array;
   readonly source: Uint8Array;
   /** Each shape's AABB in metres (for a rect, the rect itself). */
@@ -200,10 +207,19 @@ export function createStaticGrid(level: Level, footprints: PropFootprints): Stat
     }
   });
 
+  let subStepMaxM = SUBSTEP_MAX_M;
+  for (const spec of specs) {
+    if (spec.kind === ShapeKind.Rect) continue;
+    const fp = spec.footprint;
+    const half = fp.shape === 'circle' ? fp.radiusM : Math.min(fp.widthM, fp.lengthM) / 2;
+    if (half < subStepMaxM) subStepMaxM = half;
+  }
+
   const grid: StaticGrid = {
     widthTiles: w,
     heightTiles: h,
     shapeCount: n,
+    subStepMaxM,
     kind,
     source,
     bounds,

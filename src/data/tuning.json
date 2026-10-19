@@ -151,7 +151,8 @@
   },
   "tidy": {
     "grimeWeight": 0.6,
-    "litterWeight": 0.4
+    "litterWeight": 0.4,
+    "frontageGoodMinClean": 0.9
   },
   "streetLife": {
     "awareness": { "radiusM": 6, "ledBeaconRadiusM": 10 },

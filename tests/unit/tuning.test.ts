@@ -541,6 +541,7 @@ describe('M2 sweeping-core sections (SSP-053) mirror GDD §8–§12 and TECHNICA
     ['shift.knockOffBrake', 0.5, 'GDD §5.3 knock-off: rolls to a stop under half brake (SSP-062)'],
     ['tidy.grimeWeight', 0.6, 'GDD §9.2 0.6 × grime'],
     ['tidy.litterWeight', 0.4, 'GDD §9.2 0.4 × litter'],
+    ['tidy.frontageGoodMinClean', 0.9, 'GDD §9.3 pledge tip, green and Inspector at ≥ 90% (SSP-064)'],
   ])('%s = %d (%s)', (path, expected) => {
     let value: unknown = tuningJson;
     for (const part of path.split('.')) value = isJson(value) ? value[part] : undefined;

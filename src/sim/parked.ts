@@ -18,6 +18,15 @@
 // never exceeds the store's 30), and their OBBs into the static grid (collision/grid.ts ShapeSource.Parked),
 // which is why createWorld places them before it builds the grid.
 //
+// White vans (SSP-091; ENTITY_CATALOG §8.2, LEVEL_DESIGN §9.5). A parked white van (HALF_ON_PAVEMENT_KINDS)
+// always parks half on the pavement, so it may only stand in a bay beside a pavement at least
+// HALF_ON_PAVEMENT_MIN_TILES (2) deep (parkingBays.ts slotPavementDepth): in any other bay the kind draw leaves it
+// out (the same one draw, over the weights of the other kinds; a bay where no other kind has weight stays empty,
+// so the compiled `parked` is then an upper bound). It stands HALF_ON_PAVEMENT_SHIFT_M (1 m, half a tile) out of
+// the middle of the bay row towards the kerb: its centre on the kerb line, half its width over the pavement,
+// blocking the gutter line. It is flagged VEHICLE_FLAG.HALF_ON_PAVEMENT; its static OBB and roof perch move with
+// it. Puddle Lane's pavements are 1 tile, so it parks none.
+//
 // Roof perches (for npc.cat, SSP-087). Every parked car's roof is one perch, at its body centre; `roofPerch`
 // holds the NPC handle of the cat on it (ROOF_PERCH_FREE when empty). claimRoofPerch / releaseRoofPerch are the
 // occupancy API; the perch never moves, because parked cars never do.
@@ -37,8 +46,15 @@ import type { ParkedBox } from './collision/grid.ts';
 import type { StaticResolver } from './collision/resolveStatic.ts';
 import { Offence } from './complaints.ts';
 import { VEHICLE_IDS } from './entities.ts';
-import type { Level } from './map.ts';
-import { type BaySlot, cutBaySlots } from './parkingBays.ts';
+import { Ground, type Level } from './map.ts';
+import {
+  type BaySlot,
+  bayKerbStep,
+  cutBaySlots,
+  HALF_ON_PAVEMENT_MIN_TILES,
+  HALF_ON_PAVEMENT_SHIFT_M,
+  slotPavementDepth,
+} from './parkingBays.ts';
 import { pushPenalty } from './penalties.ts';
 import { nextInt, type Sfc32 } from './rng.ts';
 import { MIX_STEPS } from './traffic.ts';
@@ -53,6 +69,9 @@ import {
   type VehicleStore,
 } from './vehicleStore.ts';
 import type { World } from './world.ts';
+
+/** The parked kinds that park half on the pavement (SSP-091): the white van. */
+export const HALF_ON_PAVEMENT_KINDS: readonly string[] = ['veh.van_white_parked'];
 
 /** A level's parked cars as placed: where each stands, for tests and tools (no pose beyond the store's). */
 export type ParkedPlacement = {
@@ -88,7 +107,7 @@ export function placeParkedCars(store: VehicleStore, level: Level, rng: Sfc32): 
   const mix = (spec?.parkedMix ?? []).map((m) => {
     const kind = (VEHICLE_IDS as readonly string[]).indexOf(m.id);
     if (kind < 0) throw new Error(`${where}: ${m.id} is not a vehicle kind of entities.json`);
-    return { kind, weight: m.weight };
+    return { kind, weight: m.weight, halfOn: HALF_ON_PAVEMENT_KINDS.includes(m.id) };
   });
   let total = 0;
   for (const m of mix) total += m.weight;
@@ -104,30 +123,52 @@ export function placeParkedCars(store: VehicleStore, level: Level, rng: Sfc32): 
   }
   const filled = order.slice(0, want).sort((a, b) => a - b);
   const boxes: ParkedBox[] = [];
+  const placed: number[] = [];
+  const [w, h] = level.size;
   for (const slotIndex of filled) {
     const slot = slots[slotIndex] as BaySlot;
+    const bay = level.lanes.bays[slot.run] as Level['lanes']['bays'][number];
+    // A white van only beside a pavement deep enough to park half on (SSP-091).
+    const halfOnOk =
+      slotPavementDepth(slot, bay, level.layers.ground, w, h, Ground.Pavement, HALF_ON_PAVEMENT_MIN_TILES) >=
+      HALF_ON_PAVEMENT_MIN_TILES;
+    let slotTotal = 0;
+    for (const m of mix) if (halfOnOk || !m.halfOn) slotTotal += m.weight;
+    if (!(slotTotal > 0)) continue;
     // The kind by parkedMix weight, drawn exactly as traffic.ts draws a moving vehicle's kind.
-    let r = ((nextInt(rng, MIX_STEPS) + 0.5) / MIX_STEPS) * total;
-    let kind = (mix[mix.length - 1] as { kind: number }).kind;
-    for (const m of mix) {
+    let r = ((nextInt(rng, MIX_STEPS) + 0.5) / MIX_STEPS) * slotTotal;
+    let pick = -1;
+    for (let k = 0; k < mix.length; k += 1) {
+      const m = mix[k] as { kind: number; weight: number; halfOn: boolean };
+      if (m.halfOn && !halfOnOk) continue;
+      pick = k;
       r -= m.weight;
-      if (r < 0) {
-        kind = m.kind;
-        break;
-      }
+      if (r < 0) break;
     }
-    const i = addVehicle(store, kind, VEHICLE_FLAG.PARKED);
+    const m = mix[pick] as { kind: number; weight: number; halfOn: boolean };
+    const kind = m.kind;
+    let x = slot.x;
+    let y = slot.y;
+    let flags: number = VEHICLE_FLAG.PARKED;
+    if (m.halfOn) {
+      const [dx, dy] = bayKerbStep(bay);
+      x += dx * HALF_ON_PAVEMENT_SHIFT_M;
+      y += dy * HALF_ON_PAVEMENT_SHIFT_M;
+      flags |= VEHICLE_FLAG.HALF_ON_PAVEMENT;
+    }
+    const i = addVehicle(store, kind, flags);
     if ((store.kindPainted[kind] as number) === 1) store.paint[i] = nextInt(rng, PAINT_SLOTS);
-    store.x[i] = slot.x;
-    store.y[i] = slot.y;
+    store.x[i] = x;
+    store.y[i] = y;
     store.heading[i] = slot.heading;
-    store.prevX[i] = slot.x;
-    store.prevY[i] = slot.y;
+    store.prevX[i] = x;
+    store.prevY[i] = y;
     store.prevHeading[i] = slot.heading;
     updateVehicleCorners(store, i);
+    placed.push(slotIndex);
     boxes.push({
-      x: slot.x,
-      y: slot.y,
+      x,
+      y,
       heading: slot.heading,
       halfWidthM: store.halfWidth[i] as number,
       halfLengthM: store.halfLength[i] as number,
@@ -135,7 +176,7 @@ export function placeParkedCars(store: VehicleStore, level: Level, rng: Sfc32): 
     });
   }
   rebuildVehicleGrid(store);
-  return { slots, filled, boxes };
+  return { slots, filled: placed, boxes };
 }
 
 // ---------------------------------------------------------------------------------------------------------

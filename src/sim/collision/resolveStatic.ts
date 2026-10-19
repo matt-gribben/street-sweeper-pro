@@ -226,6 +226,8 @@ function findDeepest(grid: StaticGrid, r: StaticResolver): boolean {
     for (let k = 0; k < m; k += 1) {
       const j = r.vehicleCandidates[k] as number;
       if (((store.flags[j] as number) & VEHICLE_FLAG.PARKED) !== 0) continue; // in the static grid
+      // An actor (bicycle, mobility scooter) is hit, not collided with (SSP-091, traffic.ts stepActorVehicles).
+      if (store.kindActor[store.kind[j] as number] === 1) continue;
       vehicleObbOf(store, j, r.vehicleObb);
       if (!obbVsObb(r.obb, r.vehicleObb, c)) continue;
       // A vehicle's shape index follows every static shape, so ties go to the static world.

@@ -2,7 +2,7 @@
 id: SSP-091
 title: "Add taxi fare stops, white van pavement parking, bicycle filtering and mobility scooter"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:ai-npc, area:gameplay, area:test, size:M, vertical-slice]

@@ -353,6 +353,15 @@ describe('state hash', () => {
     world.npc.dustTicks[n] = 5;
     world.npcAi.reactions.nearMisses = 1;
     world.npcAi.reactions.coughs = 2;
+    // SSP-091: a filtering offset, a fare distance, an actor contact window, a nav edge and the counters.
+    world.vehicles.lateral[v] = 0.375;
+    world.vehicles.fareLeftM[v] = 12.5;
+    world.vehicles.contactIgnore[v] = 4;
+    world.vehicles.navFrom[v] = 2;
+    world.vehicles.navTo[v] = 3;
+    world.traffic.fareStops = 1;
+    world.traffic.actorHits = 1;
+    world.traffic.actorBumps = 2;
     return world;
   }
 
@@ -387,6 +396,15 @@ describe('state hash', () => {
       ['roofPerch', (w) => (w.vehicles.roofPerch[0] = 3)],
       ['traffic.dents', (w) => (w.traffic.dents = 2)],
       ['traffic.contactStops', (w) => (w.traffic.contactStops = 1)],
+      // SSP-091: the special kinds' columns and counters.
+      ['lateral', (w) => (w.vehicles.lateral[0] = 0.5)],
+      ['fareLeftM', (w) => (w.vehicles.fareLeftM[0] = 12.25)],
+      ['contactIgnore', (w) => (w.vehicles.contactIgnore[0] = 5)],
+      ['navFrom', (w) => (w.vehicles.navFrom[0] = 1)],
+      ['navTo', (w) => (w.vehicles.navTo[0] = 4)],
+      ['traffic.fareStops', (w) => (w.traffic.fareStops = 2)],
+      ['traffic.actorHits', (w) => (w.traffic.actorHits = 2)],
+      ['traffic.actorBumps', (w) => (w.traffic.actorBumps = 3)],
     ];
     for (const [name, edit] of edits) {
       const w = handSetWorld();
@@ -1605,8 +1623,12 @@ describe('state hash', () => {
  * SSP-095 appended the street-life section (the dust ring and brush waits, the near-miss and cough counters, and
  * each NPC's near-miss pass and dust timer) and gave the hand-set World a live dust cloud, a pass in progress and
  * a dust timer: 7e840dcb → 6e9ef640 (b705c313 on its branch, before SSP-085, SSP-090, SSP-086, SSP-096 and SSP-094 merged).
+ * SSP-091 appended, last, the special traffic kinds' words (the fare-stop and actor counters, then per vehicle its
+ * filtering offset, fare distance, contact window and nav edge; nothing without a vehicle), and gave the hand-set
+ * vehicle all five and the traffic the three counters: 6e9ef640 → d0e35e1a (2c5c0e38 on its branch, from ee810692,
+ * before SSP-096, SSP-094, SSP-095, SSP-088 and SSP-087 merged).
  */
-const GOLDEN_HAND_SET_HASH = '6e9ef640';
+const GOLDEN_HAND_SET_HASH = 'd0e35e1a';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

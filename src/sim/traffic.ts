@@ -84,17 +84,71 @@
 // (a standing vehicle never holds a zebra: it waits for the occupancy); at any other crossing, closer than
 // crossingGapS of travel plus followGapM.
 //
+// The special kinds (SSP-091, ENTITY_CATALOG §8.2; numbers in entities.json rules, for owner review):
+//   - Taxi (behaviour `taxi`): it drives a seeded fareStopMinM..fareStopMaxM (30–90 m, one `traffic` draw at
+//     spawn and after each fare) and then stops abruptly for a fare, braking at fareStopDecelMps2 (6 m/s², twice
+//     the car-following 3.0 m/s²: the rear-end trap for a sweeper following it) to a standstill in its lane, where it
+//     stands fareStopDwellS (3 s) in TrafficState.FareStop before driving on. It only starts a stop where it holds no
+//     junction box and the road from its rear to where it would stop is a plain lane (no junction, roundabout,
+//     zebra, school crossing, bus stop, give-way, portal or turn-around edge); otherwise it keeps looking. Taxis
+//     behind it queue as behind any vehicle; Bessie behind it is not blocking it, so no block timer runs.
+//   - White van (behaviour `van_white`): a moving one drives like a car; a parked one stands half on the
+//     pavement (parked.ts).
+//   - Bicycle (behaviour `bicycle`, collision `actor`): it rides at its own entities.json speed (8 m/s, faster
+//     than the 7 m/s residential limit) whatever the road class, except on a junction box's edges, where the
+//     box's lower limit holds (bikeEdgeSpeed). It **filters**: with traffic (or Bessie) slower than
+//     filterBelowMps (5 m/s) within FILTER_LOOK_M ahead in its lane, it moves sideways at filterLateralMps
+//     (1.5 m/s) to filterOffsetM (1.5 m) right of its lane, between the lanes, and rides past; it merges back
+//     once the lane beside it is clear for followGapM either side of its body. It never moves sideways into a
+//     body (the body at the new offset must touch no vehicle and not Bessie), and its corridor is taken at its
+//     offset, so it follows whatever is in it. Filtering is allowed only on `edgeFilter` edges (setup,
+//     filterEdges): straight lane edges at least FILTER_BOX_CLEAR_M from any junction box, with the kerb (or the
+//     oncoming lane, which must be at least filterOffsetM + the bike's half width + the widest lane kind's half
+//     width away) clear of the bike at its offset and no parking bay under it, and every edge within
+//     FILTER_BUFFER_M before and after the same; a filtering bike stops (Blocker.Merge) MERGE_SETBACK_M short of
+//     the first edge that is not, until it can merge. Between a filtering bike and any vehicle the corridors take
+//     no CORRIDOR_MARGIN_M (the edges there are straight, so a body never leaves its corridor), which is what lets
+//     a bike pass a queued bus or meet an oncoming one on a 3-tile two-way road (lanes 3 m apart).
+//   - Mobility scooter (behaviour `mobility_scooter`, collision `actor`; VEHICLE_FLAG.PAVEMENT): a vehicle-store
+//     vehicle (it counts in the 30) that follows the pavement nav graph instead of the lane graph, at its
+//     entities.json speed (1.5 m/s). `spawns.traffic.pavement` sets how many of each are out at once: one spawns
+//     at most every PAVEMENT_SPAWN_EVERY_TICKS ticks, at a nav node off world.viewRect within NPC_DESPAWN_M
+//     (40 m) of Bessie (uniform on the `traffic` stream), and one beyond NPC_DESPAWN_M and off the view leaves on
+//     the same beat, as the ambient NPCs are recycled (npc/spawner.ts). It wanders: at each node it takes a usable
+//     edge uniformly, never straight back unless there is no other. A usable edge (`navEdgeOk`,
+//     initPavementTraffic) is not a crossing (it stays on the pavement) and its swept body is clear of the static
+//     world (props, buildings, parked cars, a van half on the pavement). It stops PAVEMENT_GAP_M short of a
+//     pedestrian ahead (Blocker.Pedestrian), and does not move into Bessie or another vehicle; held for
+//     rules.turnRoundS (3 s) it turns round on its edge.
+//   - Actor hits (stepActorVehicles, first in the phase, ENTITY_CATALOG §3.2): Bessie's body is not resolved
+//     against an actor in phase 3 (resolveStatic skips them); here, when her OBB overlaps a bicycle's or a mobility
+//     scooter's, a contact episode starts unless its ignore window is open or it is Fallen (the NPC rule of
+//     npc/reactions.ts): her closing speed toward it (her velocity at its centre, along the separating axis from
+//     her to it) at or above streetLife.actorHit.minClosingSpeedMps (1.0 m/s) is a hit: the entities.json `hit`
+//     penalty fact (Offence.Hit: bicycle −250 and 1 complaint, mobility scooter −500 and 2; phase 9 files it and
+//     resets the chain), EV.VehicleHit, and the rider falls: TrafficState.Fallen for the pedestrian fall and get-up
+//     (97 ticks), then Angry, shaking a fist (54 ticks), standing still, then on. Slower, it is a bump: nothing but
+//     the count. Either way the window opens for actorHit.ignoreContactS and refills while she overlaps it.
+//
 // Hot path: everything except createTraffic and setTrafficTuning allocates nothing, and no double crosses a
 // call: positions and results go through the `sc` scratch array and the store's columns, the tuning numbers the
 // tick needs are copied into `params`, and per-tick code calls no Math builtin on a cold path (TECHNICAL_DESIGN
 // §17, traps 1, a and b; tests/unit/trafficAlloc.test.ts).
+
+import { queryStatic, type StaticGrid, staticContact } from './collision/grid.ts';
+import type { Aabb } from './collision/obb.ts';
+import { createAabb, createObb, type Obb, obbAabb, refreshObbAxes } from './collision/obb.ts';
+import { type Contact, createContact, obbVsObb } from './collision/sat.ts';
 import { Offence } from './complaints.ts';
-import { DT_S, SIM_HZ } from './constants.ts';
+import { DT_S, SIM_HZ, TILE_M } from './constants.ts';
 import { type Entities, VEHICLE_IDS } from './entities.ts';
 import { EV, emitEvent } from './eventQueue.ts';
 import { atan2, cos, sin, sqrt } from './fmath.ts';
-import { LANE_FLAG, type LaneGraph, type Level, NAV_FLAG } from './map.ts';
+import { Ground, LANE_FLAG, type LaneGraph, type Level, NAV_FLAG, NAV_FLAG_CROSSING } from './map.ts';
+import { ANGRY_TICKS, FALLEN_TICKS, GET_UP_TICKS } from './npc/behaviours/pedestrian.ts';
+import { NPC_DESPAWN_M } from './npc/spawner.ts';
 import type { CrossingGapCheck, Zebras } from './npc/steering.ts';
+import { NPC_FLAG, queryNpcs } from './npc/store.ts';
 import { pushPenalty } from './penalties.ts';
 import { createStream, nextInt, type Sfc32 } from './rng.ts';
 import type { Tuning } from './tuning.ts';
@@ -124,6 +178,12 @@ export const TrafficState = {
   RoadRage: 3,
   /** A bus standing at its bus stop. */
   Dwell: 4,
+  /** A taxi braking hard for a fare, then standing while the fare gets in (SSP-091). */
+  FareStop: 5,
+  /** An actor (bicycle, mobility scooter) Bessie hit: falling over and getting up (SSP-091). */
+  Fallen: 6,
+  /** An actor back on its feet, shaking a fist before it rides on (SSP-091). */
+  Angry: 7,
 } as const;
 export type TrafficState = (typeof TrafficState)[keyof typeof TrafficState];
 
@@ -159,6 +219,24 @@ const ARRIVE_EPS_M = 1e-9;
 const ZEBRA_REACTION_S = 1;
 /** The kerb check's crossing corridor reaches this far either side of the crossing's line, metres. */
 export const CROSSING_HALF_WIDTH_M = 1;
+/** A bicycle looks this far ahead in its lane for slow traffic to filter past, metres (SSP-091). */
+export const FILTER_LOOK_M = 20;
+/** No filtering on a lane edge with an end within this of a junction box's rect, metres. */
+export const FILTER_BOX_CLEAR_M = 4;
+/** …nor on one within this of such an edge along its lane (the longest body, a 7.25 m bus, and a margin), metres. */
+export const FILTER_BUFFER_M = 8;
+/** The kerb (or bay) must be this far beyond a filtering bike's body, metres. */
+export const FILTER_KERB_MARGIN_M = 0.05;
+/** A filtering bicycle stops this far short of the first edge it may not filter on, metres. */
+export const MERGE_SETBACK_M = 0.5;
+/** A pavement vehicle tries one spawn and one retirement every this many ticks (the NPC spawner's beat). */
+export const PAVEMENT_SPAWN_EVERY_TICKS = 60;
+/** A pavement vehicle stops this far short of a pedestrian ahead, metres. */
+export const PAVEMENT_GAP_M = 0.3;
+/** A pedestrian within this of a pavement vehicle's sides (beyond its radius) is in its way, metres. */
+const PAVEMENT_SIDE_M = 0.05;
+/** A pavement vehicle looks this far ahead of its front for pedestrians, metres. */
+const PAVEMENT_LOOK_M = 3;
 
 // Indices into Traffic.sc, the per-call scratch.
 /** pointAlong: in, the arc from the centre; out, the point and its edge's direction. */
@@ -200,7 +278,17 @@ const CB_X0 = 25;
 const CB_Y0 = 26;
 const CB_X1 = 27;
 const CB_Y1 = 28;
-const SCRATCH_DOUBLES = 29;
+/** scanObstacle: in, the scanning vehicle's lateral offset (right of its lane, metres). */
+const OFF_N = 29;
+/** Pavement vehicles and actor contacts: a direction, a centre and a cap. */
+const UX = 30;
+const UY = 31;
+const CAP = 32;
+/** bodyAt: in, the lateral offset and how much to grow the half width and half length by. */
+const LAT_ARG = 33;
+const GROW_W = 34;
+const GROW_L = 35;
+const SCRATCH_DOUBLES = 36;
 
 // Indices into Traffic.params: the tuning numbers the tick reads, copied off the tuning (TECHNICAL_DESIGN §17:
 // tuning objects hold tagged numbers, so a tick reading them boxes).
@@ -211,7 +299,16 @@ const P_SLOW = 3;
 const P_CROSS_GAP_S = 4;
 const P_BESSIE_HW = 5;
 const P_BESSIE_HL = 6;
-const PARAM_DOUBLES = 7;
+/** SSP-091: the taxi's fare stop, the bicycle's filtering, the scooter's speed, the actor-hit closing speed. */
+const P_FARE_MIN = 7;
+const P_FARE_SPAN = 8;
+const P_FARE_DECEL = 9;
+const P_FILTER_OFF = 10;
+const P_FILTER_BELOW = 11;
+const P_FILTER_LAT = 12;
+const P_MIN_CLOSING = 13;
+const P_REAR_AXLE = 14;
+const PARAM_DOUBLES = 15;
 
 /** The mix draw's resolution: a kind is drawn as nextInt(rng, MIX_STEPS) over the weights (parked.ts too). */
 export const MIX_STEPS = 1 << 20;
@@ -292,6 +389,51 @@ export type Traffic = {
   dentRearmTicks: number;
   /** The school-crossing stop hook (SSP-213). */
   schoolCrossingStop: SchoolCrossingCheck;
+  /** VEHICLE_IDS index of veh.taxi and of veh.bicycle (SSP-091). */
+  readonly taxiKind: number;
+  readonly bicycleKind: number;
+  /** Ticks a taxi stands at a fare stop (veh.taxi rules.fareStopDwellS × 60). */
+  readonly fareDwellTicks: number;
+  /** Per VEHICLE_IDS index: 1 for a pavement vehicle kind (behaviour `mobility_scooter`). */
+  readonly kindPavement: Uint8Array;
+  /** Per VEHICLE_IDS index: the entities.json fixed speed (m/s), 0 where the lane limit sets it. */
+  readonly kindSpeedMps: Float64Array;
+  /** Per VEHICLE_IDS index: a pavement kind's turn-round wait (rules.turnRoundS × 60), 0 otherwise. */
+  readonly kindTurnTicks: Int32Array;
+  /** An actor's fall and get-up, then its fist shake, ticks (the pedestrian's, npc/behaviours/pedestrian.ts). */
+  readonly fallTicks: number;
+  readonly angryTicks: number;
+  /** The actor contact ignore window, ticks (streetLife.actorHit.ignoreContactS × 60). */
+  actorIgnoreTicks: number;
+  /** Per lane edge, a bicycle's speed limit: its own speed, or a junction box edge's lower limit. */
+  readonly bikeEdgeSpeed: Float64Array;
+  /** Per lane edge: 1 where a bicycle may ride filtering (filterEdges). */
+  readonly edgeFilter: Uint8Array;
+  /** The pavement vehicles out at once (spawns.traffic.pavement): kinds (VEHICLE_IDS) and counts. */
+  readonly pavementKinds: number;
+  readonly pavementKind: Uint8Array;
+  readonly pavementWant: Uint16Array;
+  /** Per nav edge: 1 where a pavement vehicle may drive it (initPavementTraffic); per nav node, its usable edges. */
+  readonly navEdgeOk: Uint8Array;
+  readonly navNodeWays: Uint16Array;
+  /**
+   * Per nav edge: its length, and the heading of a body driving it from edgeFrom to edgeTo and back (setup, so
+   * the tick passes no double to a call: TECHNICAL_DESIGN §17 trap 1).
+   */
+  readonly navEdgeLen: Float64Array;
+  readonly navHeadingFwd: Float64Array;
+  readonly navHeadingBack: Float64Array;
+  /** Fare stops, actor hits and actor bumps this shift (SSP-091). */
+  fareStops: number;
+  actorHits: number;
+  actorBumps: number;
+  /** NPC query results for the pavement vehicles' look ahead (the NPC store's capacity; initPavementTraffic). */
+  npcFound: Int32Array;
+  /** Scratch OBBs (pavement setup's swept body; an actor contact's Bessie and actor), a query box, a contact. */
+  readonly obb: Obb;
+  readonly obb2: Obb;
+  readonly box: Aabb;
+  readonly contact: Contact;
   /** The tuning numbers the tick reads (setTrafficTuning): acceleration, deceleration, gaps, Bessie's body. */
   readonly params: Float64Array;
   /** The block timer in ticks: the honk interval (3 s), Road Rage (more than 10 s), the clear (0.5 s). */
@@ -330,6 +472,11 @@ export type TrafficView = {
   readonly roadRageOffences: number;
   readonly dents: number;
   readonly contactStops: number;
+  readonly fareStops: number;
+  readonly actorHits: number;
+  readonly actorBumps: number;
+  readonly edgeFilter: Uint8Array;
+  readonly navEdgeOk: Uint8Array;
 };
 
 // ---------------------------------------------------------------------------------------------------------
@@ -545,6 +692,121 @@ function buildConflicts(
 }
 
 /**
+ * The lane edges a bicycle may ride filtering on (SSP-091; the header has the rule), setup only: a raw pass (not
+ * a junction, roundabout, turn-around, give-way or portal edge; both ends clear of every junction box's rect by
+ * FILTER_BOX_CLEAR_M; at the ends and the middle, the point `reach` right of the lane on a road tile outside every
+ * parking bay, and every lane edge running the other way at least `spacing` away), then every edge whose lane
+ * is raw for FILTER_BUFFER_M before and after it, through nodes with a single way in and out.
+ */
+function filterEdges(
+  level: Level,
+  edgeLen: Float64Array,
+  dirX: Float64Array,
+  dirY: Float64Array,
+  boxRects: readonly (readonly number[])[],
+  reach: number,
+  spacing: number,
+): Uint8Array {
+  const lanes = level.lanes;
+  const n = lanes.edgeCount;
+  const raw = new Uint8Array(n);
+  const [w, h] = level.size;
+  const ground = level.layers.ground;
+  const banned =
+    LANE_FLAG.JUNCTION |
+    LANE_FLAG.ROUNDABOUT |
+    LANE_FLAG.U_TURN |
+    LANE_FLAG.PORTAL_IN |
+    LANE_FLAG.PORTAL_OUT |
+    LANE_FLAG.GIVE_WAY;
+  const roadAt = (x: number, y: number): boolean => {
+    const tx = Math.floor(x / TILE_M);
+    const ty = Math.floor(y / TILE_M);
+    if (tx < 0 || ty < 0 || tx >= w || ty >= h) return false;
+    const g = ground[ty * w + tx] as number;
+    if (g < Ground.Road || g > Ground.RoadOneWayS) return false;
+    for (const bay of lanes.bays) {
+      const [x0, y0, x1, y1] = bay.rect;
+      if (tx >= x0 && tx < x1 && ty >= y0 && ty < y1) return false;
+    }
+    return true;
+  };
+  const clear = BOX_MARGIN_M + FILTER_BOX_CLEAR_M;
+  const nearBox = (x: number, y: number): boolean =>
+    boxRects.some(
+      (r) =>
+        x >= (r[0] as number) - clear &&
+        x <= (r[2] as number) + clear &&
+        y >= (r[1] as number) - clear &&
+        y <= (r[3] as number) + clear,
+    );
+  for (let e = 0; e < n; e += 1) {
+    const len = edgeLen[e] as number;
+    if (((lanes.edgeFlags[e] as number) & banned) !== 0 || !(len > 0)) continue;
+    const a = lanes.edgeFrom[e] as number;
+    const ax = lanes.nodeX[a] as number;
+    const ay = lanes.nodeY[a] as number;
+    const dx = dirX[e] as number;
+    const dy = dirY[e] as number;
+    // right = (−forward.y, forward.x).
+    const rx = -dy;
+    const ry = dx;
+    let ok = !nearBox(ax, ay) && !nearBox(ax + dx * len, ay + dy * len);
+    for (let q = 0; ok && q <= 2; q += 1) {
+      const px = ax + dx * len * q * 0.5;
+      const py = ay + dy * len * q * 0.5;
+      if (!roadAt(px + rx * reach, py + ry * reach)) ok = false;
+      for (let f = 0; ok && f < n; f += 1) {
+        if (f === e || dx * (dirX[f] as number) + dy * (dirY[f] as number) > -0.99) continue;
+        const b = lanes.edgeFrom[f] as number;
+        const ox = px - (lanes.nodeX[b] as number);
+        const oy = py - (lanes.nodeY[b] as number);
+        const u = ox * (dirX[f] as number) + oy * (dirY[f] as number);
+        if (u < -0.01 || u > (edgeLen[f] as number) + 0.01) continue;
+        const d = ox * (dirY[f] as number) - oy * (dirX[f] as number);
+        if ((d < 0 ? -d : d) < spacing) ok = false;
+      }
+    }
+    raw[e] = ok ? 1 : 0;
+  }
+  // The single way into each node (inCount 1), and the single way out (outStart).
+  const inOnly = new Int32Array(lanes.nodeCount).fill(-1);
+  const inCount = new Int32Array(lanes.nodeCount);
+  for (let e = 0; e < n; e += 1) {
+    const to = lanes.edgeTo[e] as number;
+    inCount[to] = (inCount[to] as number) + 1;
+    inOnly[to] = e;
+  }
+  const out = new Uint8Array(n);
+  for (let e = 0; e < n; e += 1) {
+    if (raw[e] !== 1) continue;
+    let ok = true;
+    // Back along the lane.
+    for (let at = lanes.edgeFrom[e] as number, d = 0; ok && d < FILTER_BUFFER_M; ) {
+      if (inCount[at] !== 1) ok = false;
+      else {
+        const p = inOnly[at] as number;
+        if (raw[p] !== 1) ok = false;
+        d += edgeLen[p] as number;
+        at = lanes.edgeFrom[p] as number;
+      }
+    }
+    // On along it.
+    for (let at = lanes.edgeTo[e] as number, d = 0; ok && d < FILTER_BUFFER_M; ) {
+      const s0 = lanes.outStart[at] as number;
+      if ((lanes.outStart[at + 1] as number) - s0 !== 1) ok = false;
+      else {
+        if (raw[s0] !== 1) ok = false;
+        d += edgeLen[s0] as number;
+        at = lanes.edgeTo[s0] as number;
+      }
+    }
+    out[e] = ok ? 1 : 0;
+  }
+  return out;
+}
+
+/**
  * Phase 8's state for `level` on run `seed`: the edge tables, the junction boxes, the zebra of every ZEBRA edge
  * (`zebras`, world.zebras), the mix, the portals and the bus route and schedule. Inactive (no spawning) when the
  * level has no traffic spec. Setup only.
@@ -614,6 +876,56 @@ export function createTraffic(
   const busEveryTicks =
     busRoute.length > 0 && spec?.busEveryS != null ? Math.round(spec.busEveryS * SIM_HZ) : 0;
   const bus = entities.vehicles['veh.bus'];
+  // The special kinds (SSP-091).
+  const taxi = entities.vehicles['veh.taxi'];
+  const bike = entities.vehicles['veh.bicycle'];
+  const kindPavement = Uint8Array.from(VEHICLE_IDS, (id) =>
+    entities.vehicles[id].behaviour === 'mobility_scooter' ? 1 : 0,
+  );
+  const kindSpeedMps = Float64Array.from(VEHICLE_IDS, (id) => entities.vehicles[id].speedMps ?? 0);
+  const kindTurnTicks = Int32Array.from(VEHICLE_IDS, (id) => {
+    const rules: Readonly<Record<string, number>> = entities.vehicles[id].rules;
+    return Object.hasOwn(rules, 'turnRoundS')
+      ? Math.max(1, Math.round((rules.turnRoundS as number) * SIM_HZ))
+      : 0;
+  });
+  let widestHalfW = 0;
+  for (const id of VEHICLE_IDS) {
+    const e = entities.vehicles[id];
+    if (e.behaviour === 'parked' || e.behaviour === 'mobility_scooter') continue;
+    widestHalfW = Math.max(widestHalfW, e.body.widthM / 2);
+  }
+  const bikeSpeed = bike.speedMps;
+  const bikeEdgeSpeed = Float64Array.from(lanes.edgeSpeedMps, (lim, e) => {
+    if (bikeSpeed === null) return lim;
+    const box = ((lanes.edgeFlags[e] as number) & (LANE_FLAG.JUNCTION | LANE_FLAG.ROUNDABOUT)) !== 0;
+    return box && lim < bikeSpeed ? lim : bikeSpeed;
+  });
+  const bikeHalfW = bike.body.widthM / 2;
+  const filterOff = bike.rules.filterOffsetM;
+  const edgeFilter = filterEdges(
+    level,
+    edgeLen,
+    edgeDirX,
+    edgeDirY,
+    rects,
+    filterOff + bikeHalfW + FILTER_KERB_MARGIN_M,
+    filterOff + bikeHalfW + widestHalfW,
+  );
+  const pavement = spec?.pavement ?? [];
+  const nav = level.nav;
+  const navEdgeLen = new Float64Array(nav.edgeCount);
+  const navHeadingFwd = new Float64Array(nav.edgeCount);
+  const navHeadingBack = new Float64Array(nav.edgeCount);
+  for (let e = 0; e < nav.edgeCount; e += 1) {
+    const a = nav.edgeFrom[e] as number;
+    const b = nav.edgeTo[e] as number;
+    const dx = (nav.nodeX[b] as number) - (nav.nodeX[a] as number);
+    const dy = (nav.nodeY[b] as number) - (nav.nodeY[a] as number);
+    navEdgeLen[e] = sqrt(dx * dx + dy * dy);
+    navHeadingFwd[e] = atan2(dx, -dy);
+    navHeadingBack[e] = atan2(-dx, dy);
+  }
   const traffic: Traffic = {
     active: spec !== null && lanes.edgeCount > 0,
     rng: createStream(seed >>> 0, 'traffic'),
@@ -656,6 +968,33 @@ export function createTraffic(
     contactStops: 0,
     dentRearmTicks: 1,
     schoolCrossingStop: neverStopForSchoolCrossing,
+    taxiKind: kindOf('veh.taxi'),
+    bicycleKind: kindOf('veh.bicycle'),
+    fareDwellTicks: Math.max(1, Math.round(taxi.rules.fareStopDwellS * SIM_HZ)),
+    kindPavement,
+    kindSpeedMps,
+    kindTurnTicks,
+    fallTicks: FALLEN_TICKS + GET_UP_TICKS,
+    angryTicks: ANGRY_TICKS,
+    actorIgnoreTicks: 1,
+    bikeEdgeSpeed,
+    edgeFilter,
+    pavementKinds: pavement.length,
+    pavementKind: Uint8Array.from(pavement, (p) => kindOf(p.id)),
+    pavementWant: Uint16Array.from(pavement, (p) => p.count),
+    navEdgeOk: new Uint8Array(level.nav.edgeCount),
+    navNodeWays: new Uint16Array(level.nav.nodeCount),
+    navEdgeLen,
+    navHeadingFwd,
+    navHeadingBack,
+    fareStops: 0,
+    actorHits: 0,
+    actorBumps: 0,
+    npcFound: new Int32Array(1),
+    obb: createObb(),
+    obb2: createObb(),
+    box: createAabb(),
+    contact: createContact(),
     params: new Float64Array(PARAM_DOUBLES),
     honkTicks: 1,
     rageTicks: 1,
@@ -671,8 +1010,68 @@ export function createTraffic(
     eligible: new Int32Array(Math.max(1, portals.length)),
     doomed: new Uint8Array(256),
   };
+  const prm = traffic.params;
+  prm[P_FARE_MIN] = taxi.rules.fareStopMinM;
+  prm[P_FARE_SPAN] = taxi.rules.fareStopMaxM - taxi.rules.fareStopMinM;
+  prm[P_FARE_DECEL] = taxi.rules.fareStopDecelMps2;
+  prm[P_FILTER_OFF] = filterOff;
+  prm[P_FILTER_BELOW] = bike.rules.filterBelowMps;
+  prm[P_FILTER_LAT] = bike.rules.filterLateralMps;
   setTrafficTuning(traffic, tuning);
   return traffic;
+}
+
+/**
+ * The pavement vehicles' half of the setup (SSP-091), once the static grid and the NPC store exist (createWorld):
+ * which nav edges a pavement vehicle may drive (`navEdgeOk`: not a crossing, and the body of the largest
+ * pavement kind swept along it, its half length past each end, clear of every static shape), each node's usable
+ * edges, and the NPC query buffer. Without pavement kinds in the level, nothing is usable. Setup only.
+ */
+export function initPavementTraffic(
+  t: Traffic,
+  level: Level,
+  grid: StaticGrid,
+  store: VehicleStore,
+  npcCapacity: number,
+): void {
+  t.npcFound = new Int32Array(Math.max(1, npcCapacity));
+  if (t.pavementKinds === 0) return;
+  const nav = level.nav;
+  let hw = 0;
+  let hl = 0;
+  for (let k = 0; k < t.pavementKinds; k += 1) {
+    const kind = t.pavementKind[k] as number;
+    hw = Math.max(hw, store.kindHalfWidth[kind] as number);
+    hl = Math.max(hl, store.kindHalfLength[kind] as number);
+  }
+  const obb = t.obb;
+  for (let e = 0; e < nav.edgeCount; e += 1) {
+    if (((nav.edgeFlags[e] as number) & NAV_FLAG_CROSSING) !== 0) continue;
+    const a = nav.edgeFrom[e] as number;
+    const b = nav.edgeTo[e] as number;
+    const ax = nav.nodeX[a] as number;
+    const ay = nav.nodeY[a] as number;
+    const dx = (nav.nodeX[b] as number) - ax;
+    const dy = (nav.nodeY[b] as number) - ay;
+    const len = t.navEdgeLen[e] as number;
+    if (!(len > 0)) continue;
+    obb.cx = ax + dx / 2;
+    obb.cy = ay + dy / 2;
+    obb.headingRad = t.navHeadingFwd[e] as number;
+    obb.halfWidthM = hw;
+    obb.halfLengthM = len / 2 + hl;
+    refreshObbAxes(obb);
+    obbAabb(obb, t.box);
+    const m = queryStatic(grid, t.box);
+    let clear = true;
+    for (let k = 0; clear && k < m; k += 1) {
+      if (staticContact(grid, grid.candidates[k] as number, obb, t.box, t.contact)) clear = false;
+    }
+    if (!clear) continue;
+    t.navEdgeOk[e] = 1;
+    t.navNodeWays[a] = (t.navNodeWays[a] as number) + 1;
+    t.navNodeWays[b] = (t.navNodeWays[b] as number) + 1;
+  }
 }
 
 /**
@@ -695,6 +1094,10 @@ export function setTrafficTuning(t: Traffic, tuning: Tuning): void {
   t.clearTicks = Math.max(1, Math.round(tr.clearAfterS * SIM_HZ));
   t.rageComplaints = tuning.complaints.roadRage.complaints;
   t.dentRearmTicks = Math.max(1, Math.round(tr.dentRearmS * SIM_HZ));
+  const hit = tuning.streetLife.actorHit;
+  t.params[P_MIN_CLOSING] = hit.minClosingSpeedMps;
+  t.params[P_REAR_AXLE] = body.rearAxleOffsetM;
+  t.actorIgnoreTicks = Math.min(255, Math.max(1, Math.round(hit.ignoreContactS * SIM_HZ)));
 }
 
 /** The read-only view of `t`. No copy: it is the same object. */
@@ -810,7 +1213,8 @@ function quadRectMinU(t: Traffic): number {
 
 /**
  * The first point, along vehicle i's plan within LOOKAHEAD_M of its front, where the box with corners
- * `corners[off .. off + 8)` enters its corridor (half width sc[HALF_W], from its centre forward). Returns 1 and
+ * `corners[off .. off + 8)` enters its corridor (half width sc[HALF_W], from its centre forward, centred
+ * sc[OFF_N] metres right of the lane: a filtering bicycle's offset, 0 for everyone else). Returns 1 and
  * writes its arc from the centre into sc[HIT_ARC] and the plan edge into sc[HIT_EDGE], or returns 0.
  */
 function scanObstacle(
@@ -829,6 +1233,7 @@ function scanObstacle(
   const along = store.along[i] as number;
   const exits = isExitPlan(t, store, lanes, i);
   const a = t.quad;
+  const latOff = sc[OFF_N] as number;
   let start = -along;
   sc[LIM_N] = hw;
   for (let k = 0; k < n; k += 1) {
@@ -858,7 +1263,8 @@ function scanObstacle(
       const px = (corners[off + 2 * c] as number) - fx;
       const py = (corners[off + 2 * c + 1] as number) - fy;
       const u = px * dx + py * dy;
-      const v = py * dx - px * dy;
+      // n to the left of the corridor's centre line, which is `off` right of the lane (a filtering bicycle).
+      const v = py * dx - px * dy + latOff;
       a[2 * c] = u;
       a[2 * c + 1] = v;
       if (u <= hi) allHi = false;
@@ -1053,8 +1459,11 @@ function placeVehicle(t: Traffic, store: VehicleStore, lanes: LaneGraph, i: numb
   }
   sc[ARG] = 0;
   pointAlong(t, store, lanes, i);
-  store.x[i] = sc[PX] as number;
-  store.y[i] = sc[PY] as number;
+  // A filtering bicycle rides `lateral` right of the lane: right = (−forward.y, forward.x).
+  const lat = store.lateral[i] as number;
+  const fl = sqrt(fx * fx + fy * fy);
+  store.x[i] = (sc[PX] as number) - (fy / fl) * lat;
+  store.y[i] = (sc[PY] as number) + (fx / fl) * lat;
   store.heading[i] = atan2(fx, -fy);
   updateVehicleCorners(store, i);
 }
@@ -1065,6 +1474,23 @@ function placeVehicle(t: Traffic, store: VehicleStore, lanes: LaneGraph, i: numb
  */
 function moveHitsBessie(t: Traffic, store: VehicleStore, lanes: LaneGraph, i: number): boolean {
   const sc = t.sc;
+  sc[LAT_ARG] = store.lateral[i] as number;
+  sc[GROW_W] = 0;
+  sc[GROW_L] = 0;
+  bodyAt(t, store, lanes, i, t.moveCorners);
+  return cornersOverlap(t.moveCorners, 0, t.bessieCorners, 0);
+}
+
+/**
+ * Vehicle i's body moved sc[ARG] metres on along its plan, sc[LAT_ARG] metres right of its lane and grown by
+ * sc[GROW_W] and sc[GROW_L] (half extents), as corners into `out`: placeVehicle's pose (the plan is not
+ * changed). Allocation-free.
+ */
+function bodyAt(t: Traffic, store: VehicleStore, lanes: LaneGraph, i: number, out: Float64Array): void {
+  const sc = t.sc;
+  const lat = sc[LAT_ARG] as number;
+  const growW = sc[GROW_W] as number;
+  const growL = sc[GROW_L] as number;
   const along = store.along[i] as number;
   store.along[i] = along + (sc[ARG] as number);
   const hl = store.halfLength[i] as number;
@@ -1089,14 +1515,13 @@ function moveHitsBessie(t: Traffic, store: VehicleStore, lanes: LaneGraph, i: nu
   const fl = sqrt(fx * fx + fy * fy);
   const ux = fx / fl;
   const uy = fy / fl;
-  sc[BOX_CX] = sc[PX] as number;
-  sc[BOX_CY] = sc[PY] as number;
+  sc[BOX_CX] = (sc[PX] as number) - uy * lat;
+  sc[BOX_CY] = (sc[PY] as number) + ux * lat;
   sc[BOX_FX] = ux;
   sc[BOX_FY] = uy;
-  sc[BOX_HW] = store.halfWidth[i] as number;
-  sc[BOX_HL] = hl;
-  boxCorners(sc, t.moveCorners);
-  return cornersOverlap(t.moveCorners, 0, t.bessieCorners, 0);
+  sc[BOX_HW] = (store.halfWidth[i] as number) + growW;
+  sc[BOX_HL] = hl + growL;
+  boxCorners(sc, out);
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -1254,6 +1679,7 @@ export function stepTraffic(w: World): void {
   const store = w.vehicles;
   updateBessieCorners(w);
   for (let i = 0; i < store.count; i += 1) updateVehicleCorners(store, i);
+  stepActorVehicles(w);
   if (t.busEveryTicks > 0) {
     while (w.tick >= t.nextBusTick) {
       // A bus still waiting to enter is the one now due: they never bunch up at the portal.
@@ -1269,7 +1695,7 @@ export function stepTraffic(w: World): void {
   for (let i = store.count - 1; i >= 0; i -= 1) {
     if (t.doomed[i] === 1) despawnVehicle(t, store, i);
   }
-  if (t.active) spawnTraffic(w);
+  if (t.active && !spawnTraffic(w)) spawnPavement(w);
   rebuildVehicleGrid(store);
 }
 
@@ -1303,7 +1729,13 @@ function driveVehicle(w: World, i: number): void {
   store.prevHeading[i] = store.heading[i] as number;
   const flags = store.flags[i] as number;
   if ((flags & VEHICLE_FLAG.PARKED) !== 0) return;
-  const prevState = store.state[i] as number;
+  // An actor Bessie knocked over (SSP-091): falling, getting up, shaking a fist.
+  if (stepFallenActor(t, store, i)) return;
+  if ((flags & VEHICLE_FLAG.PAVEMENT) !== 0) {
+    drivePavementVehicle(w, i);
+    return;
+  }
+  let prevState = store.state[i] as number;
   // A bus at its stop.
   if (prevState === TrafficState.Dwell) {
     const left = store.dwellLeft[i] as number;
@@ -1317,7 +1749,26 @@ function driveVehicle(w: World, i: number): void {
       return;
     }
   }
+  const kind = store.kind[i] as number;
+  const isTaxi = kind === t.taxiKind;
+  const isBike = kind === t.bicycleKind;
+  // A taxi standing at a fare stop (SSP-091); once the fare is in, it draws the distance to its next one.
+  if (prevState === TrafficState.FareStop && (store.speed[i] as number) === 0) {
+    const left = store.dwellLeft[i] as number;
+    if (left > 0) {
+      store.dwellLeft[i] = left - 1;
+      store.blocker[i] = Blocker.FareStop;
+      store.blockerIndex[i] = -1;
+      store.gapM[i] = 0;
+      store.stateTicks[i] = (store.stateTicks[i] as number) + 1;
+      return;
+    }
+    drawFare(t, store, i);
+    prevState = TrafficState.Cruise;
+  }
   fillPlan(w, i);
+  // A bicycle's sideways move (filtering, SSP-091), before its corridor is taken at its new offset.
+  if (isBike) stepBikeLateral(w, i);
   const base = i * VEHICLE_PLAN_EDGES;
   const n = store.planLen[i] as number;
   const b = params[P_DECEL] as number;
@@ -1328,14 +1779,20 @@ function driveVehicle(w: World, i: number): void {
   const along = store.along[i] as number;
   const brakeDist = (v0 * v0) / (2 * b);
   sc[DECEL] = b;
-  let target = lanes.edgeSpeedMps[store.plan[base] as number] as number;
+  // A bicycle rides at its own speed whatever the road class (bikeEdgeSpeed).
+  const limits = isBike ? t.bikeEdgeSpeed : lanes.edgeSpeedMps;
+  let target = limits[store.plan[base] as number] as number;
   let bind: number = Blocker.None;
   let bindIndex = -1;
   let bindGap = -1;
   // 1. Obstacles in the corridor: Bessie, then every other vehicle (index order). `near*` is the nearest one.
   pathBox(w, i);
-  sc[HALF_W] = (store.halfWidth[i] as number) + CORRIDOR_MARGIN_M;
+  // The corridor sits at a filtering bicycle's offset, with no margin between it and anyone (the header).
+  const hwI = store.halfWidth[i] as number;
+  const latI = store.lateral[i] as number;
+  sc[HALF_W] = latI !== 0 ? hwI : hwI + CORRIDOR_MARGIN_M;
   sc[HALF_L] = hl;
+  sc[OFF_N] = latI;
   let nearGap = Number.POSITIVE_INFINITY;
   let nearBlocker: number = Blocker.None;
   let nearIndex = -1;
@@ -1361,6 +1818,7 @@ function driveVehicle(w: World, i: number): void {
   for (let j = 0; j < store.count; j += 1) {
     if (j === i) continue;
     const off = j * VEHICLE_CORNER_DOUBLES;
+    sc[HALF_W] = latI !== 0 || (store.lateral[j] as number) !== 0 ? hwI : hwI + CORRIDOR_MARGIN_M;
     if (!boxTouchesCorners(sc, store.corners, off)) continue;
     if (scanObstacle(t, store, lanes, i, store.corners, off) === 0) continue;
     // On a junction box's connectors a vehicle ignores the noses of the others waiting at the box's entries
@@ -1388,7 +1846,8 @@ function driveVehicle(w: World, i: number): void {
   // 2. The plan ahead: speed limits, stop lines, junction boxes and a bus's stop.
   let dwellNode = -1;
   let dwellD = 0;
-  const dwells = t.kindDwells[store.kind[i] as number] === 1;
+  const dwells = t.kindDwells[kind] === 1;
+  let mergeSeen = false;
   let start = -along;
   for (let k = 0; k < n; k += 1) {
     const e = store.plan[base + k] as number;
@@ -1400,7 +1859,7 @@ function driveVehicle(w: World, i: number): void {
       const prev = store.plan[base + k - 1] as number;
       const pf = lanes.edgeFlags[prev] as number;
       // Brake in time for this edge's speed limit.
-      const lim = lanes.edgeSpeedMps[e] as number;
+      const lim = limits[e] as number;
       const vl = sqrt(lim * lim + 2 * b * (d > 0 ? d : 0));
       if (vl < target) {
         target = vl;
@@ -1424,6 +1883,19 @@ function driveVehicle(w: World, i: number): void {
             bind = Blocker.Crossing;
             bindIndex = -1;
             bindGap = d;
+          }
+        }
+        // A filtering bicycle merges back before the first edge it may not filter on (SSP-091).
+        if (latI > 0 && !mergeSeen && t.edgeFilter[e] === 0) {
+          mergeSeen = true;
+          sc[ARG] = d - MERGE_SETBACK_M;
+          stopSpeed(sc);
+          const vs = sc[OUT] as number;
+          if (vs < target) {
+            target = vs;
+            bind = Blocker.Merge;
+            bindIndex = -1;
+            bindGap = d - MERGE_SETBACK_M;
           }
         }
         if (
@@ -1512,6 +1984,24 @@ function driveVehicle(w: World, i: number): void {
       bindGap = start - hl;
     }
   }
+  // A taxi's fare stop (SSP-091): once its fare distance has run out, on a plain lane, it brakes at
+  // fareStopDecelMps2 to a standstill whatever else lets it go faster.
+  let fare = false;
+  if (isTaxi) {
+    fare = prevState === TrafficState.FareStop || ((store.fareLeftM[i] as number) <= 0 && fareStopFits(w, i));
+    if (fare) {
+      if (prevState !== TrafficState.FareStop) t.fareStops += 1;
+      const hard = params[P_FARE_DECEL] as number;
+      let vh = v0 - hard * DT_S;
+      if (vh < 0) vh = 0;
+      if (vh < target) {
+        target = vh;
+        bind = Blocker.FareStop;
+        bindIndex = -1;
+        bindGap = (v0 * v0) / (2 * hard);
+      }
+    }
+  }
   // 3. Speed: up by at most accelMps2 · dt, down to the target at once (traffic is kinematic).
   let v = v0 + (params[P_ACCEL] as number) * DT_S;
   if (v > target) v = target;
@@ -1533,8 +2023,8 @@ function driveVehicle(w: World, i: number): void {
   store.blockerIndex[i] = held ? bindIndex : -1;
   store.gapM[i] = held ? bindGap : -1;
   // 4. The state machine (ENTITY_CATALOG §8.3) and the block timer of a queue Bessie heads.
-  let state: number = held ? TrafficState.Queue : TrafficState.Cruise;
-  if (held && bind === Blocker.Bessie) {
+  let state: number = fare ? TrafficState.FareStop : held ? TrafficState.Queue : TrafficState.Cruise;
+  if (held && bind === Blocker.Bessie && !fare) {
     const honkTicks = t.honkTicks;
     const rageTicks = t.rageTicks;
     const ticks = (store.blockTicks[i] as number) + 1;
@@ -1585,6 +2075,12 @@ function driveVehicle(w: World, i: number): void {
   store.planLen[i] = planLen;
   store.along[i] = s;
   store.speed[i] = v;
+  if (isTaxi) {
+    // Standing for the fare from the tick it comes to rest; otherwise the fare distance runs down.
+    if (fare) {
+      if (v === 0) store.dwellLeft[i] = t.fareDwellTicks;
+    } else store.fareLeftM[i] = (store.fareLeftM[i] as number) - step;
+  }
   fillPlan(w, i);
   // A bus reaching its stop.
   if (dwellNode >= 0 && step >= dwellD - ARRIVE_EPS_M) {
@@ -1596,7 +2092,7 @@ function driveVehicle(w: World, i: number): void {
     store.blockerIndex[i] = -1;
     store.gapM[i] = 0;
   }
-  store.stateTicks[i] = state === prevState ? (store.stateTicks[i] as number) + 1 : 1;
+  store.stateTicks[i] = state === (store.state[i] as number) ? (store.stateTicks[i] as number) + 1 : 1;
   store.state[i] = state;
   placeVehicle(t, store, lanes, i);
   releaseBoxes(t, store, i);
@@ -1736,6 +2232,596 @@ export function cornersOverlap(a: Float64Array, aOff: number, b: Float64Array, b
 }
 
 // ---------------------------------------------------------------------------------------------------------
+// The special kinds (SSP-091): taxi fares, bicycle filtering, pavement vehicles, actor hits
+// ---------------------------------------------------------------------------------------------------------
+
+/** The lane flags a taxi never makes a fare stop on: junctions, crossings, bus stops, give-ways, portals, turns. */
+const FARE_BANNED_FLAGS =
+  LANE_FLAG.ZEBRA |
+  LANE_FLAG.SCHOOL_CROSSING |
+  LANE_FLAG.BUS_STOP |
+  LANE_FLAG.GIVE_WAY |
+  LANE_FLAG.PORTAL_IN |
+  LANE_FLAG.PORTAL_OUT |
+  LANE_FLAG.JUNCTION |
+  LANE_FLAG.ROUNDABOUT |
+  LANE_FLAG.U_TURN;
+
+/** A taxi's distance to its next fare stop: fareStopMinM plus a uniform share of the span (one `traffic` draw). */
+function drawFare(t: Traffic, store: VehicleStore, i: number): void {
+  const u = nextInt(t.rng, MIX_STEPS) / MIX_STEPS;
+  store.fareLeftM[i] = (t.params[P_FARE_MIN] as number) + u * (t.params[P_FARE_SPAN] as number);
+}
+
+/**
+ * May taxi i start a fare stop now? Not while it is leaving the map or holds a junction box, and only where every
+ * plan edge from its rear bumper to its car-following braking distance + RESERVE_M past its front (beyond where
+ * its hard stop leaves it, and beyond any box it could still reserve) is a plain lane (no FARE_BANNED_FLAGS).
+ */
+function fareStopFits(w: World, i: number): boolean {
+  const store = w.vehicles;
+  const t = w.traffic;
+  const lanes = w.level.lanes;
+  if (((store.flags[i] as number) & VEHICLE_FLAG.EXITING) !== 0) return false;
+  if ((store.box0[i] as number) >= 0 || (store.box1[i] as number) >= 0) return false;
+  const v = store.speed[i] as number;
+  const hl = store.halfLength[i] as number;
+  // As far as it could still reserve a junction box from (its car-following braking distance + RESERVE_M), which
+  // is further than its hard stop: so it never stands at a fare holding a box.
+  const reach = hl + (v * v) / (2 * (t.params[P_DECEL] as number)) + RESERVE_M;
+  const base = i * VEHICLE_PLAN_EDGES;
+  const n = store.planLen[i] as number;
+  let start = -(store.along[i] as number);
+  for (let k = 0; k < n; k += 1) {
+    const e = store.plan[base + k] as number;
+    const len = t.edgeLen[e] as number;
+    if (start > reach) break;
+    if (start + len >= -hl && ((lanes.edgeFlags[e] as number) & FARE_BANNED_FLAGS) !== 0) return false;
+    start += len;
+  }
+  return start >= reach;
+}
+
+/**
+ * An actor Bessie knocked over (TrafficState.Fallen, then Angry): it stands still through the pedestrian's fall
+ * and get-up (t.fallTicks), then its fist shake (t.angryTicks), then rides on (Cruise). True when vehicle i was
+ * in either state (its tick is done).
+ */
+function stepFallenActor(t: Traffic, store: VehicleStore, i: number): boolean {
+  const st = store.state[i] as number;
+  if (st !== TrafficState.Fallen && st !== TrafficState.Angry) return false;
+  const ticks = (store.stateTicks[i] as number) + 1;
+  store.speed[i] = 0;
+  store.blocker[i] = Blocker.None;
+  store.blockerIndex[i] = -1;
+  store.gapM[i] = -1;
+  if (st === TrafficState.Fallen && ticks > t.fallTicks) {
+    store.state[i] = TrafficState.Angry;
+    store.stateTicks[i] = 1;
+  } else if (st === TrafficState.Angry && ticks > t.angryTicks) {
+    store.state[i] = TrafficState.Cruise;
+    store.stateTicks[i] = 1;
+  } else {
+    store.stateTicks[i] = ticks;
+  }
+  return true;
+}
+
+/**
+ * Bessie against the actor vehicles (the header; npc/reactions.ts's rule for pedestrians): each actor's window
+ * counts down; an actor her body OBB overlaps refills it and, unless the window was open or it is Fallen, starts
+ * a contact episode: her closing speed toward it (her velocity at its centre, along the separating axis from her
+ * to it) at or above streetLife.actorHit.minClosingSpeedMps is a hit, slower a bump. Allocation-free.
+ */
+function stepActorVehicles(w: World): void {
+  const t = w.traffic;
+  const store = w.vehicles;
+  if (store.count === store.parkedCount) return;
+  for (let i = 0; i < store.count; i += 1) {
+    const left = store.contactIgnore[i] as number;
+    if (left > 0) store.contactIgnore[i] = left - 1;
+  }
+  const v = w.vehicle;
+  const params = t.params;
+  for (let i = 0; i < store.count; i += 1) {
+    if (store.kindActor[store.kind[i] as number] !== 1) continue;
+    if (!cornersOverlap(t.bessieCorners, 0, store.corners, i * VEHICLE_CORNER_DOUBLES)) continue;
+    const inEpisode = (store.contactIgnore[i] as number) > 0 || store.state[i] === TrafficState.Fallen;
+    store.contactIgnore[i] = t.actorIgnoreTicks;
+    if (inEpisode) continue;
+    // The separating axis: the MTV pushes Bessie out of the actor, so it points from the actor to her.
+    const a = t.obb;
+    a.cx = v.xM;
+    a.cy = v.yM;
+    a.headingRad = v.headingRad;
+    a.halfWidthM = params[P_BESSIE_HW] as number;
+    a.halfLengthM = params[P_BESSIE_HL] as number;
+    refreshObbAxes(a);
+    const b = t.obb2;
+    b.cx = store.x[i] as number;
+    b.cy = store.y[i] as number;
+    b.headingRad = store.heading[i] as number;
+    b.halfWidthM = store.halfWidth[i] as number;
+    b.halfLengthM = store.halfLength[i] as number;
+    refreshObbAxes(b);
+    obbVsObb(a, b, t.contact);
+    const ux = -t.contact.normalX;
+    const uy = -t.contact.normalY;
+    // Her velocity at the actor's centre: the rear-axle velocity (forward·vLong + right·vLat) plus yaw × the
+    // lever arm from the rear axle (vehicle.ts integrates her pose there), as npc/reactions.ts takes it.
+    const s = sin(v.headingRad);
+    const c = cos(v.headingRad);
+    const rear = params[P_REAR_AXLE] as number;
+    const lx = (store.x[i] as number) - (v.xM + s * rear);
+    const ly = (store.y[i] as number) - (v.yM - c * rear);
+    const yaw = v.yawRateRadPerS;
+    const px = s * v.vLongMps + c * v.vLatMps - yaw * ly;
+    const py = -c * v.vLongMps + s * v.vLatMps + yaw * lx;
+    if (px * ux + py * uy >= (params[P_MIN_CLOSING] as number)) hitActorVehicle(w, i);
+    else t.actorBumps += 1;
+  }
+}
+
+/** A hit on actor vehicle i: the penalty fact, EV.VehicleHit, and its rider falls over (TrafficState.Fallen). */
+function hitActorVehicle(w: World, i: number): void {
+  const t = w.traffic;
+  const store = w.vehicles;
+  const kind = store.kind[i] as number;
+  t.actorHits += 1;
+  const p = pushPenalty(
+    w.penalties,
+    Offence.Hit,
+    store.kindHitPts[kind] as number,
+    store.kindHitComplaints[kind] as number,
+  );
+  w.penalties.x[p] = store.x[i] as number;
+  w.penalties.y[p] = store.y[i] as number;
+  const e = emitEvent(w.events, EV.VehicleHit, i);
+  w.events.a[e] = store.x[i] as number;
+  w.events.b[e] = store.y[i] as number;
+  w.events.c[e] = kind;
+  store.state[i] = TrafficState.Fallen;
+  store.stateTicks[i] = 0;
+  store.speed[i] = 0;
+}
+
+/** Every plan edge bicycle i's body (and MERGE_SETBACK_M ahead of it) is on may be filtered on (edgeFilter). */
+function bikeMayFilterHere(t: Traffic, store: VehicleStore, i: number): boolean {
+  const base = i * VEHICLE_PLAN_EDGES;
+  const n = store.planLen[i] as number;
+  const hl = store.halfLength[i] as number;
+  let start = -(store.along[i] as number);
+  for (let k = 0; k < n; k += 1) {
+    const e = store.plan[base + k] as number;
+    const len = t.edgeLen[e] as number;
+    if (start > hl + MERGE_SETBACK_M) break;
+    if (start + len >= -hl && t.edgeFilter[e] === 0) return false;
+    start += len;
+  }
+  return true;
+}
+
+/**
+ * Is there something slower than filterBelowMps within FILTER_LOOK_M ahead of bicycle i in its lane (its corridor
+ * at offset 0, with the margin): Bessie or a vehicle, the nearest one deciding?
+ */
+function slowAheadInLane(w: World, i: number): boolean {
+  const t = w.traffic;
+  const store = w.vehicles;
+  const lanes = w.level.lanes;
+  const sc = t.sc;
+  const hl = store.halfLength[i] as number;
+  pathBox(w, i);
+  sc[HALF_W] = (store.halfWidth[i] as number) + CORRIDOR_MARGIN_M;
+  sc[HALF_L] = hl;
+  sc[OFF_N] = 0;
+  let nearGap = Number.POSITIVE_INFINITY;
+  let nearSpeed = 0;
+  if (
+    boxTouchesCorners(sc, t.bessieCorners, 0) &&
+    scanObstacle(t, store, lanes, i, t.bessieCorners, 0) === 1
+  ) {
+    nearGap = (sc[HIT_ARC] as number) - hl;
+    const vb = w.vehicle.vLongMps;
+    nearSpeed = vb < 0 ? -vb : vb;
+  }
+  for (let j = 0; j < store.count; j += 1) {
+    if (j === i) continue;
+    const off = j * VEHICLE_CORNER_DOUBLES;
+    if (!boxTouchesCorners(sc, store.corners, off)) continue;
+    if (scanObstacle(t, store, lanes, i, store.corners, off) === 0) continue;
+    const gap = (sc[HIT_ARC] as number) - hl;
+    if (gap < nearGap) {
+      nearGap = gap;
+      nearSpeed = store.speed[j] as number;
+    }
+  }
+  return nearGap <= FILTER_LOOK_M && nearSpeed < (t.params[P_FILTER_BELOW] as number);
+}
+
+/**
+ * May bicycle i rejoin its lane here: is its body back at offset 0, grown by CORRIDOR_MARGIN_M either side and
+ * followGapM front and back, clear of Bessie and every other vehicle?
+ */
+function mergeClear(w: World, i: number): boolean {
+  const t = w.traffic;
+  const store = w.vehicles;
+  const sc = t.sc;
+  sc[ARG] = 0;
+  sc[LAT_ARG] = 0;
+  sc[GROW_W] = CORRIDOR_MARGIN_M;
+  sc[GROW_L] = t.params[P_GAP] as number;
+  bodyAt(t, store, w.level.lanes, i, t.moveCorners);
+  if (cornersOverlap(t.moveCorners, 0, t.bessieCorners, 0)) return false;
+  for (let j = 0; j < store.count; j += 1) {
+    if (j !== i && cornersOverlap(t.moveCorners, 0, store.corners, j * VEHICLE_CORNER_DOUBLES)) return false;
+  }
+  return true;
+}
+
+/**
+ * Bicycle i's sideways move this tick (the header): towards filterOffsetM while it may filter here and something
+ * slow is ahead in its lane; back towards its lane once the lane beside it is clear (held at its offset while it
+ * is not); at most filterLateralMps × dt, and only to a pose that touches no vehicle and not Bessie.
+ */
+function stepBikeLateral(w: World, i: number): void {
+  const t = w.traffic;
+  const store = w.vehicles;
+  const lanes = w.level.lanes;
+  const sc = t.sc;
+  const lat = store.lateral[i] as number;
+  let want = 0;
+  if (bikeMayFilterHere(t, store, i) && slowAheadInLane(w, i)) want = t.params[P_FILTER_OFF] as number;
+  else if (lat > 0 && !mergeClear(w, i)) want = lat;
+  if (want === lat) return;
+  const step = (t.params[P_FILTER_LAT] as number) * DT_S;
+  let next = want > lat ? lat + step : lat - step;
+  if (want > lat ? next > want : next < want) next = want;
+  sc[ARG] = 0;
+  sc[LAT_ARG] = next;
+  sc[GROW_W] = 0;
+  sc[GROW_L] = 0;
+  bodyAt(t, store, lanes, i, t.moveCorners);
+  if (cornersOverlap(t.moveCorners, 0, t.bessieCorners, 0)) return;
+  for (let j = 0; j < store.count; j += 1) {
+    if (j !== i && cornersOverlap(t.moveCorners, 0, store.corners, j * VEHICLE_CORNER_DOUBLES)) return;
+  }
+  store.lateral[i] = next;
+  placeVehicle(t, store, lanes, i);
+}
+
+/** The nav edge joining nodes `a` and `b` (they are neighbours), from `a`'s adjacency list. */
+function navEdgeOf(nav: Level['nav'], a: number, b: number): number {
+  const s1 = nav.adjStart[a + 1] as number;
+  for (let k = nav.adjStart[a] as number; k < s1; k += 1)
+    if (nav.adjNode[k] === b) return nav.adjEdge[k] as number;
+  return 0;
+}
+
+/**
+ * The nav node a pavement vehicle arriving at `node` from `came` drives to next: uniformly among the other
+ * usable edges' far nodes (one `traffic` draw when there are several), else back to `came` if that edge is
+ * usable, else −1 (it stops).
+ */
+function pickNavNext(t: Traffic, nav: Level['nav'], node: number, came: number): number {
+  const s0 = nav.adjStart[node] as number;
+  const s1 = nav.adjStart[node + 1] as number;
+  let ways = 0;
+  for (let k = s0; k < s1; k += 1) {
+    if (t.navEdgeOk[nav.adjEdge[k] as number] === 1 && nav.adjNode[k] !== came) ways += 1;
+  }
+  if (ways === 0) {
+    for (let k = s0; k < s1; k += 1) {
+      if (nav.adjNode[k] === came && t.navEdgeOk[nav.adjEdge[k] as number] === 1) return came;
+    }
+    return -1;
+  }
+  let pick = ways === 1 ? 0 : nextInt(t.rng, ways);
+  for (let k = s0; k < s1; k += 1) {
+    if (t.navEdgeOk[nav.adjEdge[k] as number] !== 1 || nav.adjNode[k] === came) continue;
+    if (pick === 0) return nav.adjNode[k] as number;
+    pick -= 1;
+  }
+  return -1;
+}
+
+/**
+ * The speed cap from the pedestrians ahead of pavement vehicle i, travelling along (sc[UX], sc[UY]), into sc[CAP]
+ * (which holds the cap so far): for every person (an NPC with a `hit`, not on a roof) whose circle is within
+ * PAVEMENT_SIDE_M of its sides and ahead of its centre, the speed that still stops PAVEMENT_GAP_M short of it.
+ */
+function pedestrianCap(w: World, i: number): void {
+  const t = w.traffic;
+  const store = w.vehicles;
+  const npc = w.npc;
+  const sc = t.sc;
+  if (npc.count === 0) return;
+  const ux = sc[UX] as number;
+  const uy = sc[UY] as number;
+  const x = store.x[i] as number;
+  const y = store.y[i] as number;
+  const hw = store.halfWidth[i] as number;
+  const hl = store.halfLength[i] as number;
+  const reach = hl + PAVEMENT_LOOK_M;
+  const ex = x + ux * reach;
+  const ey = y + uy * reach;
+  const m = hw + 1;
+  const box = t.box;
+  box.minX = (x < ex ? x : ex) - m;
+  box.minY = (y < ey ? y : ey) - m;
+  box.maxX = (x > ex ? x : ex) + m;
+  box.maxY = (y > ey ? y : ey) + m;
+  const n = queryNpcs(npc, box, t.npcFound);
+  const hasHit = w.npcAi.reactions.hasHit;
+  let cap = sc[CAP] as number;
+  for (let k = 0; k < n; k += 1) {
+    const j = t.npcFound[k] as number;
+    if (((npc.flags[j] as number) & NPC_FLAG.ON_ROOF) !== 0 || hasHit[npc.kind[j] as number] !== 1) continue;
+    const rx = (npc.x[j] as number) - x;
+    const ry = (npc.y[j] as number) - y;
+    const u = rx * ux + ry * uy;
+    if (!(u > 0)) continue;
+    const across = ry * ux - rx * uy;
+    const r = npc.radius[j] as number;
+    if ((across < 0 ? -across : across) > hw + r + PAVEMENT_SIDE_M) continue;
+    sc[ARG] = u - hl - r - PAVEMENT_GAP_M;
+    stopSpeed(sc);
+    const vs = sc[OUT] as number;
+    if (vs < cap) cap = vs;
+  }
+  sc[CAP] = cap;
+}
+
+/**
+ * A pavement vehicle's tick (the header): its speed (kindSpeedMps, capped by the pedestrians ahead), the move
+ * along its nav edges (a new edge at each node, pickNavNext), not taken when the body where it would end the
+ * tick touches Bessie or another vehicle (turning at a node included), turned round after kindTurnTicks held,
+ * its pose, and its retirement beyond NPC_DESPAWN_M off the view.
+ */
+function drivePavementVehicle(w: World, i: number): void {
+  const t = w.traffic;
+  const store = w.vehicles;
+  const nav = w.level.nav;
+  const sc = t.sc;
+  const params = t.params;
+  const kind = store.kind[i] as number;
+  const from0 = store.navFrom[i] as number;
+  const to0 = store.navTo[i] as number;
+  const along0 = store.along[i] as number;
+  let from = from0;
+  let to = to0;
+  let edge = navEdgeOf(nav, from, to);
+  let fx = nav.nodeX[from] as number;
+  let fy = nav.nodeY[from] as number;
+  let len = t.navEdgeLen[edge] as number;
+  let ux = ((nav.nodeX[to] as number) - fx) / len;
+  let uy = ((nav.nodeY[to] as number) - fy) / len;
+  const v0 = store.speed[i] as number;
+  const slow = params[P_SLOW] as number;
+  sc[DECEL] = params[P_DECEL] as number;
+  let target = t.kindSpeedMps[kind] as number;
+  let bind: number = Blocker.None;
+  let bindIndex = -1;
+  sc[UX] = ux;
+  sc[UY] = uy;
+  sc[CAP] = target;
+  pedestrianCap(w, i);
+  if ((sc[CAP] as number) < target) {
+    target = sc[CAP] as number;
+    bind = Blocker.Pedestrian;
+  }
+  let v = v0 + (params[P_ACCEL] as number) * DT_S;
+  if (v > target) v = target;
+  if (v < 0) v = 0;
+  // The move, node by node.
+  let along = along0 + v * DT_S;
+  while (along >= len) {
+    const next = pickNavNext(t, nav, to, from);
+    if (next < 0) {
+      along = len;
+      v = 0;
+      break;
+    }
+    along -= len;
+    from = to;
+    to = next;
+    edge = navEdgeOf(nav, from, to);
+    fx = nav.nodeX[from] as number;
+    fy = nav.nodeY[from] as number;
+    len = t.navEdgeLen[edge] as number;
+    ux = ((nav.nodeX[to] as number) - fx) / len;
+    uy = ((nav.nodeY[to] as number) - fy) / len;
+  }
+  if (v > 0) {
+    // Never into Bessie or another vehicle: the body where the move ends must touch neither.
+    sc[BOX_CX] = fx + ux * along;
+    sc[BOX_CY] = fy + uy * along;
+    sc[BOX_FX] = ux;
+    sc[BOX_FY] = uy;
+    sc[BOX_HW] = store.halfWidth[i] as number;
+    sc[BOX_HL] = store.halfLength[i] as number;
+    boxCorners(sc, t.moveCorners);
+    let hit: number = Blocker.None;
+    if (cornersOverlap(t.moveCorners, 0, t.bessieCorners, 0)) {
+      t.contactStops += 1;
+      hit = Blocker.Bessie;
+    } else {
+      for (let j = 0; j < store.count; j += 1) {
+        if (j === i || !cornersOverlap(t.moveCorners, 0, store.corners, j * VEHICLE_CORNER_DOUBLES)) continue;
+        hit = Blocker.Vehicle;
+        bindIndex = j;
+        break;
+      }
+    }
+    if (hit !== Blocker.None) {
+      // Stay where it was.
+      v = 0;
+      bind = hit;
+      from = from0;
+      to = to0;
+      along = along0;
+      edge = navEdgeOf(nav, from, to);
+      fx = nav.nodeX[from] as number;
+      fy = nav.nodeY[from] as number;
+      len = t.navEdgeLen[edge] as number;
+      ux = ((nav.nodeX[to] as number) - fx) / len;
+      uy = ((nav.nodeY[to] as number) - fy) / len;
+    }
+  }
+  const held = bind !== Blocker.None && v < slow;
+  if (held) {
+    const waited = (store.blockTicks[i] as number) + 1;
+    if (waited >= (t.kindTurnTicks[kind] as number)) {
+      // Held up too long: turn round on the edge (the same footprint, facing the other way).
+      const k = from;
+      from = to;
+      to = k;
+      fx = nav.nodeX[from] as number;
+      fy = nav.nodeY[from] as number;
+      ux = -ux;
+      uy = -uy;
+      along = len - along;
+      store.blockTicks[i] = 0;
+    } else {
+      store.blockTicks[i] = waited;
+    }
+  } else {
+    store.blockTicks[i] = 0;
+  }
+  store.navFrom[i] = from;
+  store.navTo[i] = to;
+  store.along[i] = along;
+  store.speed[i] = v;
+  store.x[i] = fx + ux * along;
+  store.y[i] = fy + uy * along;
+  store.heading[i] = (
+    (nav.edgeFrom[edge] as number) === from ? t.navHeadingFwd[edge] : t.navHeadingBack[edge]
+  ) as number;
+  updateVehicleCorners(store, i);
+  store.blocker[i] = held ? bind : Blocker.None;
+  store.blockerIndex[i] = held ? bindIndex : -1;
+  store.gapM[i] = held ? 0 : -1;
+  const state = held ? TrafficState.Queue : TrafficState.Cruise;
+  store.stateTicks[i] = state === (store.state[i] as number) ? (store.stateTicks[i] as number) + 1 : 1;
+  store.state[i] = state;
+  // Retire one left behind, beyond NPC_DESPAWN_M of Bessie and off the view, on the spawner's beat.
+  if (w.tick % PAVEMENT_SPAWN_EVERY_TICKS === 0) {
+    const ox = (store.x[i] as number) - w.vehicle.xM;
+    const oy = (store.y[i] as number) - w.vehicle.yM;
+    if (
+      ox * ox + oy * oy > NPC_DESPAWN_M * NPC_DESPAWN_M &&
+      !cornersTouchViewRect(store.corners, i * VEHICLE_CORNER_DOUBLES, w.viewRect)
+    ) {
+      t.doomed[i] = 1;
+    }
+  }
+}
+
+/**
+ * The pavement vehicles' spawn (the header), on ticks that are a multiple of PAVEMENT_SPAWN_EVERY_TICKS and only
+ * with room in the store: for the first pavement kind with fewer out than spawns.traffic.pavement wants, one at a
+ * nav node with a usable edge whose circle (the body's half diagonal) does not touch world.viewRect, within
+ * NPC_DESPAWN_M of Bessie, drawn uniformly, heading along one of its usable edges (uniform), at rest. No eligible
+ * node, or a body that would touch Bessie or a vehicle there, and nothing spawns this beat.
+ */
+function spawnPavement(w: World): void {
+  const t = w.traffic;
+  const store = w.vehicles;
+  if (t.pavementKinds === 0 || w.tick % PAVEMENT_SPAWN_EVERY_TICKS !== 0) return;
+  if (store.count >= store.capacity) return;
+  const nav = w.level.nav;
+  const rect = w.viewRect;
+  const bx = w.vehicle.xM;
+  const by = w.vehicle.yM;
+  const far = NPC_DESPAWN_M * NPC_DESPAWN_M;
+  for (let p = 0; p < t.pavementKinds; p += 1) {
+    const kind = t.pavementKind[p] as number;
+    let live = 0;
+    for (let j = 0; j < store.count; j += 1) if (store.kind[j] === kind) live += 1;
+    if (live >= (t.pavementWant[p] as number)) continue;
+    const hw = store.kindHalfWidth[kind] as number;
+    const hl = store.kindHalfLength[kind] as number;
+    const r2 = hw * hw + hl * hl;
+    let count = 0;
+    for (let pass = 0; pass < 2; pass += 1) {
+      let pick = pass === 0 ? -1 : count === 1 ? 0 : nextInt(t.rng, count);
+      if (pass === 1 && count === 0) return;
+      for (let node = 0; node < nav.nodeCount; node += 1) {
+        if ((t.navNodeWays[node] as number) === 0) continue;
+        const x = nav.nodeX[node] as number;
+        const y = nav.nodeY[node] as number;
+        const ox = x - bx;
+        const oy = y - by;
+        if (ox * ox + oy * oy > far) continue;
+        const cx = x < rect.minX ? rect.minX : x > rect.maxX ? rect.maxX : x;
+        const cy = y < rect.minY ? rect.minY : y > rect.maxY ? rect.maxY : y;
+        if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= r2) continue;
+        if (pass === 0) {
+          count += 1;
+          continue;
+        }
+        if (pick > 0) {
+          pick -= 1;
+          continue;
+        }
+        spawnPavementAt(w, kind, node);
+        return;
+      }
+    }
+    return;
+  }
+}
+
+/** Add a pavement vehicle of `kind` at nav node `node`, along one of its usable edges (spawnPavement). */
+function spawnPavementAt(w: World, kind: number, node: number): void {
+  const t = w.traffic;
+  const store = w.vehicles;
+  const nav = w.level.nav;
+  const sc = t.sc;
+  const ways = t.navNodeWays[node] as number;
+  let pick = ways === 1 ? 0 : nextInt(t.rng, ways);
+  let to = -1;
+  for (let k = nav.adjStart[node] as number; k < (nav.adjStart[node + 1] as number); k += 1) {
+    if (t.navEdgeOk[nav.adjEdge[k] as number] !== 1) continue;
+    if (pick === 0) {
+      to = nav.adjNode[k] as number;
+      break;
+    }
+    pick -= 1;
+  }
+  if (to < 0) return;
+  const edge = navEdgeOf(nav, node, to);
+  const x = nav.nodeX[node] as number;
+  const y = nav.nodeY[node] as number;
+  const len = t.navEdgeLen[edge] as number;
+  sc[BOX_CX] = x;
+  sc[BOX_CY] = y;
+  sc[BOX_FX] = ((nav.nodeX[to] as number) - x) / len;
+  sc[BOX_FY] = ((nav.nodeY[to] as number) - y) / len;
+  sc[BOX_HW] = store.kindHalfWidth[kind] as number;
+  sc[BOX_HL] = store.kindHalfLength[kind] as number;
+  boxCorners(sc, t.spawnCorners);
+  if (cornersOverlap(t.spawnCorners, 0, t.bessieCorners, 0)) return;
+  for (let j = 0; j < store.count; j += 1) {
+    if (cornersOverlap(t.spawnCorners, 0, store.corners, j * VEHICLE_CORNER_DOUBLES)) return;
+  }
+  const i = addVehicle(store, kind, VEHICLE_FLAG.PAVEMENT);
+  store.navFrom[i] = node;
+  store.navTo[i] = to;
+  store.along[i] = 0;
+  store.speed[i] = 0;
+  store.x[i] = x;
+  store.y[i] = y;
+  store.heading[i] = (
+    (nav.edgeFrom[edge] as number) === node ? t.navHeadingFwd[edge] : t.navHeadingBack[edge]
+  ) as number;
+  store.prevX[i] = x;
+  store.prevY[i] = y;
+  store.prevHeading[i] = store.heading[i] as number;
+  updateVehicleCorners(store, i);
+}
+
+// ---------------------------------------------------------------------------------------------------------
 // Spawning
 // ---------------------------------------------------------------------------------------------------------
 
@@ -1754,6 +2840,7 @@ function spawnFits(w: World, kind: number, edge: number): boolean {
   const fy = t.edgeDirY[edge] as number;
   const hl = store.kindHalfLength[kind] as number;
   const hw = store.kindHalfWidth[kind] as number;
+  const limits = kind === t.bicycleKind ? t.bikeEdgeSpeed : lanes.edgeSpeedMps;
   const cx = (lanes.nodeX[node] as number) - fx * hl;
   const cy = (lanes.nodeY[node] as number) - fy * hl;
   sc[BOX_FX] = fx;
@@ -1764,7 +2851,7 @@ function spawnFits(w: World, kind: number, edge: number): boolean {
   sc[BOX_HL] = hl;
   boxCorners(sc, t.spawnCorners);
   if (cornersTouchViewRect(t.spawnCorners, 0, w.viewRect)) return false;
-  const lim = lanes.edgeSpeedMps[edge] as number;
+  const lim = limits[edge] as number;
   const clear = (t.params[P_GAP] as number) + (lim * lim) / (2 * (t.params[P_DECEL] as number));
   sc[BOX_CX] = cx + fx * clear * 0.5;
   sc[BOX_CY] = cy + fy * clear * 0.5;
@@ -1787,8 +2874,9 @@ function spawnAt(w: World, kind: number, edge: number, flags: number): number {
   store.plan[i * VEHICLE_PLAN_EDGES] = edge;
   store.planLen[i] = 1;
   store.along[i] = -(store.halfLength[i] as number);
-  store.speed[i] = lanes.edgeSpeedMps[edge] as number;
+  store.speed[i] = (kind === t.bicycleKind ? t.bikeEdgeSpeed : lanes.edgeSpeedMps)[edge] as number;
   if ((flags & VEHICLE_FLAG.BUS_ROUTE) !== 0) store.routeAt[i] = 1;
+  if (kind === t.taxiKind) drawFare(t, store, i);
   fillPlan(w, i);
   placeVehicle(t, store, lanes, i);
   store.prevX[i] = store.x[i] as number;
@@ -1798,30 +2886,48 @@ function spawnAt(w: World, kind: number, edge: number, flags: number): number {
 }
 
 /**
+ * Spawn a lane vehicle of `kind` (a VEHICLE_IDS index, not a parked or pavement kind) at entry portal edge `edge`
+ * now, if the store has room and it fits there (spawnFits: off world.viewRect, the road ahead clear): its store
+ * index, or −1. For scripted arrivals and tests (SSP-091); the ambient traffic is spawnTraffic's.
+ */
+export function spawnLaneVehicle(w: World, kind: number, edge: number): number {
+  const store = w.vehicles;
+  if (store.count >= store.capacity || w.traffic.kindPavement[kind] === 1) return -1;
+  if (((w.level.lanes.edgeFlags[edge] as number) & LANE_FLAG.PORTAL_IN) === 0) return -1;
+  if (!spawnFits(w, kind, edge)) return -1;
+  const i = spawnAt(w, kind, edge, 0);
+  updateVehicleCorners(store, i);
+  rebuildVehicleGrid(store);
+  return i;
+}
+
+/**
  * At most one spawn a tick: a scheduled bus that is due (at its route's entry portal), else, while the ambient
  * moving count is under spawns.traffic.moving, one vehicle of a kind drawn by `mix` weight at an entry portal
- * drawn uniformly among those it fits (spawnFits). Never past capacity − parked moving vehicles.
+ * drawn uniformly among those it fits (spawnFits). Never past capacity − parked moving vehicles (the pavement
+ * vehicles count in those, not in the ambient lane count). Returns whether a vehicle spawned.
  */
-function spawnTraffic(w: World): void {
+function spawnTraffic(w: World): boolean {
   const t = w.traffic;
   const store = w.vehicles;
   const moving = store.count - store.parkedCount;
-  if (moving >= store.capacity - store.parkedCount) return;
+  if (moving >= store.capacity - store.parkedCount) return false;
   if (t.busesDue > 0) {
     const edge = t.busRoute[0] as number;
     if (spawnFits(w, t.busKind, edge)) {
       spawnAt(w, t.busKind, edge, VEHICLE_FLAG.BUS_ROUTE);
       t.busesDue -= 1;
       t.busesSpawned += 1;
-      return;
+      return true;
     }
   }
-  let routeBuses = 0;
+  let notAmbient = 0;
   for (let j = 0; j < store.count; j += 1) {
-    if (((store.flags[j] as number) & VEHICLE_FLAG.BUS_ROUTE) !== 0) routeBuses += 1;
+    if (((store.flags[j] as number) & (VEHICLE_FLAG.BUS_ROUTE | VEHICLE_FLAG.PAVEMENT)) !== 0)
+      notAmbient += 1;
   }
-  if (moving - routeBuses >= t.movingTarget || t.mixCount === 0 || !(t.mixTotal > 0) || t.portalCount === 0) {
-    return;
+  if (moving - notAmbient >= t.movingTarget || t.mixCount === 0 || !(t.mixTotal > 0) || t.portalCount === 0) {
+    return false;
   }
   let r = ((nextInt(t.rng, MIX_STEPS) + 0.5) / MIX_STEPS) * t.mixTotal;
   let kind = t.mixKind[t.mixCount - 1] as number;
@@ -1840,8 +2946,9 @@ function spawnTraffic(w: World): void {
       eligible += 1;
     }
   }
-  if (eligible === 0) return;
+  if (eligible === 0) return false;
   spawnAt(w, kind, t.eligible[eligible === 1 ? 0 : nextInt(t.rng, eligible)] as number, 0);
+  return true;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -1885,7 +2992,7 @@ export const trafficCrossingClear: CrossingGapCheck = (w, _i, edge) => {
   const gap = t.params[P_GAP] as number;
   const gapS = t.params[P_CROSS_GAP_S] as number;
   for (let j = 0; j < store.count; j += 1) {
-    if (((store.flags[j] as number) & VEHICLE_FLAG.PARKED) !== 0) continue;
+    if (((store.flags[j] as number) & (VEHICLE_FLAG.PARKED | VEHICLE_FLAG.PAVEMENT)) !== 0) continue;
     if (cornersOverlap(store.corners, j * VEHICLE_CORNER_DOUBLES, t.crossCorners, 0)) return false;
     const hl = store.halfLength[j] as number;
     const ox = (store.x[j] as number) - mx;
@@ -1894,6 +3001,7 @@ export const trafficCrossingClear: CrossingGapCheck = (w, _i, edge) => {
     if (ox * ox + oy * oy > reach * reach) continue;
     sc[HALF_W] = (store.halfWidth[j] as number) + CORRIDOR_MARGIN_M;
     sc[HALF_L] = hl;
+    sc[OFF_N] = store.lateral[j] as number;
     if (scanObstacle(t, store, lanes, j, t.crossCorners, 0) === 0) continue;
     const d = (sc[HIT_ARC] as number) - hl;
     const v = store.speed[j] as number;

@@ -210,7 +210,10 @@ describe('parked cars and vehicle contacts heap-delta check (TECHNICAL_DESIGN §
   it('World.step allocates nothing per tick with dents, traffic impacts and contact stops', {
     timeout: 180_000,
   }, () => {
-    requireGc();
+    // Collect the first check's worlds before the prewarm (SSP-091): optimised World.step code embeds weak
+    // references to them, and when they died in the measured window's first forced GC instead, V8 threw that
+    // code away and recompiled it inside the window (~29 KB of code-space growth, nothing the tick allocates).
+    requireGc()();
     const { step, counts } = parkedRig();
     for (let t = 0; t < PREWARM_TICKS; t++) step(t);
     const before = counts();

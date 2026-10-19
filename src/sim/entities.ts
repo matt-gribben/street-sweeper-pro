@@ -357,12 +357,26 @@ const NPC_RULES = {
 const VEHICLE_RULES = {
   'veh.hatchback': {},
   'veh.saloon': {},
-  'veh.taxi': {},
+  /**
+   * Fare stops (SSP-091): after a seeded fareStopMinM..fareStopMaxM of driving, an abrupt stop at fareStopDecelMps2
+   * (above the 3.0 m/s² car-following braking) and fareStopDwellS standing while the fare gets in.
+   */
+  'veh.taxi': {
+    fareStopMinM: 'positive',
+    fareStopMaxM: 'positive',
+    fareStopDecelMps2: 'positive',
+    fareStopDwellS: 'positive',
+  },
   'veh.van_white': {},
   /** Dwells at site.bus_stop for stopDwellS. */
   'veh.bus': { stopDwellS: 'positive' },
-  'veh.bicycle': {},
-  'veh.mobility_scooter': {},
+  /**
+   * Filtering (SSP-091): past traffic slower than filterBelowMps the bicycle rides filterOffsetM right of its lane
+   * (between the lanes), moving sideways at filterLateralMps.
+   */
+  'veh.bicycle': { filterOffsetM: 'positive', filterBelowMps: 'positive', filterLateralMps: 'positive' },
+  /** Pavement following (SSP-091): held up for turnRoundS, it turns round on its nav edge. */
+  'veh.mobility_scooter': { turnRoundS: 'positive' },
   /** Denting a parked car costs dentPts and a flat dentHp, replacing impact damage (§17 Q4). */
   'veh.hatchback_parked': { dentPts: 'negativeInteger', dentHp: 'positiveInteger' },
   'veh.saloon_parked': { dentPts: 'negativeInteger', dentHp: 'positiveInteger' },
@@ -392,6 +406,7 @@ const RULE_RANGES: readonly (readonly [string, string, string])[] = [
   ['npc.cat', 'dartMinM', 'dartMaxM'],
   ['npc.cat', 'groomIdleMinS', 'groomIdleMaxS'],
   ['npc.pigeon', 'flockMin', 'flockMax'],
+  ['veh.taxi', 'fareStopMinM', 'fareStopMaxM'],
 ];
 
 /** Power-up effects (ENTITY_CATALOG §12): the numbers each `effect.kind` holds besides `kind`. */
@@ -987,6 +1002,8 @@ function readVehicle<K extends VehicleId>(raw: unknown, id: K): VehicleEntity<K>
   const spec: (typeof VEHICLE_RULES)[K] = VEHICLE_RULES[id];
   const collision = readOneOf(obj.collision, `${id}.collision`, VEHICLE_COLLISIONS, '"solid" or "actor"');
   const hit = readHit(obj.hit, `${id}.hit`);
+  const rules = readRules(obj.rules, `${id}.rules`, spec);
+  checkRanges(id, rules);
   // An actor (bicycle, mobility scooter) is hit like a pedestrian; a solid vehicle costs HP only (§17 Q3).
   if ((collision === 'actor') !== (hit !== null)) {
     fail(
@@ -1010,7 +1027,7 @@ function readVehicle<K extends VehicleId>(raw: unknown, id: K): VehicleEntity<K>
     speedMps: obj.speed === null ? null : readNumber(obj.speed, `${id}.speed`, 'positive'),
     hit,
     sfx: readSfxMap(obj.sfx, `${id}.sfx`, VEHICLE_SFX_KEYS),
-    rules: readRules(obj.rules, `${id}.rules`, spec),
+    rules,
   };
 }
 

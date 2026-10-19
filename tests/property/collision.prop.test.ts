@@ -798,7 +798,10 @@ describe('collision properties (TECHNICAL_DESIGN §9.5, SSP-037)', () => {
 
 /** Property 4's scenarios and seed (on top of the M1 suite's 10,000). */
 const VEHICLE_RUNS = 400;
-const VEHICLE_SEED = 0x55_09_0a;
+// SSP-091: white vans no longer park beside these towns' 1-tile pavements, which re-rolled every drive; under
+// the old seed (0x55_09_0a) the one drive that pinned a moving vehicle against Bessie went with it, so the
+// contact-stop coverage below read 0. This seed has four such drives (1,479 contact stops).
+const VEHICLE_SEED = 0x55_09_1a;
 /** Coverage floors for property 4, well under what the fixed seed gives (see the commit message). */
 const VEHICLE_COVERAGE = {
   parkedContactShare: 0.3,

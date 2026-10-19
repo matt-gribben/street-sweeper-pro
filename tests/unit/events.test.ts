@@ -11,6 +11,7 @@ import {
   NPC_IDS,
   POWERUP_IDS,
   STAIN_IDS,
+  VEHICLE_IDS,
 } from '../../src/sim/entities.ts';
 import {
   createEventQueue,
@@ -79,9 +80,10 @@ describe('EventBus', () => {
       [EV.NearMiss, 4, 20.25, 30.5, 25],
       [EV.DustCloud, -1, 81.5, 61.25, -1],
       [EV.Cough, 6, 79, 58.5, 1],
+      [EV.VehicleHit, 3, 40.5, 7.25, VEHICLE_IDS.indexOf('veh.mobility_scooter')],
       [EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0],
     ]);
-    expect(bus.drain(queue)).toBe(31);
+    expect(bus.drain(queue)).toBe(32);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -129,6 +131,7 @@ describe('EventBus', () => {
       { type: EV.NearMiss, tick: 42, entity: 4, x: 20.25, y: 30.5, pts: 25 },
       { type: EV.DustCloud, tick: 42, entity: -1, x: 81.5, y: 61.25, side: -1 },
       { type: EV.Cough, tick: 42, entity: 6, x: 79, y: 58.5, kind: 'npc.old_woman' },
+      { type: EV.VehicleHit, tick: 42, entity: 3, x: 40.5, y: 7.25, kind: 'veh.mobility_scooter' },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.TimeUp },
     ]);
   });
@@ -260,6 +263,9 @@ describe('EventBus', () => {
       /type 30 .*unknown NPC kind -1/,
     );
     expect(() => bus.drain(sealedQueue(24, [[EV.DustCloud, -1, 0, 0, 0]]))).toThrow(/unknown brush side 0/);
+    expect(() => bus.drain(sealedQueue(25, [[EV.VehicleHit, 0, 0, 0, VEHICLE_IDS.length]]))).toThrow(
+      /unknown vehicle kind/,
+    );
   });
 
   it('decodes every EV id the sim defines (a new EV type must be wired into the bus)', () => {

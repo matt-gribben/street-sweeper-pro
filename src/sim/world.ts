@@ -179,6 +179,7 @@ import { createSurfaceTable, type SurfaceTable, sampleSurface } from './surface.
 import { createTidy, initTidy, setTidyTuning, stepTidy, type Tidy, type TidyView } from './tidy.ts';
 import {
   createTraffic,
+  initPavementTraffic,
   setTrafficTuning,
   stepTraffic,
   type Traffic,
@@ -466,6 +467,8 @@ export function createWorld(
   const npc = createNpcStore(level);
   const npcAi = createNpcAi(level, seed >>> 0, tuning, entities, staticGrid, zebras, npc.capacity, vehicles);
   npcAi.steering.crossingClear = trafficCrossingClear;
+  // The pavement vehicles' usable nav edges are those clear of the static world (SSP-091).
+  initPavementTraffic(traffic, level, staticGrid, vehicles, npc.capacity);
   const world: World = {
     level,
     tuning,

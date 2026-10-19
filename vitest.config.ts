@@ -37,7 +37,8 @@ export default mergeConfig(
           extends: true,
           test: {
             name: 'unit',
-            include: ['tests/unit/*.test.ts'],
+            // One test file per NPC behaviour lives in tests/unit/behaviours/ (ROADMAP M3, SSP-083).
+            include: ['tests/unit/*.test.ts', 'tests/unit/behaviours/*.test.ts'],
             pool: GC_EXPOSED.pool,
             execArgv: [...GC_EXPOSED.execArgv],
           },

@@ -447,6 +447,7 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     servedStop, box0, box1, planLen, then its planLen plan edges
  *   I traffic.rng a, b, c, counter; I nextBusTick, busesDue, busesSpawned, carHorns, roadRageOffences, then per
  *     junction box its claim and claim edge and per slot its holder and holder edge
+ *   SSP-083 appends the behaviour timers: per NPC, after stateLimit, I timerA, timerB
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the
@@ -1018,7 +1019,9 @@ function absorbReactions(hasher: StateHasher, world: World): void {
     }
     w[k] = (npc.contactIgnore[i] as number) | 0;
     w[k + 1] = (npc.stateLimit[i] as number) | 0;
-    k += 2;
+    w[k + 2] = (npc.timerA[i] as number) | 0;
+    w[k + 3] = (npc.timerB[i] as number) | 0;
+    k += 4;
   }
   mixWords(hasher, k);
 }

@@ -23,6 +23,11 @@
 //      radiusM 6 m, ledBeaconRadiusM 10 m with upg.led_beacon; setLedBeacon is SSP-188's hook). The generic
 //      pedestrian marks AWARE and, if its type yields (entities.json `yields`), yields. Doris and the businessman
 //      ignore it.
+//   5. Spray (SSP-083): while Bessie sprays this tick (water.ts stepWater, phase 5, set `spraying` and the cone's
+//      pose), one Spray stimulus aimed at each live NPC whose centre is inside the spray cone (water.ts
+//      isInSprayCone's test, edges inclusive, written out inline), in index order, from the cone's apex. Every
+//      kind is told: Doris chases (behaviours/oldWoman.ts); the generic pedestrian startles (GDD §8.5's "react
+//      with a startle"; its proposed −50 is not applied, TBD); the no-op animals ignore it.
 //
 // Actor contact (stepActorContacts, right after the stimuli and before deliverStimuli, so a hit is delivered the
 // same tick). Bessie's body OBB (tuning.json body.widthM × lengthM, 1.75 × 3.25 m) after phase 3
@@ -220,7 +225,7 @@ export function withinAwareness(w: World, i: number): boolean {
   return dx * dx + dy * dy <= r * r;
 }
 
-/** Phase 7, after the spawner: clear the tick's stimulus marks and push Horn, HiVis and BeaconYield (header). */
+/** Phase 7, after the spawner: clear the tick's stimulus marks and push Horn, HiVis, BeaconYield and Spray (header). */
 export function pushReactionStimuli(w: World): void {
   const npc = w.npc;
   const r = w.npcAi.reactions;
@@ -248,6 +253,28 @@ export function pushReactionStimuli(w: World): void {
   q.x[s] = v.xM;
   q.y[s] = v.yM;
   q.radiusM[s] = r.awarenessRadiusM;
+  const water = w.water;
+  if (!water.spraying) return;
+  // isInSprayCone, written out inline: it takes doubles, which a call V8 does not inline would box (§17).
+  const len = water.tuning.sprayConeLengthM;
+  const halfEnd = water.tuning.sprayConeEndWidthM / 2;
+  const ax = water.coneApexX;
+  const ay = water.coneApexY;
+  const fx = water.forwardX;
+  const fy = water.forwardY;
+  const rx = water.rightX;
+  const ry = water.rightY;
+  for (let i = 0; i < npc.count; i += 1) {
+    const dx = (npc.x[i] as number) - ax;
+    const dy = (npc.y[i] as number) - ay;
+    const along = dx * fx + dy * fy;
+    const across = dx * rx + dy * ry;
+    if (!(along >= 0 && along <= len && (across < 0 ? -across : across) * len <= halfEnd * along)) continue;
+    const k = pushStimulus(q, Stimulus.Spray, npcHandle(npc, i));
+    q.x[k] = ax;
+    q.y[k] = ay;
+    q.radiusM[k] = 0;
+  }
 }
 
 /** Phase 7, after pushReactionStimuli and before deliverStimuli: Bessie against the actors (header). */

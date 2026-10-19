@@ -272,6 +272,9 @@ describe('state hash', () => {
     // Its reaction columns and a running hi-vis with one hit and two bumps (SSP-082).
     world.npc.contactIgnore[n] = 42;
     world.npc.stateLimit[n] = 30;
+    // Its behaviour timers (SSP-083).
+    world.npc.timerA[n] = 600;
+    world.npc.timerB[n] = 17;
     world.npcAi.reactions.hiVisUntilTick = 700;
     world.npcAi.reactions.hits = 1;
     world.npcAi.reactions.bumps = 2;
@@ -372,11 +375,13 @@ describe('state hash', () => {
     expect(hashOf(w)).toBe(base);
   });
 
-  it('absorbs the reaction state (SSP-082): the per-NPC contact window and state limit, and the shared rules', () => {
+  it('absorbs the reaction state (SSP-082): the per-NPC contact window, state limit and (SSP-083) behaviour timers, and the shared rules', () => {
     const base = hashOf(handSetWorld());
     const edits: [string, (w: World) => void][] = [
       ['contactIgnore', (w) => (w.npc.contactIgnore[0] = 41)],
       ['stateLimit', (w) => (w.npc.stateLimit[0] = 54)],
+      ['timerA', (w) => (w.npc.timerA[0] = 599)],
+      ['timerB', (w) => (w.npc.timerB[0] = 16)],
       ['awarenessRadiusM', (w) => (w.npcAi.reactions.awarenessRadiusM = 10)],
       ['ledBeacon', (w) => (w.npcAi.reactions.ledBeacon = true)],
       ['minClosingSpeedMps', (w) => (w.npcAi.reactions.minClosingSpeedMps = 1.5)],
@@ -1437,8 +1442,10 @@ describe('state hash', () => {
  * b31a23d9 (f20bff33 on its branch, before SSP-092 merged).
  * SSP-089 appended the vehicle store and the traffic state, and gave the hand-set World a vehicle held by Bessie
  * with a two-edge plan: b31a23d9 → 68d953a7 (fc7651f5 on its branch, before SSP-092 and SSP-082 merged).
+ * SSP-083 appended each NPC's behaviour timers (timerA, timerB) after its state limit, and gave the NPC both:
+ * 68d953a7 → 424363e8 (5ed1888a on its branch, before SSP-089 merged).
  */
-const GOLDEN_HAND_SET_HASH = '68d953a7';
+const GOLDEN_HAND_SET_HASH = '424363e8';
 
 describe('state hash over a sweeping run on Puddle Lane (SSP-065)', () => {
   const level = decodeLevel(

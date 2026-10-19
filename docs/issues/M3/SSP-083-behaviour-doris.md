@@ -2,7 +2,7 @@
 id: SSP-083
 title: "Implement Doris (npc.old_woman): glare, fist-shake slowdown, spray chase, handbag whack"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:ai-npc, area:gameplay, area:test, size:M, vertical-slice]
@@ -49,12 +49,12 @@ Puddle Lane: named spawn at anchor `1` (doris_home) at 70 s, walking to the zebr
 
 ## Acceptance criteria
 
-- [ ] Test: Doris never enters Yield under BeaconYield or awareness, and does enter Yield under HiVis.
-- [ ] Test: with Bessie stopped 3 m ahead on her path, Doris enters Glare; once the path has been clear for 60 ticks she returns to Walk.
-- [ ] Test: a horn during Glare leads to FistShake for 90 ticks, then a walk speed of 0.4 m/s.
-- [ ] Test: spray leads to Chase at 1.2 m/s; a stationary Bessie in reach loses 2 HP every 60 ticks; Bessie more than 8 m away returns her to Walk.
-- [ ] Test: a hit at ≥ 1.0 m/s closing speed costs −500 pts, adds 2 complaints and spawns 6 spilled shopping.
-- [ ] `npm run test:replay` passes, with any hash change re-recorded and explained.
+- [x] Test: Doris never enters Yield under BeaconYield or awareness, and does enter Yield under HiVis.
+- [x] Test: with Bessie stopped 3 m ahead on her path, Doris enters Glare; once the path has been clear for 60 ticks she returns to Walk.
+- [x] Test: a horn during Glare leads to FistShake for 90 ticks, then a walk speed of 0.4 m/s.
+- [x] Test: spray leads to Chase at 1.2 m/s; a stationary Bessie in reach loses 2 HP every 60 ticks; Bessie more than 8 m away returns her to Walk.
+- [x] Test: a hit at ≥ 1.0 m/s closing speed costs −500 pts, adds 2 complaints and spawns 6 spilled shopping.
+- [x] `npm run test:replay` passes, with any hash change re-recorded and explained.
 
 ## Verification
 

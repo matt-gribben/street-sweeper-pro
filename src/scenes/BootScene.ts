@@ -23,13 +23,17 @@ import { DISTRICT_ID_PATTERN } from '../sim/replay.ts';
 import { DEFAULT_DISTRICT } from './ShiftScene.ts';
 import { isSpikeTestScene, SPIKE_TEST_SCENES, type SpikeTestSceneId } from './SpikeScene.ts';
 
-/** `?test=1&scene=` IDs of the single test scenes BootScene can hand off to (besides the shift flow's). */
+/**
+ * `?test=1&scene=` IDs of the single test scenes BootScene can hand off to (besides the shift flow's). `zoo` (SSP-298)
+ * is the asset zoo: test-only, never the target of a menu or a scene transition.
+ */
 export const TEST_SCENES = [
   'level_preview',
   'text_sample',
   'panel_sample',
   'hud_sample',
   'spike_city',
+  'zoo',
 ] as const;
 export type TestSceneId = (typeof TEST_SCENES)[number];
 

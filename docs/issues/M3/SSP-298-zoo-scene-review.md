@@ -2,7 +2,7 @@
 id: SSP-298
 title: "Add a minimal test-only ZooScene for in-engine review of actors and items frames"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:render, area:test, area:assets, size:M, vertical-slice]

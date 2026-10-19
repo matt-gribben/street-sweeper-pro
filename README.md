@@ -151,7 +151,7 @@ npm run assets:sheets          # contact sheets in build/sheets/ for review
 
 | URL | Shows |
 |---|---|
-| `/?test=1&scene=zoo` | The asset zoo: every sprite in-engine *(planned: a minimal zoo arrives in M3, SSP-298)* |
+| `/?test=1&scene=zoo&freeze=1` | The asset zoo (M3, SSP-298): one frame per `actors`/`items` asset at 1:1 on asphalt, slab and grass, Bessie h00 for scale. `&page=<n>` pages it, `&asset=<id>` shows every frame of one asset, `&tick=<n>` steps animations. Full coverage and its golden are M4 (SSP-118). |
 | `/?test=1&scene=lean_quadrants&freeze=1` | The M0 spike scene (above). `scale_1440` and `scale_sheet` are the other test scenes. |
 | `/?test=1&seed=42&scene=<id>&tick=<n>&freeze=1` | A deterministic, frozen scene for tests and screenshots |
 

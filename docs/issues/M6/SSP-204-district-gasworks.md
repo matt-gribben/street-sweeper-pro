@@ -31,6 +31,7 @@ Layout: 96x72.
 Litter 210 (~260 LU). Table: crisp 20, can 18, butts 15, plastic 12, newspaper 10, glass 10, bin bag 15.
 Grime 12,000. 10 stain.oil, each on the same tile as a haz.oil_slick.
 Hazards: 30 puddle, 18 pothole, 10 oil slick, 2 open manhole; road grip 6.0 (rain); dust on `%`.
+Dust from roadworks too: roadworks tiles are dusty (extend `createDust`'s dusty mask in `src/sim/dirt.ts` beyond `%`), per SSP-095's deferral of the issue's 'Dusty ground: `%` plus roadworks' (ENTITY_CATALOG §3.4, LEVEL_DESIGN). Add a unit test that a roadworks tile raises a cloud.
 Skips 2 / hydrants 4 (a sensible route passes one every 60-90 s). Power-ups 2 (wrench, water can, super suction). Frontages 34 / pledges 10.
 Lost Property: collect.hard_hat inside the Coke Street turning head. Golden Crisp: under the second canal bridge on the towpath (a 2-tile pavement strip reached via a dropped kerb).
 NPC peaks: shopper 8, kid_skateboard 3 (+3 at 140 s), litterbug 3, dog_loose 2 (tower podium). Moving traffic 10 (bin_lorry 2, van_white 3, cars 5); parked 16 (vans half on pavements). Knockables: 40 wheelie bins at kerbs, 4 trolleys.

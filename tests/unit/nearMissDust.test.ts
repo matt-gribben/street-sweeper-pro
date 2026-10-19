@@ -606,8 +606,11 @@ describe('hot path', () => {
     };
     // Pre-warm with a discarded run (30,000 ticks and a measured window), as the combo and scoring checks do: the
     // first window after the warm-up still read V8 compiling the award, cough and startle paths (~136 KB on the
-    // dev Mac; the next windows 14 KB, 4 KB, then 256 B), not the tick.
+    // dev Mac; the next windows 14 KB, 4 KB, then 256 B), not the tick. A second discarded window (SSP-095
+    // review): under heavy CPU contention (default-parallel `npm test` on a loaded machine) the second window
+    // read 38-127 KB too, V8's background compilation landing late, and passed in every isolated run.
     measureHeapDelta(step, { warmupTicks: 30_000 });
+    measureHeapDelta(step, { warmupTicks: 0 });
     const coughs0 = world.npcAi.reactions.coughs;
     const nearMisses0 = world.npcAi.reactions.nearMisses;
     const delta = measureHeapDelta(step);

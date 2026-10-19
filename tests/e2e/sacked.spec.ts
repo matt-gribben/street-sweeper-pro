@@ -142,7 +142,8 @@ test('twenty honks on Puddle Lane end the shift SACKED; the tally shows it; Try 
   expect(driving.bessie.y).toBeLessThan(start.bessie.y);
   await saveFrame(testInfo, 'sacked_retry.png', await readTestFrame(page));
   const history = await page.evaluate(() => window.__ssp?.sceneHistory());
-  expect(history).toEqual(['shift', 'tally', 'shift']);
+  // BootScene (SSP-284) loads the assets first, then hands off straight to the shift scene.
+  expect(history).toEqual(['boot', 'shift', 'tally', 'shift']);
   expect(history).not.toContain('shift_intro');
   expect(errors).toEqual([]);
 });

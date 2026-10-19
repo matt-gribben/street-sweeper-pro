@@ -140,6 +140,7 @@ The layout is canonical. New top-level directories need an ADR.
 - `src/sim/fmath.ts`, a thin wrapper for the transcendental maths the sim uses (`sin`, `cos`, `tan`, `atan2`, `exp`, `sqrt`, `hypot`). `tan` joined the list in SSP-028 because the vehicle yaw step uses `tan(δ)` ([§8.2](#82-per-tick-integration-phase-2)). See [§7.4](#74-determinism).
 - `src/sim/coords.ts`, the [§4](#4-coordinate-systems-and-units) conventions as allocation-free helpers: heading → forward/right vectors (into a caller-supplied out object), heading → vehicle frame index (`h00`–`h31`), heading → 8-way actor direction, metres → tile and grime cell (SSP-028).
 - `src/sim/inputFrame.ts`, the `InputFrame` type and its `BUTTON`/`PRESSED` bit constants ([§13.1](#131-actions-and-the-inputframe)). It lives in the sim because `src/input` may import only this type from `src/sim` ([§2.1](#21-who-may-import-whom)) (SSP-028).
+- `src/sim/entities.ts`, the types, canonical ID lists and hand-written guards for `src/data/entities.json` (`loadEntities`). It does not import the JSON: `tuning.ts`, the only sim file allowed to import `src/data/` ([§2.1](#21-who-may-import-whom)), loads it as `DEFAULT_ENTITIES` and re-exports the module. `src/sim/dataGuards.ts` holds the small helpers both loaders share (SSP-053).
 - `src/sim/base64.ts`, pure RFC 4648 base64 for the compiled-level grid layers ([§15.2](#152-compiled-schema-v1)). The sim runs in the browser and on Node type stripping, so it uses neither Node's `Buffer` nor the DOM's `atob`/`btoa` (SSP-032).
 
 ### 2.1 Who may import whom
@@ -509,7 +510,7 @@ Hand-written, synchronous, deterministic. Rapier2D stays a documented escape hat
 
 *As implemented (SSP-036, `src/sim/collision/grid.ts`):* `createStaticGrid(level, tuning.propFootprints)` builds the static world once per shift, as shapes in a fixed order (the shape index breaks every tie): the level's merged `solids` (tiles → metres), then the **map boundary** as four 4-tile-thick strips outside the map (N and S span the corners, so Bessie cannot leave the map, even diagonally), then one shape per `level.props` entry. Each shape is registered in every tile bucket its AABB overlaps; the buckets cover the map plus a one-tile ring and are stored as a CSR list. `queryStatic(grid, aabb)` gathers each overlapping shape once (a per-query stamp dedupes) into the preallocated `grid.candidates`.
 
-- **Prop footprints (provisional until M4).** ENTITY_CATALOG §9 defines the shape as the opaque bounding box of the lowest slice, which does not exist yet, so `src/data/tuning.json` → `propFootprints` holds one table keyed by the twelve static prop ids above (`STATIC_PROP_IDS` in `tuning.ts`, which requires exactly those keys), each a `circle` (`radiusM`) or a `box` (`widthM` along the prop's local +x, `lengthM` along its local +y, turned by the prop's `rot`). `provisional: true` marks it; the sizes come from the nominal widths in STYLE.md §8, `prop.bollard` is the 0.3 m-diameter circle of [§9.5](#95-property-tests), and every footprint fits its 2 m tile. The table moves to `entities.json` in M2 and is re-measured from the real slices in M4. A level prop with no footprint is a load error.
+- **Prop footprints (provisional until M4).** ENTITY_CATALOG §9 defines the shape as the opaque bounding box of the lowest slice, which does not exist yet, so `src/data/tuning.json` → `propFootprints` holds one table keyed by the twelve static prop ids above (`STATIC_PROP_IDS` in `tuning.ts`, which requires exactly those keys), each a `circle` (`radiusM`) or a `box` (`widthM` along the prop's local +x, `lengthM` along its local +y, turned by the prop's `rot`). `provisional: true` marks it; the sizes come from the nominal widths in STYLE.md §8, `prop.bollard` is the 0.3 m-diameter circle of [§9.5](#95-property-tests), and every footprint fits its 2 m tile. The table moves to `entities.json` with the prop entries in M3 (SSP-075; M2 seeds only litter, stains and Puddle Lane's pickups) and is re-measured from the real slices in M4. A level prop with no footprint is a load error.
 - **Ghost edges between merged rects.** The greedy merge cannot remove every internal edge: a terrace whose houses differ in depth merges into several rects with flush fronts. The grid keeps a solid-cell raster (outside the map counts as solid), and `rectOpenMask` closes the features of a rect that lie inside the solid union: a face is closed when every cell beyond it, along the rows (or columns) of the rect that Bessie's AABB overlaps, is solid, and a corner is closed unless both cells beside it outside the rect are empty. `obbVsRectMasked` (`sat.ts`) then takes the shallowest axis whose rect feature is open (falling back to the plain minimum only if every overlapping axis is closed). Together with resolving the deepest contact first ([§9.2](#92-vehicle-vs-static-phase-3)), sliding along a flush front never produces a sideways "ghost" normal; the unit tests show plain SAT picking the internal side face at a seam where the masked test does not.
 
 ### 9.2 Vehicle vs static (phase 3)
@@ -569,7 +570,7 @@ M1 exit criterion, in `tests/property/collision.prop.test.ts`:
 
 ### 10.1 Brush hitbox
 
-Vehicle-local (origin at the body centre, +y forward, metres). The numbers are canonical (see [GDD.md](GDD.md)):
+Vehicle-local (origin at the body centre, +y forward, metres). Since SSP-053 the numbers live in `src/data/tuning.json` → `sweeping` (brush timings and the fling ramp in `vehicle.sweeper.brush`); this table and [GDD §8.1](GDD.md#81-brush-geometry) mirror them:
 
 | Part | Shape | Behaviour per tick (when collecting) |
 |---|---|---|
@@ -614,7 +615,7 @@ Vehicle-local (origin at the body centre, +y forward, metres). The numbers are c
 ### 10.4 Water, stains and dust
 
 - Water tank 100 units (`upg.water_tank` 150/200). Spray uses 6 units/s over a **2.6 m cone** ahead; it cleans `stain.*`, sprays `haz.oil_slick` (+30) and suppresses dust. Refill at `prop.hydrant` (stopped adjacent: 25 units/s) or at the depot (full).
-- Stains are entities with a `cleanProgress` (seconds of spray needed per stain: TBD (M2 tuning), proposed defaults in [ENTITY_CATALOG §5](ENTITY_CATALOG.md#5-stains-stain), stored in `entities.json`).
+- Stains are entities with a `cleanProgress` (seconds of spray received). A stain is clean when it reaches the stain's `sprayS` in `entities.json` (1.0 s gum, 1.5 s milkshake, 2.0 s oil and chalk art, splat = gum; [ENTITY_CATALOG §5](ENTITY_CATALOG.md#5-stains-stain)).
 - Dust: brush down on dusty tiles without spray emits a cloud. Pedestrians within 3 m cough: −10 pts per pedestrian per 2 s (no complaint).
 
 ### 10.5 Hopper and dumping (`src/sim/hopper.ts`)

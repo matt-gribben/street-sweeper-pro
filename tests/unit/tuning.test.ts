@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import tuningJson from '../../src/data/tuning.json' with { type: 'json' };
-import { DEG_TO_RAD } from '../../src/sim/constants.ts';
+import { DEG_TO_RAD, SHIFT_S } from '../../src/sim/constants.ts';
 import {
   DEFAULT_TUNING,
   loadTuning,
@@ -486,6 +486,184 @@ describe('tuningSourceCopy and tuningsEqual (SSP-048 dev panel)', () => {
   });
 });
 
+describe('M2 sweeping-core sections (SSP-053) mirror GDD §8–§12 and TECHNICAL_DESIGN §10', () => {
+  // [JSON path from the root, value, where the docs state it]
+  it.each([
+    ['sweeping.gutterBrush.radiusM', 0.45, 'GDD §8.1 two circles, r = 0.45 m'],
+    ['sweeping.gutterBrush.centreXM', 0.85, 'GDD §8.1 at (±0.85, +1.75)'],
+    ['sweeping.gutterBrush.centreYM', 1.75, 'GDD §8.1 at (±0.85, +1.75)'],
+    ['sweeping.suction.minXM', -1.3, 'TD §10.1 x ∈ [−1.3, 1.3]'],
+    ['sweeping.suction.maxXM', 1.3, 'TD §10.1 x ∈ [−1.3, 1.3]'],
+    ['sweeping.suction.minYM', 1.6, 'TD §10.1 y ∈ [+1.6, +2.8]'],
+    ['sweeping.suction.maxYM', 2.8, 'TD §10.1 y ∈ [+1.6, +2.8]'],
+    ['sweeping.suction.pullMps', 3.0, 'TD §10.1 3.0 m/s × rpm × suctionMult'],
+    ['sweeping.inlet.centreXM', 0, 'TD §10.1 inlet centred at (0, +1.2)'],
+    ['sweeping.inlet.centreYM', 1.2, 'TD §10.1 inlet centred at (0, +1.2)'],
+    ['sweeping.inlet.widthM', 1.0, 'GDD §8.1 inlet 1.0 × 0.4 m'],
+    ['sweeping.inlet.depthM', 0.4, 'GDD §8.1 inlet 1.0 × 0.4 m'],
+    ['sweeping.grimeFootprint.minXM', -1.3, 'TD §10.1 x ∈ [−1.3, 1.3]'],
+    ['sweeping.grimeFootprint.maxXM', 1.3, 'TD §10.1 x ∈ [−1.3, 1.3]'],
+    ['sweeping.grimeFootprint.minYM', 1.3, 'TD §10.1 y ∈ [+1.3, +2.2]'],
+    ['sweeping.grimeFootprint.maxYM', 2.2, 'TD §10.1 y ∈ [+1.3, +2.2]'],
+    ['sweeping.kerbHugger.maxKerbDistanceM', 0.2, 'GDD §8.1 within 0.2 m of a kerb edge'],
+    ['sweeping.fling.minDistanceM', 1.5, 'GDD §8.1 knocked sideways 1.5 to 3 m'],
+    ['sweeping.fling.maxDistanceM', 3.0, 'GDD §8.1 knocked sideways 1.5 to 3 m'],
+    ['hopper.capacityLu', 100, 'GDD §8.4 base capacity 100 LU'],
+    ['hopper.warnFraction', 0.8, 'GDD §8.4 HUD warns at 80%'],
+    ['water.tankUnits', 100, 'GDD §8.5 tank 100 units'],
+    ['water.sprayUnitsPerS', 6, 'GDD §8.5 uses 6 units/s'],
+    ['water.sprayConeLengthM', 2.6, 'GDD §8.5 over a 2.6 m cone ahead'],
+    ['water.hydrantRefillUnitsPerS', 25, 'GDD §8.5 hydrant 25 units/s'],
+    ['dumping.depotBay.holdS', 1.0, 'GDD §8.7 hold Dump 1.0 s'],
+    ['dumping.depotBay.drainS', 2.0, 'GDD §8.7 depot drain 2.0 s'],
+    ['dumping.depotBay.maxSpeedMps', 0.5, 'GDD §8.7 stop inside (< 0.5 m/s)'],
+    ['dumping.skip.holdS', 1.0, 'GDD §8.7 hold Dump 1.0 s'],
+    ['dumping.skip.drainS', 3.0, 'GDD §8.7 skip drain 3.0 s'],
+    ['combo.chainS', 2.0, 'GDD §10.2 2.0 s chain timer'],
+    ['scoring.grimeCellPts', 1, 'GDD §9.1 1 pt per cell'],
+    ['scoring.gutterGrimeCellPts', 2, 'GDD §9.1 2 pts for gutter grime'],
+    ['scoring.kerbHuggerPts', 50, 'GDD §10.3 Kerb Hugger +50'],
+    ['scoring.kerbHuggerEveryS', 3, 'GDD §10.3 per 3 s of continuous kerb contact'],
+    ['scoring.cleanSweepPts', 100, 'GDD §10.3 Clean Sweep +100'],
+    ['shift.durationS', 240, 'LEVEL_DESIGN §4.1 timer starts at 240'],
+    ['shift.rolloutS', 3, 'LEVEL_DESIGN §4.1 3 s rollout'],
+    ['tidy.grimeWeight', 0.6, 'GDD §9.2 0.6 × grime'],
+    ['tidy.litterWeight', 0.4, 'GDD §9.2 0.4 × litter'],
+  ])('%s = %d (%s)', (path, expected) => {
+    let value: unknown = tuningJson;
+    for (const part of path.split('.')) value = isJson(value) ? value[part] : undefined;
+    expect(value).toBe(expected);
+  });
+
+  it('matches the GDD §10.2 combo tier table', () => {
+    const gdd = readFileSync(`${REPO_ROOT}docs/GDD.md`, 'utf8');
+    const section = gdd.slice(gdd.indexOf('### 10.2 Combo chain'), gdd.indexOf('### 10.3'));
+    const tiers = [...section.matchAll(/^\| (\d+)(?:–\d+|\+) \| ×(\d+) \|/gm)]
+      .map((m) => ({ minChain: Number(m[1]), multiplier: Number(m[2]) }))
+      .filter((tier) => tier.multiplier > 1);
+    expect(tiers).toEqual(DEFAULT_TUNING.combo.tiers);
+    expect(DEFAULT_TUNING.combo.tiers.map((t) => t.minChain)).toEqual([10, 25, 50, 100]);
+  });
+
+  it('matches the GDD §12.1 star thresholds', () => {
+    const gdd = readFileSync(`${REPO_ROOT}docs/GDD.md`, 'utf8');
+    const section = gdd.slice(gdd.indexOf('### 12.1 Stars'), gdd.indexOf('### 12.2'));
+    const thresholds = [...section.matchAll(/^\| (\d)★ \| Tidy % ≥ \*\*(\d+)\*\* \|$/gm)].map(
+      (m) => Number(m[2]) / 100,
+    );
+    const { stars } = DEFAULT_TUNING;
+    expect(thresholds).toEqual([stars.star1MinTidy, stars.star2MinTidy, stars.star3MinTidy]);
+  });
+
+  it('keeps the shift length equal to constants.ts SHIFT_S until SSP-062 reads it from tuning', () => {
+    expect(DEFAULT_TUNING.shift.durationS).toBe(SHIFT_S);
+  });
+
+  it('does not repeat the values M1 put under vehicle.sweeper', () => {
+    const sections = JSON.stringify({ ...tuningJson, vehicle: undefined, propFootprints: undefined });
+    for (const key of ['raiseLowerS', 'spinUpS', 'collectMinRpm', 'cleanPickupMaxMps', 'flingCertainMps']) {
+      expect(sections).not.toContain(key);
+    }
+    for (const key of ['fullHopperExtraKg', 'accelMul', 'topSpeedMul', 'steerRateMul']) {
+      expect(sections).not.toContain(key);
+    }
+  });
+
+  it('loads the sections unchanged, with a fresh combo tier list per call', () => {
+    expect(DEFAULT_TUNING.sweeping).toEqual(tuningJson.sweeping);
+    expect(DEFAULT_TUNING.dumping).toEqual(tuningJson.dumping);
+    expect(DEFAULT_TUNING.combo).toEqual(tuningJson.combo);
+    expect(loadTuning(tuningJson).combo.tiers).not.toBe(loadTuning(tuningJson).combo.tiers);
+  });
+
+  describe('rejects malformed data with an error naming the JSON path', () => {
+    it.each([
+      'sweeping',
+      'sweeping.suction',
+      'sweeping.suction.pullMps',
+      'sweeping.inlet.centreXM',
+      'hopper.capacityLu',
+      'water.sprayUnitsPerS',
+      'dumping.depotBay.maxSpeedMps',
+      'dumping.skip',
+      'combo.tiers',
+      'scoring.cleanSweepPts',
+      'shift.rolloutS',
+      'stars.star3MinTidy',
+      'tidy',
+    ])('a missing %s', (path) => {
+      // Top-level keys are reported under `root.`, like root.propFootprints.
+      const reported = path.includes('.') ? path : `root.${path}`;
+      expect(() => loadTuning(without(path))).toThrow(`tuning: ${reported} is missing`);
+    });
+
+    it.each([
+      ['hopper.warnFraction', 1.2, 'must be in (0, 1]'],
+      ['water.tankUnits', 0, 'must be > 0'],
+      ['sweeping.gutterBrush.centreXM', -0.85, 'must be > 0'],
+      ['sweeping.suction.minXM', '−1.3', 'must be a finite number, got string "−1.3"'],
+      ['scoring.grimeCellPts', 1.5, 'must be an integer >= 1, got 1.5'],
+      ['shift.rolloutS', -1, 'must be >= 0'],
+      ['tidy.litterWeight', 1.4, 'must be in [0, 1]'],
+    ])('out-of-range %s = %s', (path, value, message) => {
+      expect(() => loadTuning(replaced(path, value))).toThrow(`tuning: ${path} ${message}`);
+    });
+
+    it('cross-field relations', () => {
+      expect(() => loadTuning(replaced('sweeping.suction.maxYM', 1.5))).toThrow(
+        'tuning: sweeping.suction minYM (1.6) must be below maxYM (1.5)',
+      );
+      expect(() => loadTuning(replaced('sweeping.grimeFootprint.minXM', 1.3))).toThrow(
+        'tuning: sweeping.grimeFootprint minXM (1.3) must be below maxXM (1.3)',
+      );
+      expect(() => loadTuning(replaced('sweeping.fling.minDistanceM', 4))).toThrow(
+        /minDistanceM must not exceed maxDistanceM/,
+      );
+      expect(() => loadTuning(replaced('scoring.gutterGrimeCellPts', 1))).not.toThrow();
+      expect(() => loadTuning(replaced('scoring.grimeCellPts', 3))).toThrow(
+        /gutterGrimeCellPts must not be below grimeCellPts/,
+      );
+      expect(() => loadTuning(replaced('stars.star2MinTidy', 0.95))).toThrow(/thresholds must ascend/);
+      expect(() => loadTuning(replaced('tidy.grimeWeight', 0.5))).toThrow(
+        /grimeWeight \+ litterWeight must be 1, got 0\.9/,
+      );
+      expect(() => loadTuning(replaced('shift.rolloutS', 240))).toThrow(/rolloutS must be below durationS/);
+      expect(() => loadTuning(replaced('shift.durationS', 240.005))).toThrow(
+        'tuning: shift.durationS must be a whole number of 60 Hz ticks, got 240.005',
+      );
+    });
+
+    it.each([
+      ['not an array', { minChain: 10, multiplier: 2 }, /combo\.tiers must be a non-empty array/],
+      ['empty', [], /combo\.tiers must be a non-empty array/],
+      [
+        'a non-ascending chain',
+        [
+          { minChain: 10, multiplier: 2 },
+          { minChain: 10, multiplier: 3 },
+        ],
+        /combo\.tiers\[1\] minChain must be above 10/,
+      ],
+      [
+        'a non-ascending multiplier',
+        [
+          { minChain: 10, multiplier: 2 },
+          { minChain: 25, multiplier: 2 },
+        ],
+        /combo\.tiers\[1\] multiplier must be above 2/,
+      ],
+      ['a ×1 tier', [{ minChain: 5, multiplier: 1 }], /combo\.tiers\[0\] multiplier must be above 1/],
+      [
+        'a tier with an unknown key',
+        [{ minChain: 10, multiplier: 2, popup: 'TIDY!' }],
+        /unknown key "popup"/,
+      ],
+    ])('combo tiers %s', (_name, value, message) => {
+      expect(() => loadTuning(replaced('combo.tiers', value))).toThrow(message);
+    });
+  });
+});
+
 describe('tuning.json under Node type stripping', () => {
   it('loads through src/sim/tuning.ts in plain node (tools/check-type-strip.ts, no tsx)', () => {
     const out = execFileSync(process.execPath, ['tools/check-type-strip.ts'], {
@@ -494,5 +672,6 @@ describe('tuning.json under Node type stripping', () => {
     });
     expect(out).toContain('tuning.vehicle.sweeper.drive.topSpeedTransitMps=11\n');
     expect(out).toContain(`tuning.vehicle.sweeper.steering.maxSteerRad=${34 * DEG_TO_RAD}\n`);
+    expect(out).toContain('entities.litter=15 entities.stains=5 litter.bin_bag.lu=8\n');
   });
 });

@@ -88,5 +88,56 @@
       "prop.litter_bin": { "shape": "circle", "radiusM": 0.3 },
       "prop.roadworks_barrier": { "shape": "box", "widthM": 1.6, "lengthM": 0.3 }
     }
+  },
+  "sweeping": {
+    "gutterBrush": { "radiusM": 0.45, "centreXM": 0.85, "centreYM": 1.75 },
+    "suction": { "minXM": -1.3, "maxXM": 1.3, "minYM": 1.6, "maxYM": 2.8, "pullMps": 3.0 },
+    "inlet": { "centreXM": 0.0, "centreYM": 1.2, "widthM": 1.0, "depthM": 0.4 },
+    "grimeFootprint": { "minXM": -1.3, "maxXM": 1.3, "minYM": 1.3, "maxYM": 2.2 },
+    "kerbHugger": { "maxKerbDistanceM": 0.2 },
+    "fling": { "minDistanceM": 1.5, "maxDistanceM": 3.0 }
+  },
+  "hopper": {
+    "capacityLu": 100,
+    "warnFraction": 0.8
+  },
+  "water": {
+    "tankUnits": 100,
+    "sprayUnitsPerS": 6,
+    "sprayConeLengthM": 2.6,
+    "hydrantRefillUnitsPerS": 25
+  },
+  "dumping": {
+    "depotBay": { "holdS": 1.0, "drainS": 2.0, "maxSpeedMps": 0.5 },
+    "skip": { "holdS": 1.0, "drainS": 3.0 }
+  },
+  "combo": {
+    "chainS": 2.0,
+    "tiers": [
+      { "minChain": 10, "multiplier": 2 },
+      { "minChain": 25, "multiplier": 3 },
+      { "minChain": 50, "multiplier": 4 },
+      { "minChain": 100, "multiplier": 5 }
+    ]
+  },
+  "scoring": {
+    "grimeCellPts": 1,
+    "gutterGrimeCellPts": 2,
+    "kerbHuggerPts": 50,
+    "kerbHuggerEveryS": 3,
+    "cleanSweepPts": 100
+  },
+  "shift": {
+    "durationS": 240,
+    "rolloutS": 3
+  },
+  "stars": {
+    "star1MinTidy": 0.6,
+    "star2MinTidy": 0.8,
+    "star3MinTidy": 0.92
+  },
+  "tidy": {
+    "grimeWeight": 0.6,
+    "litterWeight": 0.4
   }
 }

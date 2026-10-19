@@ -1,0 +1,348 @@
+{
+  "litter.crisp_packet": {
+    "class": "litter",
+    "name": "Crisp packet",
+    "pts": 10,
+    "lu": 1,
+    "sprite": "litter.crisp_packet",
+    "sfx": { "pickup": "pickup_small" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": { "drift": { "speedMps": 1.5, "durationS": 4.0 } },
+    "milestone": "M2"
+  },
+  "litter.drink_can": {
+    "class": "litter",
+    "name": "Drink can",
+    "pts": 15,
+    "lu": 1,
+    "sprite": "litter.drink_can",
+    "sfx": { "pickup": "pickup_small" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": {},
+    "milestone": "M2"
+  },
+  "litter.plastic_bottle": {
+    "class": "litter",
+    "name": "Plastic bottle",
+    "pts": 15,
+    "lu": 1,
+    "sprite": "litter.plastic_bottle",
+    "sfx": { "pickup": "pickup_small" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": {},
+    "milestone": "M2"
+  },
+  "litter.glass_bottle": {
+    "class": "litter",
+    "name": "Glass bottle",
+    "pts": 20,
+    "lu": 1,
+    "sprite": "litter.glass_bottle",
+    "sfx": { "pickup": "pickup_glass" },
+    "districts": [
+      "district.high_street",
+      "district.gasworks",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": { "flung": { "effect": "hazard", "hazard": "haz.broken_glass" } },
+    "milestone": "M2"
+  },
+  "litter.newspaper": {
+    "class": "litter",
+    "name": "Newspaper",
+    "pts": 10,
+    "lu": 2,
+    "sprite": "litter.newspaper",
+    "sfx": { "pickup": "pickup_small" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": { "drift": { "speedMps": 1.5, "durationS": 4.0 } },
+    "milestone": "M2"
+  },
+  "litter.cigarette_butts": {
+    "class": "litter",
+    "name": "Cigarette butts",
+    "pts": 5,
+    "lu": 0.5,
+    "sprite": "litter.cigarette_butts",
+    "sfx": { "pickup": "pickup_small" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": {},
+    "milestone": "M2"
+  },
+  "litter.banana_skin": {
+    "class": "litter",
+    "name": "Banana skin",
+    "pts": 20,
+    "lu": 1,
+    "sprite": "litter.banana_skin",
+    "sfx": { "pickup": "pickup_small" },
+    "districts": ["district.high_street", "district.promenade", "district.civic_quarter"],
+    "rules": { "brushUp": { "effect": "spinOut", "turnDeg": 180 } },
+    "milestone": "M2"
+  },
+  "litter.chip_wrapper": {
+    "class": "litter",
+    "name": "Chip wrapper",
+    "pts": 15,
+    "lu": 1,
+    "sprite": "litter.chip_wrapper",
+    "sfx": { "pickup": "pickup_small" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter",
+      "district.depot_yard"
+    ],
+    "rules": {},
+    "milestone": "M2"
+  },
+  "litter.pizza_box": {
+    "class": "litter",
+    "name": "Pizza box",
+    "pts": 25,
+    "lu": 3,
+    "sprite": "litter.pizza_box",
+    "sfx": { "pickup": "pickup_big" },
+    "districts": ["district.high_street", "district.kebab_mile", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M2"
+  },
+  "litter.kebab_wrapper": {
+    "class": "litter",
+    "name": "Kebab wrapper",
+    "pts": 15,
+    "lu": 1,
+    "sprite": "litter.kebab_wrapper",
+    "sfx": { "pickup": "pickup_small" },
+    "districts": ["district.kebab_mile"],
+    "rules": {},
+    "milestone": "M2"
+  },
+  "litter.leaf_pile": {
+    "class": "litter",
+    "name": "Leaf pile",
+    "pts": 5,
+    "lu": 2,
+    "sprite": "litter.leaf_pile",
+    "sfx": { "pickup": "pickup_big" },
+    "districts": ["district.conker_hill", "district.civic_quarter"],
+    "rules": { "brushUp": { "effect": "hazard", "hazard": "haz.wet_leaves" } },
+    "milestone": "M2"
+  },
+  "litter.dog_mess": {
+    "class": "litter",
+    "name": "Dog mess",
+    "pts": 40,
+    "lu": 1,
+    "sprite": "litter.dog_mess",
+    "sfx": { "pickup": "pickup_small" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter",
+      "district.depot_yard"
+    ],
+    "rules": { "brushUp": { "effect": "stain", "stain": "stain.splat", "pts": -20 } },
+    "milestone": "M2"
+  },
+  "litter.bin_bag": {
+    "class": "litter",
+    "name": "Bin bag",
+    "pts": 50,
+    "lu": 8,
+    "sprite": "litter.bin_bag",
+    "sfx": { "pickup": "pickup_big" },
+    "districts": [
+      "district.high_street",
+      "district.gasworks",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "rules": { "burst": { "minSpeedMps": 4.0, "items": 6 } },
+    "milestone": "M2"
+  },
+  "litter.lolly_stick": {
+    "class": "litter",
+    "name": "Lolly stick",
+    "pts": 10,
+    "lu": 0.5,
+    "sprite": "litter.lolly_stick",
+    "sfx": { "pickup": "pickup_small" },
+    "districts": ["district.promenade", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M2"
+  },
+  "litter.spilled_shopping": {
+    "class": "litter",
+    "name": "Spilled shopping",
+    "pts": 0,
+    "lu": 1,
+    "sprite": "litter.spilled_shopping",
+    "sfx": { "pickup": "pickup_small" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter",
+      "district.depot_yard"
+    ],
+    "rules": {},
+    "milestone": "M2"
+  },
+  "stain.gum": {
+    "class": "stain",
+    "name": "Chewing gum",
+    "pts": 10,
+    "sprayS": 1.0,
+    "sprite": "stain.gum",
+    "districts": ["district.high_street", "district.kebab_mile", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M2"
+  },
+  "stain.milkshake": {
+    "class": "stain",
+    "name": "Milkshake",
+    "pts": 20,
+    "sprayS": 1.5,
+    "sprite": "stain.milkshake",
+    "districts": ["district.high_street", "district.promenade", "district.civic_quarter"],
+    "rules": {},
+    "milestone": "M2"
+  },
+  "stain.oil": {
+    "class": "stain",
+    "name": "Oil stain",
+    "pts": 30,
+    "sprayS": 2.0,
+    "sprite": "stain.oil",
+    "districts": ["district.gasworks", "district.civic_quarter"],
+    "rules": { "pairedHazard": "haz.oil_slick" },
+    "milestone": "M2"
+  },
+  "stain.chalk_art": {
+    "class": "stain",
+    "name": "Chalk art",
+    "pts": 30,
+    "sprayS": 2.0,
+    "sprite": "stain.chalk_art",
+    "districts": ["district.conker_hill", "district.civic_quarter"],
+    "rules": { "cleanWhileOwnerPresent": { "pts": -100, "complaints": 1 } },
+    "milestone": "M2"
+  },
+  "stain.splat": {
+    "class": "stain",
+    "name": "Splat",
+    "pts": 0,
+    "sprayS": 1.0,
+    "sprite": "stain.splat",
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter",
+      "district.depot_yard"
+    ],
+    "rules": {},
+    "milestone": "M2"
+  },
+  "pwr.flask_of_tea": {
+    "class": "pwr",
+    "name": "Flask of Tea",
+    "effect": { "kind": "chainTimerMul", "mul": 2, "durationS": 15 },
+    "sprite": "pwr.flask_of_tea",
+    "sfx": { "pickup": "powerup" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  },
+  "collect.false_teeth": {
+    "class": "collect",
+    "name": "False teeth",
+    "kind": "lostProperty",
+    "pts": 250,
+    "sprite": "collect.false_teeth",
+    "sfx": { "pickup": "powerup" },
+    "districts": ["district.puddle_lane"],
+    "milestone": "M3"
+  },
+  "collect.golden_crisp": {
+    "class": "collect",
+    "name": "Golden Crisp Packet",
+    "kind": "goldenCrisp",
+    "pts": 500,
+    "sprite": "collect.golden_crisp",
+    "sfx": { "pickup": "powerup" },
+    "districts": [
+      "district.puddle_lane",
+      "district.high_street",
+      "district.gasworks",
+      "district.conker_hill",
+      "district.promenade",
+      "district.kebab_mile",
+      "district.civic_quarter"
+    ],
+    "milestone": "M3"
+  }
+}

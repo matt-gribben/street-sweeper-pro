@@ -18,6 +18,7 @@
 // handling (vehicleFrameIndex accepts any finite angle).
 import { DT_S } from './constants.ts';
 import { cos, exp, sin, tan } from './fmath.ts';
+import { hopperFillFraction } from './hopper.ts';
 import { BRAKE_MAX, type InputFrame, PRESSED, STEER_MAX, THROTTLE_MAX } from './inputFrame.ts';
 import type { SweeperTuning } from './tuning.ts';
 
@@ -55,7 +56,7 @@ export type VehicleState = {
   rpm: number;
   /** Bessie's Dignity, 0..health.maxHp. Damage arrives with SSP-036. */
   hp: number;
-  /** Litter units in the hopper. Stays 0 in M1; M2's hopper.ts writes it (SSP-058). */
+  /** Litter units in the hopper, 0..VehicleParams.hopperCapacityLU. Only hopper.ts writes it (SSP-058). */
   hopperLU: number;
   /** Spray water units. Stays 0 in M1; the spray system (M2) owns the tank capacity and fills it. */
   water: number;
@@ -74,7 +75,10 @@ export type VehicleState = {
 export type VehicleParams = {
   /** Replaced only by setWorldTuning (world.ts), between ticks. */
   tuning: SweeperTuning;
-  /** Hopper capacity in LU. Fill fraction f = hopperLU / capacity (upg.hopper raises it; SSP-058 owns it). */
+  /**
+   * Hopper capacity in LU (tuning.json hopper.capacityLu; upg.hopper raises it in M6). Fill fraction
+   * f = hopperLU / capacity. Owned by hopper.ts: change it only through setHopperCapacity.
+   */
   hopperCapacityLU: number;
   /** Top-speed multiplier on vTopBase (pwr.bacon_butty, upg.engine plug in later). Default 1. */
   topSpeedMult: number;
@@ -164,7 +168,7 @@ export function computeHandling(
   out: VehicleHandling,
 ): VehicleHandling {
   const t = params.tuning;
-  const f = clamp(hopperLU / params.hopperCapacityLU, 0, 1);
+  const f = hopperFillFraction(hopperLU, params.hopperCapacityLU);
   const vTopBase =
     (brushDown ? t.drive.topSpeedBrushDownMps : t.drive.topSpeedTransitMps) * params.topSpeedMult;
   out.fill = f;

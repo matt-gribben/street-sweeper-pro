@@ -30,8 +30,8 @@ import {
 import { assertHeapDeltaWithinThresholds, measureHeapDelta } from '../support/heapDelta.ts';
 
 const sweeper = DEFAULT_TUNING.vehicle.sweeper;
-/** GDD §8.4 base hopper capacity; SSP-058 moves it into tuning. */
-const BASE_HOPPER_LU = 100;
+/** GDD §8.4 base hopper capacity (tuning.json hopper.capacityLu since SSP-053/SSP-058). */
+const BASE_HOPPER_LU = DEFAULT_TUNING.hopper.capacityLu;
 const ASPHALT: VehicleSurface = { gripPerS: sweeper.lateralGripPerS.asphalt, rollMult: 1 };
 
 function newBessie(tuning: SweeperTuning = sweeper): { state: VehicleState; params: VehicleParams } {

@@ -417,7 +417,7 @@ Each milestone has the same shape:
 - [ ] `src/sim/litter.ts`: struct-of-arrays store, 4 m spatial hash, kinematic fling arc (1.5–3 m sideways), wind drift hook (used by `litter.newspaper` and `litter.crisp_packet` later).
 - [ ] `src/sim/brush.ts`: raise/lower 0.5 s, RPM spin-up 0.6 s, gutter sweep-in, suction pull at 3.0 m/s × RPM × multiplier, inlet collection.
 - [ ] `src/sim/dirt.ts`: an 8×8 grid of 4 px grime cells per tile, a `Uint8` mask per district, gutter grime strip along kerbs, the Kerb Hugger check (gutter brush within 0.2 m of a kerb edge).
-- [ ] `src/sim/hopper.ts`: LU accounting, mass coupling into `vehicle.ts`, bulldozer state.
+- [x] `src/sim/hopper.ts`: LU accounting, mass coupling into `vehicle.ts`, bulldozer state. *(SSP-058: capacity from `tuning.json`, `EV.HopperFull` once per fill, the overflow clamp recorded in GDD §8.4, the linear drain API and LU-dumped counters for `shift.ts`; see [TECHNICAL_DESIGN §10.5](TECHNICAL_DESIGN.md#105-hopper-and-dumping-srcsimhopperts).)*
 - [ ] `src/sim/water.ts`: tank, 2.6 m spray cone, hydrant refill, stain clearing.
 - [ ] Depot and skip dumping in `src/sim/shift.ts`, plus the 240 s timer and end-of-shift event.
 - [ ] `src/sim/scoring.ts` and `combo.ts`: item points × multiplier, grime 1 pt per cell (2 for gutter grime), Kerb Hugger +50 per 3 s, Clean Sweep frontage +100 (the frontage segments come from `level.json`).

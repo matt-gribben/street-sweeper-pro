@@ -63,12 +63,23 @@ export type ShiftEndEvent = SimEventBase & {
   readonly reason: ShiftEndReasonValue;
 };
 
+/** The hopper just became full (phase 5 collection, SSP-058): once per fill. */
+export type HopperFullEvent = SimEventBase & {
+  readonly type: typeof EV.HopperFull;
+  /** Bessie's body centre, sim metres. */
+  readonly x: number;
+  readonly y: number;
+  /** The capacity it filled to, LU. */
+  readonly capacityLU: number;
+};
+
 /** Every bus event, keyed by its EV id. Adding an EV type is a compile error here until it is decoded. */
 export type SimEventByType = {
   [EV.Impact]: ImpactEvent;
   [EV.KerbJolt]: KerbJoltEvent;
   [EV.ReverseBeeper]: ReverseBeeperEvent;
   [EV.ShiftEnd]: ShiftEndEvent;
+  [EV.HopperFull]: HopperFullEvent;
 };
 
 /** Any bus event: a union discriminated by `type`. */
@@ -97,11 +108,18 @@ function createPayloads(): Payloads {
     [EV.KerbJolt]: { type: EV.KerbJolt, tick: 0, entity: -1, x: 0, y: 0, speedMps: 0 },
     [EV.ReverseBeeper]: { type: EV.ReverseBeeper, tick: 0, entity: -1, x: 0, y: 0 },
     [EV.ShiftEnd]: { type: EV.ShiftEnd, tick: 0, entity: -1, reason: ShiftEndReason.Towed },
+    [EV.HopperFull]: { type: EV.HopperFull, tick: 0, entity: -1, x: 0, y: 0, capacityLU: 0 },
   };
 }
 
 function isEventType(type: number): type is EventType {
-  return type === EV.Impact || type === EV.KerbJolt || type === EV.ReverseBeeper || type === EV.ShiftEnd;
+  return (
+    type === EV.Impact ||
+    type === EV.KerbJolt ||
+    type === EV.ReverseBeeper ||
+    type === EV.ShiftEnd ||
+    type === EV.HopperFull
+  );
 }
 
 /** Listener lists per type, each replaced (never mutated) on subscribe/unsubscribe. */
@@ -115,6 +133,7 @@ export class EventBus {
     [EV.KerbJolt]: [],
     [EV.ReverseBeeper]: [],
     [EV.ShiftEnd]: [],
+    [EV.HopperFull]: [],
   };
   private anyListeners: readonly AnySimEventListener[] = [];
   /** The queue and tick drained last: a sealed tick is dispatched once, however often drain() is called. */
@@ -213,6 +232,16 @@ export class EventBus {
         e.entity = entity;
         e.reason = a as ShiftEndReasonValue;
         this.emit(EV.ShiftEnd, e);
+        return;
+      }
+      case EV.HopperFull: {
+        const e = this.payloads[EV.HopperFull];
+        e.tick = tick;
+        e.entity = entity;
+        e.x = a;
+        e.y = b;
+        e.capacityLU = c;
+        this.emit(EV.HopperFull, e);
         return;
       }
     }

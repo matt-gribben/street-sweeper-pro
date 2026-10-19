@@ -3,7 +3,8 @@
 // canonical: changing it changes replay hashes and must be called out in the commit (§5.2).
 //
 //   1 Input             copy the InputFrame into the sim; hand it to the replay recorder (SSP-038)
-//   2 Vehicle (+hopper) surface sample → stepVehicle → EV.ReverseBeeper → kerb crossing (§8.2 steps 1–9)
+//   2 Vehicle (+hopper) surface sample → stepVehicle (handling scaled by the hopper fill) → EV.ReverseBeeper →
+//                       kerb crossing (§8.2 steps 1–9)
 //   3 Static collision  Bessie vs merged solids, map boundary and props: SAT/MTV, restitution, damage, EV.Impact
 //                       (collision/resolveStatic.ts over collision/grid.ts, SSP-036)
 //   4 Bodies            empty until M3
@@ -39,6 +40,7 @@ import {
   sealEvents,
 } from './eventQueue.ts';
 import { cos, sin } from './fmath.ts';
+import { createHopper, type Hopper, type HopperView, setHopperCapacity } from './hopper.ts';
 import { createInputFrame, type InputFrame } from './inputFrame.ts';
 import { createKerbCrossings, findKerbCrossings, type KerbCrossings } from './kerb.ts';
 import type { Level } from './map.ts';
@@ -70,13 +72,6 @@ export const Phase = {
 export type Phase = (typeof Phase)[keyof typeof Phase];
 
 /**
- * Base hopper capacity in LU (GDD §8.4). Only the fill fraction hopperLU / capacity reaches the handling, and
- * the hopper stays empty in M1, so the value has no effect yet. SSP-058 moves it into tuning.json (it owns
- * the hopper) and deletes this constant.
- */
-const M1_HOPPER_CAPACITY_LU = 100;
-
-/**
  * Receives each tick's input in phase 1 (tick is the index of the tick being run, starting at 0). SSP-038's
  * replay recorder appends it to a preallocated log. Must not keep a reference to `input`: the World reuses it.
  */
@@ -98,6 +93,12 @@ export type World = {
   readonly input: InputFrame;
   readonly vehicle: VehicleState;
   readonly vehicleParams: VehicleParams;
+  /**
+   * Bessie's hopper (hopper.ts, SSP-058): bulldozer state, drain and LU-dumped counters over
+   * vehicle.hopperLU and vehicleParams.hopperCapacityLU. Brush collection (phase 5) adds to it and dumping
+   * (phase 10) drains it once SSP-065 wires those systems in.
+   */
+  readonly hopper: Hopper;
   /** The surface sample phase 2 used this tick (average grip k and rolling-drag multiplier). */
   readonly surface: VehicleSurface;
   readonly events: EventQueue;
@@ -128,6 +129,7 @@ export type WorldView = {
   readonly tick: number;
   readonly input: Readonly<InputFrame>;
   readonly vehicle: Readonly<VehicleState>;
+  readonly hopper: HopperView;
   readonly surface: Readonly<VehicleSurface>;
   readonly events: ReadonlyEventQueue;
   readonly staticGrid: StaticGrid;
@@ -145,14 +147,17 @@ export function createWorld(level: Level, seed: number, tuning: Tuning): World {
   if (!Number.isInteger(seed)) throw new Error(`createWorld: seed must be an integer, got ${seed}`);
   const sweeper = tuning.vehicle.sweeper;
   const { x, y, heading } = level.player;
+  const vehicle = createVehicleState(sweeper, x, y, heading);
+  const vehicleParams = createVehicleParams(sweeper, tuning.hopper.capacityLu);
   const world: World = {
     level,
     tuning,
     seed: seed >>> 0,
     tick: 0,
     input: createInputFrame(),
-    vehicle: createVehicleState(sweeper, x, y, heading),
-    vehicleParams: createVehicleParams(sweeper, M1_HOPPER_CAPACITY_LU),
+    vehicle,
+    vehicleParams,
+    hopper: createHopper(vehicle, vehicleParams, tuning.hopper),
     surface: { gripPerS: sweeper.lateralGripPerS.asphalt, rollMult: 1 },
     events: createEventQueue(),
     staticGrid: createStaticGrid(level, tuning.propFootprints),
@@ -179,7 +184,8 @@ export function viewWorld(world: World): WorldView {
  * CLAUDE.md hard rule 2, so the panel never writes sim state itself. Every phase reads its handling numbers
  * through `world.tuning` and `world.vehicleParams.tuning` each tick, and the per-surface table is refilled in
  * place, so the next tick runs on the new values. Bessie's pose, speed and gear carry on; her HP is clamped to
- * the new health.maxHp. The static grid was built from `propFootprints` at creation, so a tuning whose
+ * the new health.maxHp, and the hopper takes the new hopper.capacityLu (its LU clamped to it, `full`
+ * recomputed without an event) and warnFraction. The static grid was built from `propFootprints` at creation, so a tuning whose
  * footprints differ needs a new World: this throws instead of half-applying it.
  *
  * A replay is `f(seed, district, inputs)` under one tuning, so ticks run after a change no longer reproduce
@@ -196,6 +202,8 @@ export function setWorldTuning(world: World, tuning: Tuning): void {
   world.surfaceTable.gripPerSById.set(table.gripPerSById);
   world.surfaceTable.rollMultById.set(table.rollMultById);
   if (world.vehicle.hp > sweeper.health.maxHp) world.vehicle.hp = sweeper.health.maxHp;
+  world.hopper.tuning = tuning.hopper;
+  setHopperCapacity(world.hopper, tuning.hopper.capacityLu);
 }
 
 /** Advance the world by one tick (DT_S) under `input`, running the 11 phases of §5.2 in order. */
@@ -257,8 +265,9 @@ function phaseInput(world: World, input: Readonly<InputFrame>): void {
 
 /**
  * Phase 2 (§8.2): sample the surface under the wheels at the pose the tick starts from, integrate the vehicle
- * (steps 1–8), turn the reverse-engage flag into EV.ReverseBeeper, then apply kerb crossings (step 9).
- * The hopper half of the phase arrives with SSP-058.
+ * (steps 1–8, with step 1 scaling the handling by the hopper's fill fraction through hopperFillFraction), turn
+ * the reverse-engage flag into EV.ReverseBeeper, then apply kerb crossings (step 9). The hopper changes only
+ * in phases 5 (collection) and 10 (dump drain), so this phase sees last tick's fill.
  */
 function phaseVehicle(world: World): void {
   const v = world.vehicle;

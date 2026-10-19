@@ -139,7 +139,7 @@ describe('tuning.json mirrors GDD §7 exactly', () => {
   it('reproduces the GDD §7.4 fill table from the full-hopper multipliers', () => {
     const gdd = readFileSync(`${REPO_ROOT}docs/GDD.md`, 'utf8');
     const section = gdd.slice(gdd.indexOf('### 7.4 Load'), gdd.indexOf('### 7.5'));
-    const rowRe = /^\| (\d+)%[^|]*\| ([\d.]+) m\/s² \| ([\d.]+) \/ ([\d.]+) m\/s \| (\d+)°\/s \|$/gm;
+    const rowRe = /^\| (\d+)%[^|]*\| ([\d.]+) m\/s² \| ([\d.]+) \/ ([\d.]+) m\/s \| ([\d.]+)°\/s \|$/gm;
     const rows = [...section.matchAll(rowRe)];
     expect(rows.map((m) => m[1])).toEqual(['0', '50', '80', '100']);
     const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;

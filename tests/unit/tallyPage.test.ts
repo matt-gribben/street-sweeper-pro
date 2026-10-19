@@ -45,10 +45,37 @@ function snapshot(overrides: Partial<SimSnapshot> = {}): SimSnapshot {
     grime: { initial: 9000, cleaned: 300 },
     frontages: [],
     npcs: [],
-    shift: { phase: 'ended', ticksRemaining: 0, endReason: 'time_up', endTick: 14_580 },
+    shift: {
+      phase: 'ended',
+      ticksRemaining: 0,
+      endReason: 'time_up',
+      endTick: 14_580,
+      finalScore: overrides.score ?? 12_450,
+      finalStars: overrides.stars ?? 0,
+    },
     complaints: 0,
     ...overrides,
   };
+}
+
+/** An ended shift snapshot: `reason`, with the sim's final score and stars (shift.ts finalShiftScore/Stars). */
+function ended(
+  reason: 'time_up' | 'towed' | 'sacked',
+  finalScore: number,
+  finalStars: number,
+  overrides: Partial<SimSnapshot> = {},
+): SimSnapshot {
+  return snapshot({
+    ...overrides,
+    shift: {
+      phase: 'ended',
+      ticksRemaining: 900,
+      endReason: reason,
+      endTick: 13_000,
+      finalScore,
+      finalStars,
+    },
+  });
 }
 
 /** Rasterises `items` at `width` and returns the pixels painted outside the first (panel) item. */
@@ -94,10 +121,10 @@ describe('formatting', () => {
 });
 
 describe('tally figures', () => {
-  it('reads the end reason, Tidy %, items, grime, score and would-be stars from the snapshot', () => {
+  it('reads the end reason, Tidy %, items, grime, final score and stars from the snapshot', () => {
     expect(tallyFigures(snapshot({ stars: 2 }), 'PUDDLE LANE')).toEqual({
       reason: 'TIME UP!',
-      towed: false,
+      failed: false,
       district: 'PUDDLE LANE',
       tidy: '47.4%',
       items: '12 / 130',
@@ -105,15 +132,38 @@ describe('tally figures', () => {
       score: '12,450',
       stars: 2,
     });
-    const towed = snapshot({
-      shift: { phase: 'ended', ticksRemaining: 900, endReason: 'towed', endTick: 13_000 },
+  });
+
+  it("shows the fail states with the sim's final score and no stars (GDD §11.3)", () => {
+    // TOWED: the sim's floor(0.5 × 12,451) = 6,225, no stars even at 3 would-be stars.
+    const towed = ended('towed', 6225, 0, { score: 12_451, stars: 3, tidy: 0.95 });
+    expect(tallyFigures(towed, 'PUDDLE LANE')).toMatchObject({
+      reason: 'TOWED!',
+      failed: true,
+      tidy: '95.0%',
+      score: '6,225',
+      stars: 0,
     });
-    expect(tallyFigures(towed, 'PUDDLE LANE')).toMatchObject({ reason: 'TOWED!', towed: true });
+    // SACKED: the score as it stands, no stars.
+    const sacked = ended('sacked', 12_451, 0, { score: 12_451, stars: 2 });
+    expect(tallyFigures(sacked, 'PUDDLE LANE')).toMatchObject({
+      reason: 'SACKED!',
+      failed: true,
+      score: '12,451',
+      stars: 0,
+    });
   });
 
   it('refuses a shift that has not ended', () => {
     const running = snapshot({
-      shift: { phase: 'running', ticksRemaining: 900, endReason: null, endTick: -1 },
+      shift: {
+        phase: 'running',
+        ticksRemaining: 900,
+        endReason: null,
+        endTick: -1,
+        finalScore: null,
+        finalStars: null,
+      },
     });
     expect(() => tallyFigures(running, 'PUDDLE LANE')).toThrow(/has not ended/);
   });
@@ -201,13 +251,11 @@ describe('tally page layout', () => {
     }
   });
 
-  it('heads a TOWED shift in 18 postbox red, TIME UP in 00 ink', () => {
-    const towed = snapshot({
-      shift: { phase: 'ended', ticksRemaining: 900, endReason: 'towed', endTick: 13_000 },
-    });
+  it('heads a SACKED or TOWED shift in 18 postbox red, TIME UP in 00 ink', () => {
     const header = (s: SimSnapshot) =>
       tallyPageLayout(font, 480, HEIGHT, tallyFigures(s, 'X'), tallyButtonStates(0))[1];
-    expect(header(towed)).toMatchObject({ kind: 'text', text: 'TOWED!', colour: 18 });
+    expect(header(ended('towed', 0, 0))).toMatchObject({ kind: 'text', text: 'TOWED!', colour: 18 });
+    expect(header(ended('sacked', 0, 0))).toMatchObject({ kind: 'text', text: 'SACKED!', colour: 18 });
     expect(header(snapshot())).toMatchObject({ kind: 'text', text: 'TIME UP!', colour: 0 });
   });
 });

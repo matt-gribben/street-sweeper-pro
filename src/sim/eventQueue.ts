@@ -28,8 +28,10 @@ export const EVENTS_PER_TICK = 512;
  * - KerbJolt: a = x, b = y (where the axle midpoint crossed the kerb edge, m), c = |vLong| just before the
  *   crossing (m/s). The front axle also loses speed; the rear axle only jolts.
  * - ReverseBeeper: a = x, b = y (Bessie's body centre, m), c = 0. Once per engagement of REV.
- * - ShiftEnd: a = reason (ShiftEndReason), b = 0, c = 0. Phase 10 (shift.ts, SSP-062), once per shift: TIME_UP
- *   on the first tick Bessie is at rest after the timer reaches 0, TOWED on the first tick that ends with HP 0.
+ * - ShiftEnd: a = reason (ShiftEndReason), b = 0, c = 0. Phase 10 (shift.ts, SSP-062, SSP-079), once per shift:
+ *   TIME_UP on the first tick Bessie is at rest after the timer reaches 0; before the timer runs out, SACKED on
+ *   the first tick that ends with the complaints meter at 5, else TOWED on the first tick that ends with HP 0
+ *   (SACKED wins a tick that does both). The World is frozen from then on (world.ts).
  * - HopperFull: a = x, b = y (Bessie's body centre, m), c = capacity (LU). Once per fill, on the add that
  *   reaches capacity (hopper.ts, SSP-058); again only after LU has dropped below capacity.
  * - LitterCollected: entity = the item's LitterField index at collection (it is swap-removed straight after),
@@ -80,11 +82,11 @@ export const EV = {
 export type EventType = (typeof EV)[keyof typeof EV];
 
 /**
- * Why a shift ended, carried in EV.ShiftEnd's `a`: TOWED (HP reached 0, SSP-036) and TIME_UP (the knock-off
- * after the 240 s timer, SSP-062). SACKED (5 complaints) is appended in M3 (SSP-079). Hashed into replays:
- * append, never renumber.
+ * Why a shift ended, carried in EV.ShiftEnd's `a`: TOWED (HP reached 0, SSP-036), TIME_UP (the knock-off after
+ * the 240 s timer, SSP-062) and SACKED (the complaints meter reached 5, SSP-079). Hashed into replays: append,
+ * never renumber.
  */
-export const ShiftEndReason = { Towed: 1, TimeUp: 2 } as const;
+export const ShiftEndReason = { Towed: 1, TimeUp: 2, Sacked: 3 } as const;
 export type ShiftEndReason = (typeof ShiftEndReason)[keyof typeof ShiftEndReason];
 
 /** The mutable queue. Only the sim writes it, through the functions below. */

@@ -21,8 +21,14 @@ import {
   THROTTLE_MAX,
 } from '../../src/sim/inputFrame.ts';
 import type { Level } from '../../src/sim/map.ts';
-import { attachInputLog, createInputLog, EVENT_NAMES, type InputLog } from '../../src/sim/replay.ts';
-import { shiftIgnoresInput } from '../../src/sim/shift.ts';
+import {
+  appendInput,
+  attachInputLog,
+  createInputLog,
+  EVENT_NAMES,
+  type InputLog,
+} from '../../src/sim/replay.ts';
+import { isShiftEnded, shiftIgnoresInput } from '../../src/sim/shift.ts';
 import type { Tuning } from '../../src/sim/tuning.ts';
 import { Gear } from '../../src/sim/vehicle.ts';
 import { createWorld, type World } from '../../src/sim/world.ts';
@@ -244,7 +250,8 @@ export function driveRoute(
     stepIndex += 1;
   };
 
-  while (world.tick < ticks) {
+  // Counted by step() calls, not world.tick: once the shift has ended the World is frozen and its tick stops.
+  for (let t = 0; t < ticks; t += 1) {
     const v = world.vehicle;
     const knockedOff = shiftIgnoresInput(world.shift);
     // Resolve instant steps (press) and completed steps before choosing this tick's frame.
@@ -321,6 +328,9 @@ export function driveRoute(
       if (report !== null && world.tick - report.startTick >= step.maxTicks) done = true;
     }
 
+    // A frozen World runs no phase 1, so its recorder logs nothing: log the (neutral) frame here, so the log
+    // still holds one frame per tick of the replay.
+    if (isShiftEnded(world.shift)) appendInput(log, log.length, frame);
     world.step(frame);
 
     const impacts = countEvents(world.events, EV.Impact);

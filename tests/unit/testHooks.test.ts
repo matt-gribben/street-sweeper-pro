@@ -261,7 +261,14 @@ describe('installTestHooks with test=1', () => {
       litter: { spawned: 130, collected: 9 },
       grime: { initial: 9000, cleaned: 450 },
       frontages: [{ id: 'frontage.test', clean: 0.5, cleanSwept: false }],
-      shift: { phase: 'running' as const, ticksRemaining: 14_000, endReason: null, endTick: -1 },
+      shift: {
+        phase: 'running' as const,
+        ticksRemaining: 14_000,
+        endReason: null,
+        endTick: -1,
+        finalScore: null,
+        finalStars: null,
+      },
       npcs: [
         { id: 'npc.shopper', origin: 'ambient' as const, x: 3, y: 4, heading: 0, state: 0, stateTicks: 9 },
       ],

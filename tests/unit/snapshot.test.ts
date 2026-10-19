@@ -67,7 +67,14 @@ describe('snapshotWorld', () => {
       'npcs',
       'complaints',
     ]);
-    expect(Object.keys(snap.shift)).toEqual(['phase', 'ticksRemaining', 'endReason', 'endTick']);
+    expect(Object.keys(snap.shift)).toEqual([
+      'phase',
+      'ticksRemaining',
+      'endReason',
+      'endTick',
+      'finalScore',
+      'finalStars',
+    ]);
     expect(Object.keys(snap.bessie)).toEqual(['x', 'y', 'heading', 'speed']);
     expect(Object.keys(snap.hopper)).toEqual(['lu', 'capacityLu', 'full']);
     expect(Object.keys(snap.water)).toEqual(['units', 'capacity']);
@@ -138,6 +145,8 @@ describe('snapshotWorld', () => {
       ticksRemaining: SHIFT_TICKS,
       endReason: null,
       endTick: -1,
+      finalScore: null,
+      finalStars: null,
     });
     const input = createInputFrame();
     input.throttle = 255;
@@ -148,10 +157,25 @@ describe('snapshotWorld', () => {
     fresh.shift.phase = ShiftPhase.Ended;
     fresh.shift.endReason = ShiftEndReason.Towed;
     fresh.shift.endTick = 99;
-    expect(snapshotWorld(fresh).shift).toMatchObject({ phase: 'ended', endReason: 'towed', endTick: 99 });
+    // The tally's figures (SSP-079): TOWED keeps floor(0.5 × score) and no stars; SACKED the score, no stars.
+    fresh.scoring.score = 1001;
+    fresh.tidy.stars = 3;
+    expect(snapshotWorld(fresh).shift).toMatchObject({
+      phase: 'ended',
+      endReason: 'towed',
+      endTick: 99,
+      finalScore: 500,
+      finalStars: 0,
+    });
+    fresh.shift.endReason = ShiftEndReason.Sacked;
+    expect(snapshotWorld(fresh).shift).toMatchObject({
+      endReason: 'sacked',
+      finalScore: 1001,
+      finalStars: 0,
+    });
     fresh.shift.endReason = ShiftEndReason.TimeUp;
     const ended = snapshotWorld(fresh);
-    expect(ended.shift.endReason).toBe('time_up');
+    expect(ended.shift).toMatchObject({ endReason: 'time_up', finalScore: 1001, finalStars: 3 });
     expect(JSON.parse(JSON.stringify(ended))).toEqual(ended);
   });
 

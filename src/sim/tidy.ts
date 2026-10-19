@@ -32,7 +32,7 @@
 // does not fall never makes the % fall. `tidy` and `frontageClean` are the ppm values ÷ 1e6.
 //
 // Stars (GDD §12.1): the would-be stars of the current Tidy %: 1★ ≥ 0.60, 2★ ≥ 0.80, 3★ ≥ 0.92 (tuning.json
-// `stars`). TOWED awards no stars; that rule belongs to the tally (M3), not here.
+// `stars`). SACKED and TOWED award no stars; that rule is shift.ts finalShiftStars (SSP-079), not here.
 //
 // Tick placement: stepTidy runs in phase 9 straight after stepScoring (SSP-065 wires it), when phases 5 and 6
 // have moved this tick's counters. It recomputes only the frontages whose counters changed this tick.
@@ -172,8 +172,8 @@ function starsForPpm(ppm: number, star1: number, star2: number, star3: number): 
 
 /**
  * The would-be stars (GDD §12.1) of a Tidy % `tidy` (0..1): 0, 1 at ≥ star1MinTidy (0.60), 2 at ≥ star2MinTidy
- * (0.80), 3 at ≥ star3MinTidy (0.92). Both sides are rounded to ppm first. TOWED's "no stars" is the tally's
- * rule, not this helper's.
+ * (0.80), 3 at ≥ star3MinTidy (0.92). Both sides are rounded to ppm first. SACKED's and TOWED's "no stars" is
+ * shift.ts finalShiftStars (SSP-079), not this helper.
  */
 export function starsForTidy(tidy: number, stars: Tuning['stars']): 0 | 1 | 2 | 3 {
   return starsForPpm(

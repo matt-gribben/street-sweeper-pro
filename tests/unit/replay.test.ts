@@ -1462,7 +1462,12 @@ describe('replay file', () => {
     const bad = (invariants: Record<string, unknown>): (() => void) => {
       return () => loadReplay({ ...file, invariants });
     };
-    expect(bad({ shiftEnded: 'Sacked' })).toThrow(/invariants\.shiftEnded must be one of "Towed", "TimeUp"/);
+    expect(bad({ shiftEnded: 'Fired' })).toThrow(
+      /invariants\.shiftEnded must be one of "Towed", "TimeUp", "Sacked"/,
+    );
+    expect(loadReplay({ ...file, invariants: { shiftEnded: 'Sacked' } }).file.invariants.shiftEnded).toBe(
+      'Sacked',
+    );
     expect(bad({ shiftEnded: true })).toThrow(/invariants\.shiftEnded must be one of/);
     expect(bad({ minLuDumped: -1 })).toThrow(/invariants\.minLuDumped must be a finite number ≥ 0/);
     expect(bad({ minDumpsCompleted: 0.5 })).toThrow(

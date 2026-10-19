@@ -1,6 +1,7 @@
 // TallyScene, numbers only (TECHNICAL_DESIGN §6.2; GDD §11.3, §15.1, §15.3; SSP-071): the page after a shift.
-// The shift flow (src/app/shiftFlow.ts) enters it on EV.ShiftEnd, after the knock-off coast or on TOWED, with the
-// SimSnapshot the shift ended in; src/ui/tallyPage.ts lays the figures out.
+// The shift flow (src/app/shiftFlow.ts) enters it on EV.ShiftEnd, after the knock-off coast or on SACKED or TOWED
+// (SSP-079), with the SimSnapshot the shift ended in; src/ui/tallyPage.ts lays the figures out (the end reason,
+// and the final score and stars of GDD §11.3).
 //
 //   enter()        takes the `ui` atlas and the font from the asset registry (uiScreen.ts, SSP-284) and resets
 //                  its menu input (menuController.ts): menu edges and clicks latched during the shift are dropped
@@ -11,7 +12,8 @@
 //                  (src/ui/menus.ts, SSP-286): W/↑, S/↓, the D-pad and the left stick move the focus (wrapping, with
 //                  hold-repeat), Space / Enter / pad A / Start pick the focused button, Esc / Backspace / pad B pick
 //                  Back to Briefing, and a mouse click picks the button under the pointer (on release). Try Again
-//                  is the default focus (GDD §15.3). The Menu is `once`: the first pick calls onRetry or onBack once
+//                  is the default focus after every end, SACKED and TOWED included (GDD §11.3, §15.3): it
+//                  restarts the same shift with the intro card skipped. The Menu is `once`: the first pick calls onRetry or onBack once
 //                  and draws that button pressed; later input is ignored. UiMove / UiSelect / UiBack go to the
 //                  scene context's bus. The sim InputFrame is ignored: menu input never reaches a sim (§13.1).
 //   render()       draws the page, re-laid out only when the width or the menu's state changes.

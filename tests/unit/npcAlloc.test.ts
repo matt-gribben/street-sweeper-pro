@@ -81,19 +81,23 @@ const DORIS_KIND = NPC_IDS.indexOf('npc.old_woman');
 const AHEAD_M = 1.625 + 2;
 
 /**
- * The rig: `generic` keeps the registry's behaviours (the SSP-082 generic pedestrian for the people, the no-op
- * for the animals) instead of the test walker, so the reaction model's states run in the window. `doris` adds
- * Doris (SSP-083) to the mix and sprays for 2 s of every 4 (the tank topped up), so her glare, fist shake,
+ * The rig: `generic` keeps the registry's behaviours (the SSP-082 generic pedestrian for the people, the SSP-084
+ * shopper, businessman and litterbug, the no-op for the animals) instead of the test walker, so the reaction
+ * model's states run in the window, with the shoppers' sidesteps, the businessmen's 2 m startles, the litterbugs'
+ * drops and, under the harness's horn, their Caught! (EV.Caught, the bonus in phase 9) and slinking off. `doris`
+ * adds Doris (SSP-083) to the mix and sprays for 2 s of every 4 (the tank topped up), so her glare, fist shake,
  * chase and handbag whacks run too; Bessie's HP is restored every tick so the whacks never get her TOWED.
  */
 function npcRig(generic = false, doris = false): { world: World; step: (t: number) => void } {
   const { level } = npcTown(TILES, {
     population: [{ fromS: 0, toS: 100_000, target: 80 }],
     mix: [
+      { id: 'npc.businessman', weight: 15 },
       { id: 'npc.dog_walker', weight: 20 },
       ...(doris ? [{ id: 'npc.old_woman' as const, weight: 40 }] : []),
+      { id: 'npc.litterbug', weight: 10 },
       { id: 'npc.postie', weight: 20 },
-      { id: 'npc.shopper', weight: 60 },
+      { id: 'npc.shopper', weight: 35 },
     ],
     caps: [{ id: 'npc.dog_walker', cap: 8 }],
     perches: {
@@ -176,6 +180,8 @@ function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
     delivered: world.npcAi.stimuli.delivered,
     hits: reactions.hits,
     bumps: reactions.bumps,
+    bonusPts: world.scoring.bonusPts,
+    litterSpawned: world.litter.litterSpawned,
   };
   let minCount = NPC_CAPACITY;
   let fullTicks = 0;
@@ -197,7 +203,9 @@ function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
       `(≤ ${HEAP_PRE_GC_THRESHOLD_BYTES}); NPCs min ${minCount}, full on ${fullTicks} ticks; spawned ` +
       `+${sp.ambientSpawned - before.spawned}, retired +${sp.ambientRetired - before.retired}, stimuli ` +
       `delivered +${world.npcAi.stimuli.delivered - before.delivered}, actor hits ` +
-      `+${reactions.hits - before.hits}, bumps +${reactions.bumps - before.bumps}, handbag whacks ${whacks}`,
+      `+${reactions.hits - before.hits}, bumps +${reactions.bumps - before.bumps}, handbag whacks ${whacks}, ` +
+      `Caught! bonus ` +
+      `+${world.scoring.bonusPts - before.bonusPts}, litter dropped +${world.litter.litterSpawned - before.litterSpawned}`,
   );
   // The window ran the work under test: a full store, spawns and retirements, stimuli delivered.
   expect(fullTicks).toBeGreaterThan(HEAP_MEASURED_TICKS / 2);
@@ -206,7 +214,15 @@ function checkPhase7Heap(label: string, generic: boolean, doris = false): void {
   expect(sp.ambientRetired - before.retired).toBeGreaterThan(10);
   expect(world.npcAi.stimuli.delivered - before.delivered).toBeGreaterThan(100);
   // The generic pedestrians walk into her path; the test walkers seldom meet her inside one window.
-  if (generic) expect(reactions.hits - before.hits).toBeGreaterThan(0);
+  if (generic) {
+    expect(reactions.hits - before.hits).toBeGreaterThan(0);
+    // SSP-084: the litterbugs' drops (the town has no litter of its own, and the brush is up) have filled the
+    // LitterField to its 2,000 cap during the pre-warm and no further (the window's drops are refused), and the
+    // harness's horn caught some litterbugs (the town has no kerbs, so the only style bonus is Caught!).
+    expect(world.litter.count).toBe(world.litter.capacity);
+    expect(world.litter.litterSpawned).toBe(world.litter.capacity);
+    expect(world.scoring.bonusPts - before.bonusPts).toBeGreaterThan(0);
+  }
   if (doris) expect(whacks).toBeGreaterThan(0);
   assertHeapDeltaWithinThresholds(delta);
 }

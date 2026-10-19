@@ -43,7 +43,10 @@ export const NPC_PATH_NODES = 32;
  * AWARE and HI_VIS, the two per-tick stimulus marks of the reaction model (npc/reactions.ts): phase 7 clears both
  * on every NPC before it delivers the tick's stimuli, and a behaviour that takes BeaconYield (Bessie within the
  * awareness radius) sets AWARE, one that takes HiVis (pwr.hi_vis running) sets HI_VIS. A FALLEN or ON_ROOF NPC
- * cannot be hit (actor contact skips it).
+ * cannot be hit (actor contact skips it). SSP-084 appends DODGED, a per-approach latch (the shopper's 4 m
+ * sidestep and the businessman's 2 m startle fire once per approach of Bessie, and the latch clears once she is
+ * outside the trigger distance), and LEAVING: the NPC is on its way off the map (the caught litterbug slinking
+ * off), and the spawner retires it on its next run with its circle off the view, whatever its origin.
  */
 export const NPC_FLAG = {
   FALLEN: 1,
@@ -51,6 +54,8 @@ export const NPC_FLAG = {
   YIELDING: 4,
   AWARE: 8,
   HI_VIS: 16,
+  DODGED: 32,
+  LEAVING: 64,
 } as const;
 export type NpcFlagBit = (typeof NPC_FLAG)[keyof typeof NPC_FLAG];
 
@@ -133,7 +138,8 @@ export type NpcStore = {
   /**
    * Two tick counters a kind's behaviour module owns (SSP-083), 0 at spawn; each module documents its use. Doris
    * (behaviours/oldWoman.ts): timerA = slowed-walk ticks left after a fist shake; timerB = the Glare's
-   * clear-path ticks, or the Chase's ticks until her handbag can whack again.
+   * clear-path ticks, or the Chase's ticks until her handbag can whack again. The litterbug
+   * (behaviours/litterbug.ts, SSP-084): timerA = ticks to his next drop; timerB unused.
    */
   readonly timerA: Int32Array;
   readonly timerB: Int32Array;
@@ -381,7 +387,7 @@ export function queryNpcs(store: NpcStore, box: Readonly<Aabb>, out: Int32Array)
 /**
  * Add an NPC of `kind` (NPC_IDS index) and `origin`, spawned from spec entry `group` (−1 for none), at
  * (xs[j], ys[j]), at rest, facing north, in state 0 with no target node, flags, link, perception, path, contact
- * window or state limit, and radius and walking speed 0 (the spawner sets the state, radius and speed). Returns its index, or −1 (changing nothing) when the store
+ * window, state limit or behaviour timer, and radius and walking speed 0 (the spawner sets the state, radius and speed). Returns its index, or −1 (changing nothing) when the store
  * is full. Takes the position through arrays so no double crosses the call.
  */
 export function addNpc(

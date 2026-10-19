@@ -447,7 +447,8 @@ export function resetStateHasher(hasher: StateHasher, seed: number): void {
  *     servedStop, box0, box1, planLen, then its planLen plan edges
  *   I traffic.rng a, b, c, counter; I nextBusTick, busesDue, busesSpawned, carHorns, roadRageOffences, then per
  *     junction box its claim and claim edge and per slot its holder and holder edge
- *   SSP-083 appends the behaviour timers: per NPC, after stateLimit, I timerA, timerB
+ *   SSP-083 appends the behaviour timers: per NPC, after stateLimit, I timerA, timerB (SSP-084's litterbug keeps
+ *     his drop countdown in timerA, so it adds no field)
  *
  * The grime mask: the first tick a hasher absorbs (state[1] is 0) absorbs the whole mask, as little-endian
  * Int32 words (the mask is a whole number of words: its width is tiles × 8); every tick then absorbs the

@@ -26,7 +26,7 @@
 //                       EV.NpcHit, drops; bumps; npc/reactions.ts, SSP-082)
 //                       → deliverStimuli → perceiveNpcs (index mod 4 == tick mod 4) → tickNpcBehaviours
 //                       (npc/, SSP-080; the behaviours steer with npc/steering.ts, SSP-081); the litterbug's
-//                       Caught! flags the tick's honk here (markHornCaught, complaints.ts, SSP-078) →
+//                       Caught! emits EV.Caught and flags the tick's honk here (markHornCaught, SSP-084) →
 //                       updateZebraOccupancy (world.zebras, SSP-081)
 //   8 Traffic           stepTraffic (traffic.ts, SSP-089): the bus schedule, every vehicle's drive along the
 //                       lane graph (car following behind Bessie and vehicles, zebra, junction and bus stops,
@@ -726,8 +726,9 @@ function phaseDirt(world: World): void {
  *   6. perceiveNpcs: the perception query of every NPC with index mod 4 == tick mod 4.
  *   7. tickNpcBehaviours: each NPC's behaviour tick, in index order (behaviours steer with npc/steering.ts).
  *   8. updateZebraOccupancy: how many NPCs stand on each zebra (world.zebras), for phases 8 and 9.
- * The litterbug behaviour flags a honk that lands its Caught! with markHornCaught (complaints.ts, SSP-078), so
- * phase 9 does not count it toward horn spam.
+ * The litterbug behaviour (SSP-084) emits EV.Caught for a honk that lands its Caught! and flags that honk with
+ * markHornCaught (complaints.ts, SSP-078), so phase 9 scores the bonus and does not count the honk toward horn
+ * spam.
  */
 function phaseNpc(world: World): void {
   beginNpcTick(world.npc);
@@ -756,10 +757,10 @@ function phaseTraffic(world: World): void {
  * (unless phase 7 flagged it Caught!) and may record a Noise fact; applyPenalties consumes the tick's penalty
  * facts in order (their points to scoring's penalty API, their complaints to the meter with EV.Complaint each,
  * the police-witness hook); stepScoring reads this tick's facts (the chain timer, frozen while a dump drains;
- * EV.LitterCollected and EV.StainCleaned in emission order; the Dirt's cleaned cells and Kerb Hugger contact),
- * then applies the penalties' points and resets the chain after the pickups; stepTidy recomputes the frontages
- * whose counters moved, awards Clean Sweeps through the bonus API and updates Tidy % and the stars. The drain
- * state is read before phase 10 runs.
+ * EV.LitterCollected and EV.StainCleaned in emission order, with EV.Caught's style bonus among them, SSP-084;
+ * the Dirt's cleaned cells and Kerb Hugger contact), then applies the penalties' points and resets the chain
+ * after the pickups; stepTidy recomputes the frontages whose counters moved, awards Clean Sweeps through the
+ * bonus API and updates Tidy % and the stars. The drain state is read before phase 10 runs.
  */
 function phaseScoring(world: World): void {
   stepHornSpam(world.complaints, world.penalties, world.vehicle, world.tick);

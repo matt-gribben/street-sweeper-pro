@@ -12,7 +12,10 @@
 //      the view (on a nav spawn point when the level lists no wall perches; car roofs and road grooming spots
 //      are SSP-087/SSP-090), and each flock of `size` birds (drawn per flock) scattered within FLOCK_SPREAD_M
 //      of a flock point whose whole spread is off screen. Placed NPCs persist for the shift too.
-//   3. The ambient population, with at most NPC_MAX_CHANGES (2) spawns and retirements together. Each of the
+//   3. Leavers (SSP-084): every NPC its behaviour marked LEAVING (NPC_FLAG; the caught litterbug slinking off the
+//      map) whose circle, and its dog's, is off the view leaves, whatever its origin. Leavers take none of the
+//      ambient budget below; an ambient one counts toward the population and its caps until it has left.
+//   4. The ambient population, with at most NPC_MAX_CHANGES (2) spawns and retirements together. Each of the
 //      two changes is, in order of preference:
 //      a. a spawn, while the live ambient count is under the current `population` window's target (0 outside
 //         every window): its kind by `mix` weight among the kinds under their `caps` that fit in the store
@@ -25,6 +28,8 @@
 //         over its target or a spawn can still follow in this run. So people left behind are recycled near
 //         Bessie one a second (retire, then spawn into the freed slot), a street she has just reached fills at
 //         two a second, a full store stays full between runs, and a dropping target sheds two a second.
+// A new NPC gets its behaviour's `onSpawn` (SSP-084: per-instance draws such as the shopper's outfit swap) as it
+// is added, before the next one.
 // A dog walker always comes with its dog: a Companion NPC at the same spot, linked both ways by handle; they
 // spawn and retire together and take two store slots. Ambient spawns leave room for every named NPC (and dog)
 // not yet spawned and every cat and bird not yet placed, so the store's NPC_CAPACITY (80, flock birds counted
@@ -43,7 +48,15 @@ import type { Tuning } from '../tuning.ts';
 import { circleTouchesViewRect } from '../viewRect.ts';
 import type { World } from '../world.ts';
 import type { Behaviour } from './behaviour.ts';
-import { addNpc, NO_NPC_HANDLE, NpcOrigin, npcHandle, removeNpc, resolveNpcHandle } from './store.ts';
+import {
+  addNpc,
+  NO_NPC_HANDLE,
+  NPC_FLAG,
+  NpcOrigin,
+  npcHandle,
+  removeNpc,
+  resolveNpcHandle,
+} from './store.ts';
 
 /** Ticks between two runs of the population controller (LEVEL_DESIGN §9.4: every 1.0 s). */
 export const NPC_SPAWN_EVERY_TICKS = SIM_HZ;
@@ -290,6 +303,8 @@ function spawnAt(
   npc.radius[i] = sp.radiusByKind[kind] as number;
   npc.walkMps[i] = sp.speedByKind[kind] as number;
   npc.targetNode[i] = node;
+  const onSpawn = behaviour.onSpawn;
+  if (onSpawn !== undefined) onSpawn(w, i);
   if (kind === sp.dogWalkerKind && origin !== NpcOrigin.Companion) {
     const d = addNpc(npc, kind, NpcOrigin.Companion, -1, xs, ys, j);
     if (d >= 0) {
@@ -299,9 +314,34 @@ function spawnAt(
       npc.targetNode[d] = node;
       npc.link[d] = npcHandle(npc, i);
       npc.link[i] = npcHandle(npc, d);
+      if (onSpawn !== undefined) onSpawn(w, d);
     }
   }
   return i;
+}
+
+/**
+ * Retire every NPC its behaviour marked LEAVING (the caught litterbug slinking off, SSP-084) whose circle, and its
+ * dog's, does not touch the view, whatever its origin (a dog only ever leaves with its walker): it has walked out
+ * of sight on its way off the map. Highest index first, so a swap-remove only ever moves an NPC already looked
+ * at. Draws nothing.
+ */
+function retireLeavers(w: World): void {
+  const npc = w.npc;
+  const view = w.viewRect;
+  for (let i = npc.count - 1; i >= 0; i -= 1) {
+    if (i >= npc.count) continue;
+    if (((npc.flags[i] as number) & NPC_FLAG.LEAVING) === 0) continue;
+    // A dog leaves with its walker, never on its own.
+    if ((npc.origin[i] as number) === NpcOrigin.Companion) continue;
+    if (circleTouchesViewRect(view, npc.x, npc.y, i, npc.radius, i)) continue;
+    const link = npc.link[i] as number;
+    if (link !== NO_NPC_HANDLE) {
+      const dog = resolveNpcHandle(npc, link);
+      if (dog >= 0 && circleTouchesViewRect(view, npc.x, npc.y, dog, npc.radius, dog)) continue;
+    }
+    retire(w, i);
+  }
 }
 
 /** Remove ambient NPC `i` and its dog, if it has one. */
@@ -322,6 +362,7 @@ export function stepNpcSpawner(w: World): void {
   if (tick % NPC_SPAWN_EVERY_TICKS !== 0) return;
   placePerches(w, sp);
   placeFlocks(w, sp);
+  retireLeavers(w);
   controlAmbient(w, sp, tick);
 }
 
@@ -463,7 +504,7 @@ function farthestRetirable(w: World): number {
   return best;
 }
 
-/** Spawn one ambient NPC (see the file comment, step 3b). False when none can spawn now. */
+/** Spawn one ambient NPC (see the file comment, step 4a). False when none can spawn now. */
 function spawnAmbient(w: World, sp: NpcSpawner): boolean {
   const npc = w.npc;
   const view = w.viewRect;

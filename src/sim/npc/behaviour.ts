@@ -2,7 +2,8 @@
 // src/sim/npc/behaviours/<camelCase>.ts exports one Behaviour: a table-driven finite state machine with its
 // states as an `as const` object (no enums, no classes), looked up through registry.ts by the entities.json
 // `behaviour` key. Phase 7 (npcAi.ts) calls `onStimulus` for each stimulus delivered to an NPC, then `tick`
-// once per live NPC per tick, in index order. A new NPC starts in `initial`.
+// once per live NPC per tick, in index order. A new NPC starts in `initial`; the spawner then calls the
+// optional `onSpawn` (SSP-084) for its per-instance draws.
 //
 // Rules for behaviour code (it runs on the per-tick hot path): no allocation, no closures, no map/filter;
 // read and write the NPC's columns in `w.npc` by index; change state with setNpcState (store.ts), which
@@ -49,4 +50,11 @@ export type Behaviour = {
    * rest of its data (where it came from and its radius), valid during this call only.
    */
   onStimulus(w: World, i: number, s: Stimulus, slot: number): void;
+  /**
+   * Optional (SSP-084): called by the spawner once for NPC `i` just after it is added in `initial` with its
+   * radius, walking speed and nav target set, before any other NPC is added. Per-instance draws go here, from
+   * `w.npcAi.rng` (the shopper's outfit swap, the litterbug's first drop timer). A companion dog is spawned
+   * with its walker's kind, so it is called for the dog too (check `origin`).
+   */
+  readonly onSpawn?: (w: World, i: number) => void;
 };

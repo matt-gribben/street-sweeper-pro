@@ -6,13 +6,15 @@ import { NPC_BEHAVIOURS, NPC_IDS } from '../../src/sim/entities.ts';
 import { createInputFrame } from '../../src/sim/inputFrame.ts';
 import { createBlankLevel } from '../../src/sim/map.ts';
 import { type Behaviour, Stimulus } from '../../src/sim/npc/behaviour.ts';
+import { businessmanBehaviour } from '../../src/sim/npc/behaviours/businessman.ts';
+import { litterbugBehaviour } from '../../src/sim/npc/behaviours/litterbug.ts';
 import { NOOP, noopBehaviour, noopJaywalkBehaviour } from '../../src/sim/npc/behaviours/noop.ts';
 import { oldWomanBehaviour } from '../../src/sim/npc/behaviours/oldWoman.ts';
 import {
   pedestrianBehaviour,
-  pedestrianJaywalkBehaviour,
   stationaryPedestrianBehaviour,
 } from '../../src/sim/npc/behaviours/pedestrian.ts';
+import { shopperBehaviour } from '../../src/sim/npc/behaviours/shopper.ts';
 import { PERCEPTION_EVERY_TICKS, PERCEPTION_PATH_S } from '../../src/sim/npc/perception.ts';
 import { BEHAVIOUR_REGISTRY, behavioursByKind } from '../../src/sim/npc/registry.ts';
 import { pushStimulus, STIMULUS_CAPACITY, STIMULUS_EVERYONE } from '../../src/sim/npc/stimuli.ts';
@@ -37,18 +39,18 @@ function openWorld(): World {
 const neutral = createInputFrame();
 
 describe('behaviour registry', () => {
-  it('maps every entities.json behaviour key to its module, or the generic pedestrian or the no-op until it lands', () => {
+  it('maps every entities.json behaviour key to a module: its own, or the generic pedestrian or the no-op until it lands', () => {
     expect(Object.keys(BEHAVIOUR_REGISTRY).sort()).toEqual([...NPC_BEHAVIOURS].sort());
-    // SSP-082: every person kind gets the generic pedestrian (the businessman, an M3 jaywalker, its jaywalking
-    // twin; the market trader the stationary one); the animals keep the no-op (SSP-081: the cat jaywalks).
-    // SSP-083: Doris has her own module.
+    // SSP-083: Doris has her own module; SSP-084: so do the shopper, the businessman (an M3 jaywalker) and the
+    // litterbug. SSP-082: every other person kind gets the generic pedestrian (the market trader the stationary
+    // one); the animals keep the no-op (SSP-081: the cat jaywalks).
     const expected: { readonly [K in (typeof NPC_BEHAVIOURS)[number]]: Behaviour } = {
-      shopper: pedestrianBehaviour,
+      shopper: shopperBehaviour,
       old_woman: oldWomanBehaviour,
       old_man_frame: pedestrianBehaviour,
       dog_walker: pedestrianBehaviour,
-      litterbug: pedestrianBehaviour,
-      businessman: pedestrianJaywalkBehaviour,
+      litterbug: litterbugBehaviour,
+      businessman: businessmanBehaviour,
       mum_pushchair: pedestrianBehaviour,
       postie: pedestrianBehaviour,
       market_trader: stationaryPedestrianBehaviour,
@@ -65,7 +67,7 @@ describe('behaviour registry', () => {
     const custom = { ...BEHAVIOUR_REGISTRY, cat: { ...noopBehaviour, initial: 3 } };
     const withCat = behavioursByKind(DEFAULT_ENTITIES, custom);
     expect(withCat[NPC_IDS.indexOf('npc.cat')]?.initial).toBe(3);
-    expect(withCat[NPC_IDS.indexOf('npc.shopper')]).toBe(pedestrianBehaviour);
+    expect(withCat[NPC_IDS.indexOf('npc.shopper')]).toBe(shopperBehaviour);
   });
 
   it('the no-op behaviour leaves an NPC where it is, in Idle, whatever it is told', () => {

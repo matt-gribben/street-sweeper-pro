@@ -1444,6 +1444,8 @@ describe('state hash', () => {
  * with a two-edge plan: b31a23d9 → 68d953a7 (fc7651f5 on its branch, before SSP-092 and SSP-082 merged).
  * SSP-083 appended each NPC's behaviour timers (timerA, timerB) after its state limit, and gave the NPC both:
  * 68d953a7 → 424363e8 (5ed1888a on its branch, before SSP-089 merged).
+ * SSP-084 keeps the litterbug's drop countdown in timerA, so it adds no field (on its branch it appended a
+ * timerTicks column, b31a23d9 → c32cfcb1, folded into timerA at its merge).
  */
 const GOLDEN_HAND_SET_HASH = '424363e8';
 

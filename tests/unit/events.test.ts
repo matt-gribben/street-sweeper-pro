@@ -61,9 +61,10 @@ describe('EventBus', () => {
       [EV.NpcHit, 12, 30.5, 9.25, NPC_IDS.indexOf('npc.old_woman')],
       [EV.CarHorn, 2, 30.5, 5.5, 3],
       [EV.HandbagWhack, 12, 31, 9.5, 2],
+      [EV.Caught, 7, 44.5, 12.75, 100],
       [EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0],
     ]);
-    expect(bus.drain(queue)).toBe(20);
+    expect(bus.drain(queue)).toBe(21);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -92,6 +93,7 @@ describe('EventBus', () => {
       { type: EV.NpcHit, tick: 42, entity: 12, x: 30.5, y: 9.25, kind: 'npc.old_woman' },
       { type: EV.CarHorn, tick: 42, entity: 2, x: 30.5, y: 5.5, honk: 3 },
       { type: EV.HandbagWhack, tick: 42, entity: 12, x: 31, y: 9.5, hp: 2 },
+      { type: EV.Caught, tick: 42, entity: 7, x: 44.5, y: 12.75, pts: 100 },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.TimeUp },
     ]);
   });

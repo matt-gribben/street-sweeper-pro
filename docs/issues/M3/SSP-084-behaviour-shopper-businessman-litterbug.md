@@ -2,7 +2,7 @@
 id: SSP-084
 title: "Implement shopper, businessman and litterbug behaviours, including the Caught! bonus"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:sim, area:ai-npc, area:gameplay, area:test, size:M, vertical-slice]
@@ -55,11 +55,11 @@ Tuesday population waves (litterbug +2 at 90 s; shopper +8 from 120 to 180 s) co
 
 ## Acceptance criteria
 
-- [ ] shopper.test.ts: sidesteps when Bessie's predicted path comes within 4 m; the swap index is in 0–7 and identical across reruns with the same seed; a hit costs −250 and 1 C.
-- [ ] businessman.test.ts: no Aware or Yield reaction at 5 m even with a 10 m beacon radius; startles at ≤ 2 m; startles on a horn 7 m away; yields under HiVis; a hit costs −250 and 1 C.
-- [ ] litterbug.test.ts: drops one item every 180–300 ticks; a honk 5.9 m away awards exactly +100 once, enters the slinking state, stops drops, and is not counted toward horn spam; a honk 6.1 m away awards no Caught! and he keeps dropping.
-- [ ] Caught! points are not multiplied by the combo and do not change the chain length.
-- [ ] Replays pass or are re-recorded with a reason.
+- [x] shopper.test.ts: sidesteps when Bessie's predicted path comes within 4 m; the swap index is in 0–7 and identical across reruns with the same seed; a hit costs −250 and 1 C.
+- [x] businessman.test.ts: no Aware or Yield reaction at 5 m even with a 10 m beacon radius; startles at ≤ 2 m; startles on a horn 7 m away; yields under HiVis; a hit costs −250 and 1 C.
+- [x] litterbug.test.ts: drops one item every 180–300 ticks; a honk 5.9 m away awards exactly +100 once, enters the slinking state, stops drops, and is not counted toward horn spam; a honk 6.1 m away awards no Caught! and he keeps dropping.
+- [x] Caught! points are not multiplied by the combo and do not change the chain length.
+- [x] Replays pass or are re-recorded with a reason.
 
 ## Verification
 

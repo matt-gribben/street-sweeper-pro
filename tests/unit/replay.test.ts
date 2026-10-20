@@ -53,6 +53,7 @@ import {
   stateHash,
 } from '../../src/sim/replay.ts';
 import { nextInt, nextU32, sfc32 } from '../../src/sim/rng.ts';
+import { ShiftPhase } from '../../src/sim/shift.ts';
 import { addStain } from '../../src/sim/stains.ts';
 import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import type { VehicleState } from '../../src/sim/vehicle.ts';
@@ -1822,6 +1823,33 @@ describe('replay file', () => {
     );
     expect(bad({ emptyAfterDump: false })).toThrow(/invariants\.emptyAfterDump must be true/);
   });
+
+  it('parses, orders and validates the SSP-107 end-state invariants (end tick, tally score keep, tally stars)', () => {
+    const invariants = {
+      tallyStars: 0,
+      shiftEndTick: 4577,
+      shiftEnded: 'Towed',
+      tallyScoreKeep: 0.5,
+    } as const;
+    const loaded = loadReplay({ ...file, invariants });
+    expect(loaded.file.invariants).toEqual(invariants);
+    // Appended after the SSP-072 keys, so every earlier file serialises unchanged.
+    expect(Object.keys(JSON.parse(serialiseReplay(loaded.file)).invariants)).toEqual([
+      'shiftEnded',
+      'shiftEndTick',
+      'tallyScoreKeep',
+      'tallyStars',
+    ]);
+    const bad = (more: Record<string, unknown>): (() => void) => {
+      return () => loadReplay({ ...file, invariants: more });
+    };
+    expect(bad({ shiftEndTick: 0 })).toThrow(/invariants\.shiftEndTick must be at least 1/);
+    expect(bad({ shiftEndTick: 1.5 })).toThrow(/invariants\.shiftEndTick must be a non-negative integer/);
+    expect(bad({ tallyScoreKeep: 1.5 })).toThrow(/invariants\.tallyScoreKeep must be in 0\.\.1/);
+    expect(bad({ tallyScoreKeep: -0.5 })).toThrow(/invariants\.tallyScoreKeep must be a finite number ≥ 0/);
+    expect(bad({ tallyStars: 4 })).toThrow(/invariants\.tallyStars must be in 0\.\.3/);
+    expect(bad({ tallyStars: 0.5 })).toThrow(/invariants\.tallyStars must be a non-negative integer/);
+  });
 });
 
 describe('replay invariants', () => {
@@ -1934,5 +1962,46 @@ describe('replay invariants', () => {
     expect(invariantFailures({ shiftEnded: 'Towed' }, monitor)).toEqual([
       'shiftEnded: 2 ShiftEnd events, expected exactly one (Towed)',
     ]);
+  });
+
+  it('checks the SSP-107 end-state invariants against the tally rules (shift.ts finalShiftScore/Stars)', () => {
+    const level = syntheticLevel();
+    const monitor = createInvariantMonitor(level, DEFAULT_TUNING);
+    const world = createWorld(level, 1, DEFAULT_TUNING);
+    world.scoring.score = 993;
+    world.tidy.stars = 2;
+    // The shift still runs: there is no tally yet.
+    monitor.observe(world);
+    const end = { shiftEndTick: 1, tallyScoreKeep: 0.5, tallyStars: 0 } as const;
+    expect(invariantFailures(end, monitor)).toEqual([
+      'shiftEndTick: the shift never ended (no ShiftEnd event), expected it at tick 1',
+      'tallyScoreKeep: the shift has not ended, so there is no tally score',
+      'tallyStars: the shift has not ended, so there are no tally stars',
+    ]);
+    // TOWED on tick 0 (the monitor counts it as tick 1, world.tick after the step): the tally keeps
+    // floor(0.5 × 993) = 496 and awards no stars.
+    world.tick += 1;
+    world.events.count = 0;
+    world.events.sealed = false;
+    pushEvent(world.events, EV.ShiftEnd, -1, ShiftEndReason.Towed, 0, 0);
+    world.shift.phase = ShiftPhase.Ended;
+    world.shift.endReason = ShiftEndReason.Towed;
+    world.shift.endTick = 0;
+    monitor.observe(world);
+    expect(monitor.finalTallyScore).toBe(496);
+    expect(monitor.finalTallyStars).toBe(0);
+    expect(invariantFailures(end, monitor)).toEqual([]);
+    expect(invariantFailures({ shiftEndTick: 3, tallyScoreKeep: 1, tallyStars: 2 }, monitor)).toEqual([
+      'shiftEndTick: the shift ended at tick 1, expected tick 3',
+      'tallyScoreKeep: the tally shows 496 of a 993 score, expected floor(1 × 993) = 993',
+      'tallyStars: the tally awards 0 star(s), expected 2',
+    ]);
+    // SACKED keeps the score as it stood, still with no stars; TIME UP keeps the would-be stars.
+    world.shift.endReason = ShiftEndReason.Sacked;
+    monitor.observe(world);
+    expect(invariantFailures({ tallyScoreKeep: 1, tallyStars: 0 }, monitor)).toEqual([]);
+    world.shift.endReason = ShiftEndReason.TimeUp;
+    monitor.observe(world);
+    expect(invariantFailures({ tallyScoreKeep: 1, tallyStars: 2 }, monitor)).toEqual([]);
   });
 });

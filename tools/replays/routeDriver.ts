@@ -1,7 +1,9 @@
 // The closed-loop route driver shared by the scripted replay generators (TECHNICAL_DESIGN §18.3): the M1
 // drive (tools/replays/record-m1-drive-puddle-lane.ts, SSP-049) and the M2 full-shift and dump-cycle replays
-// (tests/replay/scripts/build-m2-replays.ts, SSP-072). An agent cannot play by hand, so a generator describes
-// a route as a readable list of steps and this driver turns it into integer InputFrames, tick by tick.
+// (tests/replay/scripts/build-m2-replays.ts, SSP-072), the M3 High Street smoke replay (SSP-105) and the M3
+// SACKED and TOWED end-state replays (tests/replay/scripts/build-m3-end-state-replays.ts, SSP-107, which added
+// the wait and ram steps and reverse's aim). An agent cannot play by hand, so a generator describes a route as
+// a readable list of steps and this driver turns it into integer InputFrames, tick by tick.
 //
 // Each tick the driver reads the World's state (pose, speed, gear, this tick's events, whether the shift still
 // takes input) and picks throttle, brake, steer and buttons: pure pursuit for steering, a braking-distance
@@ -48,10 +50,15 @@ export type Point = readonly [xM: number, yM: number];
  * - press: put these PRESSED bits on the next tick's frame (merged into whatever the next step drives).
  * - stop: brake (no throttle, wheels straight) until Bessie stands still.
  * - reverse: hold the brake with `steer` (−127..127) until REV engages, keep reversing, and finish once an
- *   EV.Impact has been seen and Bessie has stopped against it, or after `maxTicks`.
+ *   EV.Impact has been seen and Bessie has stopped against it, or after `maxTicks`. With `aim` (SSP-107) the
+ *   steer, once in REV, points her tail at that point (pure pursuit mirrored for reversing) instead.
  * - dump: hold INTERACT (wheels straight, braking down to 0.2 m/s and then rolling, so the brake held at a
  *   standstill never engages REV) until EV.DumpEnd fires, or after `maxTicks`. The shift's dump FSM does the
  *   rest: the hold starts once Bessie is stopped at a site (shift.ts).
+ * - wait (SSP-107): send neutral frames (no throttle, brake or steer) for `ticks` ticks. A press before it lands
+ *   on its first tick, so `press` + `wait` spaces out horn presses.
+ * - ram (SSP-107): drive at `target` (pure pursuit, up to `speedMps`, no braking for it) until an EV.Impact
+ *   fires, or after `maxTicks`. For a deliberate crash into a wall; a target inside a solid is the point.
  */
 export type Step =
   | {
@@ -72,8 +79,23 @@ export type Step =
     }
   | { readonly kind: 'press'; readonly label: string; readonly pressed: number }
   | { readonly kind: 'stop'; readonly label: string }
-  | { readonly kind: 'reverse'; readonly label: string; readonly steer: number; readonly maxTicks: number }
-  | { readonly kind: 'dump'; readonly label: string; readonly maxTicks: number };
+  | {
+      readonly kind: 'reverse';
+      readonly label: string;
+      readonly steer: number;
+      readonly maxTicks: number;
+      /** SSP-107: once REV is engaged, steer the tail at this point instead of holding `steer`. */
+      readonly aim?: Point;
+    }
+  | { readonly kind: 'dump'; readonly label: string; readonly maxTicks: number }
+  | { readonly kind: 'wait'; readonly label: string; readonly ticks: number }
+  | {
+      readonly kind: 'ram';
+      readonly label: string;
+      readonly target: Point;
+      readonly speedMps: number;
+      readonly maxTicks: number;
+    };
 
 /** Tile centre in sim metres (2 m tiles). */
 export function tile(col: number, row: number): Point {
@@ -119,6 +141,30 @@ function pursuitSteer(world: World, tx: number, ty: number): number {
   const deltaRad = atan2(2 * sweeper.body.wheelbaseM * sin(alpha), ld);
   const lock = sweeper.steering.maxSteerRad / (1 + Math.abs(v.vLongMps) / sweeper.steering.steerFalloffMps);
   return Math.round(clamp(deltaRad / lock, -1, 1) * STEER_MAX);
+}
+
+/**
+ * Steer input that points Bessie's tail at (tx, ty) while reversing (SSP-107): pure pursuit from the rear axle
+ * with the backward direction as the heading, mirrored, since in reverse a steer to the right turns her nose
+ * left. Integer −STEER_MAX..STEER_MAX.
+ */
+function reverseSteer(world: World, tx: number, ty: number): number {
+  const v = world.vehicle;
+  const sweeper = world.tuning.vehicle.sweeper;
+  // Backward and its clockwise perpendicular (the right of the heading, negated).
+  const bx = -sin(v.headingRad);
+  const by = cos(v.headingRad);
+  const rx = -cos(v.headingRad);
+  const ry = -sin(v.headingRad);
+  const ax = v.xM - bx * sweeper.body.rearAxleOffsetM;
+  const ay = v.yM - by * sweeper.body.rearAxleOffsetM;
+  const dx = tx - ax;
+  const dy = ty - ay;
+  const ld = Math.max(hypot(dx, dy), 0.5);
+  const alpha = atan2(dx * rx + dy * ry, dx * bx + dy * by);
+  const deltaRad = atan2(2 * sweeper.body.wheelbaseM * sin(alpha), ld);
+  const lock = sweeper.steering.maxSteerRad / (1 + Math.abs(v.vLongMps) / sweeper.steering.steerFalloffMps);
+  return -Math.round(clamp(deltaRad / lock, -1, 1) * STEER_MAX);
 }
 
 type Segment = { ax: number; ay: number; bx: number; by: number; lenM: number };
@@ -679,12 +725,29 @@ export function driveRoute(
       frame.brake = BRAKE_MAX;
       if (Math.abs(v.vLongMps) < 0.05) done = true;
     } else if (step.kind === 'reverse') {
-      frame.steer = v.gear === Gear.Rev ? step.steer : 0;
+      frame.steer =
+        v.gear !== Gear.Rev
+          ? 0
+          : step.aim !== undefined
+            ? reverseSteer(world, step.aim[0], step.aim[1])
+            : step.steer;
       frame.brake = BRAKE_MAX;
       if (report !== null && world.tick - report.startTick >= step.maxTicks) done = true;
     } else if (step.kind === 'dump') {
       frame.buttons = BUTTON.INTERACT;
       frame.brake = Math.abs(v.vLongMps) > DUMP_BRAKE_UNTIL_MPS ? BRAKE_MAX : 0;
+      if (report !== null && world.tick - report.startTick >= step.maxTicks) done = true;
+    } else if (step.kind === 'wait') {
+      if (report !== null && world.tick + 1 - report.startTick >= step.ticks) done = true;
+    } else if (step.kind === 'ram') {
+      frame.steer = pursuitSteer(world, step.target[0], step.target[1]);
+      if (v.gear === Gear.Rev) {
+        // Throttle at a standstill returns to FWD; while still rolling back, throttle brakes.
+        frame.throttle = THROTTLE_MAX;
+      } else {
+        speedControl(v.vLongMps, step.speedMps, frame);
+        frame.brake = 0;
+      }
       if (report !== null && world.tick - report.startTick >= step.maxTicks) done = true;
     }
 
@@ -700,7 +763,7 @@ export function driveRoute(
       r.maxSpeedMps = Math.max(r.maxSpeedMps, Math.abs(world.vehicle.vLongMps));
     }
     if (impacts > 0) impactSeen = true;
-    if (step !== undefined && step.kind === 'reverse' && impactSeen) done = true;
+    if (step !== undefined && (step.kind === 'reverse' || step.kind === 'ram') && impactSeen) done = true;
     if (step !== undefined && step.kind === 'dump' && countEvents(world.events, EV.DumpEnd) > 0) done = true;
     if (world.vehicle.brushDown) maxBrushDownMps = Math.max(maxBrushDownMps, world.vehicle.vLongMps);
     else maxBrushUpMps = Math.max(maxBrushUpMps, world.vehicle.vLongMps);

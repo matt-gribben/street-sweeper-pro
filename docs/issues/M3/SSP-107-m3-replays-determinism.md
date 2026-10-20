@@ -2,7 +2,7 @@
 id: SSP-107
 title: "Record SACKED and TOWED replays and add the replay-determinism property test"
 milestone: M3
-status: todo
+status: done
 type: test
 estimate: M
 labels: [type:test, area:test, area:sim, size:M, vertical-slice]
@@ -51,10 +51,10 @@ Tick-order test: tests/unit/tickOrder.test.ts (created/extended by earlier issue
 
 ## Acceptance criteria
 
-- [ ] `npm run test:replay` passes: m3_sacked ends with reason Sacked and m3_towed with reason Towed, at the same tick every run, with stars 0 and the TOWED score halved (floored).
-- [ ] The determinism property runs ≥ 100 cases per CI execution and passes.
-- [ ] The tick-order test fails if phase 4, 7 or 8 is removed or reordered.
-- [ ] Every hash change in the PR has a stated reason.
+- [x] `npm run test:replay` passes: m3_sacked ends with reason Sacked and m3_towed with reason Towed, at the same tick every run, with stars 0 and the TOWED score halved (floored).
+- [x] The determinism property runs ≥ 100 cases per CI execution and passes.
+- [x] The tick-order test fails if phase 4, 7 or 8 is removed or reordered.
+- [x] Every hash change in the PR has a stated reason.
 
 ## Verification
 

@@ -246,6 +246,24 @@ export type NpcStoreView = {
   readonly handleSlot: Int32Array;
   readonly slotIndex: Int32Array;
   readonly slotGen: Uint32Array;
+  /** The spatial hash, read-only (queryNpcs; the renderer culls with it, SSP-103). */
+  readonly hashCols: number;
+  readonly hashRows: number;
+  readonly cellHead: Int32Array;
+  readonly cellNext: Int32Array;
+};
+
+/**
+ * What queryNpcs reads: the spatial hash and the positions. The store and its read-only view both have it, so
+ * render can cull through the same query (TECHNICAL_DESIGN §12.5, SSP-103) without writing anything.
+ */
+export type NpcHashView = {
+  readonly hashCols: number;
+  readonly hashRows: number;
+  readonly cellHead: Int32Array;
+  readonly cellNext: Int32Array;
+  readonly x: Float64Array;
+  readonly y: Float64Array;
 };
 
 /**
@@ -351,13 +369,13 @@ export function resolveNpcHandle(store: NpcStoreView, handle: number): number {
 // Spatial hash
 // ---------------------------------------------------------------------------------------------------------
 
-function hashCol(store: NpcStore, xM: number): number {
+function hashCol(store: NpcHashView, xM: number): number {
   const c = Math.floor(xM / NPC_HASH_CELL_M);
   if (!(c > 0)) return 0; // also catches NaN
   return c >= store.hashCols ? store.hashCols - 1 : c;
 }
 
-function hashRow(store: NpcStore, yM: number): number {
+function hashRow(store: NpcHashView, yM: number): number {
   const r = Math.floor(yM / NPC_HASH_CELL_M);
   if (!(r > 0)) return 0;
   return r >= store.hashRows ? store.hashRows - 1 : r;
@@ -403,9 +421,10 @@ export function updateNpcCell(store: NpcStore, i: number): boolean {
 /**
  * Write into `out` the index of every NPC whose centre lies inside `box` (edges inclusive), visiting only the
  * hash cells the box overlaps, and return how many were written. Deterministic order: cells row-major, then
- * each cell's list. `out` must hold `capacity` entries. An empty or NaN box finds nothing.
+ * each cell's list. `out` must hold `capacity` entries. An empty or NaN box finds nothing. Writes nothing to the
+ * store, so it takes the read-only view too (render culling, SSP-103).
  */
-export function queryNpcs(store: NpcStore, box: Readonly<Aabb>, out: Int32Array): number {
+export function queryNpcs(store: NpcHashView, box: Readonly<Aabb>, out: Int32Array): number {
   const minX = box.minX;
   const minY = box.minY;
   const maxX = box.maxX;

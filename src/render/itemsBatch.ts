@@ -19,6 +19,20 @@
 //            (16 under the icon at rest, 07 under the raised icon, §8.5), so the halo alternates with the bob.
 //            Centred on the pickup (pivot (8, 8)); pickups never move, so there is no interpolation. Depth layer
 //            3, after the litter so a pickup reads over an item lying on the same spot.
+//   hazards  (SSP-103) every hazard decal `haz.<kind>:v:-:n` from the `world` atlas, centred on its footprint, on
+//            the decal layer 2 like the stains: the variant n is a stateless hash of its tile (cellHash, salt
+//            VariantSalt.Hazard); haz.broken_glass instead cycles its two glint frames v 0, 1 every
+//            GLASS_GLINT_TICKS_PER_FRAME World ticks (ART_BIBLE §8.7, SSP-101: one decal, two glints). The map's
+//            speed bumps are skipped: the ground layer draws a `haz.speed_bump` site's tiles across the road
+//            (groundLayer.ts), so only a bump placed off a site would draw here.
+//   knock-   (SSP-103) every knockable (bodies.ts) at its interpolated pose, its heading drawn as the nearest quarter
+//   ables    turn (a quad rotation is pixel-exact; a spinning bin turns in 90° steps): the flats
+//            (`prop.shopping_trolley`, `prop.recycling_box`: `flat:-:0`) on layer 3 and the stacks (`prop.wheelie_bin`,
+//            `prop.traffic_cone`, `prop.a_board`: spriteStack.ts KNOCKABLE stacks, 4 slices) at their slice heights.
+//            They stand up off the ground, so they are flagged SpriteFlag.Upright: masked like actors, never
+//            darkened by a shadow (their own included). Their drop shadows (the flat's frame, or the lowest and
+//            highest slices at their heights, ART_BIBLE §6.4) go into the shift's drop-shadow batch when one is
+//            passed.
 //   markers  from the compiled level, built once: `prop.hydrant:flat:-:0` at each `prop.hydrant` prop (its rot in
 //            quarter turns), `site.skip:flat:-:0` (layer 3) and `site.depot_bay:flat:-:0` (the bay markings,
 //            layer 2) centred on their site rect, quarter-turned when the rect is the frame's footprint turned
@@ -37,9 +51,12 @@
 // frame IDs come from tables built at load, the hit list and the cull rect are preallocated (the per-frame region
 // is scanned for `new` and literals and heap-measured in tests/unit/itemsBatch.test.ts).
 import { FRAME, type FrameId } from '../gen/assets.ts';
+import type { BodyStoreView } from '../sim/bodies.ts';
+import { BODY_CAPACITY } from '../sim/bodies.ts';
 import type { Aabb } from '../sim/collision/obb.ts';
 import { PX_PER_M, TILE_M } from '../sim/constants.ts';
-import { LITTER_IDS, POWERUP_IDS, STAIN_IDS } from '../sim/entities.ts';
+import { HAZARD_ENTITY_IDS, KNOCKABLE_IDS, LITTER_IDS, POWERUP_IDS, STAIN_IDS } from '../sim/entities.ts';
+import { HAZARD_CAPACITY, type HazardStoreView } from '../sim/hazards.ts';
 import {
   LITTER_CAPACITY,
   LITTER_ROTATIONS,
@@ -53,7 +70,14 @@ import { STAIN_CAPACITY, type StainStoreView } from '../sim/stains.ts';
 import { HYDRANT_PROP_ID } from '../sim/water.ts';
 import { cellHash, VariantSalt } from './cityMesh.ts';
 import type { SpriteAtlas } from './spriteAtlas.ts';
-import { SpriteBatch } from './spriteBatch.ts';
+import { type DropShadowBatch, SpriteBatch, SpriteFlag } from './spriteBatch.ts';
+import {
+  A_BOARD_STACK,
+  type SpriteStack,
+  STACK_LAYER,
+  TRAFFIC_CONE_STACK,
+  WHEELIE_BIN_STACK,
+} from './spriteStack.ts';
 import { worldFrameVariants } from './worldFrames.ts';
 import { DepthLayer } from './worldMaterial.ts';
 
@@ -102,6 +126,56 @@ export const LITTER_FRAMES = LITTER_IDS.map((id) =>
     (dir) => [`${id}:idle:${dir}:0`, `${id}:wobble:${dir}:0`, `${id}:wobble:${dir}:1`] as const,
   ),
 ) satisfies readonly (readonly (readonly FrameId[])[])[];
+
+/** World ticks per glint frame of haz.broken_glass (chosen in SSP-103: the pickups' 400 ms). */
+export const GLASS_GLINT_TICKS_PER_FRAME = 24;
+
+/** Every hazard kind's decal frames: HAZARD_FRAMES[kind][n], kind the HAZARD_ENTITY_IDS index (`world` atlas). */
+export const HAZARD_FRAMES: readonly (readonly FrameId[])[] = HAZARD_ENTITY_IDS.map((id) =>
+  worldFrameVariants(id, 'v'),
+);
+
+const GLASS_KIND = HAZARD_ENTITY_IDS.indexOf('haz.broken_glass');
+const BUMP_KIND = HAZARD_ENTITY_IDS.indexOf('haz.speed_bump');
+
+/**
+ * The decal frame of a hazard of kind `kind` (HAZARD_ENTITY_IDS index) whose footprint starts at tile (col, row),
+ * at World tick `tick`: haz.broken_glass cycles its glint frames, every other kind shows its tile's hashed variant.
+ */
+export function hazardFrame(kind: number, col: number, row: number, tick: number): FrameId {
+  const variants = HAZARD_FRAMES[kind];
+  if (variants === undefined) return rejectHazardKind(kind);
+  if (kind === GLASS_KIND) return variants[Math.floor(tick / GLASS_GLINT_TICKS_PER_FRAME) & 1] as FrameId;
+  return variants[cellHash(col | 0, row | 0, VariantSalt.Hazard) % variants.length] as FrameId;
+}
+
+/** How a knockable is drawn: one flat frame, or a sprite stack. */
+export type KnockableLook = { readonly flat: FrameId | null; readonly stack: SpriteStack | null };
+
+/** The look of each knockable (ART_BIBLE §8.6: SSP-101 placeholders). */
+const KNOCKABLE_LOOK_BY_ID: { readonly [K in (typeof KNOCKABLE_IDS)[number]]: KnockableLook } = {
+  'prop.wheelie_bin': { flat: null, stack: WHEELIE_BIN_STACK },
+  'prop.traffic_cone': { flat: null, stack: TRAFFIC_CONE_STACK },
+  'prop.a_board': { flat: null, stack: A_BOARD_STACK },
+  'prop.shopping_trolley': { flat: 'prop.shopping_trolley:flat:-:0', stack: null },
+  'prop.recycling_box': { flat: 'prop.recycling_box:flat:-:0', stack: null },
+};
+
+/** Every knockable's look, by KNOCKABLE_IDS index (ART_BIBLE §8.6: SSP-101 placeholders). */
+export const KNOCKABLE_LOOKS: readonly KnockableLook[] = KNOCKABLE_IDS.map((id) => KNOCKABLE_LOOK_BY_ID[id]);
+
+/** The most slices any knockable stack has (its instance budget per body). */
+export const KNOCKABLE_MAX_SLICES = Math.max(1, ...KNOCKABLE_LOOKS.map((l) => l.stack?.slices.length ?? 1));
+
+/** Slice heights per knockable kind (typed, so no height crosses a call as a fresh double). */
+const KNOCKABLE_SLICE_HEIGHTS = KNOCKABLE_LOOKS.map((l) =>
+  Float64Array.from(l.stack?.slices ?? [], (slice) => slice.heightM),
+);
+
+/** The quarter turns 0..3 nearest to a heading of `rad` radians (clockwise from north). */
+export function knockableQuarterTurns(rad: number): number {
+  return ((Math.round(rad / (Math.PI / 2)) % 4) + 4) % 4;
+}
 
 /** Every stain kind's variant frames: STAIN_FRAMES[kind][n], kind the STAIN_IDS index (`world` atlas). */
 export const STAIN_FRAMES: readonly (readonly FrameId[])[] = STAIN_IDS.map((id) =>
@@ -209,7 +283,14 @@ export type ItemsBatchOptions = {
   readonly litterCapacity?: number;
   readonly stainCapacity?: number;
   readonly pickupCapacity?: number;
+  readonly hazardCapacity?: number;
+  readonly bodyCapacity?: number;
 };
+
+/** Drop shadows the items batch may add per frame for `bodyCapacity` knockables (two per stack, one per flat). */
+export function itemsShadowCapacity(bodyCapacity = BODY_CAPACITY): number {
+  return bodyCapacity * 2;
+}
 
 /** The shift's items draw. Add `mesh` to the world pass and call update() once per rendered frame. */
 export class ItemsBatch {
@@ -220,6 +301,8 @@ export class ItemsBatch {
   stainsDrawn = 0;
   markersDrawn = 0;
   pickupsDrawn = 0;
+  hazardsDrawn = 0;
+  knockablesDrawn = 0;
   private readonly hits: Int32Array;
   /** The cull rect of the last update(): the camera's ground rect plus ITEMS_CULL_MARGIN_M. */
   readonly cullRect: Aabb = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
@@ -231,6 +314,9 @@ export class ItemsBatch {
   /** The interpolated position of the litter item being written (addFrom reads it, slot 0). */
   private readonly drawX = new Float64Array(1);
   private readonly drawY = new Float64Array(1);
+  /** 1 on every tile of a `haz.speed_bump` site (the ground layer draws those bumps), by row-major tile. */
+  private readonly bumpTile: Uint8Array;
+  private readonly levelW: number;
 
   /** `items` and `world` are the loaded atlases of those names; `level` gives the static markers. */
   constructor(items: SpriteAtlas, world: SpriteAtlas, level: Level, options: ItemsBatchOptions = {}) {
@@ -240,6 +326,16 @@ export class ItemsBatch {
     const litterCapacity = options.litterCapacity ?? LITTER_CAPACITY;
     const stainCapacity = options.stainCapacity ?? STAIN_CAPACITY;
     const pickupCapacity = options.pickupCapacity ?? PICKUP_CAPACITY;
+    const hazardCapacity = options.hazardCapacity ?? HAZARD_CAPACITY;
+    const bodyCapacity = options.bodyCapacity ?? BODY_CAPACITY;
+    this.levelW = level.size[0];
+    this.bumpTile = new Uint8Array(level.size[0] * level.size[1]);
+    for (const site of level.sites) {
+      if (site.id !== 'haz.speed_bump') continue;
+      const [x0, y0, x1, y1] = site.rect;
+      for (let r = y0; r < y1; r += 1)
+        for (let c = x0; c < x1; c += 1) this.bumpTile[r * this.levelW + c] = 1;
+    }
     const markers = levelItemMarkers(level);
     this.markers = markers;
     this.markerFrames = markers.map((m) => m.frame);
@@ -248,7 +344,9 @@ export class ItemsBatch {
     this.markerLayer = Uint8Array.from(markers, (m) => m.layer);
     this.markerTurns = Uint8Array.from(markers, (m) => m.quarterTurns);
     this.hits = new Int32Array(litterCapacity);
-    this.batch = new SpriteBatch(items, litterCapacity + stainCapacity + pickupCapacity + markers.length, {
+    const streetCapacity = hazardCapacity + bodyCapacity * KNOCKABLE_MAX_SLICES;
+    const capacity = litterCapacity + stainCapacity + pickupCapacity + markers.length + streetCapacity;
+    this.batch = new SpriteBatch(items, capacity, {
       secondaryAtlas: world,
       receiveShadows: true,
     });
@@ -265,6 +363,8 @@ export class ItemsBatch {
    * Writes this frame's instances: every stain, marker, litter item and pickup inside `camera` (the camera's
    * ground rect, cameraGroundRect with no margin) grown by ITEMS_CULL_MARGIN_M. `tick` is the World tick (wobble,
    * bob), `alpha` the render alpha (litter interpolation, clamped to 0..1) and `camYSimM` the camera's sim y.
+   * `hazards` and `bodies` (SSP-103) add the hazard decals and the knockables, whose drop shadows go into
+   * `shadows` (the shift's drop-shadow batch, already begun) when it is given.
    */
   update(
     litter: LitterFieldView,
@@ -274,6 +374,9 @@ export class ItemsBatch {
     alpha: number,
     camera: Readonly<Aabb>,
     camYSimM: number,
+    hazards: HazardStoreView | null = null,
+    bodies: BodyStoreView | null = null,
+    shadows: DropShadowBatch | null = null,
   ): void {
     const rect = this.cullRect;
     rect.minX = camera.minX - ITEMS_CULL_MARGIN_M;
@@ -294,6 +397,23 @@ export class ItemsBatch {
       if (x < rect.minX || x > rect.maxX || y < rect.minY || y > rect.maxY) continue;
       batch.addFrom(stainFrameOf(stains, i), sx, sy, i, DepthLayer.Decal);
       stainsDrawn += 1;
+    }
+
+    let hazardsDrawn = 0;
+    if (hazards !== null) {
+      const hx = hazards.x;
+      const hy = hazards.y;
+      for (let i = 0; i < hazards.count; i += 1) {
+        const x = hx[i] as number;
+        const y = hy[i] as number;
+        if (x < rect.minX || x > rect.maxX || y < rect.minY || y > rect.maxY) continue;
+        const kind = hazards.kind[i] as number;
+        const col = hazards.col0[i] as number;
+        const row = hazards.row0[i] as number;
+        if (kind === BUMP_KIND && this.bumpTile[row * this.levelW + col] === 1) continue;
+        batch.addFrom(hazardFrame(kind, col, row, tick), hx, hy, i, DepthLayer.Decal);
+        hazardsDrawn += 1;
+      }
     }
 
     let markersDrawn = 0;
@@ -324,6 +444,50 @@ export class ItemsBatch {
       batch.addFrom(frame, drawX, drawY, 0, DepthLayer.Litter);
     }
 
+    let knockablesDrawn = 0;
+    if (bodies !== null) {
+      for (let i = 0; i < bodies.count; i += 1) {
+        const px = bodies.prevX[i] as number;
+        const py = bodies.prevY[i] as number;
+        const x = px + ((bodies.x[i] as number) - px) * t;
+        const y = py + ((bodies.y[i] as number) - py) * t;
+        if (x < rect.minX || x > rect.maxX || y < rect.minY || y > rect.maxY) continue;
+        drawX[0] = x;
+        drawY[0] = y;
+        const from = bodies.prevHeading[i] as number;
+        const d = (bodies.heading[i] as number) - from;
+        const h = from + (d - 2 * Math.PI * Math.floor((d + Math.PI) / (2 * Math.PI))) * t;
+        const turns = ((Math.round(h / (Math.PI / 2)) % 4) + 4) % 4;
+        const kind = bodies.kind[i] as number;
+        const look = KNOCKABLE_LOOKS[kind] ?? rejectKnockableKind(kind);
+        const flat = look.flat;
+        if (flat !== null) {
+          batch.addFrom(flat, drawX, drawY, 0, DepthLayer.Litter, 0, SpriteFlag.Upright, turns);
+          shadows?.addFrom(flat, drawX, drawY, 0, 0, turns);
+        } else if (look.stack !== null) {
+          const slices = look.stack.slices;
+          const heights = KNOCKABLE_SLICE_HEIGHTS[kind] as Float64Array;
+          for (let k = 0; k < slices.length; k += 1) {
+            const slice = slices[k];
+            if (slice === undefined) continue;
+            batch.addSliceFrom(
+              slice.frame,
+              drawX,
+              drawY,
+              0,
+              heights,
+              k,
+              STACK_LAYER,
+              SpriteFlag.Upright,
+              turns,
+            );
+            if (slice.castsShadow) shadows?.addSliceFrom(slice.frame, drawX, drawY, 0, heights, k, turns);
+          }
+        }
+        knockablesDrawn += 1;
+      }
+    }
+
     let pickupsDrawn = 0;
     const kx = pickups.x;
     const ky = pickups.y;
@@ -342,6 +506,8 @@ export class ItemsBatch {
     this.markersDrawn = markersDrawn;
     this.litterDrawn = n;
     this.pickupsDrawn = pickupsDrawn;
+    this.hazardsDrawn = hazardsDrawn;
+    this.knockablesDrawn = knockablesDrawn;
   }
   // per-frame draw path: end
 
@@ -359,6 +525,16 @@ function rejectLitterKind(kind: number): never {
 /** Throws for a power-up kind outside POWERUP_IDS (kept out of the per-frame path). */
 function rejectPowerUpKind(kind: number): never {
   throw new RangeError(`power-up kind ${kind} is not 0..${POWERUP_IDS.length - 1}`);
+}
+
+/** Throws for a hazard kind outside HAZARD_ENTITY_IDS (kept out of the per-frame path). */
+function rejectHazardKind(kind: number): never {
+  throw new RangeError(`hazard kind ${kind} is not 0..${HAZARD_ENTITY_IDS.length - 1}`);
+}
+
+/** Throws for a knockable kind outside KNOCKABLE_IDS (kept out of the per-frame path). */
+function rejectKnockableKind(kind: number): never {
+  throw new RangeError(`knockable kind ${kind} is not 0..${KNOCKABLE_IDS.length - 1}`);
 }
 
 /** Throws for a stain kind outside STAIN_IDS (kept out of the per-frame path). */

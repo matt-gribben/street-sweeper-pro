@@ -6,6 +6,9 @@
 //   nothing about GPU frame time, so this project asserts no timing. The sim-step assertion joins it with the
 //   first stress scene (M3, SSP-106): there is no sim in M0. Since SSP-102 a second `ci` check counts the draws of
 //   a shift with fx particles alive (the fx_puddle splash): one more draw while droplets live, still within 10.
+//   Since SSP-103 a third counts them on the populated Puddle Lane (tick 7800, seed 1) with NPCs, moving and parked
+//   traffic, knockables and hazard decals on screen (worked out from the same seeded World in Node): 8 draws, the
+//   street adding none.
 // - `gpu` (headed Chromium on the real GPU, local only: `npx playwright test tests/e2e/perf.spec.ts
 //   --project=gpu`): samples requestAnimationFrame timestamp deltas from `__ssp.perf().frameMs` and asserts
 //   their p99 against P99_FRAME_TIME_BUDGET_MS. Never run by `npm run test:e2e`, `npm run ci` or ci.yml.
@@ -17,9 +20,12 @@
 // Civic Quarter stress load; the final perf scene is Kebab Mile at night with max litter (§18.6).
 import { expect, type Page, test } from '@playwright/test';
 import type { TestPerf } from '../../src/debug/testHooks.ts';
+import { cameraGroundRect, createCameraRig, pinCameraRig } from '../../src/render/camera.ts';
 import { SPLASH } from '../../src/render/fx.ts';
 import { HEADING_COUNT } from '../../src/render/headings.ts';
 import { FRAMES_PER_HEADING } from '../../src/render/spikeActors.ts';
+import { VEHICLE_FLAG } from '../../src/sim/vehicleStore.ts';
+import { idleWorld, puddleLaneLevel } from '../support/actorReference.ts';
 import { frameStats, roundStats } from '../support/frameStats.ts';
 import { FX_PUDDLE_DRIVE_TICKS, planFxPuddle } from '../support/fxPuddle.ts';
 
@@ -154,6 +160,69 @@ test('draw calls stay within the budget with fx particles active (fx_puddle spla
   expect(maxCalls, `draw calls per frame with particles (budget ${DRAW_CALL_BUDGET})`).toBeLessThanOrEqual(
     DRAW_CALL_BUDGET,
   );
+  expect(errors).toEqual([]);
+});
+
+test('draw calls stay within the budget with NPCs, traffic, knockables and hazards on screen (Puddle Lane, SSP-103)', {
+  tag: '@ci',
+}, async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors = collectErrors(page);
+  const tick = 7800;
+  await page.goto(`/?test=1&seed=1&scene=district.puddle_lane&tick=${tick}&freeze=1`);
+  await page.waitForFunction(() => window.__ssp?.ready === true);
+  // The views and what each holds, from the same seeded World in Node (no input: Bessie stays in the depot).
+  const world = idleWorld(puddleLaneLevel(), 1, tick);
+  const views = [
+    { x: 56, y: 13, h: 31.5 },
+    { x: 79, y: 23, h: 31.5 },
+    { x: 60, y: 14, h: 37.8 },
+  ];
+  const seen = { npcs: 0, moving: 0, parked: 0, knockables: 0, hazards: 0 };
+  const counts: number[] = [];
+  for (const view of views) {
+    const rig = createCameraRig(480);
+    pinCameraRig(rig, view.x, view.y, view.h);
+    const r = cameraGroundRect(rig, 0, { minX: 0, minY: 0, maxX: 0, maxY: 0 });
+    const inside = (x: number, y: number): boolean => x > r.minX && x < r.maxX && y > r.minY && y < r.maxY;
+    for (let i = 0; i < world.npc.count; i++)
+      if (inside(world.npc.x[i] ?? 0, world.npc.y[i] ?? 0)) seen.npcs++;
+    for (let i = 0; i < world.vehicles.count; i++) {
+      if (!inside(world.vehicles.x[i] ?? 0, world.vehicles.y[i] ?? 0)) continue;
+      if (((world.vehicles.flags[i] ?? 0) & VEHICLE_FLAG.PARKED) !== 0) seen.parked++;
+      else seen.moving++;
+    }
+    for (let i = 0; i < world.bodies.count; i++) {
+      if (inside(world.bodies.x[i] ?? 0, world.bodies.y[i] ?? 0)) seen.knockables++;
+    }
+    for (let i = 0; i < world.hazards.count; i++) {
+      if (inside(world.hazards.x[i] ?? 0, world.hazards.y[i] ?? 0)) seen.hazards++;
+    }
+    counts.push(
+      await page.evaluate(({ x, y, h }) => {
+        const api = window.__ssp;
+        if (api === undefined) throw new Error('window.__ssp missing');
+        api.setCamera(x, y, h);
+        api.step(0);
+        return api.perf().drawCalls;
+      }, view),
+    );
+  }
+  console.log(
+    `[perf:ci] street draw calls ${counts.join(' ')} with ${JSON.stringify(seen)} (budget ${DRAW_CALL_BUDGET})`,
+  );
+  expect(seen.npcs).toBeGreaterThan(0);
+  expect(seen.moving).toBeGreaterThan(0);
+  expect(seen.parked).toBeGreaterThan(0);
+  expect(seen.knockables).toBeGreaterThan(0);
+  expect(seen.hazards).toBeGreaterThan(0);
+  for (const n of counts) {
+    expect(n).toBeGreaterThanOrEqual(MIN_PLAUSIBLE_DRAW_CALLS);
+    expect(
+      n,
+      `draw calls per frame on the populated street (budget ${DRAW_CALL_BUDGET})`,
+    ).toBeLessThanOrEqual(DRAW_CALL_BUDGET);
+  }
   expect(errors).toEqual([]);
 });
 

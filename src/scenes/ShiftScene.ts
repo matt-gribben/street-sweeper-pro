@@ -20,7 +20,12 @@
 //                       stains, hydrants, skip and depot bays inside the camera's ground rect plus 4 m
 //                       (itemsBatch.ts, SSP-067). It reads the World, never writes it.
 //
-// Draw calls: city (1) + building shadows (1) + Bessie's drop shadow (1) + actors batch (1) + items batch (1) +
+// The street (SSP-103): the NPCs, traffic, parked cars, the cat riding Bessie and the dog leads are written by
+// StreetActors (streetActors.ts) into Bessie's own actors batch and drop-shadow batch between her begin() and end(),
+// and the hazard decals and knockables by the items batch (whose knockable drop shadows join the same shadow batch),
+// so the street adds no draw call.
+//
+// Draw calls: city (1) + building shadows (1) + drop shadows (1) + actors batch (1) + items batch (1) +
 // the fx particles (1, only while one is alive) + the HUD's UI batch (1), then the palette pass and the blit: 8 of
 // the 10 budgeted without effects, 9 with (§12.7). The items draw is skipped only when no item is in view.
 //
@@ -90,10 +95,11 @@ import { brushSpinFrameAt, createBrushSpin } from '../render/brushSpin.ts';
 import { cameraGroundRect, groundPxPerMetre } from '../render/camera.ts';
 import { FxParticles, fxRenderSeed } from '../render/fx.ts';
 import { bodyVelocity, createPose, createVelocity, interpolatePose } from '../render/interpolate.ts';
-import { ItemsBatch } from '../render/itemsBatch.ts';
+import { ItemsBatch, itemsShadowCapacity } from '../render/itemsBatch.ts';
 import { createLevelCity, type LevelCity } from '../render/levelCity.ts';
 import type { SpriteAtlas } from '../render/spriteAtlas.ts';
 import { UiSpriteBatch } from '../render/spriteBatch.ts';
+import { StreetActors, streetSpriteCapacity } from '../render/streetActors.ts';
 import type { Aabb } from '../sim/collision/obb.ts';
 import { viewDirt } from '../sim/dirt.ts';
 import type { ReadonlyEventQueue } from '../sim/eventQueue.ts';
@@ -178,6 +184,7 @@ type Built = {
   readonly city: LevelCity;
   readonly bessie: BessieSprite;
   readonly items: ItemsBatch;
+  readonly street: StreetActors;
   readonly hudBatch: UiSpriteBatch;
   readonly hud: Hud;
   readonly fx: FxParticles;
@@ -209,6 +216,7 @@ export class ShiftScene implements Scene {
   private city: LevelCity | null = null;
   private bessie: BessieSprite | null = null;
   private items: ItemsBatch | null = null;
+  private street: StreetActors | null = null;
   private hud: Hud | null = null;
   private hudBatch: UiSpriteBatch | null = null;
   private unsubscribeHud: Unsubscribe | null = null;
@@ -344,6 +352,11 @@ export class ShiftScene implements Scene {
     return this.items;
   }
 
+  /** The street's NPCs, vehicles and leads in the actors batch (null before enter() resolves; SSP-103). */
+  get streetActors(): StreetActors | null {
+    return this.street;
+  }
+
   /** The placeholder particles (null before enter() resolves). */
   get fxParticles(): FxParticles | null {
     return this.fx;
@@ -434,6 +447,7 @@ export class ShiftScene implements Scene {
     );
     const { sim, city, bessie, hud, hudBatch, fx, popups } = built;
     this.items = built.items;
+    this.street = built.street;
     if (this.recordInputs) {
       const log = createInputLog();
       // Like attachInputLog (replay.ts), but stops at the log's capacity instead of throwing (a shift outlasts it).
@@ -495,10 +509,23 @@ export class ShiftScene implements Scene {
     let bessie: BessieSprite | null = null;
     let itemsBatch: ItemsBatch | null = null;
     try {
-      bessie = createBessieSprite(actors, this.currentTuning.vehicle.sweeper.health.dentedBelowHp);
+      const streetSprites = streetSpriteCapacity(sim.npc.capacity, sim.vehicles.capacity);
+      bessie = createBessieSprite(actors, this.currentTuning.vehicle.sweeper.health.dentedBelowHp, {
+        extraSprites: streetSprites,
+        extraShadows: streetSprites + itemsShadowCapacity(sim.bodies.capacity),
+        shadowAtlas: items,
+      });
       itemsBatch = new ItemsBatch(items, world, level, {
         litterCapacity: sim.litter.capacity,
         stainCapacity: sim.stains.capacity,
+        hazardCapacity: sim.hazards.capacity,
+        bodyCapacity: sim.bodies.capacity,
+      });
+      const street = new StreetActors(actors, {
+        npcCapacity: sim.npc.capacity,
+        vehicleCapacity: sim.vehicles.capacity,
+        seed,
+        catSeatForwardM: sim.npcAi.entities.npcs['npc.cat'].rules.seatForwardM,
       });
       const hudBatch = new UiSpriteBatch(ui, SHIFT_UI_CAPACITY);
       const hud = new Hud(hudBatch, font, DEFAULT_GLYPHS);
@@ -510,7 +537,7 @@ export class ShiftScene implements Scene {
         frontages: level.frontages,
       });
       const popups = new Popups(hudBatch, font);
-      return { sim, city, bessie, items: itemsBatch, hudBatch, hud, fx, popups };
+      return { sim, city, bessie, items: itemsBatch, street, hudBatch, hud, fx, popups };
     } catch (error: unknown) {
       itemsBatch?.dispose();
       bessie?.dispose();
@@ -535,6 +562,7 @@ export class ShiftScene implements Scene {
       this.items.dispose();
       this.items = null;
     }
+    this.street = null;
     this.unsubscribeHud?.();
     this.unsubscribeHud = null;
     this.unsubscribeFx?.();
@@ -601,11 +629,22 @@ export class ShiftScene implements Scene {
     if (!paused) this.context.followCamera(pose.xM, pose.yM, velocity.xMps, velocity.yMps, v.vLongMps);
     const rig = this.context.renderer.rig;
     const spinFrame = brushSpinFrameAt(this.brushSpin, world.tick, v.rpm);
-    bessie.update(pose, v.hp, v.brushDown, spinFrame, rig.snappedZ);
+    cameraGroundRect(rig, 0, this.cameraRect);
+    // Bessie, the street's actors and the knockables' shadows share the actors and drop-shadow batches.
+    bessie.begin(rig.snappedZ);
+    bessie.add(pose, v.hp, v.brushDown, spinFrame);
+    this.street?.update(
+      world.npc,
+      world.vehicles,
+      alpha,
+      this.cameraRect,
+      pose,
+      bessie.sprites,
+      bessie.shadows,
+    );
     this.city?.grime?.upload(this.context.renderer.webgl);
     const items = this.items;
     if (items !== null) {
-      cameraGroundRect(rig, 0, this.cameraRect);
       items.update(
         world.litter,
         world.stains,
@@ -614,8 +653,12 @@ export class ShiftScene implements Scene {
         alpha,
         this.cameraRect,
         rig.snappedZ,
+        world.hazards,
+        world.bodies,
+        bessie.shadows,
       );
     }
+    bessie.end();
     this.fx?.update(world.tick, alpha);
     const hud = this.hud;
     const batch = this.hudBatch;

@@ -2,7 +2,7 @@
 id: SSP-103
 title: "Draw NPCs, animals, traffic, knockables and hazards with state-driven frames"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:render, area:test, size:L, vertical-slice]

@@ -1198,53 +1198,6 @@ describe('entities.json rules mirror ENTITY_CATALOG §4.2 and §5', () => {
   });
 });
 
-/**
- * M3 sprites whose placeholders land in parallel with SSP-075 (ENTITY_CATALOG §15), each with the issue that
- * adds it. A listed sprite may already resolve; every sprite NOT listed must resolve now. SSP-103 adds the
- * full resolution test once all five placeholder issues have landed, and empties this list.
- */
-const PENDING_PLACEHOLDER_SPRITES: Readonly<Record<string, string>> = {
-  'npc.cat': 'SSP-099',
-  'npc.pigeon': 'SSP-099',
-  'veh.hatchback': 'SSP-100',
-  'veh.saloon': 'SSP-100',
-  'veh.taxi': 'SSP-100',
-  'veh.van_white': 'SSP-100',
-  'veh.bus': 'SSP-100',
-  'veh.bicycle': 'SSP-100',
-  'veh.mobility_scooter': 'SSP-100',
-  'veh.hatchback_parked': 'SSP-100',
-  'veh.saloon_parked': 'SSP-100',
-  'veh.taxi_parked': 'SSP-100',
-  'veh.van_white_parked': 'SSP-100',
-  'prop.wheelie_bin': 'SSP-101',
-  'prop.traffic_cone': 'SSP-101',
-  'prop.a_board': 'SSP-101',
-  'prop.shopping_trolley': 'SSP-101',
-  'prop.recycling_box': 'SSP-101',
-  'prop.bollard': 'SSP-101',
-  'prop.bench': 'SSP-101',
-  'prop.bus_shelter': 'SSP-101',
-  'prop.phone_box': 'SSP-101',
-  'prop.post_box': 'SSP-101',
-  'prop.tree': 'SSP-101',
-  'prop.planter': 'SSP-101',
-  'prop.market_stall': 'SSP-101',
-  'prop.litter_bin': 'SSP-101',
-  'prop.roadworks_barrier': 'SSP-101',
-  'haz.oil_slick': 'SSP-101',
-  'haz.puddle': 'SSP-101',
-  'haz.pothole': 'SSP-101',
-  'haz.wet_leaves': 'SSP-101',
-  'haz.broken_glass': 'SSP-101',
-  'haz.open_manhole': 'SSP-101',
-  'pwr.bacon_butty': 'SSP-101',
-  'pwr.hi_vis': 'SSP-101',
-  'pwr.super_suction': 'SSP-101',
-  'pwr.wrench': 'SSP-101',
-  'pwr.water_can': 'SSP-101',
-};
-
 describe('entities.json references', () => {
   const assetIds = new Set(
     (/^export type AssetId = (.*);$/m.exec(GEN_ASSETS)?.[1] ?? '')
@@ -1253,7 +1206,7 @@ describe('entities.json references', () => {
   );
   const rawEntries = Object.entries(entitiesJson as Record<string, Json>);
 
-  it('every sprite is an AssetId in src/gen/assets.ts with at least one frame (pending M3 placeholders aside)', () => {
+  it('every sprite is an AssetId in src/gen/assets.ts with at least one frame (SSP-103: none pending)', () => {
     expect(assetIds.size).toBeGreaterThan(20);
     const frameIds = Object.keys(FRAME);
     let resolved = 0;
@@ -1267,46 +1220,15 @@ describe('entities.json references', () => {
       expect(typeof sprite, id).toBe('string');
       const hasFrames =
         assetIds.has(String(sprite)) && frameIds.some((f) => f.startsWith(`${String(sprite)}:`));
-      if (Object.hasOwn(PENDING_PLACEHOLDER_SPRITES, String(sprite)) && !hasFrames) continue;
       expect(assetIds.has(String(sprite)), `${id}.sprite ${String(sprite)}`).toBe(true);
       expect(hasFrames, `${id}.sprite has frames`).toBe(true);
       resolved += 1;
     }
-    // Everything SSP-053 shipped, plus the M3 sprites that already had placeholders, resolves today.
-    expect(resolved).toBeGreaterThanOrEqual(rawEntries.length - SITE_IDS.length - 47);
+    // Every placeholder issue (SSP-097 to SSP-101) has landed: every entry but the sites resolves.
+    expect(resolved).toBe(rawEntries.length - SITE_IDS.length);
     // And at the type level: the loaded sprite is an AssetId.
     const sprite: AssetId = DEFAULT_ENTITIES.litter['litter.banana_skin'].sprite;
     expect(sprite).toBe('litter.banana_skin');
-  });
-
-  it('lists as pending only M3 sprites, each against the placeholder issue that adds it', () => {
-    const pending = Object.keys(PENDING_PLACEHOLDER_SPRITES);
-    expect(pending).toHaveLength(39);
-    const raw = entitiesJson as Record<string, Json>;
-    for (const sprite of pending) {
-      const owners = Object.entries(raw).filter(([, entry]) => entry.sprite === sprite);
-      expect(owners.length, sprite).toBe(1);
-      expect(owners[0]?.[1].milestone, sprite).toBe('M3');
-      expect(PENDING_PLACEHOLDER_SPRITES[sprite]).toMatch(/^SSP-(097|098|099|100|101)$/);
-    }
-    // The M3 sprites that already had placeholders before SSP-075, or whose issue has landed, are not pending.
-    for (const sprite of [
-      'npc.old_woman',
-      'npc.shopper',
-      'npc.old_man_frame',
-      'npc.dog_walker',
-      'npc.mum_pushchair',
-      'npc.postie',
-      'npc.litterbug',
-      'npc.businessman',
-      'npc.market_trader',
-      'prop.lamp_post',
-      'prop.hydrant',
-      'haz.speed_bump',
-      'pwr.flask_of_tea',
-    ]) {
-      expect(pending).not.toContain(sprite);
-    }
   });
 
   it('every sfx value is in the canonical SFX list of ENTITY_CATALOG §1.4 (audio sources arrive in M5)', () => {

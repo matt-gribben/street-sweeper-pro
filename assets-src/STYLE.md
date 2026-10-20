@@ -118,7 +118,8 @@ shadow 00 00 01 01 02 03 04 05 00 08 09 13 11 08 13 14 15 18 19 30 31 01 21 22 2
   hard-edged stepped circles, **no dither on the edge**. Headlight cones are 8 m long.
 - **Cast shadows** are masks, never painted: buildings cast SE polygons of length **0.84 × height** (1 / tan 50°, the sun elevation);
   actors cast their own sprite offset **+2, +2 px** (SE). Bessie's brush overlay casts none; airborne birds cast
-  none (*proposed*).
+  none, and a cat on a wall, a car roof or Bessie's roof casts at **+3, +3 px** (both adopted in SSP-103, ART_BIBLE
+  §6.4, §8.3).
 - **Shadow-length multiplier per district (D-06, provisional):** overcast (Gasworks Estate) **×0.5** (0.42 × h),
   dawn (Puddle Lane) and golden hour (The Promenade) **×1.5** (1.26 × h), every other district **×1.0**. The
   direction always stays SE. The values are confirmed when those districts render: M6 for the overcast and golden

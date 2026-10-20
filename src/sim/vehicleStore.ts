@@ -250,7 +250,21 @@ export type VehicleStoreView = {
   readonly navFrom: Int32Array;
   readonly navTo: Int32Array;
   readonly kindActor: Uint8Array;
+  /** The spatial lookup, read-only (queryVehicles; the renderer culls with it, SSP-103). */
+  readonly maxHalfDiagonalM: number;
+  readonly gridW: number;
+  readonly gridH: number;
+  readonly gridOriginX: number;
+  readonly gridOriginY: number;
+  readonly cellHead: Int32Array;
+  readonly cellNext: Int32Array;
 };
+
+/** What queryVehicles reads: the spatial lookup of the last rebuildVehicleGrid. The store and its view have it. */
+export type VehicleGridView = Pick<
+  VehicleStoreView,
+  'maxHalfDiagonalM' | 'gridW' | 'gridH' | 'gridOriginX' | 'gridOriginY' | 'cellHead' | 'cellNext'
+>;
 
 /** An empty store for `level` with room for `capacity` vehicles; body sizes from `entities`. Setup only. */
 export function createVehicleStore(
@@ -526,9 +540,9 @@ export function rebuildVehicleGrid(store: VehicleStore): void {
  * Write into `out` the indices of the vehicles whose centre lies in a cell that the box, grown by the largest
  * half diagonal, overlaps (every vehicle whose OBB can touch the box, and a few more), cells row-major then
  * ascending index; returns how many (at most out.length). Reads the buckets of the last rebuildVehicleGrid.
- * Allocation-free.
+ * Allocation-free, and writes nothing, so it takes the read-only view too (render culling, SSP-103).
  */
-export function queryVehicles(store: VehicleStore, box: Readonly<Aabb>, out: Int32Array): number {
+export function queryVehicles(store: VehicleGridView, box: Readonly<Aabb>, out: Int32Array): number {
   const m = store.maxHalfDiagonalM;
   let c0 = Math.floor((box.minX - m - store.gridOriginX) / VEHICLE_CELL_M);
   let c1 = Math.floor((box.maxX + m - store.gridOriginX) / VEHICLE_CELL_M);

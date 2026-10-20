@@ -3,7 +3,8 @@
 // captures and opened with Read, while the spec checks what must hold exactly.
 //
 // `?test=1&seed=1&scene=fx_puddle&freeze=1` is Puddle Lane with one haz.puddle placed on Mangle Street at (7, 71)
-// (src/scenes/FxPuddleScene.ts; puddles are not drawn until SSP-103/SSP-104). The drive, planned in Node
+// (src/scenes/FxPuddleScene.ts; since SSP-103 its decal is drawn, so the checks below leave its 2 m tile out: its
+// 27 rim and 28 glints are not spray). The drive, planned in Node
 // (tests/support/fxPuddle.ts: full throttle, brush up, from the depot start), crosses it above 3 m/s; the page
 // replays the same log through `__ssp.loadInputs`.
 //
@@ -113,7 +114,18 @@ function projector(state: ShiftTestState, width: number): (x: number, y: number)
   ];
 }
 
-/** Pixels whose index is in `indices` inside the sim-metre box [x0, x1) × [y0, y1), and their mean screen x. */
+/** The placed puddle's tile (the 32×32 decal, SSP-103), sim metres [x0, y0, x1, y1). */
+const PUDDLE_TILE = [
+  Math.floor(FX_PUDDLE.x / 2) * 2,
+  Math.floor(FX_PUDDLE.y / 2) * 2,
+  Math.floor(FX_PUDDLE.x / 2) * 2 + 2,
+  Math.floor(FX_PUDDLE.y / 2) * 2 + 2,
+] as const;
+
+/**
+ * Pixels whose index is in `indices` inside the sim-metre box [x0, x1) × [y0, y1), outside the placed puddle's
+ * decal, and their mean screen x.
+ */
 function countIn(
   frame: RgbaFrame,
   project: (x: number, y: number) => [number, number],
@@ -122,9 +134,13 @@ function countIn(
 ): { n: number; xs: number[] } {
   const [ax, ay] = project(box[0], box[1]);
   const [bx, by] = project(box[2], box[3]);
+  const [dx0, dy0] = project(PUDDLE_TILE[0], PUDDLE_TILE[1]);
+  const [dx1, dy1] = project(PUDDLE_TILE[2], PUDDLE_TILE[3]);
   const xs: number[] = [];
   for (let py = Math.max(0, Math.floor(ay)); py < Math.min(frame.height, Math.ceil(by)); py++) {
     for (let px = Math.max(0, Math.floor(ax)); px < Math.min(frame.width, Math.ceil(bx)); px++) {
+      if (px >= Math.floor(dx0) && px < Math.ceil(dx1) && py >= Math.floor(dy0) && py < Math.ceil(dy1))
+        continue;
       if (indices.has(indexAt(frame, px, py))) xs.push(px);
     }
   }

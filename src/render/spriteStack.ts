@@ -60,6 +60,45 @@ export const LAMP_POST_STACK: SpriteStack = {
   ],
 };
 
+/**
+ * The knockable props' stacks (SSP-103; the SSP-101 placeholder grids, 4 slices each per STYLE.md v1 §8). The
+ * grids carry no band heights, so the slices are drawn at the tops of four bands of a top height chosen near the
+ * STYLE.md §8 nominal (wheelie bin 1.1 m → 1.0 m, cone 0.75 m → 0.8 m, A-board 0.9 m → 0.8 m), on even tenths like
+ * the lamp post's (see LAMP_POST_STACK on texel ties). Only the lowest and highest slices cast (ART_BIBLE §6.4).
+ * SSP-148 (M4) renders the final props and fixes the bands with their scripts.
+ */
+export const WHEELIE_BIN_STACK: SpriteStack = {
+  asset: 'prop.wheelie_bin',
+  slices: [
+    { frame: 'prop.wheelie_bin:slice:-:0', heightM: 0.2, castsShadow: true, lightsAtNight: false },
+    { frame: 'prop.wheelie_bin:slice:-:1', heightM: 0.4, castsShadow: false, lightsAtNight: false },
+    { frame: 'prop.wheelie_bin:slice:-:2', heightM: 0.8, castsShadow: false, lightsAtNight: false },
+    { frame: 'prop.wheelie_bin:slice:-:3', heightM: 1.0, castsShadow: true, lightsAtNight: false },
+  ],
+};
+
+/** `prop.traffic_cone`: see WHEELIE_BIN_STACK. */
+export const TRAFFIC_CONE_STACK: SpriteStack = {
+  asset: 'prop.traffic_cone',
+  slices: [
+    { frame: 'prop.traffic_cone:slice:-:0', heightM: 0.2, castsShadow: true, lightsAtNight: false },
+    { frame: 'prop.traffic_cone:slice:-:1', heightM: 0.4, castsShadow: false, lightsAtNight: false },
+    { frame: 'prop.traffic_cone:slice:-:2', heightM: 0.6, castsShadow: false, lightsAtNight: false },
+    { frame: 'prop.traffic_cone:slice:-:3', heightM: 0.8, castsShadow: true, lightsAtNight: false },
+  ],
+};
+
+/** `prop.a_board`: see WHEELIE_BIN_STACK. */
+export const A_BOARD_STACK: SpriteStack = {
+  asset: 'prop.a_board',
+  slices: [
+    { frame: 'prop.a_board:slice:-:0', heightM: 0.2, castsShadow: true, lightsAtNight: false },
+    { frame: 'prop.a_board:slice:-:1', heightM: 0.4, castsShadow: false, lightsAtNight: false },
+    { frame: 'prop.a_board:slice:-:2', heightM: 0.6, castsShadow: false, lightsAtNight: false },
+    { frame: 'prop.a_board:slice:-:3', heightM: 0.8, castsShadow: true, lightsAtNight: false },
+  ],
+};
+
 /** Slices `stack` adds to the items batch. */
 export function stackSliceCount(stack: SpriteStack): number {
   return stack.slices.length;

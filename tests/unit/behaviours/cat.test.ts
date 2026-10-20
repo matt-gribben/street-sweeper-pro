@@ -28,12 +28,13 @@ import {
   setNpcState,
 } from '../../../src/sim/npc/store.ts';
 import { DEFAULT_ENTITIES, DEFAULT_TUNING } from '../../../src/sim/tuning.ts';
-import type { World } from '../../../src/sim/world.ts';
+import { createWorld, type World } from '../../../src/sim/world.ts';
 import {
   addCat,
   CAT_KIND,
   CAT_STREET,
   catWorld,
+  compileCatTown,
   putBessie,
   roofPerchAt,
   tileCentre,
@@ -60,9 +61,16 @@ function at(world: World, handle: number): number {
   return i;
 }
 
+/**
+ * The cat street with its wall perches listed, compiled once: the level compiler is slow, and the bolt test below
+ * builds a world per mid-road spot (over 200), which timed out under the full suite when each one recompiled.
+ * createWorld only reads the Level, so sharing it is safe.
+ */
+const STREET_LEVEL = compileCatTown(CAT_STREET, { perches: { count: 1, on: ['walls'] } });
+
 /** The cat street with its wall perches listed and the spawner told its one cat is already placed. */
 function street(seed: number): World {
-  const world = catWorld(seed, { perches: { count: 1, on: ['walls'] } });
+  const world = createWorld(STREET_LEVEL, seed, DEFAULT_TUNING);
   world.npcAi.spawner.perchPending = 0;
   return world;
 }
@@ -453,7 +461,9 @@ describe('grooming and bolting', () => {
     }
   });
 
-  it('a bolt never runs towards Bessie, even with a free perch on her far side within reach', () => {
+  it('a bolt never runs towards Bessie, even with a free perch on her far side within reach', {
+    timeout: 60_000,
+  }, () => {
     // SSP-087 review: a grooming cat on tile (37, 3) with Bessie 3.9 m east used to bolt to the wall perch at
     // (81, 3), past her; the mirror case (tile (51, 3), Bessie 3.9 m west) to (99, 3). Every mid-road spot on the
     // street, Bessie 3.9 m east and west: the bolt's target and its first step have no component towards her.

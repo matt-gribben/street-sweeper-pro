@@ -1,0 +1,306 @@
+{
+  "schema": 1,
+  "id": "district.high_street",
+  "name": "Muckleford High Street",
+  "day": "tue",
+  "mode": "shift",
+  "map": "high_street.map.txt",
+  "size": [80, 60],
+  "timer": 240,
+  "seed": 2001,
+  "timeOfDay": "late_morning",
+  "weather": "clear",
+  "music": "mus.high_street",
+  "ambience": "amb.town_morning",
+  "start": { "heading": 16 },
+  "depot": { "rect": [32, 0, 16, 8] },
+  "buildings": {
+    "A": {
+      "storeys": 3,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "frontageWidth": 6,
+      "roofkit": ["chimney"]
+    },
+    "B": {
+      "storeys": 3,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "frontageWidth": 6,
+      "roofkit": ["chimney"]
+    },
+    "C": {
+      "storeys": 3,
+      "roof": "roof.felt",
+      "wall": "facade.flats_render",
+      "use": "civic",
+      "roofkit": ["vent"]
+    },
+    "D": {
+      "storeys": 3,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "frontageWidth": 6,
+      "roofkit": ["chimney"]
+    },
+    "E": {
+      "storeys": 3,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "frontageWidth": 6,
+      "roofkit": ["chimney"]
+    },
+    "F": {
+      "storeys": 3,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "frontageWidth": 6,
+      "roofkit": ["chimney"]
+    },
+    "G": {
+      "storeys": 3,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "frontageWidth": 6,
+      "roofkit": ["chimney"]
+    },
+    "I": {
+      "storeys": 3,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "frontageWidth": 6,
+      "roofkit": ["chimney"]
+    },
+    "J": {
+      "storeys": 5,
+      "roof": "roof.felt",
+      "wall": "facade.parade_brick",
+      "use": "shop",
+      "roofkit": ["vent", "water_tank"]
+    },
+    "K": {
+      "storeys": 4,
+      "roof": "roof.felt",
+      "wall": "facade.corner_shop",
+      "use": "shop",
+      "roofkit": ["vent"]
+    },
+    "L": {
+      "storeys": 5,
+      "roof": "roof.felt",
+      "wall": "facade.flats_render",
+      "use": "shop",
+      "roofkit": ["water_tank", "vent"]
+    },
+    "M": {
+      "storeys": 4,
+      "roof": "roof.felt",
+      "wall": "facade.parade_brick",
+      "use": "shop",
+      "roofkit": ["vent"]
+    },
+    "N": {
+      "storeys": 4,
+      "roof": "roof.felt",
+      "wall": "facade.corner_shop",
+      "use": "shop",
+      "roofkit": ["vent"]
+    },
+    "O": {
+      "storeys": 5,
+      "roof": "roof.felt",
+      "wall": "facade.parade_brick",
+      "use": "shop",
+      "roofkit": ["water_tank", "vent"]
+    },
+    "P": {
+      "storeys": 2,
+      "roof": "roof.depot",
+      "wall": "facade.depot_shed",
+      "use": "depot",
+      "landmark": true
+    },
+    "Q": {
+      "storeys": 4,
+      "roof": "roof.felt",
+      "wall": "facade.corner_shop",
+      "use": "takeaway",
+      "roofkit": ["vent"]
+    },
+    "R": {
+      "storeys": 5,
+      "roof": "roof.felt",
+      "wall": "facade.flats_render",
+      "use": "shop",
+      "roofkit": ["water_tank", "vent"]
+    },
+    "S": {
+      "storeys": 3,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick",
+      "use": "house",
+      "frontageWidth": 6,
+      "roofkit": ["chimney"]
+    },
+    "T": {
+      "storeys": 3,
+      "roof": "roof.slate",
+      "wall": "facade.terrace_brick_bay",
+      "use": "house",
+      "frontageWidth": 6,
+      "roofkit": ["chimney"]
+    },
+    "U": {
+      "storeys": 3,
+      "roof": "roof.felt",
+      "wall": "facade.flats_render",
+      "use": "house",
+      "frontageWidth": 6,
+      "roofkit": ["water_tank", "vent"]
+    }
+  },
+  "anchors": {
+    "0": "zebra_west_s",
+    "1": "doris_home",
+    "2": "zebra_east_n",
+    "3": "zebra_east_s",
+    "4": "square_chippy_corner",
+    "5": "bus_stop_a",
+    "6": "bus_stop_b",
+    "7": "zebra_west_n",
+    "8": "square_pigeons_west",
+    "9": "square_pigeons_east"
+  },
+  "pledges": [
+    "fr_19_24",
+    "fr_45_24",
+    "fr_58_24",
+    "fr_50_30",
+    "fr_30_36",
+    "fr_47_37",
+    "fr_27_8",
+    "fr_48_8",
+    "fr_65_21",
+    "fr_13_36",
+    "fr_43_49",
+    "fr_0_24"
+  ],
+  "litter": {
+    "initial": 200,
+    "table": {
+      "litter.crisp_packet": 20,
+      "litter.cigarette_butts": 18,
+      "litter.drink_can": 12,
+      "litter.plastic_bottle": 10,
+      "litter.chip_wrapper": 10,
+      "litter.newspaper": 8,
+      "litter.banana_skin": 8,
+      "litter.glass_bottle": 6,
+      "litter.pizza_box": 4,
+      "litter.bin_bag": 4
+    },
+    "gutterBias": 0.45,
+    "minSpacingM": 0.5,
+    "hotspots": [
+      { "near": "prop.market_stall", "radius": 3, "mult": 3.0 },
+      { "near": "site.bus_stop", "radius": 3, "mult": 2.0 },
+      { "near": "use:takeaway", "radius": 4, "mult": 3.0 },
+      { "near": "prop.litter_bin", "radius": 3, "mult": 2.0 },
+      { "near": "prop.bench", "radius": 2, "mult": 1.5 }
+    ]
+  },
+  "grime": {
+    "cells": 11000,
+    "gutterShare": 0.16,
+    "zones": [
+      { "rect": [42, 9, 20, 2], "density": 0.9 },
+      { "near": "site.bus_stop", "radius": 2, "density": 0.9 },
+      { "near": "use:takeaway", "radius": 1, "density": 0.85 },
+      { "near": "prop.market_stall", "radius": 1, "density": 0.85 },
+      { "near": "prop.litter_bin", "radius": 1.5, "density": 0.7 }
+    ],
+    "speckle": 0.03
+  },
+  "stains": {
+    "count": 36,
+    "table": { "stain.gum": 30, "stain.milkshake": 6 },
+    "near": ["site.bus_stop", "prop.bench", "use:takeaway"]
+  },
+  "knockables": [
+    { "id": "prop.a_board", "at": [16.5, 24.4] },
+    { "id": "prop.a_board", "at": [32.5, 24.4] },
+    { "id": "prop.a_board", "at": [37.5, 24.4] },
+    { "id": "prop.a_board", "at": [49.5, 24.4] },
+    { "id": "prop.a_board", "at": [62.5, 24.4] },
+    { "id": "prop.a_board", "at": [17.5, 31.6] },
+    { "id": "prop.a_board", "at": [26.5, 31.6] },
+    { "id": "prop.a_board", "at": [61.5, 31.6] },
+    { "id": "prop.wheelie_bin", "at": [18.5, 16.5] },
+    { "id": "prop.wheelie_bin", "at": [31.5, 16.5] },
+    { "id": "prop.wheelie_bin", "at": [45.5, 16.5] },
+    { "id": "prop.wheelie_bin", "at": [56.5, 16.5] },
+    { "id": "prop.wheelie_bin", "at": [25.5, 41.5] },
+    { "id": "prop.wheelie_bin", "at": [53.5, 41.5] },
+    { "id": "prop.shopping_trolley", "at": [31.5, 44.5] },
+    { "id": "prop.shopping_trolley", "at": [48.5, 43.5] }
+  ],
+  "powerups": {
+    "count": 2,
+    "table": { "pwr.flask_of_tea": 1, "pwr.super_suction": 1, "pwr.water_can": 1 },
+    "at": [[24.5, 49.5], [62.5, 8.5]]
+  },
+  "collectibles": {
+    "lostProperty": { "id": "collect.lost_wallet", "at": [39.5, 41.5] },
+    "goldenCrisp": { "at": [59.5, 26.5] }
+  },
+  "npcs": {
+    "population": [
+      { "from": 0, "to": 90, "target": 27 },
+      { "from": 90, "to": 120, "target": 29 },
+      { "from": 120, "to": 180, "target": 37 },
+      { "from": 180, "to": 240, "target": 29 }
+    ],
+    "mix": { "npc.shopper": 66, "npc.businessman": 18, "npc.litterbug": 12, "npc.old_man_frame": 4 },
+    "caps": { "npc.shopper": 26, "npc.businessman": 5, "npc.litterbug": 5, "npc.old_man_frame": 1 },
+    "named": [
+      { "id": "npc.old_woman", "anchor": "1", "spawnAt": 60, "route": ["2", "3", "4", "3", "2", "1"] }
+    ],
+    "flocks": [
+      { "id": "npc.pigeon", "count": 1, "size": [6, 10], "near": "square_pigeons_west" },
+      { "id": "npc.pigeon", "count": 1, "size": [6, 10], "near": "square_pigeons_east" }
+    ]
+  },
+  "traffic": {
+    "densityPerKm": 12,
+    "mix": { "veh.taxi": 20, "veh.bicycle": 20, "veh.hatchback": 25, "veh.saloon": 20, "veh.van_white": 15 },
+    "parkedFill": 0.7,
+    "parkedMix": { "veh.hatchback_parked": 35, "veh.saloon_parked": 25, "veh.van_white_parked": 40 },
+    "busRoute": ["5", "6"],
+    "busEveryS": 45
+  },
+  "events": [
+    { "type": "market", "at": 0 },
+    {
+      "type": "market_close",
+      "at": 180,
+      "buildS": 20,
+      "itemsPerPitch": 3,
+      "table": {
+        "litter.chip_wrapper": 3,
+        "litter.banana_skin": 3,
+        "litter.crisp_packet": 2,
+        "litter.newspaper": 2,
+        "litter.drink_can": 2,
+        "litter.plastic_bottle": 1
+      }
+    }
+  ],
+  "par": { "loadout": ["upg.hopper"], "star1": 89, "star2": 150, "star3": 184, "perfectMin": 260 }
+}

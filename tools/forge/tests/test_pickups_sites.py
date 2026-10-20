@@ -22,6 +22,8 @@ PICKUPS = {
     "pwr.flask_of_tea": ("pickup/flask_of_tea", {26, 7}),
     "collect.false_teeth": ("pickup/false_teeth", {7, 20}),
     "collect.golden_crisp": ("pickup/golden_crisp", {15, 16}),
+    # SSP-105: the High Street's Lost Property.
+    "collect.lost_wallet": ("pickup/lost_wallet", {13, 7}),
     # SSP-101: the other five power-ups.
     "pwr.bacon_butty": ("pickup/bacon_butty", {12, 18}),
     "pwr.hi_vis": ("pickup/hi_vis", {17, 7}),

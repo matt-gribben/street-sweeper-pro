@@ -580,7 +580,7 @@ Sites are level-authored regions and markers from `<district>.level.json`. Most 
 
 ## 13. Collectibles (`collect.*`)
 
-**Common spec:** as power-ups (16×16 cell, 12×12 body, `bob ×2`, `grid`, atlas `items`). SFX `powerup` (named variant `collect` for Lost Property, `golden` for `collect.golden_crisp`); the £25 Lost Property payout also plays `coin`. **Placeholders (SSP-052):** `collect.false_teeth` and `collect.golden_crisp` (the ones Puddle Lane uses) have placeholder grids with frames `bob:-:0`/`bob:-:1`; the rest arrive in M4/M6.
+**Common spec:** as power-ups (16×16 cell, 12×12 body, `bob ×2`, `grid`, atlas `items`). SFX `powerup` (named variant `collect` for Lost Property, `golden` for `collect.golden_crisp`); the £25 Lost Property payout also plays `coin`. **Placeholders (SSP-052):** `collect.false_teeth` and `collect.golden_crisp` (the ones Puddle Lane uses) have placeholder grids with frames `bob:-:0`/`bob:-:1`; so, since SSP-105, does `collect.lost_wallet` (the High Street's Lost Property: a 13 umber wallet with 14 stitching, an 08 clasp and a 07 card); the rest arrive in M4/M6.
 
 ### 13.1 Lost Property (one per district)
 
@@ -643,7 +643,7 @@ Liveries are per-instance ramp swaps of the `veh.sweeper` frames: no extra rende
 
 `src/data/entities.json` is keyed by entity ID. The sim reads it once at boot into typed struct-of-arrays stores; render, audio and UI read the same file for sprite, SFX and display-name lookups. The shape below is the contract this catalog mirrors. [TECHNICAL_DESIGN](TECHNICAL_DESIGN.md) owns the loader: `src/sim/entities.ts` holds the types and guards, and `src/sim/tuning.ts` (the only sim file that may import `src/data/`) loads the file as `DEFAULT_ENTITIES`.
 
-SSP-053 (M2) seeded the 15 `litter.*` and 5 `stain.*` entries plus the three pickups Puddle Lane references (`pwr.flask_of_tea`, `collect.false_teeth`, `collect.golden_crisp`). SSP-075 froze the Mon–Tue set at the start of M3 ([ROADMAP M3](ROADMAP.md#m3-living-street) entity-scope table): the 11 people and animals, the 7 traffic vehicles and 4 parked variants, all 17 props, the 7 Mon–Tue hazards, 4 sites and all 6 power-ups, every one with `milestone: "M3"`. The Wed–Sun entities arrive in M6. Entries appear in this catalog's section order. Fields per class:
+SSP-053 (M2) seeded the 15 `litter.*` and 5 `stain.*` entries plus the three pickups Puddle Lane references (`pwr.flask_of_tea`, `collect.false_teeth`, `collect.golden_crisp`); SSP-105 (M3) added the High Street's Lost Property, `collect.lost_wallet` (`milestone: "M3"`, district Tue only), which L041 needs. SSP-075 froze the Mon–Tue set at the start of M3 ([ROADMAP M3](ROADMAP.md#m3-living-street) entity-scope table): the 11 people and animals, the 7 traffic vehicles and 4 parked variants, all 17 props, the 7 Mon–Tue hazards, 4 sites and all 6 power-ups, every one with `milestone: "M3"`. The Wed–Sun entities arrive in M6. Entries appear in this catalog's section order. Fields per class:
 
 | Class | Required fields (besides `class`, `name`, `sprite`, `districts`, `milestone`) |
 |---|---|

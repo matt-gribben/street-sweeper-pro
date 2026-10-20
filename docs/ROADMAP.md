@@ -489,7 +489,7 @@ Each milestone has the same shape:
 - `bodies.ts` (knockable impulse bodies), `complaints.ts`, and the end states SACKED and TOWED.
 - Horn, near-miss detection, dust coughing, puddle splashing, power-ups.
 - Reaction animations: placeholder grids allowed, but every state (walk, idle, startle, fall, angry) exists as frames under the final frame IDs.
-- `npm run levels` also compiles a first grey-box High Street (80×60), so Tuesday's NPCs have a home. *(Compiler support, SSP-077: the NPC, traffic, hazard, knockable, power-up and event specs compile to `spawns` and `schedules`, with L005/L007 membership and milestones, the L050 peaks, L073, L080, L081 and the par report's peak lines. The High Street itself is SSP-105.)*
+- `npm run levels` also compiles a first grey-box High Street (80×60), so Tuesday's NPCs have a home. *(Compiler support, SSP-077: the NPC, traffic, hazard, knockable, power-up and event specs compile to `spawns` and `schedules`, with L005/L007 membership and milestones, the L050 peaks, L073, L080, L081 and the par report's peak lines. The High Street itself is SSP-105, done: see LEVEL_DESIGN §5.2.)*
 
 **Exit criteria (canonical).**
 
@@ -521,7 +521,7 @@ Each milestone has the same shape:
 - [ ] Placeholder grids for all M3 NPCs: 24×24 humans with 13 frames per direction (S, SW, W, NW, N authored; SE, E, NE mirrored); cat 16×16; pigeon 12×12; the walker's dog 20×20 (`npc.dog_loose` grid).
 - [x] Placeholder renders for `veh.hatchback`, `veh.saloon`, `veh.van_white`, `veh.taxi`, `veh.bus`, `veh.bicycle`, `veh.mobility_scooter`: run the Blender rig with flat-colour primitive boxes, so the 32-heading frame IDs are final from day one. *(SSP-100: `assets-src/blender/vehicles/<name>.py`, 0° tilt, `placeholder: true`; the four `_parked` variants are manifest `alias` entries on the moving vehicles' rects (ASSET_PIPELINE §7.5). Lead call: `veh.van_white` moves to a 96×96 cell, because its 30×60 body cannot fit 64 px at the near-diagonal headings (ART_BIBLE §7.1).)*
 - [x] `src/render/fx.ts` placeholder particles (palette colours only) for dust, splash and sparkle. *(SSP-102: one pooled instanced draw on the fx layer, 256 slots recycled oldest first, fed by `EV.DustCloud`, `EV.Splash`, `EV.PowerUp` and the frontages' Clean Sweep flags, a render-side `sfc32` (`render.fx`), particles timed by the World tick; the `fx_puddle` test scene places a puddle on Mangle Street for the splash evidence; 9 draw calls while particles live.)*
-- [ ] Grey-box `assets-src/levels/high_street.{map.txt,level.json}`.
+- [x] Grey-box `assets-src/levels/high_street.{map.txt,level.json}`. *(SSP-105: 80×60, compiled with no warnings; layout, lead calls and the compile report are in [LEVEL_DESIGN §5.2](LEVEL_DESIGN.md#52-tue-muckleford-high-street-districthigh_street); smoke replay `tests/replay/replays/m3_high_street.json`.)*
 
 **Explicitly deferred.** The remaining NPCs and vehicles (M6). `npc.dog_loose` behaviour (M6; only its grid is needed now, for the walker's dog). Juice such as hit-stop and screen shake (M7). Final animation quality (M4).
 

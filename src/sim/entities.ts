@@ -216,8 +216,15 @@ export const POWERUP_IDS = [
 ] as const;
 export type PowerupId = (typeof POWERUP_IDS)[number];
 
-/** The collectibles entities.json holds so far: Puddle Lane's (the rest arrive in M4/M6). */
-export const COLLECTIBLE_IDS = ['collect.false_teeth', 'collect.golden_crisp'] as const;
+/**
+ * The collectibles entities.json holds so far, in ENTITY_CATALOG §13 order: the Mon–Tue Lost Property (Puddle
+ * Lane's false teeth, the High Street's wallet, SSP-105) and the Golden Crisp; the rest arrive in M6.
+ */
+export const COLLECTIBLE_IDS = [
+  'collect.false_teeth',
+  'collect.lost_wallet',
+  'collect.golden_crisp',
+] as const;
 export type CollectibleId = (typeof COLLECTIBLE_IDS)[number];
 
 /** Every key of entities.json, in file order (ENTITY_CATALOG section order). The file must hold exactly these. */

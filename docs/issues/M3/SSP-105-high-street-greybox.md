@@ -2,7 +2,7 @@
 id: SSP-105
 title: "Author and compile the grey-box High Street (80\u00d760) for Tuesday's NPCs"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: L
 labels: [type:feature, area:gameplay, area:tooling, area:test, size:L]

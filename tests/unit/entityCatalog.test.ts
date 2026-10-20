@@ -169,20 +169,20 @@ function catalogMismatches(md: string, entities: Entities, tuning: Tuning = DEFA
     check(`${id} districts`, parseDistricts(districts, codes), e.districts);
   }
 
-  // §13.1: Lost Property is "+250 pts"; the Mon row is | Mon | `collect.false_teeth` | False teeth | owner |.
+  // §13.1: Lost Property is "+250 pts"; each row is | Mon | `collect.false_teeth` | False teeth | owner |. The
+  // Mon–Tue items are in entities.json (the Tue wallet since SSP-105); the rest arrive in M6.
   const lost = section(md, '### 13.1 Lost Property (one per district)');
-  const teeth = entities.collectibles['collect.false_teeth'];
-  check('collect.false_teeth pts', Number(/\*\*\+(\d+) pts/.exec(lost)?.[1]), teeth.pts);
-  check(
-    'collect.false_teeth name',
-    /`collect\.false_teeth` \| ([^|]+) \|/.exec(lost)?.[1]?.trim(),
-    teeth.name,
-  );
-  check(
-    'collect.false_teeth districts',
-    [codes.get(/^\| (\w+) \| `collect\.false_teeth`/m.exec(lost)?.[1] ?? '')],
-    [...teeth.districts],
-  );
+  for (const id of ['collect.false_teeth', 'collect.lost_wallet'] as const) {
+    const item = entities.collectibles[id];
+    const escaped = id.replace('.', '\\.');
+    check(`${id} pts`, Number(/\*\*\+(\d+) pts/.exec(lost)?.[1]), item.pts);
+    check(`${id} name`, new RegExp(`\`${escaped}\` \\| ([^|]+) \\|`).exec(lost)?.[1]?.trim(), item.name);
+    check(
+      `${id} districts`,
+      [codes.get(new RegExp(`^\\| (\\w+) \\| \`${escaped}\``, 'm').exec(lost)?.[1] ?? '')],
+      [...item.districts],
+    );
+  }
 
   // §13.2: | `collect.golden_crisp` | rule | **+500 pts.** … |
   const golden =
@@ -762,12 +762,16 @@ function editedEntity(id: string, edit: (entity: Json) => void): unknown {
 // ---------------------------------------------------------------------------------------------------------
 
 describe('entities.json mirrors ENTITY_CATALOG', () => {
-  it('holds the 15 litter and 5 stain IDs, the frozen M3 set and the two Puddle Lane collectibles, in order', () => {
+  it('holds the 15 litter and 5 stain IDs, the frozen M3 set and the three Mon–Tue collectibles, in order', () => {
     expect(Object.keys(entitiesJson)).toEqual([...ENTITY_IDS]);
     expect(LITTER_IDS).toHaveLength(15);
     expect(STAIN_IDS).toHaveLength(5);
-    expect(ENTITY_IDS).toHaveLength(15 + 5 + 56 + 2);
-    expect([...COLLECTIBLE_IDS]).toEqual(['collect.false_teeth', 'collect.golden_crisp']);
+    expect(ENTITY_IDS).toHaveLength(15 + 5 + 56 + 3);
+    expect([...COLLECTIBLE_IDS]).toEqual([
+      'collect.false_teeth',
+      'collect.lost_wallet',
+      'collect.golden_crisp',
+    ]);
   });
 
   it('lists exactly the catalog §2 IDs it holds', () => {
@@ -861,11 +865,14 @@ describe('entities.json mirrors ENTITY_CATALOG', () => {
   it('puts the Puddle Lane pickups in Puddle Lane, and the flask and Golden Crisp in every shift district', () => {
     const tea = DEFAULT_ENTITIES.powerups['pwr.flask_of_tea'];
     const teeth = DEFAULT_ENTITIES.collectibles['collect.false_teeth'];
+    const wallet = DEFAULT_ENTITIES.collectibles['collect.lost_wallet'];
     const golden = DEFAULT_ENTITIES.collectibles['collect.golden_crisp'];
     expect(tea.districts).toEqual(SHIFT_DISTRICTS);
     expect(golden.districts).toEqual(SHIFT_DISTRICTS);
     expect(teeth.districts).toEqual(['district.puddle_lane']);
     expect(teeth.kind).toBe('lostProperty');
+    expect(wallet.districts).toEqual(['district.high_street']);
+    expect(wallet.kind).toBe('lostProperty');
     expect(golden.kind).toBe('goldenCrisp');
     expect(tea.effect).toEqual({ kind: 'chainTimerMul', mul: 2, durationS: 15 });
   });
@@ -1316,7 +1323,7 @@ describe('entities.json references', () => {
         checked += 1;
       }
     }
-    expect(checked).toBe(57);
+    expect(checked).toBe(58);
   });
 
   it('every district is a canonical district ID listed in week order', () => {

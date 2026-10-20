@@ -27,6 +27,19 @@
       "swaps": []
     },
     {
+      "id": "collect.lost_wallet",
+      "class": "collect",
+      "technique": "grid",
+      "source": "assets-src/sprites/pickup/lost_wallet.sprite.txt",
+      "cell": [16, 16],
+      "states": ["bob"],
+      "dirs": "-",
+      "frames": { "bob": 2 },
+      "atlas": "items",
+      "outline": false,
+      "swaps": []
+    },
+    {
       "id": "facade.corner_shop",
       "class": "facade",
       "technique": "procedural",

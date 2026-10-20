@@ -594,6 +594,15 @@ export class ShiftScene implements Scene {
     this.context.releaseCamera();
   }
 
+  /**
+   * The input this tick steps the World with: `input` itself. Test-only subclasses override it (StressScene,
+   * SSP-106: the stress fixture's director, src/debug/stress.ts, which also tops the World's stores up); it runs
+   * once per stepped tick, just before world.step. No shipping scene overrides it.
+   */
+  protected directTick(_world: World, input: Readonly<InputFrame>): Readonly<InputFrame> {
+    return input;
+  }
+
   fixedUpdate(input: Readonly<InputFrame>): void {
     const world = this.world;
     if (world === null || world.shift.phase === ShiftPhase.Ended || this.pausedNow) return;
@@ -601,7 +610,7 @@ export class ShiftScene implements Scene {
     if (pauseInput !== null && pauseInput.takeSceneEdges(ACTION.PAUSE) !== 0) {
       if (this.requestPause(PauseReason.Player)) return;
     }
-    world.step(input);
+    world.step(this.directTick(world, input));
     this.fx?.trackCleanSweeps(world.tidy.cleanSwept, world.tick - 1);
     this.city?.grime?.accumulate(world.dirt);
     this.hud?.tick(world);

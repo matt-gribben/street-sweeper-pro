@@ -378,6 +378,10 @@ export function stepActorContacts(w: World): void {
   obb.halfLengthM = body.lengthM * 0.5;
   refreshObbAxes(obb);
   const rearM = body.rearAxleOffsetM;
+  // Her heading's sine and cosine for the contact branch, taken every tick: on the branch alone the calls are
+  // cold call sites V8 does not inline, and each boxed its double (TECHNICAL_DESIGN §17 trap 1, SSP-106).
+  const s = sin(v.headingRad);
+  const c = cos(v.headingRad);
   const box = r.box;
   obbAabb(obb, box);
   const reach = w.npcAi.steering.maxRadiusM;
@@ -411,8 +415,6 @@ export function stepActorContacts(w: World): void {
     // The normal points from the circle toward Bessie; the actor lies along −normal from her.
     const ux = -contact.normalX;
     const uy = -contact.normalY;
-    const s = sin(v.headingRad);
-    const c = cos(v.headingRad);
     // The contact point on her side: the actor's centre less its radius along u. Its lever arm is taken from the
     // rear axle, the point whose velocity vLong and vLat are (vehicle.ts integrates the pose there).
     const lx = circle.x - ux * circle.radiusM - (v.xM + s * rearM);

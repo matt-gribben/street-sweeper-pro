@@ -119,6 +119,13 @@ export type LoopOptions = {
    * only when the loop starts or resumes.
    */
   readonly onFrameTimed?: ((nowMs: number, workMs: number) => void) | null;
+  /**
+   * Called after every tick (frames and runTicks) with the CPU time of its fixedUpdate in ms: in a shift, the
+   * ShiftScene's world.step plus its per-tick HUD, fx and grime bookkeeping (SSP-106). Test mode feeds
+   * `__ssp.perf().stepMs` with it, the series perf.spec.ts asserts the sim step budget on. Default null: the
+   * clock is then not read per tick.
+   */
+  readonly onTickTimed?: ((stepMs: number) => void) | null;
 };
 
 /** A running (or stopped) fixed-timestep loop. */
@@ -150,6 +157,7 @@ export function createLoop(target: LoopTarget, options: LoopOptions = {}): Loop 
   const clock = options.clock ?? browserClock();
   const fixedFrameS = options.fixedFrameS ?? null;
   const onFrameTimed = options.onFrameTimed ?? null;
+  const onTickTimed = options.onTickTimed ?? null;
   const acc = createAccumulator();
   let frozen = options.frozen ?? false;
   let running = false;
@@ -166,7 +174,13 @@ export function createLoop(target: LoopTarget, options: LoopOptions = {}): Loop 
 
   function tick(): void {
     const input = target.sampleForTick();
-    target.fixedUpdate(input);
+    if (onTickTimed === null) {
+      target.fixedUpdate(input);
+    } else {
+      const stepStartMs = clock.now();
+      target.fixedUpdate(input);
+      onTickTimed(clock.now() - stepStartMs);
+    }
     target.drainEvents();
     ticks += 1;
   }

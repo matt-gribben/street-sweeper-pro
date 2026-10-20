@@ -51,6 +51,15 @@ export function sqrt(x: number): number {
   return Math.sqrt(x);
 }
 
+/**
+ * Replaces buf[i] with its square root: sqrt for a hot path whose sqrt call V8 may not inline (a big function's
+ * inlining budget runs out), where the boxed argument and result would allocate 32 B a call (TECHNICAL_DESIGN §17
+ * trap 1). The same value as sqrt; allocation-free whether inlined or not (SSP-106, like headingCosSin).
+ */
+export function sqrtAt(buf: Float64Array, i: number): void {
+  buf[i] = Math.sqrt(buf[i] as number);
+}
+
 /** Length of the vector (x, y). Two-argument only, so calls never allocate a rest array. */
 export function hypot(x: number, y: number): number {
   return Math.hypot(x, y);

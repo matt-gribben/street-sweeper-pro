@@ -13,6 +13,7 @@ import type { SceneContext } from '../../src/app/Game.ts';
 import { createLoop, type LoopClock } from '../../src/app/loop.ts';
 import { SCENE_IDS, SceneManager } from '../../src/app/SceneManager.ts';
 import { ScriptedInput } from '../../src/debug/scriptedInput.ts';
+import { STRESS_DISTRICT } from '../../src/debug/stress.ts';
 import {
   installTestHooks,
   isShiftTestState,
@@ -31,16 +32,23 @@ import {
   ShiftScene,
   type ShiftSceneOptions,
 } from '../../src/scenes/ShiftScene.ts';
+import { StressScene } from '../../src/scenes/StressScene.ts';
+import { BODY_CAPACITY } from '../../src/sim/bodies.ts';
 import { DEG_TO_RAD, DT_S, SHIFT_TICKS } from '../../src/sim/constants.ts';
 import { EV } from '../../src/sim/eventQueue.ts';
+import { HAZARD_CAPACITY } from '../../src/sim/hazards.ts';
 import { createInputFrame, PRESSED } from '../../src/sim/inputFrame.ts';
+import { LITTER_CAPACITY } from '../../src/sim/litter.ts';
 import { decodeLevel, type Level } from '../../src/sim/map.ts';
+import { NPC_CAPACITY } from '../../src/sim/npc/store.ts';
 import { loadReplay, readInput, runReplay } from '../../src/sim/replay.ts';
 import { snapshotWorld } from '../../src/sim/snapshot.ts';
 import { DEFAULT_TUNING, loadTuning, type Tuning, tuningSourceCopy } from '../../src/sim/tuning.ts';
+import { VEHICLE_CAPACITY } from '../../src/sim/vehicleStore.ts';
 import { TutorialMemory } from '../../src/ui/tutorialMemory.ts';
 import { checkoutAssets, recordingAssets } from '../support/checkoutAssets.ts';
 import { fakePad, keyEvent, padSource, setTrigger } from '../support/fakeInput.ts';
+import { stressRig } from '../support/stressWorld.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const read = (rel: string): string => readFileSync(`${REPO_ROOT}${rel}`, 'utf8');
@@ -948,5 +956,40 @@ describe('ShiftScene fx (SSP-102)', () => {
     expect(fx.drawn).toBe(0);
     expect(fx.mesh.count).toBe(0);
     shift.exit();
+  });
+});
+
+describe('StressScene (SSP-106)', () => {
+  it('runs the stress fixture on High Street: every store at capacity, the World the Node rig steps', async () => {
+    const c = context();
+    const shift = new StressScene(c.ctx, checkoutLevels);
+    await shift.enter({ seed: 3 });
+    expect(shift.district).toBe(STRESS_DISTRICT);
+    expect(shift.id).toBe('shift');
+    expect(shift.stressDirector).toBeNull();
+    const world = shift.worldView;
+    if (world === null) throw new Error('no world');
+    expect(world.litter.count).toBe(LITTER_CAPACITY);
+    expect(world.bodies.count).toBe(BODY_CAPACITY);
+    expect(world.hazards.count).toBe(HAZARD_CAPACITY);
+    const node = stressRig(3);
+    // The director writes the input: whatever the player's devices say is ignored.
+    const pressed = createInputFrame();
+    pressed.throttle = 255;
+    pressed.steer = -127;
+    // Two minutes: the population fills at two a second.
+    for (let t = 0; t < 2400; t++) {
+      shift.fixedUpdate(pressed);
+      const events = shift.simEvents;
+      if (events !== null) c.ctx.events.drain(events);
+      node.step();
+    }
+    expect(snapshotWorld(world)).toEqual(snapshotWorld(node.world));
+    expect(world.npc.count).toBeGreaterThanOrEqual(NPC_CAPACITY - 4);
+    expect(world.vehicles.count).toBe(VEHICLE_CAPACITY);
+    expect(shift.stressDirector?.catsHit).toBe(node.director.catsHit);
+    shift.render(0.5);
+    shift.exit();
+    expect(shift.stressDirector).toBeNull();
   });
 });

@@ -26,7 +26,9 @@ import { isSpikeTestScene, SPIKE_TEST_SCENES, type SpikeTestSceneId } from './Sp
 /**
  * `?test=1&scene=` IDs of the single test scenes BootScene can hand off to (besides the shift flow's). `zoo` (SSP-298)
  * is the asset zoo: test-only, never the target of a menu or a scene transition. `fx_puddle` (SSP-102) is a Puddle
- * Lane shift with one puddle placed on Mangle Street, for the splash fx (src/scenes/FxPuddleScene.ts).
+ * Lane shift with one puddle placed on Mangle Street, for the splash fx (src/scenes/FxPuddleScene.ts). `stress`
+ * (SSP-106) is the NPC budget's stress fixture: High Street with every store at capacity and its director
+ * (src/scenes/StressScene.ts, src/debug/stress.ts), for perf.spec.ts.
  */
 export const TEST_SCENES = [
   'level_preview',
@@ -36,6 +38,7 @@ export const TEST_SCENES = [
   'spike_city',
   'zoo',
   'fx_puddle',
+  'stress',
 ] as const;
 export type TestSceneId = (typeof TEST_SCENES)[number];
 

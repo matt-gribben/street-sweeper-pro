@@ -123,6 +123,8 @@ export type GameOptions = {
   readonly night: boolean;
   /** Per-frame timing observer (test mode's `__ssp.perf()`), or null. */
   readonly onFrameTimed: ((nowMs: number, workMs: number) => void) | null;
+  /** Per-tick fixedUpdate timing observer (test mode's `__ssp.perf().stepMs`, SSP-106), or null (the default). */
+  readonly onTickTimed?: ((stepMs: number) => void) | null;
   /** The input source; defaults to the keyboard and gamepad merged by src/input/actions.ts. */
   readonly input?: TickInputSource;
   /**
@@ -244,6 +246,7 @@ export class Game {
         fixedFrameS: options.testMode ? TEST_RENDER_STEP_S : null,
         frozen: options.frozen,
         onFrameTimed: options.onFrameTimed,
+        onTickTimed: options.onTickTimed ?? null,
       },
     );
   }

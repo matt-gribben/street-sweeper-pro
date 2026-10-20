@@ -29,7 +29,7 @@ Build:
 - Don't change the webview scheme (`useHttpsScheme`) from what ADR 0003 records, because it changes the localStorage origin.
 
 Build host (the docs don't cover this). The dev machine is a Mac. Options:
-- a GitHub Actions `windows-latest` job (CI exists 'once a remote exists', TECHNICAL_DESIGN §19; no remote exists yet; Blender and AI never run in CI, but Tauri may)
+- a GitHub Actions `windows-latest` job (CI runs on the public GitHub remote since 2026-10-20, TECHNICAL_DESIGN §19; Blender and AI never run in CI, but Tauri may)
 - a Windows machine
 - experimental cross-compilation from macOS (NSIS only).
 Pick one, document it, and make sure the build repeats from a clean checkout (`npm ci`, then the build).

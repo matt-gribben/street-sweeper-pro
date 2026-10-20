@@ -1661,7 +1661,7 @@ Test mode also disables audio output, the speed-zoom spring and look-ahead (unle
 
 ## 19. CI
 
-GitHub Actions, once a remote exists. Blender and AI generation **never** run in CI.
+GitHub Actions on the public remote (https://github.com/matt-gribben/street-sweeper-pro, since 2026-10-20). Blender and AI generation **never** run in CI.
 
 | Job | Runner | Steps |
 |---|---|---|

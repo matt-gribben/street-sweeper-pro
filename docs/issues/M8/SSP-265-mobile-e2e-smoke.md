@@ -28,7 +28,7 @@ Touch events: drive through real input, not __ssp shortcuts, so touch.ts is exer
 
 Test hooks (?test=1, TECHNICAL_DESIGN §18.5) may be used for seed=1, readiness (__ssp.ready) and reading __ssp.state() (score, tidy, hopper, hp, tick, positions), and W = readFrame().length / 1080, but driving input must come from touch events. Test mode mutes audio (AUDIO_DESIGN §14), which is expected. Keep it deterministic: fixed seed, fixed input timeline, assertions on outcomes (score > 0, LU > 0), not hashes. No new dependency.
 
-UPDATE: SSP-296 audits the macos-latest `visual` job that runs `npm run test:e2e` and proves it green (or records the lead's decision not to have a remote). Extend its test:e2e project selection to include `mobile`.
+UPDATE: SSP-296 audits the macos-latest `visual` job that runs `npm run test:e2e` and proves it green (the remote exists since 2026-10-20). Extend its test:e2e project selection to include `mobile`.
 
 ## Scope
 

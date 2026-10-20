@@ -52,11 +52,11 @@ GDD §16.2 tutorial beats (including 9–11) are implemented in M3 by SSP-290. V
 
 ## Acceptance criteria
 
-- [ ] `npm run ci` exits 0 on the dev Mac. *(Every stage passed on the final tree when run on its own, including `npm test` at `--maxWorkers=4`, 3,704 of 3,704. But all six full `npm run ci` runs failed 1–2 load-sensitive heap-delta checks while other agents held the load average at 12–40. Recorded in ROADMAP M3, adjacent issue 1. Re-run on an idle machine before tagging.)*
+- [ ] `npm run ci` exits 0 on the dev Mac. *(Every stage passed on the final tree when run on its own, including `npm test` at `--maxWorkers=4`, 3,704 of 3,704. But all six full `npm run ci` runs failed 1–2 load-sensitive heap-delta checks while other agents held the load average at 12–40. Recorded in ROADMAP M3, adjacent issue 1. Re-run on an idle machine before tagging.)* *(2026-10-20: the owner accepted the close with this open; the load-sensitive heap and timing flake is follow-up work, and the first GitHub CI run hit the same class of failure.)*
 - [x] Every canonical exit criterion and M3 measurable-check row in the PR links passing evidence. *(The PR body is in the SSP-109 commit message; the same evidence is in ROADMAP M3, "M3 close".)*
 - [x] ENTITY_CATALOG, GDD, LEVEL_DESIGN and TECHNICAL_DESIGN contain no open item marked 'Resolve in M3' without a recorded resolution or a deferral note.
 - [x] ROADMAP §6 risk scores are updated with a note per changed row. *(A new "M3 close" column with a note on every row; R-10 re-scored 4 → 2.)*
-- [ ] The tag `m3` exists on the merge commit after approval. *(Waits for the owner, as `m1` and `m2` did: it goes on the merge commit of this branch, which does not exist until the branch is merged. See the SSP-109 commit message.)*
+- [x] The tag `m3` exists on the merge commit after approval. *(Done 2026-10-20: the owner approved M3 and `m3` is on 706efae, pushed to the public GitHub remote with `m0` to `m2`.)*
 
 ## Verification
 

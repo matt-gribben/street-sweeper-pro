@@ -54,7 +54,7 @@ R-05 contingency (SSP-022): if macos-latest frames differ from the dev-Mac golde
 - [ ] `npx playwright test --list` for the CI invocation lists every tests/e2e spec except gpu-only runs, and neither ci.yml nor test:e2e invokes `--project=gpu`
 - [ ] A GitHub Actions run URL on a PR shows `checks` and `visual` both green; if the lead declined a remote, TECHNICAL_DESIGN §19 records that decision instead
 - [ ] If a remote exists: on a throwaway branch with one golden pixel changed, the `visual` job fails and uploads test-results/ containing expected.png, actual.png and diff.png
-- [ ] ROADMAP §8 D-09 (plus D-12, and D-11 if still pending) has its CI half filled in, or explicitly marked 'no remote' by lead decision
+- [ ] ROADMAP §8 D-09 (plus D-12, and D-11 if still pending) has its CI half filled in
 - [ ] If a remote exists, `gh api repos/<owner>/<repo>/branches/main/protection` shows both jobs as required checks
 
 ## Verification

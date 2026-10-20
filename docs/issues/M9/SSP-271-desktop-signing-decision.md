@@ -28,7 +28,7 @@ Options:
 - **Windows, unsigned.** SmartScreen shows 'More info → Run anyway'.
 - **Windows, signed.** A code-signing certificate or a cloud signing service.
 
-Input data: itch.io page views and downloads since the 1.0 launch (M7). Never commit certificates, keys or passwords. Signing secrets live outside the repo (no remote/CI exists yet; TECHNICAL_DESIGN §19).
+Input data: itch.io page views and downloads since the 1.0 launch (M7). Never commit certificates, keys or passwords. Signing secrets live outside the repo (the repo is public on GitHub, so never put them in the repo or in plain workflow files; use GitHub Actions secrets if CI signs; TECHNICAL_DESIGN §19).
 
 ## Scope
 

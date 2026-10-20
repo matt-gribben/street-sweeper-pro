@@ -252,7 +252,7 @@ The panel's per-judge numeric scores are not preserved in the project record. Th
 ### 4.3 Neutral / follow-ons
 
 - `vite build` with `base: './'` produces a static `dist/` for itch.io (butler from M7) or any static host.
-- **CI** (GitHub Actions, once a remote exists):
+- **CI** (GitHub Actions, once a remote exists; it does since 2026-10-20):
   - `ubuntu-latest`: typecheck, lint, unit, replay, `assets:verify`, `assets:lint`.
   - `macos-latest` (arm64): Playwright visual and e2e tests.
   - Blender and AI generation never run in CI.

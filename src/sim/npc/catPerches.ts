@@ -26,11 +26,13 @@
 // runReachM / TILE_M tiles. The direction with the shortest crossing wins (ties: N, E, S, W). A far side with no
 // perch is still a landing: the cat sits on the far pavement and the next approach can send it back.
 //
-// Cover (findCover). A bolt runs to the nearest free perch within runReachM with a clear line that is farther
-// from Bessie than the cat (else the nearest free one); a cat getting off the road (after a groom, after
-// hopping off Bessie's roof) runs to the nearest free perch within runReachM with a clear line. Failing that it
-// leaves the road by the shortest march (as above; for a bolt, only along the axes square to Bessie or away
-// from her, never towards her); a cat already off the road and not bolting stays where it is.
+// Cover (findCover). A bolt runs to the nearest free perch within runReachM with a clear line whose run points
+// away from Bessie or square to her (dot(perch − cat, cat − Bessie) ≥ 0, and so farther from her than the cat);
+// a cat getting off the road (after a groom, after hopping off Bessie's roof) runs to the nearest free perch
+// within runReachM with a clear line. Failing that it leaves the road by the shortest march (as above; for a
+// bolt, only along the axes square to Bessie or away from her, to a landing that passes the same dot rule):
+// a bolt never runs towards her, and with no such cover it has none (SSP-087 review). A cat already off the
+// road and not bolting stays where it is.
 //
 // Grooming spots. The tiles the lane graph's centrelines run through (each edge sampled every 0.5 m) that are
 // LANE tiles: mid-road. A perched cat picks one within groomReachM with a clear line, that no other cat grooms
@@ -427,9 +429,9 @@ export function findDartTarget(w: World, i: number): number {
 }
 
 /**
- * Cover for NPC `i` (see the header): the nearest free perch within runReachM with a clear line (when `away`, one
- * farther from Bessie than the cat, falling back to any), never `exclude`; else off the road by the shortest
- * march (when `away`, not towards Bessie), or the cat's own tile when it is already off the road and not `away`.
+ * Cover for NPC `i` (see the header): the nearest free perch within runReachM with a clear line (when `away`, only
+ * one the cat runs to away from Bessie or square to her), never `exclude`; else off the road by the shortest march
+ * (when `away`, the same rule), or the cat's own tile when it is already off the road and not `away`.
  * NO_TARGET when there is none.
  */
 export function findCover(w: World, i: number, away: boolean, exclude: number): number {
@@ -442,7 +444,7 @@ export function findCover(w: World, i: number, away: boolean, exclude: number): 
   const by = w.vehicle.yM;
   const catToBessie2 = (x - bx) * (x - bx) + (y - by) * (y - by);
   const reach2 = c.params.runReachM * c.params.runReachM;
-  for (let pass = away ? 0 : 1; pass < 2; pass += 1) {
+  {
     let best = NO_TARGET;
     let bestD2 = reach2;
     for (let p = 0; p < c.perchCount; p += 1) {
@@ -452,7 +454,10 @@ export function findCover(w: World, i: number, away: boolean, exclude: number): 
       const py = c.py[0] as number;
       const d2 = (px - x) * (px - x) + (py - y) * (py - y);
       if (!(d2 <= bestD2)) continue;
-      if (pass === 0 && !((px - bx) * (px - bx) + (py - by) * (py - by) > catToBessie2)) continue;
+      // A bolt never runs towards Bessie: dot(perch − cat, cat − Bessie) ≥ 0 and it ends farther from her (no
+      // fallback: failing every perch it marches, below).
+      if (away && (px - x) * (x - bx) + (py - y) * (y - by) < 0) continue;
+      if (away && !((px - bx) * (px - bx) + (py - by) * (py - by) > catToBessie2)) continue;
       if (!segmentClear(w, i)) continue;
       best = p;
       bestD2 = d2;
@@ -469,6 +474,14 @@ export function findCover(w: World, i: number, away: boolean, exclude: number): 
     if (away && DIR_X[dir as 0 | 1 | 2 | 3] * (x - bx) + DIR_Y[dir as 0 | 1 | 2 | 3] * (y - by) < 0) continue;
     const code = marchAcross(w, i, dir, onRoad);
     if (code === NO_TARGET || code === exclude) continue;
+    // The landing too: a cat off its tile's centre must not drift towards her on the way to the next centre.
+    if (away) {
+      catTargetPos(c, code);
+      const px = c.px[0] as number;
+      const py = c.py[0] as number;
+      if ((px - x) * (x - bx) + (py - y) * (y - by) < 0) continue;
+      if (!((px - bx) * (px - bx) + (py - by) * (py - by) > catToBessie2)) continue;
+    }
     if (c.marchTiles < bestTiles) {
       best = code;
       bestTiles = c.marchTiles;

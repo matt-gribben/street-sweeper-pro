@@ -452,6 +452,48 @@ describe('grooming and bolting', () => {
       expect(world.npc.state[at(world, h)]).toBe(CAT.Perch);
     }
   });
+
+  it('a bolt never runs towards Bessie, even with a free perch on her far side within reach', () => {
+    // SSP-087 review: a grooming cat on tile (37, 3) with Bessie 3.9 m east used to bolt to the wall perch at
+    // (81, 3), past her; the mirror case (tile (51, 3), Bessie 3.9 m west) to (99, 3). Every mid-road spot on the
+    // street, Bessie 3.9 m east and west: the bolt's target and its first step have no component towards her.
+    const c0 = street(1).npcAi.cat;
+    const cases: [number, number, number][] = [
+      [37, 3, 3.9],
+      [51, 3, -3.9],
+    ];
+    for (let s = 0; s < c0.spotCount; s += 1) {
+      const t = c0.spotTile[s] as number;
+      const tx = t % c0.widthTiles;
+      const ty = Math.floor(t / c0.widthTiles);
+      cases.push([tx, ty, 3.9], [tx, ty, -3.9]);
+    }
+    let bolted = 0;
+    for (const [tx, ty, gap] of cases) {
+      const world = street(13);
+      const c = world.npcAi.cat;
+      const s = [...c.spotTile].indexOf(ty * c.widthTiles + tx);
+      const [x0, y0] = tileCentre(tx, ty);
+      const h = npcHandle(world.npc, addCat(world, TILE_TARGET - s, x0, y0));
+      const bx = x0 + gap;
+      const by = y0;
+      putBessie(world, bx, by);
+      world.step(neutral);
+      const i = at(world, h);
+      expect(world.npc.state[i]).toBe(CAT.Bolt);
+      bolted += 1;
+      const target = world.npc.timerB[i] as number;
+      const label = `tile (${tx}, ${ty}), Bessie ${gap} m east of the cat`;
+      if (catTargetPos(c, target)) {
+        const towards = ((c.px[0] as number) - x0) * (bx - x0) + ((c.py[0] as number) - y0) * (by - y0);
+        expect(towards, label).toBeLessThanOrEqual(0);
+      }
+      const step =
+        ((world.npc.x[i] as number) - x0) * (bx - x0) + ((world.npc.y[i] as number) - y0) * (by - y0);
+      expect(step, label).toBeLessThanOrEqual(0);
+    }
+    expect(bolted).toBeGreaterThan(2);
+  });
 });
 
 describe('hit: the leap, the roof ride and the hop off', () => {

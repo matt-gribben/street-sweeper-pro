@@ -9,7 +9,9 @@
 //   3. perch occupancy matches the cats: a wall perch is taken exactly when one cat sits on it or runs to it, a
 //      parked car's roof holds exactly the handle of the cat that does; no two cats share a perch;
 //   4. a cat sitting on a perch is exactly on it, and a cat off the roof moves at most its bolt speed a tick;
-//   5. every hit on a cat (EV.NpcHit with its kind) puts it into LeapOnRoof that tick.
+//   5. every hit on a cat (EV.NpcHit with its kind) puts it into LeapOnRoof that tick;
+//   6. a bolt never runs towards Bessie: on its first Bolt tick a cat's step has no component towards her
+//      (displacement · (Bessie − cat) ≤ 0; SSP-087 review).
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { TILE_M } from '../../src/sim/constants.ts';
@@ -98,6 +100,13 @@ function checkTick(w: World, prevX: Float64Array, prevY: Float64Array, prevHandl
       expect(t === -1 || t >= 0, `perched cat with tile target ${TILE_TARGET - t}`).toBe(true);
     if (!onRoof && !(s === CAT.HopOff && st === LEAP_TICKS + 1) && prevHandle[i] === npcHandle(npc, i)) {
       expect(Math.hypot(x - (prevX[i] as number), y - (prevY[i] as number))).toBeLessThanOrEqual(BOLT_STEP_M);
+    }
+    // 6. A bolt's first step is away from Bessie or square to her.
+    if (s === CAT.Bolt && st === 1 && prevHandle[i] === npcHandle(npc, i)) {
+      const px = prevX[i] as number;
+      const py = prevY[i] as number;
+      const towards = (x - px) * (w.vehicle.xM - px) + (y - py) * (w.vehicle.yM - py);
+      expect(towards, `bolt from (${px}, ${py}) to (${x}, ${y})`).toBeLessThanOrEqual(1e-9);
     }
   }
   for (let p = 0; p < c.wallCount; p++) {

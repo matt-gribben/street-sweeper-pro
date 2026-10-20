@@ -443,26 +443,52 @@ describe('installTestHooks with test=1', () => {
     expect(Array.from(frame ?? [])).toEqual([7, 0, 0, 255, 7, 0, 0, 255]);
   });
 
-  it('perf() reports the host draw calls and the frames recorded through recordFrame()', () => {
+  it('perf() reports the host draw calls, the frames recorded through recordFrame() and the ticks through recordStep()', () => {
     const target: TestHookTarget = {};
     const hooks = installTestHooks(target, '?test=1', fakeHost());
     expect(typeof target.__ssp?.perf).toBe('function');
     expect(typeof target.__ssp?.perfReset).toBe('function');
-    expect(target.__ssp?.perf()).toEqual({ drawCalls: 6, renders: 0, frameMs: [], workMs: [], overflow: 0 });
+    expect(target.__ssp?.perf()).toEqual({
+      drawCalls: 6,
+      renders: 0,
+      frameMs: [],
+      workMs: [],
+      overflow: 0,
+      stepMs: [],
+      stepOverflow: 0,
+    });
     hooks?.recordFrame(8.3, 0.1);
     hooks?.recordFrame(8.4, 0.2);
+    hooks?.recordStep(0.05);
     const perf = target.__ssp?.perf();
-    expect(perf).toEqual({ drawCalls: 6, renders: 0, frameMs: [8.3, 8.4], workMs: [0.1, 0.2], overflow: 0 });
+    expect(perf).toEqual({
+      drawCalls: 6,
+      renders: 0,
+      frameMs: [8.3, 8.4],
+      workMs: [0.1, 0.2],
+      overflow: 0,
+      stepMs: [0.05],
+      stepOverflow: 0,
+    });
     expect(JSON.parse(JSON.stringify(perf))).toEqual(perf);
   });
 
-  it('perfReset() clears the recorded frames but not the draw-call reading', () => {
+  it('perfReset() clears the recorded frames and ticks but not the draw-call reading', () => {
     const target: TestHookTarget = {};
     const host = fakeHost();
     const hooks = installTestHooks(target, '?test=1', host);
     hooks?.recordFrame(8.3, 0.1);
+    hooks?.recordStep(0.05);
     target.__ssp?.perfReset();
-    expect(target.__ssp?.perf()).toEqual({ drawCalls: 6, renders: 0, frameMs: [], workMs: [], overflow: 0 });
+    expect(target.__ssp?.perf()).toEqual({
+      drawCalls: 6,
+      renders: 0,
+      frameMs: [],
+      workMs: [],
+      overflow: 0,
+      stepMs: [],
+      stepOverflow: 0,
+    });
     expect(host.calls).toEqual([]);
   });
 

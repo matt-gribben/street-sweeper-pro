@@ -2,6 +2,16 @@
 // (tests/unit/frameStats.test.ts) and the Playwright spec only does browser work.
 
 /**
+ * The sim step budget (TECHNICAL_DESIGN §17, ROADMAP §8 D-08, SSP-106): the nearest-rank p99 of one tick's step time
+ * with every store at capacity (the stress fixture: 2,000 litter, 80 NPCs, 30 vehicles, 128 knockables, 64
+ * hazards), in ms, on the dev Mac. D-08's ×2 frame-time headroom was sized for M6 frames that spend about 3–4 ms of
+ * CPU, about 2 ms of it sim, so the sim's share of the 20.6 ms frame budget is 2 ms a tick; it stays the M0
+ * initial target. Asserted on the browser's per-tick series by perf.spec.ts (`ci`) and on world.step in Node by
+ * tests/unit/stressAlloc.test.ts; tests/unit/perfBudget.test.ts keeps the docs in step.
+ */
+export const SIM_STEP_P99_BUDGET_MS = 2;
+
+/**
  * The p-th percentile (0 < p ≤ 100) by the nearest-rank method: the smallest sample such that at least p% of
  * the samples are ≤ it, i.e. `sorted[ceil(p / 100 × n) − 1]`. Always one of the samples (no interpolation), so
  * "p99 ≤ budget" means exactly "at least 99% of frames took ≤ budget". Throws on an empty input.

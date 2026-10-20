@@ -2,7 +2,7 @@
 id: SSP-106
 title: "Prove the NPC budget: 80 NPCs, 30 vehicles, 2,000 litter, allocation-free"
 milestone: M3
-status: todo
+status: done
 type: test
 estimate: M
 labels: [type:test, area:perf, area:test, area:sim, size:M, vertical-slice]
@@ -46,10 +46,10 @@ UPDATE: the heap-delta mechanism (the `tests/support/heapDelta.ts` helper, the -
 
 ## Acceptance criteria
 
-- [ ] The heap-delta test passes with 80 NPCs, 30 vehicles and 2,000 litter for 3,600 ticks after a 600-tick warm-up.
-- [ ] Measured sim step p99 ≤ the D-08-derived budget (≤ 2 ms initial target) on the dev Mac; the number is recorded in the PR.
-- [ ] perf.spec.ts (`ci`) asserts ≤ 10 draw calls and the step-time budget on the stress scene.
-- [ ] Any allocation found in a per-tick path is fixed, not suppressed.
+- [x] The heap-delta test passes with 80 NPCs, 30 vehicles and 2,000 litter for 3,600 ticks after a 600-tick warm-up.
+- [x] Measured sim step p99 ≤ the D-08-derived budget (≤ 2 ms initial target) on the dev Mac; the number is recorded in the PR.
+- [x] perf.spec.ts (`ci`) asserts ≤ 10 draw calls and the step-time budget on the stress scene.
+- [x] Any allocation found in a per-tick path is fixed, not suppressed.
 
 ## Verification
 

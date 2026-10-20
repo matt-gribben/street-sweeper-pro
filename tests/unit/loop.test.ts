@@ -335,6 +335,40 @@ describe('createLoop with an injected clock', () => {
     ]);
   });
 
+  it('reports every tick its fixedUpdate CPU time, from frames and from runTicks (SSP-106)', () => {
+    const clock = fakeClock();
+    const steps: number[] = [];
+    const target = recordingTarget();
+    const fixedUpdate = target.fixedUpdate;
+    target.fixedUpdate = (input) => {
+      clock.nowMs += 0.25; // each tick's update takes 0.25 ms on the fake clock
+      fixedUpdate(input);
+    };
+    target.sampleForTick = ((sample) => () => {
+      clock.nowMs += 5; // sampling input is not part of the step
+      return sample();
+    })(target.sampleForTick);
+    const loop = createLoop(target, { clock, onTickTimed: (stepMs) => steps.push(stepMs) });
+    loop.start();
+    clock.runFrame(1000 / 30 + 0.01); // two ticks
+    loop.runTicks(3);
+    expect(target.ticks).toBe(5);
+    expect(steps).toEqual([0.25, 0.25, 0.25, 0.25, 0.25]);
+  });
+
+  it('reads the clock per tick only with onTickTimed', () => {
+    const clock = fakeClock();
+    let reads = 0;
+    const now = clock.now;
+    clock.now = () => {
+      reads += 1;
+      return now();
+    };
+    const loop = createLoop(recordingTarget(), { clock });
+    loop.runTicks(10);
+    expect(reads).toBe(0);
+  });
+
   it('rejects a negative or fractional runTicks count', () => {
     const loop = createLoop(recordingTarget(), { clock: fakeClock() });
     expect(() => loop.runTicks(-1)).toThrow(RangeError);

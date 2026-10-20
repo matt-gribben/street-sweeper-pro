@@ -4,7 +4,9 @@
 //
 // URL parameters, all optional after `test=1`:
 //   seed=<n>    run seed, an unsigned 32-bit integer (the shift's World is created with it; 0 when absent);
-//   scene=<id>  boot straight into a scene: the shift flow's intro card (`shift_intro`, src/scenes/ShiftIntroScene.ts,
+//   scene=<id>  boot straight into a scene (`stress`, SSP-106: the NPC budget's stress fixture, src/scenes/StressScene.ts,
+//               High Street with every store at capacity and src/debug/stress.ts's director): the shift flow's
+//               intro card (`shift_intro`, src/scenes/ShiftIntroScene.ts,
 //               also the default without `scene`, SSP-071), a district shift with the intro skipped (`shift` for
 //               Puddle Lane, or `district.puddle_lane`, src/scenes/ShiftScene.ts), `spike_city`, `lean_quadrants`, `scale_1440`, `scale_sheet`
 //               (src/scenes/SpikeScene.ts), `level_preview` (src/scenes/LevelPreviewScene.ts), `text_sample`
@@ -41,7 +43,8 @@
 //   setCamera()   pin the render camera at (x, y) sim metres and height h metres, springs off for good;
 //   perf()        draw calls of the last rendered frame (all passes), frames rendered since boot, plus the
 //                 frame timings recorded since the last perfReset(): rAF timestamp deltas and frame-callback CPU
-//                 time (perfCounters.ts);
+//                 time (perfCounters.ts), and since SSP-106 every tick's fixedUpdate CPU time (`stepMs`: in a
+//                 shift, world.step and its bookkeeping), the sim step series perf.spec.ts asserts;
 //   perfReset()   clears the recorded timings (start of a perf sampling window);
 //   scene()       the active (top) scene's ID (`shift_intro`, `shift`, `tally`, `lean_quadrants`, …), or null while
 //                 the stack is empty (SSP-071): SimSnapshot has no field for it;
@@ -73,7 +76,8 @@
 // count. SimSnapshot grows with the sim: M2 added the sweeping state (SSP-065), M3 added complaints (SSP-078).
 //
 // Timings are recorded once `ready` is true, one sample per requestAnimationFrame callback (the loop measures
-// the callback's CPU time and main.ts records it, so performance.now() stays in src/app/loop.ts); they are
+// the callback's CPU time and main.ts records it, so performance.now() stays in src/app/loop.ts) and one step
+// sample per tick, also through step(n) (the loop's onTickTimed, SSP-106); they are
 // read-only observations and never feed back into what is drawn. tests/e2e/perf.spec.ts reads them (SSP-023).
 //
 // Test mode also turns off what would make frames depend on timing (main.ts, src/app/Game.ts): the look-ahead and
@@ -234,6 +238,8 @@ export type TestHooks = {
   markReady(): void;
   /** Records one frame's timings for perf(): rAF timestamp delta and frame-callback CPU time, in ms. */
   recordFrame(frameMs: number, workMs: number): void;
+  /** Records one tick's fixedUpdate CPU time for perf().stepMs, in ms (SSP-106). */
+  recordStep(stepMs: number): void;
 };
 
 declare global {
@@ -406,6 +412,9 @@ export function installTestHooks(
     },
     recordFrame(frameMs: number, workMs: number): void {
       counters.record(frameMs, workMs);
+    },
+    recordStep(stepMs: number): void {
+      counters.recordStep(stepMs);
     },
   };
 }

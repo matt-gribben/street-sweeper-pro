@@ -6,7 +6,7 @@ import * as fmath from '../../src/sim/fmath.ts';
 const SAMPLES = [0, -0, 1e-9, 0.5, 1, -1, Math.PI / 3, -2.75, 10, 123.456, -1e6, Number.NaN, Infinity];
 
 describe('fmath v1 forwards to Math', () => {
-  it('exports exactly the §7.4 functions plus tan and headingCosSin (SSP-107)', () => {
+  it('exports exactly the §7.4 functions plus tan, headingCosSin (SSP-107) and sqrtAt (SSP-106)', () => {
     expect(Object.keys(fmath).sort()).toEqual([
       'atan2',
       'cos',
@@ -15,8 +15,23 @@ describe('fmath v1 forwards to Math', () => {
       'hypot',
       'sin',
       'sqrt',
+      'sqrtAt',
       'tan',
     ]);
+  });
+
+  it('sqrtAt replaces one slot with its square root, bit for bit the same as sqrt, and leaves the rest', () => {
+    const buf = new Float64Array(SAMPLES.length + 1);
+    for (let i = 0; i < SAMPLES.length; i++) {
+      buf.set(SAMPLES);
+      buf[SAMPLES.length] = 7;
+      fmath.sqrtAt(buf, i);
+      for (let j = 0; j < SAMPLES.length; j++) {
+        const want = j === i ? Math.sqrt(SAMPLES[j] as number) : (SAMPLES[j] as number);
+        expect(Object.is(buf[j], want)).toBe(true);
+      }
+      expect(buf[SAMPLES.length]).toBe(7);
+    }
   });
 
   it('headingCosSin writes cos and sin of the heading, bit for bit the same as cos and sin', () => {

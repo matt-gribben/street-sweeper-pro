@@ -7,7 +7,7 @@ describe('createPerfCounters', () => {
     const counters = createPerfCounters();
     expect(counters.capacity).toBe(PERF_SAMPLE_CAPACITY);
     expect(counters.count).toBe(0);
-    expect(counters.samples()).toEqual({ frameMs: [], workMs: [], overflow: 0 });
+    expect(counters.samples()).toEqual({ frameMs: [], workMs: [], overflow: 0, stepMs: [], stepOverflow: 0 });
   });
 
   it('holds a 30 s window at 120 Hz with room to spare', () => {
@@ -19,7 +19,13 @@ describe('createPerfCounters', () => {
     counters.record(8.3, 0.1);
     counters.record(16.7, 0.25);
     expect(counters.count).toBe(2);
-    expect(counters.samples()).toEqual({ frameMs: [8.3, 16.7], workMs: [0.1, 0.25], overflow: 0 });
+    expect(counters.samples()).toEqual({
+      frameMs: [8.3, 16.7],
+      workMs: [0.1, 0.25],
+      overflow: 0,
+      stepMs: [],
+      stepOverflow: 0,
+    });
   });
 
   it('drops and counts samples beyond capacity instead of overwriting', () => {
@@ -28,7 +34,34 @@ describe('createPerfCounters', () => {
     counters.record(2, 0);
     counters.record(3, 0);
     counters.record(4, 0);
-    expect(counters.samples()).toEqual({ frameMs: [1, 2], workMs: [0, 0], overflow: 2 });
+    expect(counters.samples()).toEqual({
+      frameMs: [1, 2],
+      workMs: [0, 0],
+      overflow: 2,
+      stepMs: [],
+      stepOverflow: 0,
+    });
+  });
+
+  it('records tick step times in their own series, apart from the frames (SSP-106)', () => {
+    const counters = createPerfCounters(2);
+    counters.recordStep(0.1);
+    counters.record(16.7, 0.4);
+    counters.recordStep(0.2);
+    counters.recordStep(0.3);
+    expect(counters.count).toBe(1);
+    expect(counters.stepCount).toBe(2);
+    expect(counters.samples()).toEqual({
+      frameMs: [16.7],
+      workMs: [0.4],
+      overflow: 0,
+      stepMs: [0.1, 0.2],
+      stepOverflow: 1,
+    });
+    counters.reset();
+    expect(counters.stepCount).toBe(0);
+    expect(counters.samples().stepMs).toEqual([]);
+    expect(counters.samples().stepOverflow).toBe(0);
   });
 
   it('reset() forgets samples and overflow', () => {
@@ -37,7 +70,7 @@ describe('createPerfCounters', () => {
     counters.record(2, 0);
     counters.reset();
     expect(counters.count).toBe(0);
-    expect(counters.samples()).toEqual({ frameMs: [], workMs: [], overflow: 0 });
+    expect(counters.samples()).toEqual({ frameMs: [], workMs: [], overflow: 0, stepMs: [], stepOverflow: 0 });
     counters.record(5, 1);
     expect(counters.samples().frameMs).toEqual([5]);
   });

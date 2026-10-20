@@ -26,6 +26,8 @@ import type { EventBus } from './events.ts';
  * and UI-pass test scene, and `panel_sample` the SSP-285 9-slice panel and button-state test scene. `shift` is the drive-only
  * ShiftScene (SSP-046), the default boot scene from M1, which `?test=1&scene=district.<name>` also boots. `fx_puddle`
  * (SSP-102) boots a ShiftScene on Puddle Lane with one placed puddle; once in, that scene reports the ID `shift`.
+ * `stress` (SSP-106) boots the NPC budget's stress fixture, a ShiftScene on High Street with every store at
+ * capacity; it too reports `shift` once in.
  */
 export const SCENE_IDS = [
   'boot',
@@ -49,6 +51,7 @@ export const SCENE_IDS = [
   'panel_sample',
   'hud_sample',
   'fx_puddle',
+  'stress',
 ] as const;
 export type SceneId = (typeof SCENE_IDS)[number];
 

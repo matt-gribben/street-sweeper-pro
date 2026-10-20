@@ -143,7 +143,7 @@ import { Offence } from './complaints.ts';
 import { DT_S, SIM_HZ, TILE_M } from './constants.ts';
 import { type Entities, VEHICLE_IDS } from './entities.ts';
 import { EV, emitEvent } from './eventQueue.ts';
-import { atan2, cos, sin, sqrt } from './fmath.ts';
+import { atan2, cos, sin, sqrt, sqrtAt } from './fmath.ts';
 import { Ground, LANE_FLAG, type LaneGraph, type Level, NAV_FLAG, NAV_FLAG_CROSSING } from './map.ts';
 import { ANGRY_TICKS, FALLEN_TICKS, GET_UP_TICKS } from './npc/behaviours/pedestrian.ts';
 import { NPC_DESPAWN_M } from './npc/spawner.ts';
@@ -288,7 +288,11 @@ const CAP = 32;
 const LAT_ARG = 33;
 const GROW_W = 34;
 const GROW_L = 35;
-const SCRATCH_DOUBLES = 36;
+/** driveVehicle's speed-limit braking: in, v² + 2bd; out (sqrtAt), its square root (SSP-106). */
+const LIMIT_V = 36;
+/** placeVehicle, bodyAt: in, the chord's squared length; out (sqrtAt), its length (SSP-106). */
+const CHORD_LEN = 37;
+const SCRATCH_DOUBLES = 38;
 
 // Indices into Traffic.params: the tuning numbers the tick reads, copied off the tuning (TECHNICAL_DESIGN §17:
 // tuning objects hold tagged numbers, so a tick reading them boxes).
@@ -1461,7 +1465,9 @@ function placeVehicle(t: Traffic, store: VehicleStore, lanes: LaneGraph, i: numb
   pointAlong(t, store, lanes, i);
   // A filtering bicycle rides `lateral` right of the lane: right = (−forward.y, forward.x).
   const lat = store.lateral[i] as number;
-  const fl = sqrt(fx * fx + fy * fy);
+  sc[CHORD_LEN] = fx * fx + fy * fy;
+  sqrtAt(sc, CHORD_LEN);
+  const fl = sc[CHORD_LEN] as number;
   store.x[i] = (sc[PX] as number) - (fy / fl) * lat;
   store.y[i] = (sc[PY] as number) + (fx / fl) * lat;
   store.heading[i] = atan2(fx, -fy);
@@ -1512,7 +1518,9 @@ function bodyAt(t: Traffic, store: VehicleStore, lanes: LaneGraph, i: number, ou
   pointAlong(t, store, lanes, i);
   store.along[i] = along;
   // The body: unit forward from the chord, right = (−fy, fx) (forward (sin h, −cos h), right (cos h, sin h)).
-  const fl = sqrt(fx * fx + fy * fy);
+  sc[CHORD_LEN] = fx * fx + fy * fy;
+  sqrtAt(sc, CHORD_LEN);
+  const fl = sc[CHORD_LEN] as number;
   const ux = fx / fl;
   const uy = fy / fl;
   sc[BOX_CX] = (sc[PX] as number) - uy * lat;
@@ -1665,7 +1673,10 @@ function stopSpeed(sc: Float64Array): void {
     sc[OUT] = 0;
     return;
   }
-  const v = sqrt(2 * (sc[DECEL] as number) * d);
+  // Through sqrtAt: stopSpeed runs several times per vehicle per tick, and an un-inlined sqrt boxed (SSP-106).
+  sc[OUT] = 2 * (sc[DECEL] as number) * d;
+  sqrtAt(sc, OUT);
+  const v = sc[OUT] as number;
   const step = d / DT_S;
   sc[OUT] = v < step ? v : step;
 }
@@ -1860,7 +1871,9 @@ function driveVehicle(w: World, i: number): void {
       const pf = lanes.edgeFlags[prev] as number;
       // Brake in time for this edge's speed limit.
       const lim = limits[e] as number;
-      const vl = sqrt(lim * lim + 2 * b * (d > 0 ? d : 0));
+      sc[LIMIT_V] = lim * lim + 2 * b * (d > 0 ? d : 0);
+      sqrtAt(sc, LIMIT_V);
+      const vl = sc[LIMIT_V] as number;
       if (vl < target) {
         target = vl;
         bind = Blocker.None;

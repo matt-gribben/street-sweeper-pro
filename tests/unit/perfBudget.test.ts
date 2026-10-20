@@ -1,9 +1,11 @@
 // D-08 (SSP-023): the p99 frame-time budget lives in tests/e2e/perf.spec.ts and is mirrored in
-// TECHNICAL_DESIGN §17 and ROADMAP §8; the bundle size is mirrored in ADR 0001 §4.4. The spec is a Playwright
+// TECHNICAL_DESIGN §17 and ROADMAP §8; the bundle size is mirrored in ADR 0001 §4.4. The sim step budget (SSP-106)
+// lives in tests/support/frameStats.ts and is mirrored in the same two places. The spec is a Playwright
 // file (importing it would register Playwright tests), so its constants are read from the source text.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { SIM_STEP_P99_BUDGET_MS } from '../support/frameStats.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const read = (relPath: string): string => readFileSync(`${REPO_ROOT}${relPath}`, 'utf8');
@@ -45,10 +47,12 @@ describe('D-08 p99 frame-time budget', () => {
     expect(row).not.toContain('TBD');
   });
 
-  it('re-defers the sim-step number in TECHNICAL_DESIGN §17 to a named milestone', () => {
+  it('mirrors the sim step budget (SSP-106) in TECHNICAL_DESIGN §17', () => {
     const row = tableRow(read('docs/TECHNICAL_DESIGN.md'), 'Sim step time');
-    expect(row).toMatch(/re-deferred to M\d/);
-    expect(row).not.toContain('TBD (M0 spike)');
+    expect(row).toContain(`**${SIM_STEP_P99_BUDGET_MS} ms** p99 per tick`);
+    expect(row).toContain('SIM_STEP_P99_BUDGET_MS');
+    expect(row).not.toContain('TBD');
+    expect(row).not.toContain('re-deferred');
   });
 
   it('is recorded in ROADMAP §8 D-08 with the baseline, sample count and headroom', () => {
@@ -57,7 +61,7 @@ describe('D-08 p99 frame-time budget', () => {
     expect(row).toContain(`**p99 frame time ≤ ${budgetMs} ms**`);
     expect(row).toContain(`baseline p99 **${baselineMs} ms**`);
     expect(row).toContain(`headroom **${headroom}**`);
-    expect(row).toMatch(/re-deferred to M\d/);
+    expect(row).toContain(`**Decided in SSP-106: sim step p99 ≤ ${SIM_STEP_P99_BUDGET_MS} ms per tick**`);
     const frames = /\*\*([0-9,]+) frames\*\*/.exec(row)?.[1];
     expect(frames, 'D-08 evidence must give the sample count').toBeDefined();
     expect(td).toContain(`**${frames} frames**`);

@@ -26,6 +26,7 @@ import {
   SpikeScene,
   type SpikeTestSceneId,
 } from './scenes/SpikeScene.ts';
+import { StressScene } from './scenes/StressScene.ts';
 import { TallyScene } from './scenes/TallyScene.ts';
 import { TextSampleScene } from './scenes/TextSampleScene.ts';
 import { ZooScene } from './scenes/ZooScene.ts';
@@ -70,6 +71,12 @@ const game = new Game(canvas, {
         lastReadyRafMs = nowMs;
       }
     : null,
+  // Every tick's fixedUpdate CPU time for `__ssp.perf().stepMs` (SSP-106), once ready, through step(n) as well.
+  onTickTimed: testMode
+    ? (stepMs) => {
+        if (testHooks?.api.ready === true) testHooks.recordStep(stepMs);
+      }
+    : null,
   // `__ssp.loadInputs` replays a log by the running World's tick (SSP-073): the top ShiftScene's, none otherwise.
   simTick: () => {
     const top = game.scenes.top;
@@ -85,7 +92,8 @@ const game = new Game(canvas, {
 // (compiled Puddle Lane from a pinned camera, SSP-045), `text_sample` (bitmap text over a shadowed street,
 // SSP-069), `panel_sample` (9-slice panels and button states, SSP-285), `hud_sample` (the HUD at its widest,
 // SSP-070), `zoo` (the test-only asset zoo, SSP-298, with `page=<n>` and `asset=<id>`), `fx_puddle` (a Puddle Lane
-// shift with one puddle placed on Mangle Street, for the splash fx, SSP-102), `spike_city` or a spike
+// shift with one puddle placed on Mangle Street, for the splash fx, SSP-102), `stress` (the NPC budget's stress
+// fixture, SSP-106: High Street with every store at capacity), `spike_city` or a spike
 // test scene. An unknown ID throws at once, before the boot; so does `tally`,
 // which needs a finished shift (boot the flow and step to the end). Dev builds keep the M0 spike city for the spike
 // scripts: `?world=spike_city`, `?world=palette_test` (the SSP-016 palette test world for
@@ -160,6 +168,9 @@ function testScene(id: TestSceneId | SpikeTestSceneId): Scene {
     case 'fx_puddle':
       // The splash fx's test shift (SSP-102): Puddle Lane with one puddle placed on Mangle Street.
       return new FxPuddleScene(context);
+    case 'stress':
+      // The NPC budget's stress fixture (SSP-106): High Street with every store at capacity, and its director.
+      return new StressScene(context);
     case 'lean_quadrants':
     case 'scale_1440':
     case 'scale_sheet':

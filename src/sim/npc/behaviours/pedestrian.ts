@@ -43,6 +43,7 @@
 //
 // Hot path: no allocation, no closures per tick; positions cross calls only through typed arrays.
 import { atan2, sqrt } from '../../fmath.ts';
+import type { NamedNpc } from '../../map.ts';
 import { nextInt } from '../../rng.ts';
 import type { World } from '../../world.ts';
 import { type Behaviour, Stimulus } from '../behaviour.ts';
@@ -126,6 +127,22 @@ export function wantsToYield(w: World, i: number): boolean {
   const f = npc.flags[i] as number;
   if ((f & NPC_FLAG.AWARE) !== 0 && w.npcAi.reactions.yields[npc.kind[i] as number] === 1) return true;
   return (f & NPC_FLAG.HI_VIS) !== 0 && withinAwareness(w, i);
+}
+
+/**
+ * The named route NPC `i` still has to walk (its level.json `npcs.named` entry, compiled to `spawns.npc`), or
+ * null when it has none: not a named NPC, a route of fewer than 2 nodes, or a route it has finished (`routeAt`
+ * past the end). Shared by the route walkers (the dog walker since SSP-086, Doris since SSP-104).
+ */
+export function namedRouteOf(w: World, i: number): NamedNpc | null {
+  const npc = w.npc;
+  if (npc.origin[i] !== NpcOrigin.Named) return null;
+  const spec = w.level.npc;
+  const g = npc.group[i] as number;
+  if (spec === null || g < 0 || g >= spec.named.length) return null;
+  const named = spec.named[g] as NamedNpc;
+  if (named.route.length < 2 || (npc.routeAt[i] as number) >= named.route.length) return null;
+  return named;
 }
 
 /** Stand: no desire but separation, so it slows to a stop and keeps out of the others' way. */

@@ -372,7 +372,9 @@ describe('the M2 sweeping content (SSP-056, LEVEL_DESIGN §5.1)', () => {
   });
 
   it('has one flask of tea and places Lost Property and the Golden Crisp where §5.1 says', () => {
-    expect(doc.powerups).toEqual({ count: 1, table: { 'pwr.flask_of_tea': 1 } });
+    // SSP-104 fixes the flask on the Pump Green path cross (pavement), off the kerb-hugging par route.
+    expect(doc.powerups).toEqual({ count: 1, table: { 'pwr.flask_of_tea': 1 }, at: [[30.5, 11.5]] });
+    expect(map.ground[tile(30, 11)]).toBe(Ground.Pavement);
     const lost = doc.collectibles?.lostProperty;
     expect(lost?.id).toBe('collect.false_teeth');
     const [lx, ly] = lost?.at ?? [0, 0];
@@ -436,8 +438,10 @@ describe('the M3 lane and nav graphs (SSP-076)', () => {
   });
 
   it('records the four bay runs with the heading of the lane beside them', () => {
+    // SSP-104 shortened the first run to x 28–31, so no parked car stands in front of the Pump Green
+    // entrance (x 32–33), the only way onto the Green, where the flask of tea and the Lost Property are.
     expect(decoded.lanes.bays).toEqual([
-      { rect: [28, 6, 34, 7], heading: (3 * Math.PI) / 2 },
+      { rect: [28, 6, 32, 7], heading: (3 * Math.PI) / 2 },
       { rect: [41, 6, 47, 7], heading: (3 * Math.PI) / 2 },
       { rect: [50, 11, 51, 17], heading: 0 },
       { rect: [52, 30, 53, 36], heading: Math.PI },

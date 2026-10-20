@@ -84,6 +84,7 @@ import {
 } from '../store.ts';
 import {
   enterPedestrianState,
+  namedRouteOf,
   PED,
   pedestrianStimulus,
   STARTLE_TICKS,
@@ -313,18 +314,6 @@ function keepOnLead(w: World, i: number, other: number): void {
 // The walker
 // ---------------------------------------------------------------------------------------------------------
 
-/** The named route walker `i` walks, or null when it has none to walk (ambient, a one-node route, or done). */
-function routeOf(w: World, i: number): NamedNpc | null {
-  const npc = w.npc;
-  if (npc.origin[i] !== NpcOrigin.Named) return null;
-  const spec = w.level.npc;
-  const g = npc.group[i] as number;
-  if (spec === null || g < 0 || g >= spec.named.length) return null;
-  const named = spec.named[g] as NamedNpc;
-  if (named.route.length < 2 || (npc.routeAt[i] as number) >= named.route.length) return null;
-  return named;
-}
-
 /** Stand: separation only. */
 function stand(w: World, i: number): void {
   beginSteer(w);
@@ -376,7 +365,7 @@ function tickWalker(w: World, i: number): void {
   const dog = resolveNpcHandle(npc, npc.link[i] as number);
   if (dog >= 0) checkLead(w, i, dog);
   const s = npc.state[i] as number;
-  const named = s === PED.Walk || s === PED.Cross ? routeOf(w, i) : null;
+  const named = s === PED.Walk || s === PED.Cross ? namedRouteOf(w, i) : null;
   if (named !== null && !wantsToYield(w, i)) walkRoute(w, i, named);
   else tickPedestrian(w, i, false);
   if (dog >= 0) keepOnLead(w, i, dog);

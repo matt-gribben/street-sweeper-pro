@@ -12,6 +12,12 @@
 // every litter item is picked up (no fling), and each corner is a quarter circle between the two streets'
 // centre lines at 2.2 m/s.
 //
+// Since SSP-104 Puddle Lane has its M3 street life (traffic, parked cars, people, puddles), so the routes swing
+// out to the centre line past the parking bays on Bessie's left (where the lanes run beside them), and the
+// driver gives way like a careful player (driveRoute's yieldToStreet): to vehicles, people on the road and
+// occupied zebras in her way, to traffic about to cross her path while she is still in a kerb lane (each street
+// step's predictWindow; a corner is committed), and squeezing past a car that waits for her.
+//
 // Because the driver is closed-loop, a deliberate sim change can make this script produce different inputs.
 // The committed replay files are the truth: `npm run test:replay -- --update` re-records their hashes for the
 // committed inputs (ROADMAP §5.3). Re-run this script only to change a route, or when a sim change stops the
@@ -121,13 +127,34 @@ function streetName(a: Point, b: Point): string {
 }
 
 /**
+ * A left turn starts this far left of the incoming centre line (SSP-104), so Bessie waits for it, and makes it,
+ * clear of the oncoming lane (1.5 m right of the centre line; a car's 0.9 m half width and hers leave 0.475 m)
+ * where a turn from the centre line would overlap it by 0.275 m. The arc keeps its radius and its end on the
+ * outgoing centre line, so its centre moves the same 0.75 m and her inner rear wheel passes the inside kerb
+ * corner about 0.5 m closer than from the centre line.
+ */
+const LEFT_TURN_OFFSET_M = 0.75;
+
+/** Whether turning from heading `dirIn` to `dirOut` (axis-aligned, 90° apart) is a left turn. */
+function isLeftTurn(dirIn: Point, dirOut: Point): boolean {
+  // dirOut is the left of dirIn (screen axes, y down: left of (x, y) is (y, −x)).
+  return dirOut[0] === dirIn[1] && dirOut[1] === -dirIn[0];
+}
+
+/** Where the corner at `j` from `dirIn` starts: CORNER_RADIUS_M before it, on (or left of) the centre line. */
+function cornerStart(j: Point, dirIn: Point, dirOut: Point): Point {
+  const p = along(j, dirIn, -CORNER_RADIUS_M);
+  return isLeftTurn(dirIn, dirOut) ? leftOf(p, dirIn, LEFT_TURN_OFFSET_M) : p;
+}
+
+/**
  * The corner at junction `j` from heading `dirIn` to heading `dirOut` (axis-aligned, 90° apart): a quarter
- * circle of CORNER_RADIUS_M from the incoming centre line CORNER_RADIUS_M before `j` to the outgoing centre
- * line CORNER_RADIUS_M after it. Its centre lies CORNER_RADIUS_M along dirOut from the arc's start.
+ * circle of CORNER_RADIUS_M from cornerStart (CORNER_RADIUS_M before `j`) to the outgoing centre line. Its
+ * centre lies CORNER_RADIUS_M along dirOut from the arc's start.
  */
 function cornerArc(j: Point, dirIn: Point, dirOut: Point): Point[] {
   const r = CORNER_RADIUS_M;
-  const c = along(along(j, dirIn, -r), dirOut, r);
+  const c = along(cornerStart(j, dirIn, dirOut), dirOut, r);
   const out: Point[] = [];
   for (let k = 1; k <= CORNER_POINTS; k++) {
     const t = ((k / CORNER_POINTS) * Math.PI) / 2;
@@ -144,6 +171,64 @@ function cornerArc(j: Point, dirIn: Point, dirOut: Point): Point[] {
  * Each street is one drive step (centre line → kerb lane on her left → centre line before the next corner) and
  * each junction one corner step. `buttons(i)` gives the BUTTON bits held on street i (0-based) and its corner.
  */
+/**
+ * The parking bay runs of the level (SSP-090, `lanes.bays`) in metres, `[x0, y0, x1, y1]` (max exclusive). A
+ * route in the kerb lane would drive into a parked car, so beside a run on Bessie's left it swings out to the
+ * street's centre line, where the lanes beside a bay run (LEVEL_DESIGN §7.1; SSP-104).
+ */
+const BAY_RUNS: readonly (readonly [number, number, number, number])[] = decodeLevel(
+  readFileSync(LEVEL_PATH, 'utf8'),
+).lanes.bays.map((b) => [b.rect[0] * 2, b.rect[1] * 2, b.rect[2] * 2, b.rect[3] * 2] as const);
+/** Clear of a bay run's ends by this much on the centre line, metres. */
+const BAY_CLEAR_M = 3;
+/** Swing out to the centre line, and back to the kerb lane, over this distance, metres. */
+const BAY_RAMP_M = 8;
+
+/**
+ * The bay runs beside the kerb lane on Bessie's left along the street from `a` (heading `dir`), as along-street
+ * intervals [enter, leave] in metres from `a`, widened by BAY_CLEAR_M.
+ */
+function baysOnLeft(a: Point, dir: Point): [number, number][] {
+  const out: [number, number][] = [];
+  for (const [x0, y0, x1, y1] of BAY_RUNS) {
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    // Left of `dir` (screen axes, y down): (dir.y, −dir.x).
+    const lateral = (cx - a[0]) * dir[1] - (cy - a[1]) * dir[0];
+    if (Math.abs(lateral - KERB_LANE_OFFSET_M) > 0.5) continue;
+    const s0 = (x0 - a[0]) * dir[0] + (y0 - a[1]) * dir[1];
+    const s1 = (x1 - a[0]) * dir[0] + (y1 - a[1]) * dir[1];
+    out.push([Math.min(s0, s1) - BAY_CLEAR_M, Math.max(s0, s1) + BAY_CLEAR_M]);
+  }
+  return out.sort((p, q) => p[0] - q[0]);
+}
+
+/** How far left of the centre line Bessie drives at `sM` along a street with bay runs `bays` on her left. */
+function laneOffsetAt(sM: number, bays: readonly [number, number][]): number {
+  let offset = KERB_LANE_OFFSET_M;
+  for (const [enter, leave] of bays) {
+    const out = sM < enter ? enter - sM : sM > leave ? sM - leave : 0;
+    offset = Math.min(offset, (KERB_LANE_OFFSET_M * Math.min(out, BAY_RAMP_M)) / BAY_RAMP_M);
+  }
+  return offset;
+}
+
+/**
+ * The kerb-lane path from `fromM` to `toM` along the street from `a` (heading `dir`), swinging out round the bay
+ * runs on Bessie's left: a point at each end and at every ramp start and end in between.
+ */
+function kerbLane(a: Point, dir: Point, fromM: number, toM: number): Point[] {
+  const bays = baysOnLeft(a, dir);
+  const at = [fromM];
+  for (const [enter, leave] of bays) {
+    for (const sM of [enter - BAY_RAMP_M, enter, leave, leave + BAY_RAMP_M]) {
+      if (sM > fromM && sM < toM) at.push(sM);
+    }
+  }
+  at.push(toM);
+  return at.map((sM) => leftOf(along(a, dir, sM), dir, laneOffsetAt(sM, bays)));
+}
+
 function sweepRoute(
   label: string,
   route: readonly Point[],
@@ -163,13 +248,12 @@ function sweepRoute(
     const dir = unit(a, b);
     const cornerAfter = i < points.length - 1;
     const laneFromM = (i > 1 ? CORNER_RADIUS_M : 0) + LANE_RAMP_M;
-    const path: Point[] = [leftOf(along(a, dir, laneFromM), dir, KERB_LANE_OFFSET_M)];
-    if (cornerAfter) {
-      path.push(leftOf(along(b, dir, -(CORNER_RADIUS_M + LANE_RAMP_M)), dir, KERB_LANE_OFFSET_M));
-      path.push(along(b, dir, -CORNER_RADIUS_M));
-    } else {
-      path.push(leftOf(b, dir, KERB_LANE_OFFSET_M));
-    }
+    const lengthM = Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]);
+    const laneToM = cornerAfter ? lengthM - (CORNER_RADIUS_M + LANE_RAMP_M) : lengthM;
+    const path: Point[] = kerbLane(a, dir, laneFromM, laneToM);
+    // Bessie may wait for crossing traffic only while she is in the kerb lane (driveRoute's predictWindow).
+    const predictWindow = [0, path.length - 1] as const;
+    if (cornerAfter) path.push(cornerStart(b, dir, unit(b, points[i + 1] as Point)));
     const held = buttons(i - 1);
     steps.push({
       kind: 'drive',
@@ -178,6 +262,7 @@ function sweepRoute(
       speedMps: SWEEP_MPS,
       exitMps: cornerAfter ? CORNER_MPS : SWEEP_MPS,
       buttons: held,
+      predictWindow,
     });
     if (cornerAfter) {
       const next = points[i + 1] as Point;
@@ -188,6 +273,8 @@ function sweepRoute(
         speedMps: CORNER_MPS,
         exitMps: CORNER_MPS,
         buttons: held,
+        // Committed: a turn never stops to wait for traffic that is not yet in her way.
+        predictWindow: [-1, -1],
       });
     }
   }
@@ -247,11 +334,15 @@ const FULL_SHIFT_ROUTE: readonly Step[] = [
 /**
  * Set from the recorded run with headroom (SSP-072): it scored 6,316 and collected 47 items (best chain 4: the
  * initial litter is too sparse along the kerbs for the ×2 tier's 10 pickups 2 s apart, so no ComboTier is
- * asserted), never lost HP and never touched a solid, and the shift ended TIME_UP at tick 14,493.
+ * asserted), never lost HP and never touched a solid, and the shift ended TIME_UP at tick 14,493. Re-recorded on
+ * the populated street (SSP-104): giving way to traffic, people and zebras for about 4,000 ticks, it scores
+ * 5,725 and collects 33 items, with no complaint, no lost HP and no impact, and ends TIME_UP. The litter floor
+ * drops from 35 to 25 with it (the same headroom under the new run): a shift spent waiting at junctions sweeps
+ * less of the figure-of-eight.
  */
 const FULL_SHIFT_INVARIANTS: ReplayInvariants = {
   minScore: 4000,
-  minLitterCollected: 35,
+  minLitterCollected: 25,
   hpMin: 90,
   maxSolidOverlapM: 0.001,
   shiftEnded: 'TimeUp',
@@ -261,8 +352,11 @@ const FULL_SHIFT_INVARIANTS: ReplayInvariants = {
 // Dump cycle
 // ---------------------------------------------------------------------------------------------------------
 
-/** Dump-cycle length: the lap, the bay and the dump with a margin (the route summary prints the ticks used). */
-const DUMP_CYCLE_TICKS = 7_200;
+/**
+ * Dump-cycle length: the lap, the bay and the dump with a margin (the route summary prints the ticks used). Since
+ * SSP-104 the street has traffic and people to give way to: the dump ends later (the summary prints the tick).
+ */
+const DUMP_CYCLE_TICKS = 9_000;
 
 /**
  * From the depot, brush down, north up Mangle Street and round the north loop clockwise (Soapsud Terrace east
@@ -307,7 +401,8 @@ const DUMP_CYCLE_ROUTE: readonly Step[] = [
 
 /**
  * Set from the recorded run with headroom (SSP-072): it scored 4,356, collected 17 items (16.5 LU) and sprayed
- * the tank down to 28.4 units; the depot dump drained all 16.5 LU and refilled the tank to 100.
+ * the tank down to 28.4 units; the depot dump drained all 16.5 LU and refilled the tank to 100. On the populated
+ * street (SSP-104) it scores 4,809 with 18 items (17.5 LU) and the same dump.
  */
 const DUMP_CYCLE_INVARIANTS: ReplayInvariants = {
   minScore: 3000,
@@ -388,7 +483,7 @@ function build(
   ticks: number,
   invariants: ReplayInvariants,
 ): Build {
-  const drive = driveRoute(level, DEFAULT_TUNING, SEED, route, ticks);
+  const drive = driveRoute(level, DEFAULT_TUNING, SEED, route, ticks, { yieldToStreet: true });
   const file = recordReplay(level, DEFAULT_TUNING, DISTRICT, SEED, drive.log, invariants);
   return { name, file, drive, goal };
 }

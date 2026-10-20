@@ -13,9 +13,18 @@ import {
   obbCorners,
   obbForwardAxis,
   obbRightAxis,
+  refreshObbAxes,
   setObb,
 } from '../../src/sim/collision/obb.ts';
-import { type Contact, createContact, obbVsCircle, obbVsRect } from '../../src/sim/collision/sat.ts';
+import {
+  type Contact,
+  createCircle,
+  createContact,
+  obbMayTouchCircle,
+  obbVsCircle,
+  obbVsCircleShape,
+  obbVsRect,
+} from '../../src/sim/collision/sat.ts';
 import { createPose, SUBSTEP_MAX_M, subStepCount, subStepPose } from '../../src/sim/collision/sweep.ts';
 import type { Vec2 } from '../../src/sim/coords.ts';
 import { nextRange, sfc32 } from '../../src/sim/rng.ts';
@@ -567,5 +576,34 @@ describe('allocation-free per-call paths', () => {
     );
     expect(sink).toBeGreaterThan(0);
     assertHeapDeltaWithinThresholds(delta);
+  });
+});
+
+describe('obbMayTouchCircle (SSP-104: the pickups pre-test)', () => {
+  it('is never false for a circle obbVsCircleShape finds touching, and is false far away', () => {
+    const rng = sfc32(104);
+    const obb = createObb();
+    const circle = createCircle();
+    const out = createContact();
+    let touching = 0;
+    for (let k = 0; k < 5000; k++) {
+      obb.cx = nextRange(rng, -5, 5);
+      obb.cy = nextRange(rng, -5, 5);
+      obb.headingRad = nextRange(rng, -Math.PI, Math.PI);
+      obb.halfWidthM = nextRange(rng, 0.2, 1.5);
+      obb.halfLengthM = nextRange(rng, 0.2, 2.5);
+      refreshObbAxes(obb);
+      circle.x = nextRange(rng, -8, 8);
+      circle.y = nextRange(rng, -8, 8);
+      circle.radiusM = nextRange(rng, 0.1, 1);
+      if (obbVsCircleShape(obb, circle, out)) {
+        touching += 1;
+        expect(obbMayTouchCircle(obb, circle)).toBe(true);
+      }
+    }
+    expect(touching).toBeGreaterThan(100);
+    circle.x = obb.cx + obb.halfWidthM + obb.halfLengthM + circle.radiusM + 0.01;
+    circle.y = obb.cy;
+    expect(obbMayTouchCircle(obb, circle)).toBe(false);
   });
 });

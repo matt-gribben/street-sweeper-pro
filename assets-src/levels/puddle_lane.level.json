@@ -219,9 +219,51 @@
     ],
     "speckle": 0.03
   },
-  "powerups": { "count": 1, "table": { "pwr.flask_of_tea": 1 } },
+  "powerups": { "count": 1, "table": { "pwr.flask_of_tea": 1 }, "at": [[30.5, 11.5]] },
   "collectibles": {
     "lostProperty": { "id": "collect.false_teeth", "at": [34.5, 11.5] },
     "goldenCrisp": { "at": [44.5, 30.5] }
+  },
+  "hazards": {
+    "place": [
+      { "id": "haz.puddle", "at": [12.5, 6.5] },
+      { "id": "haz.puddle", "at": [30.5, 4.5] },
+      { "id": "haz.puddle", "at": [22.5, 9.5] },
+      { "id": "haz.puddle", "at": [52.5, 14.5] },
+      { "id": "haz.puddle", "at": [60.5, 12.5] },
+      { "id": "haz.puddle", "at": [44.5, 23.5] },
+      { "id": "haz.puddle", "at": [50.5, 33.5] },
+      { "id": "haz.puddle", "at": [36.5, 41.5] }
+    ]
+  },
+  "knockables": [
+    { "id": "prop.recycling_box", "at": [5.5, 3.25] },
+    { "id": "prop.wheelie_bin", "at": [21.3, 9.5] },
+    { "id": "prop.wheelie_bin", "at": [49.3, 9.5] },
+    { "id": "prop.recycling_box", "at": [54.5, 3.25] },
+    { "id": "prop.wheelie_bin", "at": [40.5, 42.75] },
+    { "id": "prop.recycling_box", "at": [53.7, 37.5] }
+  ],
+  "npcs": {
+    "population": [
+      { "from": 0, "to": 60, "target": 8 },
+      { "from": 60, "to": 180, "target": 12 },
+      { "from": 180, "to": 240, "target": 8 }
+    ],
+    "mix": { "npc.shopper": 70, "npc.mum_pushchair": 20, "npc.old_man_frame": 10 },
+    "caps": { "npc.shopper": 9, "npc.mum_pushchair": 2, "npc.old_man_frame": 1 },
+    "named": [
+      { "id": "npc.postie", "anchor": "3", "spawnAt": 10, "route": ["3"] },
+      { "id": "npc.old_woman", "anchor": "1", "spawnAt": 70, "route": ["1", "2", "3", "2", "1"] },
+      { "id": "npc.dog_walker", "anchor": "4", "spawnAt": 120, "route": ["4", "5", "6", "7"], "loop": true }
+    ],
+    "perches": { "id": "npc.cat", "count": 4, "on": ["walls", "carRoofs"] }
+  },
+  "traffic": {
+    "densityPerKm": 5.4,
+    "mix": { "veh.hatchback": 55, "veh.saloon": 30, "veh.van_white": 15 },
+    "parkedFill": 0.6,
+    "parkedMix": { "veh.hatchback_parked": 50, "veh.saloon_parked": 35, "veh.van_white_parked": 15 },
+    "pavement": { "veh.mobility_scooter": 1 }
   }
 }

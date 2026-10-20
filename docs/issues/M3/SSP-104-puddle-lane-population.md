@@ -2,7 +2,7 @@
 id: SSP-104
 title: "Populate Puddle Lane with its M3 NPCs, traffic, hazards, knockables and power-up"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:gameplay, area:ai-npc, area:tooling, area:test, size:M, vertical-slice]

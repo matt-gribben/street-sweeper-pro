@@ -1,11 +1,16 @@
-// The canonical tick order (TECHNICAL_DESIGN §5.2) as the systems are actually called (SSP-065; SSP-080 phase 7; SSP-081 zebra occupancy; SSP-089 phase 8). The phase
-// trace in tests/unit/world.test.ts proves the eleven phase slots run in order; this file wraps every system
-// function World.step calls, records each call, and checks the full per-tick sequence, so a system that moved
-// to another phase (or swapped places inside one) fails here. SSP-078 adds the horn (phase 1) and the honk window
-// and penalty facts (phase 9, before scoring); SSP-092 the knockable bodies (phase 4, between static collision
-// and brush/litter), SSP-096 the power-ups right after them (stepPickups). SSP-089 fills phase 8 with stepTraffic, run on a compiled town with traffic so phase 8 does
-// real work (spawns, car following, a car queued behind Bessie, its honks and the Road Rage fact that phase 9
-// then files). Changing this order changes replay hashes and must be called out in the commit (§5.2).
+// The canonical tick order (TECHNICAL_DESIGN §5.2) as the systems are actually called (SSP-065; SSP-080 phase 7;
+// SSP-081 zebra occupancy; SSP-089 phase 8). The phase trace in tests/unit/world.test.ts proves the eleven phase
+// slots run in order; this file wraps every system function World.step calls, records each call, and checks the
+// full per-tick sequence, so a system that moved to another phase (or swapped places inside one) fails here.
+// SSP-078 adds the horn (phase 1) and the honk window and penalty facts (phase 9, before scoring); SSP-092 the
+// knockable bodies (phase 4, between static collision and brush/litter), SSP-096 the power-ups right after them
+// (stepPickups). SSP-089 fills phase 8 with stepTraffic, run on a compiled town with traffic so phase 8 does real
+// work (spawns, car following, a car queued behind Bessie, its honks and the Road Rage fact that phase 9 then
+// files). SSP-107 completes phases 1–11: every system World.step calls is wrapped, including those the earlier
+// issues added without a wrapper (the parked cars' contacts in phase 3, the glass sweep in 5, the dust in 6, the
+// reactions and the zebra offence in 7, the level events in 10), and a meta-test proves the check fails when
+// phase 4, 7 or 8 is removed, swapped with a neighbour or has a system moved out of it. Changing this order
+// changes replay hashes and must be called out in the commit (§5.2).
 //
 // vi.mock replaces each module for everything that imports it in this test file's module graph (world.ts
 // included); every wrapper forwards to the real function, so the World runs exactly as in the game.
@@ -39,7 +44,7 @@ vi.mock('../../src/sim/eventQueue.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['resetEvents', 'sealEvents']),
 );
 vi.mock('../../src/sim/shift.ts', async (importOriginal) =>
-  wrap(await importOriginal(), ['gateShiftInput', 'stepShift']),
+  wrap(await importOriginal(), ['gateShiftInput', 'stepShift', 'stepShiftEvents']),
 );
 vi.mock('../../src/sim/brush.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['stepBrushState', 'stepBrushLitter']),
@@ -52,10 +57,13 @@ vi.mock('../../src/sim/kerb.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['findKerbCrossings']),
 );
 vi.mock('../../src/sim/hazards.ts', async (importOriginal) =>
-  wrap(await importOriginal(), ['stepHazardContacts', 'stepBrushUpLeaves']),
+  wrap(await importOriginal(), ['stepHazardContacts', 'stepGlassSweep', 'stepBrushUpLeaves']),
 );
 vi.mock('../../src/sim/collision/resolveStatic.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['resolveStatic']),
+);
+vi.mock('../../src/sim/parked.ts', async (importOriginal) =>
+  wrap(await importOriginal(), ['applyVehicleContacts']),
 );
 vi.mock('../../src/sim/bodies.ts', async (importOriginal) => wrap(await importOriginal(), ['stepBodies']));
 vi.mock('../../src/sim/pickups.ts', async (importOriginal) => wrap(await importOriginal(), ['stepPickups']));
@@ -68,7 +76,9 @@ vi.mock('../../src/sim/stains.ts', async (importOriginal) =>
 vi.mock('../../src/sim/water.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['stepWater', 'cleanStainsInCone']),
 );
-vi.mock('../../src/sim/dirt.ts', async (importOriginal) => wrap(await importOriginal(), ['stepDirt']));
+vi.mock('../../src/sim/dirt.ts', async (importOriginal) =>
+  wrap(await importOriginal(), ['stepDirt', 'stepDust']),
+);
 vi.mock('../../src/sim/npc/store.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['beginNpcTick']),
 );
@@ -77,6 +87,12 @@ vi.mock('../../src/sim/viewRect.ts', async (importOriginal) =>
 );
 vi.mock('../../src/sim/npc/spawner.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['stepNpcSpawner']),
+);
+vi.mock('../../src/sim/npc/reactions.ts', async (importOriginal) =>
+  wrap(await importOriginal(), ['stepReactions']),
+);
+vi.mock('../../src/sim/npc/zebraOffence.ts', async (importOriginal) =>
+  wrap(await importOriginal(), ['stepZebras']),
 );
 vi.mock('../../src/sim/npc/stimuli.ts', async (importOriginal) =>
   wrap(await importOriginal(), ['deliverStimuli']),
@@ -112,27 +128,32 @@ const ONE_TICK = [
   'stepHazardContacts',
   'phase 3',
   'resolveStatic',
+  'applyVehicleContacts',
   'phase 4',
   'stepBodies',
   'stepPickups',
   'phase 5',
   'beginLitterTick',
   'stepBrushLitter',
+  'stepGlassSweep',
   'stepBrushUpLeaves',
   'stepBrushUpSplats',
   'stepLitter',
   'stepWater',
   'phase 6',
   'stepDirt',
+  'stepDust',
   'cleanStainsInCone',
   'phase 7',
   'beginNpcTick',
   'updateViewRect',
   'stepNpcSpawner',
+  'stepReactions',
   'deliverStimuli',
   'perceiveNpcs',
   'tickNpcBehaviours',
-  'updateZebraOccupancy',
+  'stepZebras',
+  'updateZebraOccupancy', // inside stepZebras (npc/zebraOffence.ts)
   'phase 8',
   'stepTraffic',
   'phase 9',
@@ -142,11 +163,45 @@ const ONE_TICK = [
   'stepTidy',
   'phase 10',
   'stepShift',
+  'stepShiftEvents',
   'phase 11',
   'sealEvents',
 ];
 
-describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078, SSP-092)', () => {
+/**
+ * Why a recorded call log is not `ticks` repetitions of ONE_TICK, naming the first tick and position that
+ * differ, or null when it is.
+ */
+function tickOrderMismatch(log: readonly string[], ticks: number): string | null {
+  const n = ONE_TICK.length;
+  for (let i = 0; i < Math.max(log.length, ticks * n); i++) {
+    const want = i < ticks * n ? ONE_TICK[i % n] : '(end of log)';
+    const got = log[i] ?? '(end of log)';
+    if (got !== want) return `tick ${Math.floor(i / n)}, call ${i % n}: expected ${want}, got ${got}`;
+  }
+  return null;
+}
+
+/** ONE_TICK as its phase blocks: each starts at its `phase n` marker (block 0 is resetEvents). */
+function phaseBlocks(): string[][] {
+  const blocks: string[][] = [[]];
+  for (const name of ONE_TICK) {
+    if (name.startsWith('phase ')) blocks.push([]);
+    (blocks[blocks.length - 1] as string[]).push(name);
+  }
+  return blocks;
+}
+
+describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078, SSP-092, SSP-107)', () => {
+  it('lists the eleven phases once each, in order, every system inside one', () => {
+    const blocks = phaseBlocks();
+    expect(blocks.map((b) => b[0])).toEqual([
+      'resetEvents',
+      ...Array.from({ length: 11 }, (_, i) => `phase ${i + 1}`),
+    ]);
+    for (const block of blocks.slice(1)) expect(block.length, block[0]).toBeGreaterThan(1);
+  });
+
   it('runs phase 4 (knockable bodies, SSP-092) after phase 3 (static collision) and before phase 5 (brush/litter)', () => {
     const at = (name: string): number => ONE_TICK.indexOf(name);
     expect(at('phase 3')).toBeLessThan(at('resolveStatic'));
@@ -165,9 +220,11 @@ describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078
       'beginNpcTick',
       'updateViewRect',
       'stepNpcSpawner',
+      'stepReactions',
       'deliverStimuli',
       'perceiveNpcs',
       'tickNpcBehaviours',
+      'stepZebras',
       'updateZebraOccupancy',
     ];
     expect(at('phase 6')).toBeLessThan(at('phase 7'));
@@ -245,6 +302,7 @@ describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078
     calls.on = false;
     const expected: string[] = [];
     for (let t = 0; t < ticks; t++) expected.push(...ONE_TICK);
+    expect(tickOrderMismatch(calls.log, ticks)).toBeNull();
     expect(calls.log).toEqual(expected);
     // The run went through the collecting and raised states and sprayed, so the systems did real work.
     expect(collectingTicks).toBeGreaterThan(100);
@@ -252,5 +310,47 @@ describe('World.step system call order (TECHNICAL_DESIGN §5.2, SSP-065, SSP-078
     expect(world.vehicle.water).toBeLessThan(DEFAULT_TUNING.water.tankUnits);
     expect(world.complaints.honks).toBe(5);
     expect(world.bodies.bodiesKnocked).toBe(1);
+  });
+});
+
+describe('the tick-order check catches a missing or moved phase 4, 7 or 8 (SSP-107)', () => {
+  // Three ticks of the canonical order with the middle one altered, as World.step would record them had the
+  // phase been dropped or reordered in world.ts.
+  const withMiddleTick = (tick: readonly string[]): string[] => [...ONE_TICK, ...tick, ...ONE_TICK];
+  const blocks = phaseBlocks();
+  const join = (order: readonly number[]): string[] => order.flatMap((i) => blocks[i] as string[]);
+  const canonical = blocks.map((_, i) => i);
+
+  it('passes the canonical order', () => {
+    expect(tickOrderMismatch(withMiddleTick(ONE_TICK), 3)).toBeNull();
+  });
+
+  for (const phase of [4, 7, 8]) {
+    it(`fails when phase ${phase} is removed`, () => {
+      const order = canonical.filter((i) => i !== phase);
+      expect(tickOrderMismatch(withMiddleTick(join(order)), 3)).toMatch(/^tick 1, /);
+    });
+
+    for (const other of [phase - 1, phase + 1]) {
+      it(`fails when phase ${phase} swaps places with phase ${other}`, () => {
+        const order = canonical.slice();
+        order[phase] = other;
+        order[other] = phase;
+        expect(tickOrderMismatch(withMiddleTick(join(order)), 3)).toMatch(/^tick 1, /);
+      });
+    }
+
+    it(`fails when a system of phase ${phase} moves to the end of the tick, its marker staying put`, () => {
+      const block = blocks[phase] as string[];
+      const moved = block[1] as string;
+      const tick = ONE_TICK.filter((name, i) => !(name === moved && i === ONE_TICK.indexOf(moved)));
+      tick.push(moved);
+      expect(tickOrderMismatch(withMiddleTick(tick), 3)).toMatch(/^tick 1, /);
+    });
+  }
+
+  it('fails when a tick ends early or the log runs on', () => {
+    expect(tickOrderMismatch(ONE_TICK.slice(0, -1), 1)).toMatch(/expected sealEvents, got \(end of log\)/);
+    expect(tickOrderMismatch([...ONE_TICK, 'resetEvents'], 1)).toMatch(/got resetEvents/);
   });
 });

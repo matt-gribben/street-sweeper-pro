@@ -1480,6 +1480,13 @@ export const EVENT_NAMES = Object.keys(EV) as EventName[];
  * - minDumpsCompleted (SSP-072): at least this many dumps drained to the end (EV.DumpEnd with c = 1).
  * - emptyAfterDump (SSP-072): every completed dump leaves the hopper at exactly 0 LU and, at a depot bay, the
  *   tank full (water = water.tankUnits) at the end of its DumpEnd tick.
+ * - shiftEndTick (SSP-107): EV.ShiftEnd fired on this step of the replay (1-based: the run's tick count once it
+ *   has fired). An end-state replay ends there, so it equals `ticks`.
+ * - tallyScoreKeep (SSP-107): the shift has ended and the tally's score (shift.ts finalShiftScore) is
+ *   floor(tallyScoreKeep × score), the score being scoring.ts's at the end: 0.5 after TOWED, 1 after SACKED or
+ *   TIME UP (GDD §11.3).
+ * - tallyStars (SSP-107): the shift has ended and the tally's stars (shift.ts finalShiftStars over tidy.ts's
+ *   would-be stars) are exactly this: 0 after SACKED or TOWED.
  */
 export type ReplayInvariants = {
   minScore?: number;
@@ -1491,6 +1498,9 @@ export type ReplayInvariants = {
   minLuDumped?: number;
   minDumpsCompleted?: number;
   emptyAfterDump?: true;
+  shiftEndTick?: number;
+  tallyScoreKeep?: number;
+  tallyStars?: number;
 };
 
 /** Names usable in `invariants.shiftEnded`: the keys of ShiftEndReason. */
@@ -1523,6 +1533,9 @@ const INVARIANT_KEYS = [
   'minLuDumped',
   'minDumpsCompleted',
   'emptyAfterDump',
+  'shiftEndTick',
+  'tallyScoreKeep',
+  'tallyStars',
 ];
 
 function failFile(path: string, message: string): never {
@@ -1596,6 +1609,21 @@ function parseInvariants(value: unknown): ReplayInvariants {
   if (raw.emptyAfterDump !== undefined) {
     if (raw.emptyAfterDump !== true) failFile('invariants.emptyAfterDump', 'must be true (or left out)');
     out.emptyAfterDump = true;
+  }
+  if (raw.shiftEndTick !== undefined) {
+    const tick = nonNegativeInt(raw.shiftEndTick, 'invariants.shiftEndTick');
+    if (tick < 1) failFile('invariants.shiftEndTick', 'must be at least 1');
+    out.shiftEndTick = tick;
+  }
+  if (raw.tallyScoreKeep !== undefined) {
+    const keep = finiteNumber(raw.tallyScoreKeep, 'invariants.tallyScoreKeep', 0);
+    if (keep > 1) failFile('invariants.tallyScoreKeep', `must be in 0..1, got ${keep}`);
+    out.tallyScoreKeep = keep;
+  }
+  if (raw.tallyStars !== undefined) {
+    const stars = nonNegativeInt(raw.tallyStars, 'invariants.tallyStars');
+    if (stars > 3) failFile('invariants.tallyStars', `must be in 0..3, got ${stars}`);
+    out.tallyStars = stars;
   }
   return out;
 }

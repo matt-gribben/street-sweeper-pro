@@ -6,8 +6,26 @@ import * as fmath from '../../src/sim/fmath.ts';
 const SAMPLES = [0, -0, 1e-9, 0.5, 1, -1, Math.PI / 3, -2.75, 10, 123.456, -1e6, Number.NaN, Infinity];
 
 describe('fmath v1 forwards to Math', () => {
-  it('exports exactly the §7.4 functions plus tan', () => {
-    expect(Object.keys(fmath).sort()).toEqual(['atan2', 'cos', 'exp', 'hypot', 'sin', 'sqrt', 'tan']);
+  it('exports exactly the §7.4 functions plus tan and headingCosSin (SSP-107)', () => {
+    expect(Object.keys(fmath).sort()).toEqual([
+      'atan2',
+      'cos',
+      'exp',
+      'headingCosSin',
+      'hypot',
+      'sin',
+      'sqrt',
+      'tan',
+    ]);
+  });
+
+  it('headingCosSin writes cos and sin of the heading, bit for bit the same as cos and sin', () => {
+    const out = new Float64Array(2);
+    for (const headingRad of SAMPLES) {
+      fmath.headingCosSin({ headingRad }, out);
+      expect(Object.is(out[0], Math.cos(headingRad))).toBe(true);
+      expect(Object.is(out[1], Math.sin(headingRad))).toBe(true);
+    }
   });
 
   it.each([

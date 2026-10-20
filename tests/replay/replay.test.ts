@@ -3,10 +3,12 @@
 // For every tests/replay/replays/*.json it loads the replay (src/sim/replay.ts loadReplay), loads its district's
 // compiled level from public/assets/levels/<name>.json (district.<name>) through decodeLevel, runs the input
 // log for the replay's own `ticks` (3,600 is the standard length; the M2 full shift runs 14,600, to the end of
-// the shift, SSP-072) on a World with the default tuning, and asserts every checkpoint hash (the last one is
+// the shift, SSP-072; an end-state replay, SSP-107, stops on the tick its shift ends, SACKED or TOWED, and may
+// be shorter) on a World with the default tuning, and asserts every checkpoint hash (the last one is
 // the final-state hash), the invariants, and the §17 zero-allocation heap check (over the replay's first 4,200
 // ticks and, for a longer replay, its last 4,200 too). It also checks that changing one input of a committed
-// replay fails it. A built-in synthetic replay (tests/replay/synthetic.ts, hand-built level) always runs too,
+// replay fails it, and the tick-count rule (§18.3): a replay shorter than 3,600 ticks must be an end-state
+// replay, asserting its end reason with the end on its last tick (shiftEnded, shiftEndTick = ticks). A built-in synthetic replay (tests/replay/synthetic.ts, hand-built level) always runs too,
 // so the project never has zero tests.
 //
 // `npm run test:replay -- --update` re-records the checkpoint hashes of the committed files (vitest.config.ts
@@ -31,6 +33,7 @@ import {
   inputLogsEqual,
   type LoadedReplay,
   loadReplay,
+  REPLAY_TICKS,
   type ReplayFile,
   recordReplay,
   runReplay,
@@ -103,7 +106,8 @@ function checkReplay(name: string, replay: LoadedReplay, level: Level, update: b
     `score ${monitor.finalScore}, litter collected ${monitor.finalLitterCollected}, ` +
     `LU dumped ${monitor.finalLuDumped} in ${monitor.dumpsCompleted} completed dump(s), ` +
     (monitor.shiftEnds > 0
-      ? `shift ended at tick ${monitor.shiftEndTick} (reason ${monitor.shiftEndReason})`
+      ? `shift ended at tick ${monitor.shiftEndTick} (reason ${monitor.shiftEndReason}), tally score ` +
+        `${monitor.finalTallyScore}, tally stars ${monitor.finalTallyStars}`
       : 'shift running');
   return { failures, checkpoints: run.checkpoints, summary };
 }
@@ -145,6 +149,19 @@ describe('replay corpus', () => {
           }
         }
         expect(result.failures, result.failures.join('\n')).toEqual([]);
+      });
+
+      it('obeys the tick-count rule: 3,600 ticks or more, or an end-state replay ending on its last tick', () => {
+        const { file } = load().replay;
+        if (file.ticks >= REPLAY_TICKS) return;
+        const { shiftEnded, shiftEndTick } = file.invariants;
+        expect(
+          shiftEnded,
+          `${name}: ${file.ticks} ticks, so it must assert invariants.shiftEnded`,
+        ).toBeDefined();
+        expect(shiftEndTick, `${name}: ${file.ticks} ticks, so its shift must end on its last tick`).toBe(
+          file.ticks,
+        );
       });
 
       it('fails when one input of the log changes (one InputFrame byte, or one byte of the encoded inputs)', () => {

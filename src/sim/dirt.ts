@@ -65,7 +65,7 @@
 
 import { GRIME_CELL_M, TILE_M } from './constants.ts';
 import { EV, type EventQueue, emitEvent } from './eventQueue.ts';
-import { cos, sin } from './fmath.ts';
+import { headingCosSin } from './fmath.ts';
 import { COLLIDE, GRIME_CELL, Ground, GUTTER_CELLS_PER_TILE, type Level } from './map.ts';
 import { createStream, nextFloat } from './rng.ts';
 import type { Tuning } from './tuning.ts';
@@ -155,6 +155,8 @@ export type Dirt = {
   poseY: number;
   poseC: number;
   poseS: number;
+  /** Scratch for headingCosSin: [cos, sin] of the pose's heading (SSP-107: no double crosses that call). */
+  readonly trig: Float64Array;
 };
 
 /** What render, audio and UI may see: the same object, typed read-only. */
@@ -244,6 +246,7 @@ export function createDirt(level: Level, tuning: Tuning): Dirt {
     poseY: 0.5,
     poseC: 0.5,
     poseS: 0.5,
+    trig: new Float64Array(2),
   };
   applyTuning(dirt, tuning);
   return dirt;
@@ -508,8 +511,10 @@ export function stepDirt(dirt: Dirt, pose: DirtPose, collecting: boolean): void 
 
   const px = pose.xM;
   const py = pose.yM;
-  const c = cos(pose.headingRad);
-  const s = sin(pose.headingRad);
+  const trig = dirt.trig;
+  headingCosSin(pose, trig);
+  const c = trig[0] as number;
+  const s = trig[1] as number;
   dirt.poseX = px;
   dirt.poseY = py;
   dirt.poseC = c;

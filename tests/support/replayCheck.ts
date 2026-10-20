@@ -31,6 +31,7 @@ import {
   readInput,
   type StateHasher,
 } from '../../src/sim/replay.ts';
+import { finalShiftScore, finalShiftStars, isShiftEnded } from '../../src/sim/shift.ts';
 import type { Tuning } from '../../src/sim/tuning.ts';
 import { createWorld, type World } from '../../src/sim/world.ts';
 import { HEAP_MEASURED_TICKS, HEAP_WARMUP_TICKS, type HeapDelta, measureHeapDelta } from './heapDelta.ts';
@@ -61,6 +62,13 @@ export type InvariantMonitor = {
   shiftEndTick: number;
   /** LU dumped (hopper.luDumpedTotal) at the end of the last observed tick (SSP-072). */
   finalLuDumped: number;
+  /**
+   * At the end of the last observed tick (SSP-107): whether the shift has ended, the tally's score
+   * (finalShiftScore of the score) and stars (finalShiftStars of tidy.ts's would-be stars).
+   */
+  finalShiftEnded: boolean;
+  finalTallyScore: number;
+  finalTallyStars: number;
   /** EV.DumpEnd events with c = 1 (the drain ran to the end) (SSP-072). */
   dumpsCompleted: number;
   /** One line per completed dump that left LU in the hopper or, at a depot bay, the tank short (SSP-072). */
@@ -82,6 +90,9 @@ export function createInvariantMonitor(level: Level, tuning: Tuning): InvariantM
       monitor.finalScore = world.scoring.score;
       monitor.finalLitterCollected = world.litter.litterCollected;
       monitor.finalLuDumped = world.hopper.luDumpedTotal;
+      monitor.finalShiftEnded = isShiftEnded(world.shift);
+      monitor.finalTallyScore = finalShiftScore(world.shift, world.scoring.score);
+      monitor.finalTallyStars = finalShiftStars(world.shift, world.tidy.stars);
       const events = world.events;
       for (let i = 0; i < events.count; i++) {
         const type = events.type[i];
@@ -123,6 +134,9 @@ export function createInvariantMonitor(level: Level, tuning: Tuning): InvariantM
     shiftEndReason: 0,
     shiftEndTick: 0,
     finalLuDumped: 0,
+    finalShiftEnded: false,
+    finalTallyScore: 0,
+    finalTallyStars: 0,
     dumpsCompleted: 0,
     dumpProblems: [],
   };
@@ -191,6 +205,35 @@ export function invariantFailures(invariants: ReplayInvariants, monitor: Invaria
   }
   if (invariants.emptyAfterDump === true) {
     for (const problem of monitor.dumpProblems) failures.push(`emptyAfterDump: ${problem}`);
+  }
+  if (invariants.shiftEndTick !== undefined) {
+    const want = invariants.shiftEndTick;
+    if (monitor.shiftEnds === 0) {
+      failures.push(`shiftEndTick: the shift never ended (no ShiftEnd event), expected it at tick ${want}`);
+    } else if (monitor.shiftEndTick !== want) {
+      failures.push(`shiftEndTick: the shift ended at tick ${monitor.shiftEndTick}, expected tick ${want}`);
+    }
+  }
+  if (invariants.tallyScoreKeep !== undefined) {
+    const keep = invariants.tallyScoreKeep;
+    const want = Math.floor(keep * monitor.finalScore);
+    if (!monitor.finalShiftEnded) {
+      failures.push('tallyScoreKeep: the shift has not ended, so there is no tally score');
+    } else if (monitor.finalTallyScore !== want) {
+      failures.push(
+        `tallyScoreKeep: the tally shows ${monitor.finalTallyScore} of a ${monitor.finalScore} score, expected ` +
+          `floor(${keep} × ${monitor.finalScore}) = ${want}`,
+      );
+    }
+  }
+  if (invariants.tallyStars !== undefined) {
+    if (!monitor.finalShiftEnded) {
+      failures.push('tallyStars: the shift has not ended, so there are no tally stars');
+    } else if (monitor.finalTallyStars !== invariants.tallyStars) {
+      failures.push(
+        `tallyStars: the tally awards ${monitor.finalTallyStars} star(s), expected ${invariants.tallyStars}`,
+      );
+    }
   }
   const minEvents = invariants.minEvents ?? {};
   for (const name of EVENT_NAMES) {

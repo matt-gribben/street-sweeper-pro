@@ -32,7 +32,7 @@ Give every gameplay-relevant sound a visual equivalent: speech bubbles for chara
 **Caption table (Speech):**
 - `ped_oi` → 'Oi!', varied ('Watch it!', 'Oi, Sweepy!', 'My shoes!'), seeded from a list in `src/data/entities.json`;
 - `ped_oi:cough` → '*cough cough*'; `ped_oi:tut` → 'Tut tut.';
-- `granny_harrumph` → 'HMPH!' / 'Young people today!'; `:whack` → 'Take that!';
+- `granny_harrumph` → 'Hmph!' / 'Young people today!'; `:whack` → 'Take that!';
 - `kid_waah` → 'WAAAH!'.
 
 **Caption table (Speech + sounds):** [Cat yowls], [Dog barks] (with an edge arrow), [Seagull squawks], [Pigeons scatter], [Police siren] (with an edge arrow), [Car horn], [Ice cream van chimes], [Hopper full], [Water empty].

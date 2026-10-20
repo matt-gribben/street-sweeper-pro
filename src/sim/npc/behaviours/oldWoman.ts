@@ -22,7 +22,7 @@
 //             the awareness radius nor upg.led_beacon makes her yield (the catalog's "within awareness radius"
 //             was aligned to TECHNICAL_DESIGN §11.2's 4 m in SSP-083).
 //   FistShake a Horn delivered while she glares: she stands facing Bessie for `fistShakeS` × 60 (90) ticks,
-//             then SlowWalk. A horn in any other state leaves her as she is (TECHNICAL_DESIGN §11.2 draws it
+//             then SlowWalk. Entering it emits EV.FistShake (SSP-288; her "Hmph!" bubble). A horn in any other state leaves her as she is (TECHNICAL_DESIGN §11.2 draws it
 //             only from Glare).
 //   SlowWalk  Walk at `hornSlowSpeedMps` (0.4 m/s) for `hornSlowS` × 60 ticks (600; `timerA` counts them down
 //             on every tick she is not shaking her fist, glaring included), then Walk at her own speed again.
@@ -331,6 +331,15 @@ function whack(w: World, i: number): void {
   w.events.c[e] = before - v.hp;
 }
 
+/** EV.FistShake (SSP-288): her "Hmph!" bubble and sfx.granny_harrumph read it. A presentation fact only. */
+function emitFistShake(w: World, i: number): void {
+  const npc = w.npc;
+  const e = emitEvent(w.events, EV.FistShake, i);
+  w.events.a[e] = npc.x[i] as number;
+  w.events.b[e] = npc.y[i] as number;
+  w.events.c[e] = w.npcAi.oldWoman.fistShakeTicks;
+}
+
 /** Doris's tick for NPC `i` (see the file comment). */
 export function tickOldWoman(w: World, i: number): void {
   const npc = w.npc;
@@ -452,6 +461,7 @@ export function oldWomanStimulus(w: World, i: number, s: Stimulus): void {
       npc.speed[i] = 0;
       npc.timerB[i] = 0;
       faceBessie(w, i);
+      emitFistShake(w, i);
       return;
     case Stimulus.Spray:
       if (state !== DORIS.Walk && state !== DORIS.SlowWalk && state !== DORIS.Idle && state !== DORIS.Glare) {

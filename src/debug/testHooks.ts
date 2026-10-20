@@ -54,6 +54,11 @@
 //                 SSP-073): from the next tick on, World tick t is fed the log's frame t (neutral past its end and
 //                 while no World runs) instead of the keyboard and gamepad. Load it at World tick 0 and step(n)
 //                 replays the file's run; tests/e2e/smoke.spec.ts drives the M2 full-shift replay this way.
+//   injectEvent(type, entity, a, b, c) dispatches one synthetic sim event (an EV id with its raw payload, as the
+//                 sim would emit it) to the event bus's presentation subscribers, as if the last World tick had
+//                 emitted it (SSP-288): the popups, the HUD and later audio react, but it never enters the World, its
+//                 EventQueue, a replay or a hash. tests/e2e/popups.spec.ts shows speech bubbles on Puddle Lane this way
+//                 (the district has no NPCs or traffic before M3's district content).
 //
 // step(n) runs n fixed 60 Hz loop ticks synchronously (loop.runTicks: input → scenes.fixedUpdate → event drain)
 // and renders once (loop.renderNow). In a shift each loop tick is one World tick (ShiftScene.fixedUpdate calls
@@ -76,6 +81,7 @@ export const TEST_RENDER_STEP_S = 1 / 60;
 /** Largest `seed`: sfc32 seeds are unsigned 32-bit integers. */
 export const MAX_SEED = 0xffff_ffff;
 
+import { EV, type EventType } from '../sim/eventQueue.ts';
 import { decodeInputs, type InputLog, MAX_REPLAY_TICKS } from '../sim/replay.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
 import { createPerfCounters, type PerfSamples } from './perfCounters.ts';
@@ -167,6 +173,8 @@ export type SspTestApi = {
   boot(): TestBoot;
   /** Replays a replay file's `inputs` (`ticks` frames) by World tick from the next tick on (SSP-073). */
   loadInputs(inputs: string, ticks: number): void;
+  /** Dispatches one synthetic sim event to the bus's presentation subscribers, never the sim (SSP-288). */
+  injectEvent(type: number, entity: number, a: number, b: number, c: number): void;
 };
 
 /** What the hooks drive: implemented by main.ts over the Game's loop and renderer. */
@@ -198,6 +206,8 @@ export type TestHookHost = {
   boot(): TestBoot;
   /** Hands a decoded input log to the Game's scripted input (Game.scriptedInput.load). */
   loadInputs(log: InputLog): void;
+  /** Drains a one-event sealed queue of `type` into the Game's event bus (validated here: an EV id, finite numbers). */
+  injectEvent(type: EventType, entity: number, a: number, b: number, c: number): void;
 };
 
 /** An object that can carry `__ssp`: the browser's `window`, or a plain object in unit tests. */
@@ -218,6 +228,12 @@ declare global {
     /** Test hooks, present only with `?test=1`. */
     __ssp?: SspTestApi;
   }
+}
+
+const EVENT_TYPES: ReadonlySet<number> = new Set(Object.values(EV));
+
+function isEventType(type: number): type is EventType {
+  return EVENT_TYPES.has(type);
 }
 
 /** Scene IDs are snake_case, optionally class-prefixed like district IDs (`district.puddle_lane`). */
@@ -350,6 +366,17 @@ export function installTestHooks(
         );
       }
       host.loadInputs(decodeInputs(inputs, ticks));
+    },
+    injectEvent(type: number, entity: number, a: number, b: number, c: number): void {
+      if (!isEventType(type)) {
+        throw new RangeError(`__ssp.injectEvent(type, ...): ${type} is not an EV id`);
+      }
+      if (!Number.isInteger(entity) || ![a, b, c].every((v) => Number.isFinite(v))) {
+        throw new RangeError(
+          '__ssp.injectEvent(type, entity, a, b, c): entity must be an integer, a, b, c finite',
+        );
+      }
+      host.injectEvent(type, entity, a, b, c);
     },
   };
   target.__ssp = api;

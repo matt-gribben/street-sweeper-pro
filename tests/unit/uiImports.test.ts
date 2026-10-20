@@ -76,3 +76,52 @@ describe('src/ui', () => {
     expect(problems).toEqual([]);
   });
 });
+
+// SSP-288's grep check: nothing under src/ui imports the render camera (the composition root injects the projection)
+// or writes sim state through the World and its stores (TECHNICAL_DESIGN §2.1, CLAUDE.md hard rule 2). The mutation
+// scan flags assignments, compound assignments and ++/-- whose target is reached through a sim-state name.
+const CAMERA_IMPORT_RE = /\bfrom\s*(['"])[^'"\n]*render\/camera(?:\.ts)?\1/;
+const SIM_WRITE_RE =
+  /\b(?:world|view|sim|npc|vehicles|vehicle|scoring|litter|stains|complaints|penalties)\.[\w$.]+(?:\[[^\]\n]*\])?\s*(?:[-+*/%&|^]?=(?!=)|\+\+|--)/;
+
+/** One message per line of `source` that imports camera.ts or writes sim state. */
+function scanUiWrites(file: string, source: string): string[] {
+  const code = blankComments(source);
+  const problems: string[] = [];
+  code.split('\n').forEach((line, n) => {
+    if (CAMERA_IMPORT_RE.test(line)) problems.push(`${file}:${n + 1}: imports render/camera.ts`);
+    if (SIM_WRITE_RE.test(line)) problems.push(`${file}:${n + 1}: writes sim state: ${line.trim()}`);
+  });
+  return problems;
+}
+
+describe('src/ui never imports render/camera.ts or writes sim state (SSP-288)', () => {
+  it.each([
+    ["import { groundPxPerMetre } from '../render/camera.ts';"],
+    ['world.vehicle.hp = 0;'],
+    ['view.npc.x[i] += 1;'],
+    ['world.tick++;'],
+    ['npc.state[i] = 3;'],
+  ])('self-test: flags %s', (source) => {
+    expect(scanUiWrites('src/ui/fixture.ts', source)).not.toEqual([]);
+  });
+
+  it.each([
+    ['const x = world.npc.x[i] ?? 0;'],
+    ['if (view.tick === 3) return;'],
+    ['bubbles.xM[s] = px + (npc.x[i] - px) * alpha;'],
+    ['// world.tick = 0'],
+  ])('self-test: accepts %s', (source) => {
+    expect(scanUiWrites('src/ui/fixture.ts', source)).toEqual([]);
+  });
+
+  it('holds for every file under src/ui', () => {
+    const files = listTsFiles(`${REPO_ROOT}${UI_DIR}`);
+    expect(files.map((f) => posix.basename(f.replaceAll('\\', '/')))).toContain('popups.ts');
+    const problems = files.flatMap((full) => {
+      const rel = relative(REPO_ROOT, full).split(sep).join('/');
+      return scanUiWrites(rel, readFileSync(full, 'utf8'));
+    });
+    expect(problems).toEqual([]);
+  });
+});

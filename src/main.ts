@@ -29,6 +29,7 @@ import {
 import { TallyScene } from './scenes/TallyScene.ts';
 import { TextSampleScene } from './scenes/TextSampleScene.ts';
 import { ZooScene } from './scenes/ZooScene.ts';
+import { createEventQueue, pushEvent, resetEvents, sealEvents } from './sim/eventQueue.ts';
 
 /** An error's message, for the console and `__ssp.boot()`. */
 function errorMessage(error: unknown): string {
@@ -229,6 +230,16 @@ const testHooks = installTestHooks(window, search, {
     const scripted = game.scriptedInput;
     if (scripted === null) throw new Error('__ssp.loadInputs: the Game has no scripted input');
     scripted.load(log);
+  },
+  // A queue of its own per call (test mode only), stamped as the last World tick's: the bus drains it once.
+  injectEvent: (type, entity, a, b, c) => {
+    const top = game.scenes.top;
+    const world = top instanceof ShiftScene ? top.worldView : null;
+    const queue = createEventQueue();
+    resetEvents(queue, Math.max(0, (world?.tick ?? game.loop.ticks) - 1));
+    pushEvent(queue, type, entity, a, b, c);
+    sealEvents(queue);
+    game.events.drain(queue);
   },
 });
 

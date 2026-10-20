@@ -50,7 +50,7 @@ Related docs: [GDD](GDD.md) (what the events mean in play), [TECHNICAL_DESIGN](T
 | **Visibly Satisfying Clean** | Cleaning must also be *audibly* satisfying. The brush synth crackles harder as it erases grime cells. Each pickup is a crisp "thwip" whose pitch climbs with the chain. When a frontage reaches 100% it gets a sparkle sting. |
 | **Heavy, Honest Machine** | Bessie's diesel is always under you. Pitch follows the hydrostatic drive continuously, with no gear changes. A fuller hopper makes the engine strain: lower pitch, more grit. Kerbs thud and the suspension creaks. |
 | **Thorough vs. Fast** | Going fast has its own sound. Flung items give a sad "fwip" with a falling blip, and transit speed lifts the engine an octave. The trade-off can be heard without looking at the HUD. |
-| **Charming Chaos** | Every character has a voice "bark" in synthesised gibberish (the "Oi!", Doris's "HMPH!", the cat's yowl), and each one is captioned. Mistakes sound funny. Nothing sounds painful: no screams, no crunches of bone, no screeching-tyre-then-thud. |
+| **Charming Chaos** | Every character has a voice "bark" in synthesised gibberish (the "Oi!", Doris's "Hmph!", the cat's yowl), and each one is captioned. Mistakes sound funny. Nothing sounds painful: no screams, no crunches of bone, no screeching-tyre-then-thud. |
 | **Every Pixel Reproducible** | Every sound is a pure function of a committed text source: JSON parameter presets and tracker song data. No recordings, no sample packs, no generated audio. |
 
 ### 1.3 Era and palette
@@ -76,7 +76,7 @@ All melodies are original. Nothing quotes or paraphrases an existing tune, inclu
 |---|---|
 | Use short, bright transients that read well on laptop speakers | Build sub-bass-heavy sounds that vanish on laptops and phones |
 | Pitch voice barks by character (kids high, businessman low) | Use realistic human screams or pain sounds, even cartoonish ones |
-| Make the comedy timing land: a beat of silence before Doris's "HMPH!" | Stack five one-shots on the same frame (§4.4 caps this) |
+| Make the comedy timing land: a beat of silence before Doris's "Hmph!" | Stack five one-shots on the same frame (§4.4 caps this) |
 | Leave the 1–4 kHz band clear for pickups and barks while music plays | Write melodies that sit in the same register as `pickup_small` |
 | Use a major key by default; minor keys only for Wednesday and Saturday colour | Use horror stings or tension drones. Stakes are comic. |
 
@@ -368,7 +368,7 @@ Barks are **synthesised gibberish** (about 3–6 formant-ish square syllables wi
 | ID | Trigger | Sound design | Engine | Var | Jit | Bus | Pri | Voices / cd |
 |---|---|---|---|---|---|---|---|---|
 | `sfx.ped_oi` | Any human pedestrian is hit, splashed, startled by a near miss, coughs in dust (named `cough`), or catches you cleaning chalk with no kid present. Named `tut` for the Inspector logging a frontage below 90%. Named `huh` for the litterbug when Caught! | "Oi!": a two-syllable square blip, up then down (≈ 330 → 440 → 260 Hz), 280 ms. `cough`: three noise "khuh" bursts. `tut`: two dry clicks. `huh`: a single rising blip. | jsfxr | 6 + `cough`ᴺ, `tut`ᴺ, `huh`ᴺ | 60 | voice | 4 | 2 / 250 |
-| `sfx.granny_harrumph` | `npc.old_woman` (Doris) glares when blocked, shakes her fist after the horn, or is hit. Named `whack`: each handbag hit (2 HP) during the chase. | "HMPH!": a low nasal pulse burst with a falling pitch and a breathy noise tail, 400 ms, preceded by **150 ms of rendered silence** (comic timing). `whack`: a leathery thwack (noise thump plus a 200 Hz body). | jsfxr | 3 + `whack`ᴺ | 40 | voice | 4 | 1 / 600 |
+| `sfx.granny_harrumph` | `npc.old_woman` (Doris) glares when blocked, shakes her fist after the horn, or is hit. Named `whack`: each handbag hit (2 HP) during the chase. | "Hmph!": a low nasal pulse burst with a falling pitch and a breathy noise tail, 400 ms, preceded by **150 ms of rendered silence** (comic timing). `whack`: a leathery thwack (noise thump plus a 200 Hz body). | jsfxr | 3 + `whack`ᴺ | 40 | voice | 4 | 1 / 600 |
 | `sfx.kid_waah` | `npc.kid_chalk` sees you cleaning their chalk art. `npc.kid_skateboard` is hit. | "WAAAH!": a rising-then-falling square wail with wide vibrato, 1.1 s, starting high (≈ 700 Hz) | jsfxr | 2 | 50 | voice | 4 | 1 / 1,000 |
 
 Runtime pitch offsets for barks, in semitones: `npc.kid_*` +5, `npc.shopper` ±2 (by outfit swap index), `npc.jogger` +1, `npc.businessman` −3, `npc.old_man_frame` −5, `npc.reveller` −2 (with +40 cents of extra wobble), `npc.inspector` −4, `npc.lollipop_lady` +2. Everyone else is 0.
@@ -905,13 +905,14 @@ Every gameplay-relevant sound has a **visual equivalent**, and no information is
 - **On-screen** sources get a speech bubble anchored above them.
 - **Off-screen** sources get a caption at the screen edge with an arrow glyph (← → ↑ ↓) pointing to the source.
 - Display time is 1.5 s plus 60 ms per character, at most 3 s. At most 3 captions show at once, and newer captions replace older ones of the same ID.
+- *As built for speech bubbles (SSP-288, `src/ui/popups.ts` `BubbleManager`; SSP-184 extends it for captions):* the time is rounded to whole sim ticks (`Oi!` 1.68 s = 101 ticks, 10 characters 2.1 s = 126, 25 or more 3.0 s = 180) and counts World ticks, so bubbles freeze under Pause. A 4th bubble replaces the oldest showing; a bubble whose ID is showing replaces it in place (its timer restarts) rather than stacking. A speech bubble's ID is its source (the NPC's handle, or the car), so a car's next honk restarts its "!". The bubble look is in [ART_BIBLE §11](ART_BIBLE.md#11-vfx). Doris's bark is spelt "Hmph!" everywhere (GDD §18.3's spelling; this table said "HMPH!" before SSP-288).
 
 | Sound | Speech caption | Sound caption (Speech + sounds) | Always-on visual cue |
 |---|---|---|---|
 | `ped_oi` | "Oi!" (varies: "Watch it!", "Oi, Sweepy!", "My shoes!"; seeded from a list in `src/data/entities.json`) | — | Pedestrian angry animation |
 | `ped_oi:cough` | "*cough cough*" | — | Dust cloud VFX |
 | `ped_oi:tut` | "Tut tut." | — | Clipboard tick and −100 popup |
-| `granny_harrumph` | "HMPH!" / "Young people today!" | — | Fist-shake animation |
+| `granny_harrumph` | "Hmph!" / "Young people today!" | — | Fist-shake animation |
 | `granny_harrumph:whack` | "Take that!" | — | Handbag swing, HP flash |
 | `kid_waah` | "WAAAH!" | — | Crying animation |
 | `cat_yowl` | — | [Cat yowls] (with the "Not the cat!" popup) | Cat leaps on to the roof |

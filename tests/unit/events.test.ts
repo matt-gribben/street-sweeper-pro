@@ -81,9 +81,12 @@ describe('EventBus', () => {
       [EV.DustCloud, -1, 81.5, 61.25, -1],
       [EV.Cough, 6, 79, 58.5, 1],
       [EV.VehicleHit, 3, 40.5, 7.25, VEHICLE_IDS.indexOf('veh.mobility_scooter')],
+      [EV.PickupScored, 3, 40.5, 12.25, 150],
+      [EV.Penalty, Offence.Hit, 30.5, 9.25, -250],
+      [EV.FistShake, 12, 31, 9.5, 90],
       [EV.ShiftEnd, -1, ShiftEndReason.TimeUp, 0, 0],
     ]);
-    expect(bus.drain(queue)).toBe(32);
+    expect(bus.drain(queue)).toBe(35);
     expect(seen).toEqual([
       { type: EV.Impact, tick: 42, entity: -1, x: 1.5, y: -2.25, speedMps: 4.75 },
       { type: EV.KerbJolt, tick: 42, entity: -1, x: 3, y: 4, speedMps: 2.5 },
@@ -132,6 +135,9 @@ describe('EventBus', () => {
       { type: EV.DustCloud, tick: 42, entity: -1, x: 81.5, y: 61.25, side: -1 },
       { type: EV.Cough, tick: 42, entity: 6, x: 79, y: 58.5, kind: 'npc.old_woman' },
       { type: EV.VehicleHit, tick: 42, entity: 3, x: 40.5, y: 7.25, kind: 'veh.mobility_scooter' },
+      { type: EV.PickupScored, tick: 42, entity: 3, x: 40.5, y: 12.25, multiplier: 3, pts: 150 },
+      { type: EV.Penalty, tick: 42, entity: Offence.Hit, x: 30.5, y: 9.25, reason: Offence.Hit, pts: -250 },
+      { type: EV.FistShake, tick: 42, entity: 12, x: 31, y: 9.5, ticks: 90 },
       { type: EV.ShiftEnd, tick: 42, entity: -1, reason: ShiftEndReason.TimeUp },
     ]);
   });
@@ -249,6 +255,9 @@ describe('EventBus', () => {
     expect(() => bus.drain(sealedQueue(16, [[EV.DumpEnd, 0, 0, 10, 1]]))).toThrow(/dump site 0/);
     expect(() => bus.drain(sealedQueue(17, [[EV.Complaint, -1, 0, 0, 0]]))).toThrow(/unknown offence 0/);
     expect(() => bus.drain(sealedQueue(18, [[EV.Complaint, -1, 0, 0, 99]]))).toThrow(/unknown offence 99/);
+    expect(() => bus.drain(sealedQueue(19, [[EV.Penalty, 0, 0, 0, -10]]))).toThrow(
+      /Penalty at tick 19 carries unknown offence 0/,
+    );
     expect(() => bus.drain(sealedQueue(19, [[EV.Knock, 0, 0, 0, 5]]))).toThrow(/knockable kind 5/);
     expect(() => bus.drain(sealedQueue(20, [[EV.NpcHit, 0, 0, 0, NPC_IDS.length]]))).toThrow(
       /unknown NPC kind/,
@@ -280,8 +289,9 @@ describe('EventBus', () => {
           (type) =>
             [
               type,
-              // StainCleaned and GlassSwept carry a kind (a STAIN_IDS / HAZARD_ENTITY_IDS index) in `entity`.
-              type === EV.StainCleaned || type === EV.GlassSwept ? 0 : -1,
+              // StainCleaned and GlassSwept carry a kind (a STAIN_IDS / HAZARD_ENTITY_IDS index) in `entity`,
+              // Penalty its Offence code.
+              type === EV.StainCleaned || type === EV.GlassSwept ? 0 : type === EV.Penalty ? Offence.Hit : -1,
               type === EV.ShiftEnd
                 ? ShiftEndReason.Towed
                 : type === EV.DumpStart || type === EV.DumpEnd

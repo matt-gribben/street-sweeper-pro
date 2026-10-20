@@ -12,6 +12,7 @@ import {
   type TestHookHost,
   type TestHookTarget,
 } from '../../src/debug/testHooks.ts';
+import { EV } from '../../src/sim/eventQueue.ts';
 import {
   appendInput,
   createInputLog,
@@ -56,6 +57,9 @@ function fakeHost(
     boot: () => ({ status: 'failed', error: "asset registry: atlas 'ui' failed to load", lutBuilds: 1 }),
     loadInputs: (log) => {
       calls.push(`loadInputs ${log.length}`);
+    },
+    injectEvent: (type, entity, a, b, c) => {
+      calls.push(`injectEvent ${type} ${entity} ${a} ${b} ${c}`);
     },
   };
 }
@@ -181,6 +185,7 @@ describe('installTestHooks with test=1', () => {
     expect(typeof api?.setCamera).toBe('function');
     expect(Object.keys(api ?? {}).sort()).toEqual([
       'boot',
+      'injectEvent',
       'loadInputs',
       'perf',
       'perfReset',
@@ -234,6 +239,21 @@ describe('installTestHooks with test=1', () => {
       lutBuilds: 1,
     });
     expect(JSON.parse(JSON.stringify(boot))).toEqual(boot);
+  });
+
+  it('injectEvent(type, entity, a, b, c) hands a valid EV id and payload to the host, and refuses anything else (SSP-288)', () => {
+    const target: TestHookTarget = {};
+    const host = fakeHost();
+    installTestHooks(target, '?test=1', host);
+    const api = target.__ssp;
+    if (api === undefined) throw new Error('no api');
+    api.injectEvent(EV.NpcHit, -1, 12.5, 30.25, 0);
+    expect(host.calls).toEqual([`injectEvent ${EV.NpcHit} -1 12.5 30.25 0`]);
+    expect(() => api.injectEvent(0, -1, 0, 0, 0)).toThrow(/not an EV id/);
+    expect(() => api.injectEvent(9999, -1, 0, 0, 0)).toThrow(/not an EV id/);
+    expect(() => api.injectEvent(EV.Caught, 1.5, 0, 0, 0)).toThrow(/entity must be an integer/);
+    expect(() => api.injectEvent(EV.Caught, 1, Number.NaN, 0, 0)).toThrow(/finite/);
+    expect(host.calls).toHaveLength(1);
   });
 
   it('loadInputs(inputs, ticks) decodes a replay log strictly and hands it to the host (SSP-073)', () => {

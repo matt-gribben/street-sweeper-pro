@@ -23,8 +23,8 @@ export const EVENTS_PER_TICK = 512;
  * Fling, SSP-061 StainCleaned, SSP-062 DumpStart and DumpEnd, SSP-093 HazardJolt and HazardStop, SSP-063
  * ComboTier, SSP-078 Complaint and Horn, SSP-092 Knock, SSP-082 NpcHit, SSP-089 CarHorn, SSP-083
  * HandbagWhack, SSP-084 Caught, SSP-090 Dent, SSP-086 LeadTangle, SSP-096 PowerUp, SSP-094 Splash, NpcSplash,
- * GlassSmash and GlassSwept, SSP-095 NearMiss, DustCloud and Cough, SSP-088 PigeonScatter, SSP-091 VehicleHit;
- * later issues append the rest of the §7.2 list.
+ * GlassSmash and GlassSwept, SSP-095 NearMiss, DustCloud and Cough, SSP-088 PigeonScatter, SSP-091 VehicleHit,
+ * SSP-288 PickupScored, Penalty and FistShake; later issues append the rest of the §7.2 list.
  *
  * Payloads (`entity` is a store index, or −1 for Bessie and for events with no entity):
  * - Impact: a = x, b = y (contact point, m), c = normal impact speed vn (m/s). Emitted by phase 3 (SSP-036), for
@@ -136,6 +136,18 @@ export const EVENTS_PER_TICK = 512;
  *   once per contact episode in which Bessie's closing speed toward it is at least
  *   streetLife.actorHit.minClosingSpeedMps (1.0 m/s); the entities.json `hit` penalty fact goes with it and the
  *   rider falls over. Audio plays its sfx.hit (`ped_oi`, `granny_harrumph`, M5).
+ * - PickupScored: entity = the combo multiplier the pickup scored at (1..5), a = x, b = y (the pickup's position,
+ *   copied from its EV.LitterCollected, EV.StainCleaned or EV.GlassSwept), c = the points it scored (its `pts` ×
+ *   that multiplier; 0 for a 0-point pickup). Phase 9 (scoring.ts stepScoring, SSP-288), once per pickup, straight
+ *   after that pickup's chain increment (and any EV.ComboTier it caused). A presentation fact only: scoring has
+ *   already counted the points; the world-space score popup (ui/popups.ts) reads it.
+ * - Penalty: entity = its Offence code (complaints.ts), a = x, b = y (where the offence happened, m), c = its
+ *   points (0 or below). Phase 9 (complaints.ts applyPenalties, SSP-288), once per penalty fact, in the order
+ *   recorded, before the complaints it files. The world-space penalty popup (ui/popups.ts) reads it.
+ * - FistShake: entity = Doris's NPC store index, a = x, b = y (her centre, m), c = how long she shakes it (ticks,
+ *   rules.fistShakeS × 60 = 90). Phase 7 (npc/behaviours/oldWoman.ts, SSP-288), when a Horn delivered while she
+ *   glares starts a FistShake. Her "Hmph!" bubble (ui/popups.ts) and sfx.granny_harrumph (her entities.json
+ *   sfx.horn, M5) read it.
  */
 export const EV = {
   Impact: 1,
@@ -170,6 +182,9 @@ export const EV = {
   Cough: 30,
   PigeonScatter: 31,
   VehicleHit: 32,
+  PickupScored: 33,
+  Penalty: 34,
+  FistShake: 35,
 } as const;
 export type EventType = (typeof EV)[keyof typeof EV];
 

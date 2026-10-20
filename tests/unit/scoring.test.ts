@@ -60,6 +60,8 @@ type Rig = {
   t: number;
   /** Every EV.ComboTier so far, as [tick, multiplier, previous, chain]. */
   tiers: number[][];
+  /** Every EV.PickupScored so far (SSP-288), as [tick, multiplier, x, y, points]. */
+  scored: number[][];
 };
 
 function rig(): Rig {
@@ -69,6 +71,7 @@ function rig(): Rig {
     dirt: { tickCleanedCells: 0, tickCleanedGutterCells: 0, kerbContact: false },
     t: 0,
     tiers: [],
+    scored: [],
   };
 }
 
@@ -86,6 +89,11 @@ function tick(r: Rig, f: Facts = {}): void {
   const before = q.count;
   stepScoring(r.s, q, r.dirt, f.draining ?? false);
   for (let i = before; i < q.count; i++) {
+    // Phase 9 appends only tier changes and (SSP-288) one EV.PickupScored per pickup.
+    if (q.type[i] === EV.PickupScored) {
+      r.scored.push([r.t, q.entity[i] as number, q.a[i] as number, q.b[i] as number, q.c[i] as number]);
+      continue;
+    }
     expect(q.type[i]).toBe(EV.ComboTier);
     r.tiers.push([r.t, q.a[i] as number, q.b[i] as number, q.c[i] as number]);
   }
@@ -205,8 +213,38 @@ describe('pickups', () => {
     stepScoring(r.s, r.q, r.dirt, false);
     expect(r.s.combo.chain).toBe(10);
     expect(r.s.score).toBe(9 * 10 + 20);
-    expect(r.q.count).toBe(14);
-    expect(r.q.type[13]).toBe(EV.ComboTier);
+    // 13 facts, then per pickup its EV.PickupScored (SSP-288), the 10th preceded by its EV.ComboTier.
+    expect(r.q.count).toBe(24);
+    for (let i = 13; i < 22; i++) expect(r.q.type[i]).toBe(EV.PickupScored);
+    expect(r.q.type[22]).toBe(EV.ComboTier);
+    expect(r.q.type[23]).toBe(EV.PickupScored);
+  });
+
+  it('reports each pickup as EV.PickupScored (SSP-288): its position, the multiplier it scored at and its points', () => {
+    const r = rig();
+    tick(r, { litter: Array(8).fill('litter.spilled_shopping') });
+    expect(r.scored).toHaveLength(8);
+    expect(r.scored[0]).toEqual([0, 1, 1, 2, 0]);
+    r.scored.length = 0;
+    // Chain 9 (×1), 10 (×2), 11 (×2): the bin bags at (1, 2), the milkshake at (3, 4).
+    tick(r, { litter: ['litter.bin_bag', 'litter.bin_bag'], stains: ['stain.milkshake'] });
+    expect(r.scored).toEqual([
+      [1, 1, 1, 2, 50],
+      [1, 2, 1, 2, 100],
+      [1, 2, 3, 4, 40],
+    ]);
+    // The tier change comes before the pickup that caused it.
+    const q = r.q;
+    const types = Array.from({ length: q.count }, (_, i) => q.type[i]);
+    expect(types).toEqual([
+      EV.LitterCollected,
+      EV.LitterCollected,
+      EV.StainCleaned,
+      EV.PickupScored,
+      EV.ComboTier,
+      EV.PickupScored,
+      EV.PickupScored,
+    ]);
   });
 });
 

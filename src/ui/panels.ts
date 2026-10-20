@@ -22,6 +22,16 @@
 // The label is centred on its ink (the plain advance's trailing 1 px gap excluded) and vertically on the 7 px cap
 // height. buttonWidthFor() gives the narrowest button whose centred label clears the cursor slot on both sides.
 //
+// Speech bubbles (AUDIO_DESIGN §13.2, GDD §15.2 "diegesis where cheap"; SSP-288): an ink (00) panel with a 1 px chalk
+// (07) outline whose four corner pixels are cut, and a 3-row tail under its bottom edge pointing down at the source:
+//   bottom edge   07 07 00 00 00 07 07     the outline opens over the tail (tx − 1 .. tx + 1 in ink)
+//   tail row 1          07 00 07
+//   tail row 2             07               the tip, at (tx, bottom + 2)
+// They are not 9-slice: a 9-slice panel is at least 16 px tall, and a one-line bubble is 11 (1 px outline, 1 px pad,
+// the 7 px line, 1 px pad, 1 px outline). They are drawn from sub-rectangles of the solid `ui.bar_fill` frame
+// recoloured 07 → the wanted index (the HUD's bars do the same), so they cost quads, never atlas space, and stay in
+// the one UI draw. Placeholder look until SSP-156 (M4).
+//
 // Per frame nothing allocates: slices are computed into a preallocated Int32Array, button looks are a table built at
 // load, and text goes through BitmapFont.draw (allocation-free). The section between the "per-frame draw path"
 // markers is scanned by tests/unit/panels.test.ts for `new` and array literals.
@@ -57,6 +67,28 @@ export const SLICE_W = 2;
 export const SLICE_H = 3;
 export const SLICE_DST_X = 4;
 export const SLICE_DST_Y = 5;
+
+/** The solid frame bubbles are cut from (ui.bar_fill, 66×8 of 07), and its ink. */
+export const SOLID_FRAME: FrameId = 'ui.bar_fill:bar:-:0';
+const SOLID_FRAME_W_PX = 66;
+const SOLID_FRAME_H_PX = 8;
+const SOLID_FRAME_INK = 7;
+
+/** Speech-bubble colours (AUDIO_DESIGN §13.2): chalk text and outline on an ink panel. */
+export const BUBBLE_FILL = 0;
+export const BUBBLE_OUTLINE = 7;
+export const BUBBLE_TEXT = 7;
+/** Pixels between the outline and the text's ink: left/right and top/bottom. */
+export const BUBBLE_PAD_X_PX = 2;
+export const BUBBLE_PAD_Y_PX = 1;
+/** Rows of tail below the panel's bottom edge; the tip is the last. */
+export const BUBBLE_TAIL_PX = 2;
+/** The tail's half width where it meets the panel (it opens tx − 1 .. tx + 1). */
+export const BUBBLE_TAIL_HALF_PX = 1;
+/** The tail's centre keeps this far from the panel's sides (clear of the cut corners and the outline). */
+export const BUBBLE_TAIL_INSET_PX = 3;
+/** The narrowest bubble: the tail and its insets on both sides. */
+export const BUBBLE_MIN_W_PX = 2 * BUBBLE_TAIL_INSET_PX + 1;
 
 /** The four button states (ART_BIBLE §12.3). */
 export const ButtonState = { Normal: 0, Focus: 1, Pressed: 2, Disabled: 3 } as const;
@@ -149,6 +181,17 @@ export interface PanelSink extends GlyphSink {
     recolourFrom: number,
     recolourTo: number,
   ): void;
+}
+
+/** Width of the bubble that holds one line of `inkPx` px of text: the ink, the pads and the outline. */
+export function bubbleWidthFor(inkPx: number): number {
+  const w = inkPx + 2 * (BUBBLE_PAD_X_PX + 1);
+  return w < BUBBLE_MIN_W_PX ? BUBBLE_MIN_W_PX : w;
+}
+
+/** Height of a bubble holding one line of a font `glyphHPx` tall (11 for Kerbside 5×7); the tail is extra. */
+export function bubbleHeightFor(glyphHPx: number): number {
+  return glyphHPx + 2 * (BUBBLE_PAD_Y_PX + 1);
 }
 
 /** Slices along one axis of a panel `sizePx` long: two corners plus ceil((size − 16) / 8) repeats. */
@@ -265,6 +308,52 @@ export class Panels {
     font.draw(this.sink, label, labelX, textY, look.labelColour);
   }
 
+  /**
+   * Draws a speech bubble's panel w × h with its top-left at (x, y) and its tail under the bottom edge centred on
+   * column `tailX`, so the tip is at (tailX, y + h − 1 + BUBBLE_TAIL_PX); whole internal pixels. `tailX` is clamped
+   * to BUBBLE_TAIL_INSET_PX inside the sides; w is at least BUBBLE_MIN_W_PX and h at least 3. The text is the
+   * caller's (popups.ts draws it after the panel, so it lies on top). Allocates nothing.
+   */
+  drawBubble(xPx: number, yPx: number, wPx: number, hPx: number, tailXPx: number): void {
+    if (
+      !Number.isInteger(xPx) ||
+      !Number.isInteger(yPx) ||
+      !Number.isInteger(tailXPx) ||
+      !Number.isInteger(wPx) ||
+      !Number.isInteger(hPx) ||
+      wPx < BUBBLE_MIN_W_PX ||
+      hPx < 3
+    ) {
+      rejectBubble(xPx, yPx, wPx, hPx, tailXPx);
+    }
+    const lo = xPx + BUBBLE_TAIL_INSET_PX;
+    const hi = xPx + wPx - 1 - BUBBLE_TAIL_INSET_PX;
+    const tx = tailXPx < lo ? lo : tailXPx > hi ? hi : tailXPx;
+    const bottom = yPx + hPx - 1;
+    // The outline as two overlapping chalk rectangles (so the four corner pixels stay cut), then the ink inside.
+    this.solid(xPx + 1, yPx, wPx - 2, hPx, BUBBLE_OUTLINE);
+    this.solid(xPx, yPx + 1, wPx, hPx - 2, BUBBLE_OUTLINE);
+    this.solid(xPx + 1, yPx + 1, wPx - 2, hPx - 2, BUBBLE_FILL);
+    // The tail: the bottom edge opens over it, then it narrows to the tip.
+    const half = BUBBLE_TAIL_HALF_PX;
+    this.solid(tx - half, bottom, 2 * half + 1, 1, BUBBLE_FILL);
+    this.solid(tx - half, bottom + 1, 2 * half + 1, 1, BUBBLE_OUTLINE);
+    this.solid(tx, bottom + 1, 1, 1, BUBBLE_FILL);
+    this.solid(tx, bottom + 2, 1, 1, BUBBLE_OUTLINE);
+  }
+
+  /** A solid w × h rectangle in palette colour `colour`, tiled from SOLID_FRAME's 66×8 (no-op when empty). */
+  private solid(xPx: number, yPx: number, wPx: number, hPx: number, colour: number): void {
+    const sink = this.sink;
+    for (let row = 0; row < hPx; row += SOLID_FRAME_H_PX) {
+      const rows = hPx - row < SOLID_FRAME_H_PX ? hPx - row : SOLID_FRAME_H_PX;
+      for (let col = 0; col < wPx; col += SOLID_FRAME_W_PX) {
+        const cols = wPx - col < SOLID_FRAME_W_PX ? wPx - col : SOLID_FRAME_W_PX;
+        sink.addRegion(SOLID_FRAME, 0, 0, cols, rows, xPx + col, yPx + row, SOLID_FRAME_INK, colour);
+      }
+    }
+  }
+
   /** The 9-slice quads of `style`'s frame over (x, y, w, h), each recoloured from → to. */
   private slicedPanel(
     style: PanelStyle,
@@ -302,6 +391,12 @@ export class Panels {
 function rejectPanelSize(wPx: number, hPx: number): never {
   throw new RangeError(
     `panel size ${wPx}x${hPx}: each side must be whole pixels and at least ${PANEL_MIN_PX}`,
+  );
+}
+
+function rejectBubble(xPx: number, yPx: number, wPx: number, hPx: number, tailXPx: number): never {
+  throw new RangeError(
+    `bubble (${xPx}, ${yPx}) ${wPx}x${hPx} tail ${tailXPx}: whole internal pixels, at least ${BUBBLE_MIN_W_PX}x3`,
   );
 }
 

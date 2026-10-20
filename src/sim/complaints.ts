@@ -8,7 +8,8 @@
 //
 // Penalties (applyPenalties, phase 9, before stepScoring). Every fact in the tick's penalty log (penalties.ts),
 // in the order recorded: its points go to scoring's penalty API (scoring.ts addPenalty, which stepScoring
-// applies after the tick's pickups and which resets the chain), its complaints are filed, and the police-witness
+// applies after the tick's pickups and which resets the chain), EV.Penalty reports it (SSP-288: the reason, the
+// position and the points, for the world-space penalty popup), its complaints are filed, and the police-witness
 // hook is asked for extra complaints at its position. The log is then empty. So a tick with any penalty fact
 // ends with chain 0, and every fact's points come off the score exactly once.
 //
@@ -312,6 +313,17 @@ export function policeWitnessComplaints(_c: Complaints, _log: PenaltyLog, _i: nu
 }
 
 /**
+ * EV.Penalty for penalty fact `i` (SSP-288): its Offence in `entity`, its position and its points. A presentation
+ * fact for the world-space penalty popup; the points still go through scoring's penalty API.
+ */
+function emitPenalty(events: EventQueue, log: PenaltyLog, i: number): void {
+  const e = emitEvent(events, EV.Penalty, log.reason[i] as number);
+  events.a[e] = log.x[i] as number;
+  events.b[e] = log.y[i] as number;
+  events.c[e] = log.pts[i] as number;
+}
+
+/**
  * Phase 9, after stepHornSpam and before stepScoring: consume the tick's penalty facts in order (see the
  * header): points to scoring's penalty API (applied, with the chain reset, after the tick's pickups), complaints
  * and the police witness's extras to the meter with EV.Complaint each. Leaves the log empty. Allocation-free.
@@ -320,6 +332,7 @@ export function applyPenalties(c: Complaints, log: PenaltyLog, scoring: Scoring,
   const n = log.count;
   for (let i = 0; i < n; i += 1) {
     addPenalty(scoring, log.pts[i] as number);
+    emitPenalty(events, log, i);
     const k = log.complaints[i] as number;
     if (k > 0) fileComplaints(c, events, k, log.reason[i] as Offence, log, i);
     const extra = policeWitnessComplaints(c, log, i);

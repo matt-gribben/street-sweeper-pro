@@ -181,6 +181,7 @@ async function browserLike(search: string, options: ShiftSceneOptions = {}) {
     sceneStack: () => scenes.ids(),
     boot: () => ({ status: 'loaded', error: null, lutBuilds: 1 }),
     loadInputs: (log) => scripted.load(log),
+    injectEvent: () => {},
   });
   if (hooks === null) throw new Error('hooks not installed');
   loop.start();

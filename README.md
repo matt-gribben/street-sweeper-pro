@@ -14,15 +14,21 @@ A top-down pixel-art arcade driving game about the most underappreciated job in 
 
 ---
 
-## Status: pre-alpha, M2 complete (closed 2026-10-20 by SSP-074, pending owner approval and the `m2` tag); M3 in progress
+## Status: pre-alpha, M3 complete (closed 2026-10-20 by SSP-109, pending owner approval and the `m3` tag)
 
-Milestone **M2, Sweeping Core**, is done (2026-10-20): the first playable. `npm run dev` opens on the Puddle Lane intro card, and Space starts a complete 240 s shift. You sweep litter and grime with the brush, fill the hopper, dump at a depot bay or the skip, spray stains, and refill at hydrants, and you score with combos, Kerb Hugger and Clean Sweeps. A basic HUD runs throughout, and the shift ends on a numbers-only tally with Try Again. The evidence is in [docs/ROADMAP.md](docs/ROADMAP.md#m2-sweeping-core). Some M3 work (NPC store and steering, complaints and the horn, SACKED and TOWED, Big Pam's radio, the asset zoo) has merged too, but Puddle Lane has no pedestrians or traffic yet.
+Milestone **M3, Living Street**, is done (2026-10-20): the street fights back. Puddle Lane now has its Monday cast: shoppers, Doris, the old man with his walking frame, a parent with a pushchair, the postie, a dog walker and dog on a lead, and cats on walls and car roofs. Traffic follows a lane graph, parks in bays, queues behind Bessie and honks. There are bins and recycling boxes to knock over, and puddles to splash through. Every penalty, the Council Complaints meter and both fail states (SACKED and TOWED) work, as do the horn, near misses, dust coughing, the six power-ups, Big Pam's radio with the tutorial prompts, the pause menu, score popups and speech bubbles. A grey-box High Street (Tuesday) holds the rest of the Mon–Tue cast: businessmen, litterbugs, market traders, pigeons, taxis, buses and bicycles. Every sprite is still a placeholder under its final ID; real art is M4. The evidence and the frozen Mon–Tue entity list are in [docs/ROADMAP.md](docs/ROADMAP.md#m3-living-street).
 
-Milestone **M1, Drivable Bessie**, closed on 2026-10-19 (approved and tagged `m1`). `npm run dev` opens Puddle Lane, compiled from its ASCII map and drawn with procedural placeholder tiles and facades. You can drive Bessie there with the keyboard or a gamepad. Under her is the deterministic sim: a kinematic bicycle model, OBB/SAT collision with impact damage, kerb jolts and surface grip. The camera adds look-ahead and speed zoom, and the F1 dev panel tunes the handling live. The first 3,600-tick replay hash is committed. The evidence is in [docs/ROADMAP.md](docs/ROADMAP.md#m1-drivable-bessie). Milestone **M0, Foundations & Look Spike** (pinned scaffold, forge, Blender and Codex wrappers, the locked Kerbside-32 palette in [assets-src/STYLE.md](assets-src/STYLE.md)) closed earlier the same day, and the decisions it settled are in the [M0 decision log](docs/ROADMAP.md#8-m0-spike-decision-log). There is no audio until M5. The milestone in progress is **M3, Living Street**.
+Milestone **M2, Sweeping Core**, closed on 2026-10-20 (approved and tagged `m2`): the first playable. `npm run dev` opens on the Puddle Lane intro card, and Space starts a complete 240 s shift. You sweep litter and grime with the brush, fill the hopper, dump at a depot bay or the skip, spray stains, and refill at hydrants, and you score with combos, Kerb Hugger and Clean Sweeps. A basic HUD runs throughout, and the shift ends on a numbers-only tally with Try Again. The evidence is in [docs/ROADMAP.md](docs/ROADMAP.md#m2-sweeping-core).
+
+Milestone **M1, Drivable Bessie**, closed on 2026-10-19 (approved and tagged `m1`). `npm run dev` opens Puddle Lane, compiled from its ASCII map and drawn with procedural placeholder tiles and facades. You can drive Bessie there with the keyboard or a gamepad. Under her is the deterministic sim: a kinematic bicycle model, OBB/SAT collision with impact damage, kerb jolts and surface grip. The camera adds look-ahead and speed zoom, and the F1 dev panel tunes the handling live. The first 3,600-tick replay hash is committed. The evidence is in [docs/ROADMAP.md](docs/ROADMAP.md#m1-drivable-bessie). Milestone **M0, Foundations & Look Spike** (pinned scaffold, forge, Blender and Codex wrappers, the locked Kerbside-32 palette in [assets-src/STYLE.md](assets-src/STYLE.md)) closed earlier the same day, and the decisions it settled are in the [M0 decision log](docs/ROADMAP.md#8-m0-spike-decision-log). There is no audio until M5. The next milestone is **M4, Art Pass 1**.
 
 Sections below that describe commands, directories or behaviour that later milestones add are marked *(partly planned)*, with what works today stated next to them.
 
 ### Screenshots
+
+![A Puddle Lane street with a postie on the pavement, a cat sitting on the roof of a parked green hatchback, two parked cars and a moving one, puddles, a wheelie bin and the HUD with the five empty complaint boxes](docs/img/m3-street.png)
+
+Puddle Lane in the M3 build, about two minutes into a shift (seed 1, tick 7,800). The postie is on his door round, a cat rides a parked car's roof, and the five boxes top right are the Council Complaints meter. This is the `street_parade.png` capture from `tests/e2e/streetActors.spec.ts`, upscaled 4× with nearest-neighbour filtering. Every sprite is a placeholder until M4.
 
 ![Mangle Street in Puddle Lane: a band of clean asphalt down the middle of the road where the brush has passed, between thick brown grime on both sides, with the HUD timer, score, Tidy % bar, speed bar, hopper, water and dignity meters](docs/img/m2-sweep.png)
 
@@ -124,7 +130,7 @@ Full pipeline, exact tool invocations and their gotchas: [docs/ASSET_PIPELINE.md
 
 ## Quick start
 
-> These work today. `npm run dev` opens on the Puddle Lane intro card; Space starts the 240 s shift with Bessie at the depot (M2). W/↑ throttle, S/↓ brake (hold at a standstill to reverse), A/D or ←/→ steer, Space lowers or raises the brush, Left Shift sprays, E (held, stopped in a depot bay or beside the skip) dumps, H sounds the horn; on a gamepad RT, LT, the left stick and A. The shift ends on the tally, where Try Again restarts it. F1 opens the dev panel, and the asset zoo is at `?test=1&scene=zoo` (SSP-298). The M0 spike city is still at `?world=spike_city` in dev builds.
+> These work today. `npm run dev` opens on the Puddle Lane intro card; Space starts the 240 s shift with Bessie at the depot (M2). W/↑ throttle, S/↓ brake (hold at a standstill to reverse), A/D or ←/→ steer, Space lowers or raises the brush, Left Shift sprays, E (held, stopped in a depot bay or beside the skip) dumps, H sounds the horn, Esc or P pauses; on a gamepad RT, LT, the left stick, A and Start. Pedestrians, animals and traffic share the street (M3), and the shift ends on the tally (time up, SACKED or TOWED), where Try Again restarts it. F1 opens the dev panel, and the asset zoo is at `?test=1&scene=zoo` (SSP-298). The M0 spike city is still at `?world=spike_city` in dev builds.
 
 ### Prerequisites
 
@@ -158,6 +164,8 @@ npm run assets:sheets          # contact sheets in build/sheets/ for review
 | URL | Shows |
 |---|---|
 | `/?test=1&scene=zoo&freeze=1` | The asset zoo (M3, SSP-298): one frame per `actors`/`items` asset at 1:1 on asphalt, slab and grass, Bessie h00 for scale. `&page=<n>` pages it, `&asset=<id>` shows every frame of one asset, `&tick=<n>` steps animations. Full coverage and its golden are M4 (SSP-118). |
+| `/?test=1&scene=district.high_street` | The grey-box High Street (Tuesday, SSP-105) with its street life. |
+| `/?test=1&seed=1&scene=stress` | The NPC budget's stress scene (SSP-106): 80 NPCs, 30 vehicles and 2,000 litter, driven by a scripted director. |
 | `/?test=1&scene=lean_quadrants&freeze=1` | The M0 spike scene (above). `scale_1440` and `scale_sheet` are the other test scenes. |
 | `/?test=1&seed=42&scene=<id>&tick=<n>&freeze=1` | A deterministic, frozen scene for tests and screenshots |
 
@@ -175,7 +183,7 @@ The canonical public build will be an HTML5 game on itch.io, pushed with butler 
 
 ## Commands *(partly planned)*
 
-Every script below exists. `npm run audio` is an input-count guard until M5 adds its sources (it reports "0 sources; nothing to render"). `npm run levels` compiles Puddle Lane (since M1), and `npm run test:replay` runs the committed replays: `m1_drive_puddle_lane` (since M1), `m2_full_shift_puddle_lane` and `m2_dump_cycle_puddle_lane` (since M2). `npm run test:e2e` runs the M2 smoke test (`tests/e2e/smoke.spec.ts`: the full-shift replay's inputs played in the built game, 60 s of sweeping and then the whole shift to the tally) beside the perf draw-call check and the scene specs (flow, HUD, grime, items, text, panels).
+Every script below exists. `npm run audio` is an input-count guard until M5 adds its sources (it reports "0 sources; nothing to render"). `npm run levels` compiles Puddle Lane (since M1) and the High Street (since M3), and `npm run test:replay` runs the committed replays: `m1_drive_puddle_lane` (since M1), `m2_full_shift_puddle_lane` and `m2_dump_cycle_puddle_lane` (since M2), and `m3_sacked`, `m3_towed` and `m3_high_street` (since M3). `npm run test:e2e` runs the M2 smoke test (`tests/e2e/smoke.spec.ts`: the full-shift replay's inputs played in the built game, 60 s of sweeping and then the whole shift to the tally) beside the perf checks (draw calls, and the sim step on the stress scene) and the scene specs (flow, HUD, grime, items, text, panels, menus, pause, popups, radio, tutorial, complaints, SACKED, street actors, the zoo).
 
 ### Assets and content
 

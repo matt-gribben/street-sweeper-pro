@@ -1,9 +1,11 @@
 // World-space score popups and speech bubbles on Puddle Lane in the shipping bundle (SSP-288; GDD §15.2, ART_BIBLE
 // §11, AUDIO_DESIGN §13.2; TECHNICAL_DESIGN §7.2, §12.7). The spec boots Puddle Lane straight into a shift on the M2
-// full-shift replay's seed and inputs (`__ssp.loadInputs`), plays them to World tick 3,110, where two real pickups
-// (ticks 3,075 and 3,105, one popup risen and one just spawned) are still floating up near Bessie, then injects
-// (`__ssp.injectEvent`, presentation only) what Puddle Lane cannot yet produce, having no NPCs or traffic: a shopper's
-// hit ("Oi!"), a car's honk ("!"), a ×3 pickup and a −250 penalty, each a few metres from Bessie. Then:
+// full-shift replay's seed and inputs (`__ssp.loadInputs`), plays them to World tick 9,610, where two real pickups
+// (ticks 9,566 and 9,588, one popup risen and one younger) are still floating up near Bessie, then injects
+// (`__ssp.injectEvent`, presentation only) what the replay does not produce near that tick (its careful driver hits
+// nobody, and no real bubble or penalty popup is up then): a shopper's hit ("Oi!"), a car's honk ("!"), a ×3 pickup
+// and a −250 penalty, each a few metres from Bessie. (The capture moved from tick 3,110 when SSP-104 re-generated the
+// replay's inputs for the populated Puddle Lane.) Then:
 //
 // - the frame (captured to test-results/popups_puddle_lane.png, opened with Read for review) shows them, and every
 //   popup and bubble pixel outside the HUD's reserved boxes equals a CPU rasterisation of the same popups layer: the
@@ -46,8 +48,11 @@ const REPLAY = loadReplay(
   readFileSync(`${REPO_ROOT}tests/replay/replays/m2_full_shift_puddle_lane.json`, 'utf8'),
 );
 const SHIFT_URL = `/?test=1&seed=${REPLAY.file.seed}&scene=district.puddle_lane&freeze=1`;
-/** World tick of the capture: 35 ticks after the pickup at 3,075 and 5 after the one at 3,105. */
-const CAPTURE_TICK = 3110;
+/**
+ * World tick of the capture: 44 ticks after the pickup at 9,566 and 22 after the one at 9,588, and after the
+ * sparkles of the Clean Sweep on tick 9,588 have died (at most 18 ticks), so no fx draw joins the frame's 8.
+ */
+const CAPTURE_TICK = 9610;
 /** Ticks after the capture by which every popup and bubble of it has gone. */
 const GONE_AFTER_TICKS = 120;
 /** City, building shadows, Bessie's drop shadow, actors, items, the HUD's UI draw (popups included), palette, blit. */
@@ -212,7 +217,7 @@ test('popups and speech bubbles on Puddle Lane: pixel-exact, in the HUD draw, fr
   await saveFrame(testInfo, 'popups_paused.png', pausedB);
 
   // Resumed: 120 ticks on, everything has gone (the longest, 'Oi!', lasts 101 ticks; popups 57), and the replay's
-  // next pickup (tick 3,257) has not come yet.
+  // next pickup (tick 10,272) has not come yet.
   await page.keyboard.press('Escape');
   await step(page, 1);
   expect(await page.evaluate(() => window.__ssp?.scenes())).toEqual(['shift']);

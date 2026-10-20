@@ -336,7 +336,9 @@ const FULL_SHIFT_ROUTE: readonly Step[] = [
  * initial litter is too sparse along the kerbs for the ×2 tier's 10 pickups 2 s apart, so no ComboTier is
  * asserted), never lost HP and never touched a solid, and the shift ended TIME_UP at tick 14,493. Re-recorded on
  * the populated street (SSP-104): giving way to traffic, people and zebras for about 4,000 ticks, it scores
- * 5,725 and collects 33 items, with no complaint, no lost HP and no impact, and ends TIME_UP. The litter floor
+ * 5,725 and collects 33 items, with no complaint, no lost HP and no impact, and ends TIME_UP (re-generated at the
+ * SSP-104 merge, after SSP-087's cat bolt rule: 5,588 and 29 items, two puddle splashes of pedestrians, no lost HP
+ * or impact, TIME_UP). The litter floor
  * drops from 35 to 25 with it (the same headroom under the new run): a shift spent waiting at junctions sweeps
  * less of the figure-of-eight.
  */

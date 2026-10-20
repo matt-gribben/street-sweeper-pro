@@ -21,7 +21,10 @@
 //               of render time) the live camera is still deterministic;
 //   page=<n>    the zoo page to show (`scene=zoo`, SSP-298; 0 when absent): a non-negative integer;
 //   asset=<id>  the zoo's full-frame view of one asset (`scene=zoo`, SSP-298), an asset ID (`veh.sweeper`). An ID
-//               the zoo has no frames for is not malformed: the zoo logs an error naming it and shows its default view.
+//               the zoo has no frames for is not malformed: the zoo logs an error naming it and shows its default view;
+//   tips=0      no tutorial (SSP-290): the shift flow hands its ShiftScenes no TutorialMemory, so Pam's tutorial
+//               beats never reach the radio. On (as in the shipping game) when absent or `tips=1`. Specs that check
+//               other barks, or HUD pixels where the radio panel sits, turn it off.
 // Malformed values throw at boot: a test must never run against a silently defaulted parameter.
 //
 // `window.__ssp`:
@@ -54,6 +57,9 @@
 //                 SSP-073): from the next tick on, World tick t is fed the log's frame t (neutral past its end and
 //                 while no World runs) instead of the keyboard and gamepad. Load it at World tick 0 and step(n)
 //                 replays the file's run; tests/e2e/smoke.spec.ts drives the M2 full-shift replay this way.
+//   tutorial()    the tutorial prompt layer's state in a shift (SSP-290, src/ui/tutorial.ts TutorialState): the beat
+//                 showing ({ n, trigger, text } or null), the beats queued behind it, the beats fired this shift, the
+//                 session's learned lesson ids and the path Bessie has travelled; null when no tutorial runs.
 //   injectEvent(type, entity, a, b, c) dispatches one synthetic sim event (an EV id with its raw payload, as the
 //                 sim would emit it) to the event bus's presentation subscribers, as if the last World tick had
 //                 emitted it (SSP-288): the popups, the HUD and later audio react, but it never enters the World, its
@@ -84,6 +90,7 @@ export const MAX_SEED = 0xffff_ffff;
 import { EV, type EventType } from '../sim/eventQueue.ts';
 import { decodeInputs, type InputLog, MAX_REPLAY_TICKS } from '../sim/replay.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
+import type { TutorialState } from '../ui/tutorial.ts';
 import { createPerfCounters, type PerfSamples } from './perfCounters.ts';
 
 /** Parsed `?test=1` parameters. */
@@ -104,6 +111,8 @@ export type TestParams = {
   readonly page: number;
   /** `asset=<id>`: the zoo's full-frame view of one asset (SSP-298), or null for its default view. */
   readonly asset: string | null;
+  /** `tips=0` turns Pam's tutorial off (SSP-290); true when absent. */
+  readonly tips: boolean;
 };
 
 /** Camera part of {@link TestState}: focus in sim metres, height in metres, look-ahead offset in metres. */
@@ -175,6 +184,8 @@ export type SspTestApi = {
   loadInputs(inputs: string, ticks: number): void;
   /** Dispatches one synthetic sim event to the bus's presentation subscribers, never the sim (SSP-288). */
   injectEvent(type: number, entity: number, a: number, b: number, c: number): void;
+  /** The shift's tutorial state (SSP-290), or null when no tutorial runs. */
+  tutorial(): TutorialState | null;
 };
 
 /** What the hooks drive: implemented by main.ts over the Game's loop and renderer. */
@@ -208,6 +219,8 @@ export type TestHookHost = {
   loadInputs(log: InputLog): void;
   /** Drains a one-event sealed queue of `type` into the Game's event bus (validated here: an EV id, finite numbers). */
   injectEvent(type: EventType, entity: number, a: number, b: number, c: number): void;
+  /** The top shift's tutorial state (ShiftScene.tutorialState), or null. */
+  tutorial(): TutorialState | null;
 };
 
 /** An object that can carry `__ssp`: the browser's `window`, or a plain object in unit tests. */
@@ -261,7 +274,7 @@ function parseSwitch(name: string, raw: string | null): boolean {
 
 /**
  * Parses the test parameters from a `location.search` string. Returns null unless `test=1` is present (any other
- * value, or none, means test mode is off); throws on a malformed seed, scene, tick, freeze, night, springs, page or asset.
+ * value, or none, means test mode is off); throws on a malformed seed, scene, tick, freeze, night, springs, page, asset or tips.
  */
 export function readTestParams(search: string): TestParams | null {
   const query = new URLSearchParams(search);
@@ -288,6 +301,7 @@ export function readTestParams(search: string): TestParams | null {
     springs: parseSwitch('springs', query.get('springs')),
     page: pageRaw === null ? 0 : parseCount('page', pageRaw, MAX_PAGE),
     asset: assetRaw,
+    tips: query.get('tips') === null ? true : parseSwitch('tips', query.get('tips')),
   };
 }
 
@@ -377,6 +391,10 @@ export function installTestHooks(
         );
       }
       host.injectEvent(type, entity, a, b, c);
+    },
+    tutorial(): TutorialState | null {
+      const state = host.tutorial();
+      return state === null ? null : (JSON.parse(JSON.stringify(state)) as TutorialState);
     },
   };
   target.__ssp = api;

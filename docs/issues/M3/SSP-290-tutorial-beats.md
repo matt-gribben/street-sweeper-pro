@@ -2,7 +2,7 @@
 id: SSP-290
 title: "Implement Pam's tutorial prompt layer and author the 13 Puddle Lane tutorial_beat events"
 milestone: M3
-status: todo
+status: done
 type: feature
 estimate: M
 labels: [type:feature, area:ui, area:gameplay, area:tooling, area:test, size:M, vertical-slice]

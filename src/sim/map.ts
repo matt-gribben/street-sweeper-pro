@@ -323,6 +323,31 @@ export const EVENT_TYPES = [
 export type EventType = (typeof EVENT_TYPES)[number];
 
 /**
+ * The triggers a `tutorial_beat` event may name (level.json → events[].trigger; SSP-290), in GDD §16.2 beat order.
+ * The names stand for the GDD's trigger column; LEVEL_DESIGN §4.4 defines each one exactly. The sim never reads
+ * them: src/ui/tutorial.ts evaluates them from bus events and read-only state, so beats change no replay hash.
+ */
+export const TUTORIAL_TRIGGERS = [
+  'shift_start',
+  'moved_10m',
+  'first_pickup',
+  'first_fling',
+  'chain_10',
+  'first_kerb_contact',
+  'hopper_80',
+  'in_depot_bay',
+  'cat_within_10m',
+  'doris_encounter',
+  'first_complaint',
+  'pledge_on_screen',
+  'timer_remaining<=60',
+] as const;
+export type TutorialTrigger = (typeof TUTORIAL_TRIGGERS)[number];
+
+/** The one district whose level.json may carry `tutorial_beat` events (LEVEL_DESIGN §4.4; SSP-302 widens it). */
+export const TUTORIAL_DISTRICT = 'district.puddle_lane';
+
+/**
  * The event params that name anchors (LEVEL_DESIGN §4.3) and the graph each one's actor moves on: `lane` for
  * vehicles (the bin lorry, Sid's sweeper, the ice cream van, the parade's road closure) and `nav` for people.
  * `anchor` is one anchor; `route` and `anchors` are lists. The compiler resolves each anchor to a node of that

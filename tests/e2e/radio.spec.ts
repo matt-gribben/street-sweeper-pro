@@ -32,7 +32,8 @@ import { readBitmapFont, readIndexedAtlas, TextRaster } from '../support/textRas
 import { collectPageErrors, openTestScene, type RgbaFrame, readTestFrame } from '../support/visualGolden.ts';
 import { saveFrame } from './helpers/saveFrame.ts';
 
-const SHIFT_URL = '/?test=1&seed=1&scene=district.puddle_lane&freeze=1';
+// tips=0: Pam's tutorial beats (SSP-290) would hold the radio from shift start; this spec checks the warning bark.
+const SHIFT_URL = '/?test=1&seed=1&scene=district.puddle_lane&freeze=1&tips=0';
 /** 1920×1080 gives W = 480 (playwright.config.ts VISUAL_VIEWPORT). */
 const W = 480;
 const PRESS_EVERY_TICKS = 30;

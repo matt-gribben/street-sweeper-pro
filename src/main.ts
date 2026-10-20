@@ -30,6 +30,7 @@ import { TallyScene } from './scenes/TallyScene.ts';
 import { TextSampleScene } from './scenes/TextSampleScene.ts';
 import { ZooScene } from './scenes/ZooScene.ts';
 import { createEventQueue, pushEvent, resetEvents, sealEvents } from './sim/eventQueue.ts';
+import { TutorialMemory } from './ui/tutorialMemory.ts';
 
 /** An error's message, for the console and `__ssp.boot()`. */
 function errorMessage(error: unknown): string {
@@ -106,6 +107,12 @@ type FirstScene =
   | { readonly kind: 'scene'; readonly scene: Scene }
   | { readonly kind: 'flow'; readonly flow: ShiftFlow; readonly atIntro: boolean };
 
+/**
+ * The session's tutorial learned set (SSP-290). Save data is M6: until SSP-186 loads it from `tutorial.learned`,
+ * every session starts as a first play.
+ */
+const tutorialMemory = new TutorialMemory();
+
 function shiftFlow(district: string, atIntro: boolean): FirstScene {
   const context = game.sceneContext;
   const flow = new ShiftFlow({
@@ -122,6 +129,8 @@ function shiftFlow(district: string, atIntro: boolean): FirstScene {
     seed,
     // Dev builds record the shift's input log for the dev panel's Save replay (SSP-038, SSP-048).
     recordInputs: import.meta.env.DEV,
+    // Pam's tutorial (SSP-290): one learned set for the session; `?test=1&tips=0` turns the tutorial off.
+    tutorial: testParams?.tips === false ? null : tutorialMemory,
     onError: (error) => console.error('Street Sweeper Pro: a scene failed to load', error),
   });
   return { kind: 'flow', flow, atIntro };
@@ -232,6 +241,13 @@ const testHooks = installTestHooks(window, search, {
     scripted.load(log);
   },
   // A queue of its own per call (test mode only), stamped as the last World tick's: the bus drains it once.
+  // The tutorial of the shift on top (or under the PauseOverlay), or null when none runs (SSP-290).
+  tutorial: () => {
+    const top = game.scenes.top;
+    const shift =
+      top instanceof PauseOverlay ? (flow?.shift ?? null) : top instanceof ShiftScene ? top : null;
+    return shift?.tutorialState() ?? null;
+  },
   injectEvent: (type, entity, a, b, c) => {
     const top = game.scenes.top;
     const world = top instanceof ShiftScene ? top.worldView : null;

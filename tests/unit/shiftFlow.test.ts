@@ -32,6 +32,7 @@ import { IntroStatus } from '../../src/ui/introCard.ts';
 import { MENU_COMMAND } from '../../src/ui/menus.ts';
 import { PauseEntry, pauseButtonRects } from '../../src/ui/pausePage.ts';
 import { TallyButton, tallyButtonRects } from '../../src/ui/tallyPage.ts';
+import { TutorialMemory } from '../../src/ui/tutorialMemory.ts';
 import { checkoutAssets } from '../support/checkoutAssets.ts';
 import { fakePad, keyEvent, padSource, setButton } from '../support/fakeInput.ts';
 
@@ -45,7 +46,11 @@ beforeAll(async () => {
 });
 
 /** The browser wiring of main.ts without WebGL, ticked by hand. */
-function harness(levelGate: Promise<void> = Promise.resolve(), recordInputs = false) {
+function harness(
+  levelGate: Promise<void> = Promise.resolve(),
+  recordInputs = false,
+  tutorial: TutorialMemory | null = null,
+) {
   const keyboard = new KeyboardDevice(DT_S);
   const pad = fakePad();
   const pads = padSource(pad);
@@ -106,6 +111,7 @@ function harness(levelGate: Promise<void> = Promise.resolve(), recordInputs = fa
     seed: 7,
     recordInputs,
     onError: (error) => errors.push(error),
+    tutorial,
   });
   /** One display frame: poll, `n` ticks (input → scenes → event drain), render. */
   const frame = (n = 1): void => {
@@ -427,6 +433,41 @@ describe('ShiftFlow', () => {
     expect(h.flow.shift?.tuning).toBe(edited);
     expect(dev.worldView?.tick).toBe(0);
   }, 60_000);
+});
+
+describe('the tutorial in the shift flow (SSP-290)', () => {
+  it('hands every shift the same TutorialMemory: a beat learned before Restart Shift stays learned', async () => {
+    const memory = new TutorialMemory();
+    const h = harness(Promise.resolve(), false, memory);
+    await h.flow.startAtShift();
+    const first = h.scenes.top as ShiftScene;
+    expect(first.tutorialState()).toMatchObject({ current: { n: 1 }, fired: [1] });
+    // W and D: throttle and steering used, so beat 1 (drive) is learned and dismissed.
+    h.keyboard.handleKeyDown(keyEvent('KeyW'));
+    h.keyboard.handleKeyDown(keyEvent('KeyD'));
+    h.frame(20);
+    h.keyboard.handleKeyUp(keyEvent('KeyW'));
+    h.keyboard.handleKeyUp(keyEvent('KeyD'));
+    expect(memory.learned()).toContain('drive');
+    expect(first.tutorialState()?.current?.n).not.toBe(1);
+    h.tap('KeyP');
+    h.frame();
+    await h.topIs('pause');
+    h.tap('KeyS');
+    h.frame();
+    h.tap('Enter');
+    h.frame();
+    await vi.waitFor(() => expect(h.scenes.ids()).toEqual(['shift']));
+    const fresh = h.scenes.top as ShiftScene;
+    expect(fresh).not.toBe(first);
+    expect(fresh.tutorialState()).toMatchObject({ current: null, fired: [] });
+  });
+
+  it('runs no tutorial without a memory (`?test=1&tips=0`)', async () => {
+    const h = harness();
+    await h.flow.startAtShift();
+    expect((h.scenes.top as ShiftScene).tutorial).toBeNull();
+  });
 });
 
 describe('PauseOverlay in the shift flow (SSP-287)', () => {

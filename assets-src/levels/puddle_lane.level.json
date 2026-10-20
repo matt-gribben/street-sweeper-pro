@@ -265,5 +265,60 @@
     "parkedFill": 0.6,
     "parkedMix": { "veh.hatchback_parked": 50, "veh.saloon_parked": 35, "veh.van_white_parked": 15 },
     "pavement": { "veh.mobility_scooter": 1 }
-  }
+  },
+  "events": [
+    {
+      "type": "tutorial_beat",
+      "trigger": "shift_start",
+      "text": "Morning, rookie. That's Bessie. Be gentle with her. {throttle} to go, {steer} to steer."
+    },
+    {
+      "type": "tutorial_beat",
+      "trigger": "moved_10m",
+      "text": "Brush down with {brush}. Takes her a second to spin up."
+    },
+    {
+      "type": "tutorial_beat",
+      "trigger": "first_pickup",
+      "text": "Lovely. Keep it under {cleanSpeed} or you'll fling it everywhere."
+    },
+    { "type": "tutorial_beat", "trigger": "first_fling", "text": "Too quick! Slow down, it's not a race." },
+    {
+      "type": "tutorial_beat",
+      "trigger": "chain_10",
+      "text": "TIDY! Keep picking it up and the bonus keeps growing."
+    },
+    {
+      "type": "tutorial_beat",
+      "trigger": "first_kerb_contact",
+      "text": "Hug the kerb. That's where the real muck is."
+    },
+    {
+      "type": "tutorial_beat",
+      "trigger": "hopper_80",
+      "text": "She's getting full. Back to the depot, the arrow'll show you."
+    },
+    { "type": "tutorial_beat", "trigger": "in_depot_bay", "text": "Stop in the bay and hold {interact}." },
+    { "type": "tutorial_beat", "trigger": "cat_within_10m", "text": "Cat! Give it a toot on the horn." },
+    {
+      "type": "tutorial_beat",
+      "trigger": "doris_encounter",
+      "text": "Ah. Doris. She won't move. Go round. Don't honk. Definitely don't spray her."
+    },
+    {
+      "type": "tutorial_beat",
+      "trigger": "first_complaint",
+      "text": "That's a complaint. Five of those and you're sacked."
+    },
+    {
+      "type": "tutorial_beat",
+      "trigger": "pledge_on_screen",
+      "text": "Green rosette means they've signed the Tidy Pledge. Get theirs spotless and they'll tip."
+    },
+    {
+      "type": "tutorial_beat",
+      "trigger": "timer_remaining<=60",
+      "text": "One minute! Dump what you've got before knocking-off time."
+    }
+  ]
 }

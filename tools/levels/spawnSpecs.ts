@@ -50,6 +50,8 @@ import {
   type PopulationWindow,
   type ScheduledEvent,
   type TrafficSpawn,
+  TUTORIAL_DISTRICT,
+  TUTORIAL_TRIGGERS,
   type WeightEntry,
 } from '../../src/sim/map.ts';
 import { countBaySlots } from '../../src/sim/parkingBays.ts';
@@ -883,6 +885,8 @@ export function checkEvents(value: unknown, ctx: SpecContext, problems: SpecProb
     return out;
   }
   const last = { s: -1, type: '' };
+  /** Each tutorial trigger's first event index: a trigger shows one beat. */
+  const beatTriggers = new Map<string, number>();
   value.forEach((e: unknown, index) => {
     const where = `events[${index}]`;
     const path = ['events'];
@@ -956,8 +960,21 @@ export function checkEvents(value: unknown, ctx: SpecContext, problems: SpecProb
     }
     // The params the M3 tooling reads.
     if (type === 'tutorial_beat') {
+      if (ctx.districtId !== TUTORIAL_DISTRICT)
+        bad('L000', `is for ${TUTORIAL_DISTRICT} only (LEVEL_DESIGN §4.4: Monday's tutorial)`);
       if (typeof trigger !== 'string') bad('L000', 'needs a trigger (the sim event that shows it)');
-      if (typeof e.text !== 'string' || e.text.length === 0) bad('L000', 'needs a non-empty text');
+      else if (!TUTORIAL_TRIGGERS.some((t) => t === trigger))
+        bad(
+          'L000',
+          `trigger ${JSON.stringify(trigger)} is not a tutorial trigger (one of ${TUTORIAL_TRIGGERS.join(', ')})`,
+        );
+      else {
+        const first = beatTriggers.get(trigger);
+        if (first !== undefined)
+          bad('L000', `trigger ${JSON.stringify(trigger)} is already used by events[${first}]`);
+        else beatTriggers.set(trigger, index);
+      }
+      if (typeof e.text !== 'string' || e.text.trim().length === 0) bad('L000', 'needs a non-empty text');
     }
     if (type === 'population_wave') {
       if (typeof e.npc !== 'string') bad('L000', 'needs npc (the npc.* id whose cap changes)');

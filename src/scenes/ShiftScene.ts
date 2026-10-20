@@ -70,6 +70,13 @@
 // resume() (the flow, on Resume) lets it step again. Pause edges latched before the shift started (Esc on the card or
 // the tally) are dropped in enter().
 //
+// Tutorial (SSP-290, src/ui/tutorial.ts): with options.tutorial (the session's TutorialMemory; the shift flow passes
+// it, `?test=1&tips=0` leaves it out) and a level that carries `tutorial_beat` events (Puddle Lane), enter() builds
+// Pam's prompt layer over the HUD's radio, attaches it to the bus and starts it (beat 1, shift_start).
+// fixedUpdate() feeds it one TutorialFrame per World tick after the HUD's tick: read-only World state plus the
+// pledge-on-screen answer for beat 12, which needs the camera's ground rect (the sim has no camera), so it is
+// worked out here from the render rig. The layer never writes the World, so replays are unchanged.
+//
 // The shift end's scene change (the tally) is the shift flow's (src/app/shiftFlow.ts, SSP-071); no audio (M5).
 import type { FontName } from '../app/assetRegistry.ts';
 import { PauseReason, type Unsubscribe } from '../app/events.ts';
@@ -101,6 +108,15 @@ import type { BitmapFont } from '../ui/bitmapText.ts';
 import { Hud } from '../ui/hud.ts';
 import type { HudCamera } from '../ui/hudModel.ts';
 import { createPopupCamera, POPUPS_MAX_QUADS, Popups } from '../ui/popups.ts';
+import {
+  createTutorialFrame,
+  pledgeFrontageInView,
+  readTutorialFrame,
+  TutorialLayer,
+  type TutorialState,
+  tutorialBeats,
+} from '../ui/tutorial.ts';
+import type { TutorialMemory } from '../ui/tutorialMemory.ts';
 
 /** The HUD's font (`public/assets/fonts/kerbside5x7.json`). */
 export const HUD_FONT: FontName = 'kerbside5x7';
@@ -139,6 +155,13 @@ export type ShiftSceneOptions = {
    * (then the shift keeps running). Without it requestPause() refuses every request.
    */
   readonly onPause?: (reason: PauseReason) => boolean;
+  /**
+   * The session's learned set (SSP-290): with it, a level's `tutorial_beat` events play as Pam's prompts. Without
+   * it (the default; `?test=1&tips=0`) no tutorial runs.
+   */
+  readonly tutorial?: TutorialMemory | null;
+  /** SSP-235's 'Show tips': learned tutorial beats play again. Default false. */
+  readonly showTips?: boolean;
 };
 
 /** `district.<name>` → `<name>`, the compiled level's file name; throws on anything else. */
@@ -193,6 +216,14 @@ export class ShiftScene implements Scene {
   private unsubscribeFx: Unsubscribe | null = null;
   private popupLayer: Popups | null = null;
   private unsubscribePopups: Unsubscribe | null = null;
+  private readonly tutorialMemory: TutorialMemory | null;
+  private readonly showTips: boolean;
+  private tutorialLayer: TutorialLayer | null = null;
+  private unsubscribeTutorial: Unsubscribe | null = null;
+  /** What the tutorial reads each tick, reused every tick. */
+  private readonly tutorialFrame = createTutorialFrame();
+  /** The camera's ground rect for beat 12's pledge check, reused every tick. */
+  private readonly tutorialRect: Aabb = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
   /** The brush overlay's spin phase (render-side, brushSpin.ts). */
   private readonly brushSpin = createBrushSpin();
   /** The camera's ground rect this frame (the items batch's cull rect before its margin), reused every frame. */
@@ -219,6 +250,18 @@ export class ShiftScene implements Scene {
     this.recordInputs = options.recordInputs ?? false;
     this.pauseInput = options.pauseInput ?? null;
     this.onPause = options.onPause ?? null;
+    this.tutorialMemory = options.tutorial ?? null;
+    this.showTips = options.showTips === true;
+  }
+
+  /** Pam's tutorial prompt layer (null without a tutorial memory, on a level with no beats, or before enter()). */
+  get tutorial(): TutorialLayer | null {
+    return this.tutorialLayer;
+  }
+
+  /** The tutorial's state for the test hook (`__ssp.tutorial()`), or null when no tutorial runs. */
+  tutorialState(): TutorialState | null {
+    return this.tutorialLayer?.state() ?? null;
   }
 
   /** True while paused (from an accepted requestPause() until resume()): the World is not stepped. */
@@ -410,6 +453,14 @@ export class ShiftScene implements Scene {
     this.popupLayer = popups;
     this.unsubscribePopups = popups.attach(this.context.events, viewWorld(sim));
     this.unsubscribeHidden = this.context.onHidden(() => this.requestPause(PauseReason.Hidden));
+    const memory = this.tutorialMemory;
+    const beats = memory === null ? [] : tutorialBeats(level);
+    if (memory !== null && beats.length > 0) {
+      const tutorial = new TutorialLayer(beats, hud, memory, { showTips: this.showTips });
+      this.tutorialLayer = tutorial;
+      this.unsubscribeTutorial = tutorial.attach(this.context.events);
+      tutorial.start(readTutorialFrame(sim, false, this.tutorialFrame));
+    }
     // A Pause press latched before the shift started (Esc on the card or the tally) must not pause it.
     this.pauseInput?.takeSceneEdges(ACTION.PAUSE);
     this.pausedNow = false;
@@ -496,6 +547,10 @@ export class ShiftScene implements Scene {
     this.unsubscribePopups?.();
     this.unsubscribePopups = null;
     this.popupLayer = null;
+    this.unsubscribeTutorial?.();
+    this.unsubscribeTutorial = null;
+    this.tutorialLayer?.dispose();
+    this.tutorialLayer = null;
     this.unsubscribeHidden?.();
     this.unsubscribeHidden = null;
     if (this.hudBatch !== null) {
@@ -522,6 +577,12 @@ export class ShiftScene implements Scene {
     this.fx?.trackCleanSweeps(world.tidy.cleanSwept, world.tick - 1);
     this.city?.grime?.accumulate(world.dirt);
     this.hud?.tick(world);
+    const tutorial = this.tutorialLayer;
+    if (tutorial !== null) {
+      const rect = cameraGroundRect(this.context.renderer.rig, 0, this.tutorialRect);
+      const pledge = pledgeFrontageInView(world.level.frontages, rect);
+      tutorial.tick(readTutorialFrame(world, pledge, this.tutorialFrame));
+    }
   }
 
   render(frameAlpha: number): void {

@@ -9,6 +9,6 @@
   "public/assets/atlas/world.png": "6bc81ff3352d176da1846da1799b044bb62931a19a9f1acfebad30e0d484a040",
   "public/assets/fonts/kerbside5x7.json": "dd727e1030daa3a825755ae3414c0d460568841cffc1dbaaeb2bd51862bad017",
   "public/assets/levels/high_street.json": "839158dc3a1adffc696a9d2b087c5321fc7e0de6758f033fb08beb96e18d3dab",
-  "public/assets/levels/puddle_lane.json": "a5629653519cd26bb654a493015512126b4a2fd93541ff6bfdb8fb6e12a2b045",
+  "public/assets/levels/puddle_lane.json": "bed79b83eaad262985d0a9c1de74c685728d3fd57108aa19ce919f1e7560f634",
   "src/gen/assets.ts": "74308ffc3d11c178f9e3689d31182f4287766b67df84bc7c4a78bd1862aba90b"
 }

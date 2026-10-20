@@ -20,8 +20,12 @@ import {
   type InputLog,
   inputLogsEqual,
 } from '../../src/sim/replay.ts';
+import type { TutorialState } from '../../src/ui/tutorial.ts';
 
 /** A host that records calls: a tick counter, a camera and a 2x1 "frame" holding the tick. */
+/** What the fake host's tutorial() returns (a test may replace it). */
+let tutorialState: TutorialState | null = null;
+
 function fakeHost(
   snapshot: TestHookHost['snapshot'] = () => null,
 ): TestHookHost & { calls: string[]; history: string[]; stack: string[] } {
@@ -61,6 +65,7 @@ function fakeHost(
     injectEvent: (type, entity, a, b, c) => {
       calls.push(`injectEvent ${type} ${entity} ${a} ${b} ${c}`);
     },
+    tutorial: () => tutorialState,
   };
 }
 
@@ -83,6 +88,7 @@ describe('readTestParams', () => {
       springs: false,
       page: 0,
       asset: null,
+      tips: true,
     });
   });
 
@@ -97,6 +103,7 @@ describe('readTestParams', () => {
         springs: true,
         page: 0,
         asset: null,
+        tips: true,
       },
     );
     expect(readTestParams('?test=1&night=0')?.night).toBe(false);
@@ -140,8 +147,16 @@ describe('readTestParams', () => {
     ['an asset without a class', '?test=1&asset=sweeper'],
     ['a frame ID as the asset', '?test=1&asset=veh.sweeper:body:h00:0'],
     ['an empty asset', '?test=1&asset='],
+    ['tips=off', '?test=1&tips=off'],
+    ['an empty tips', '?test=1&tips='],
   ])('throws on %s', (_label, search) => {
     expect(() => readTestParams(search)).toThrow(/\?test=1/);
+  });
+
+  it('turns the tutorial off with tips=0 only (SSP-290)', () => {
+    expect(readTestParams('?test=1')?.tips).toBe(true);
+    expect(readTestParams('?test=1&tips=1')?.tips).toBe(true);
+    expect(readTestParams('?test=1&tips=0')?.tips).toBe(false);
   });
 
   it('uses a fixed 1/60 s render step', () => {
@@ -176,6 +191,7 @@ describe('installTestHooks with test=1', () => {
       springs: false,
       page: 0,
       asset: null,
+      tips: true,
     });
     expect(target.__ssp).toBe(hooks?.api);
     const api = target.__ssp;
@@ -197,6 +213,7 @@ describe('installTestHooks with test=1', () => {
       'setCamera',
       'state',
       'step',
+      'tutorial',
     ]);
   });
 
@@ -254,6 +271,25 @@ describe('installTestHooks with test=1', () => {
     expect(() => api.injectEvent(EV.Caught, 1.5, 0, 0, 0)).toThrow(/entity must be an integer/);
     expect(() => api.injectEvent(EV.Caught, 1, Number.NaN, 0, 0)).toThrow(/finite/);
     expect(host.calls).toHaveLength(1);
+  });
+
+  it('tutorial() returns a JSON-safe copy of the host tutorial state, or null (SSP-290)', () => {
+    const target: TestHookTarget = {};
+    installTestHooks(target, '?test=1', fakeHost());
+    tutorialState = null;
+    expect(target.__ssp?.tutorial()).toBeNull();
+    const state: TutorialState = {
+      current: { n: 1, trigger: 'shift_start', text: 'Morning, rookie.' },
+      queued: [12],
+      fired: [1, 12],
+      learned: ['pledges'],
+      distanceM: 3.5,
+    };
+    tutorialState = state;
+    const got = target.__ssp?.tutorial();
+    expect(got).toEqual(state);
+    expect(got).not.toBe(state);
+    tutorialState = null;
   });
 
   it('loadInputs(inputs, ticks) decodes a replay log strictly and hands it to the host (SSP-073)', () => {

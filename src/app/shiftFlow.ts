@@ -25,6 +25,8 @@
 //   together; on a stack of one it is a plain replace, and a push onto an empty stack at boot). A transition that
 //   fails is reported through onError (main.ts logs it) and leaves the old scenes on screen.
 //
+// - Tutorial (SSP-290): the flow holds the session's TutorialMemory and hands it to every ShiftScene it builds.
+//
 // The flow also stands in for "the shift" for the dev panel (devShift): its tuning edits apply to the running
 // shift and to every shift the flow creates after it, and its replay source is the current ShiftScene.
 import type { DevShift } from '../debug/devPanel.ts';
@@ -36,6 +38,7 @@ import type { TallyResult, TallySceneOptions } from '../scenes/TallyScene.ts';
 import { EV } from '../sim/eventQueue.ts';
 import type { Level } from '../sim/map.ts';
 import { DEFAULT_TUNING, type Tuning, tuningsEqual } from '../sim/tuning.ts';
+import type { TutorialMemory } from '../ui/tutorialMemory.ts';
 import type { EventBus, PauseReason } from './events.ts';
 import { DEFAULT_GLYPHS } from './glyphBindings.ts';
 import type { Scene, SceneManager } from './SceneManager.ts';
@@ -61,6 +64,11 @@ export type ShiftFlowOptions = {
   readonly recordInputs: boolean;
   /** A failed transition (a level or atlas that did not load). */
   readonly onError: (error: unknown) => void;
+  /**
+   * The session's tutorial learned set (SSP-290), handed to every ShiftScene so a beat learned in one shift stays
+   * learned on Try Again and Restart Shift. Null or absent: no tutorial (`?test=1&tips=0`).
+   */
+  readonly tutorial?: TutorialMemory | null;
 };
 
 /** Drives intro → shift → tally → shift for one district and seed. */
@@ -136,9 +144,10 @@ export class ShiftFlow {
   }
 
   private shiftScene(): ShiftScene {
-    const { factory, recordInputs, menu } = this.options;
+    const { factory, recordInputs, menu, tutorial } = this.options;
     const level = this.level;
     const scene = factory.shift({
+      ...(tutorial === undefined || tutorial === null ? {} : { tutorial }),
       tuning: this.tuning,
       recordInputs,
       input: menu,

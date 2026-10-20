@@ -598,13 +598,6 @@ describe('events and schedules', () => {
     expect(level.schedules).toEqual([
       { type: 'dawn', atS: [0], untilS: null, trigger: null, params: { durationS: 20 } },
       {
-        type: 'tutorial_beat',
-        atS: [],
-        untilS: null,
-        trigger: 'shift_start',
-        params: { text: 'Morning, rookie.' },
-      },
-      {
         type: 'inspection',
         atS: [60],
         untilS: null,
@@ -658,6 +651,7 @@ describe('events and schedules', () => {
         'L000 events[1] (dawn) at must ascend within the shift (0 ≤ at < 240)',
         'L000 events[2] (gust) at must ascend within the shift (0 ≤ at < 240)',
         'L000 events[3] (rival_cameo) untilS must be after at and at most 240',
+        "L000 events[4] (tutorial_beat) is for district.puddle_lane only (LEVEL_DESIGN §4.4: Monday's tutorial)",
         'L000 events[4] (tutorial_beat) needs a non-empty text',
         'L000 events[5] (population_wave) needs delta, a non-zero integer',
         'L000 events[5] (population_wave) needs one at and an untilS',

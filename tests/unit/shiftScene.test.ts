@@ -38,6 +38,7 @@ import { decodeLevel, type Level } from '../../src/sim/map.ts';
 import { loadReplay, readInput, runReplay } from '../../src/sim/replay.ts';
 import { snapshotWorld } from '../../src/sim/snapshot.ts';
 import { DEFAULT_TUNING, loadTuning, type Tuning, tuningSourceCopy } from '../../src/sim/tuning.ts';
+import { TutorialMemory } from '../../src/ui/tutorialMemory.ts';
 import { checkoutAssets, recordingAssets } from '../support/checkoutAssets.ts';
 import { fakePad, keyEvent, padSource, setTrigger } from '../support/fakeInput.ts';
 
@@ -182,6 +183,7 @@ async function browserLike(search: string, options: ShiftSceneOptions = {}) {
     boot: () => ({ status: 'loaded', error: null, lutBuilds: 1 }),
     loadInputs: (log) => scripted.load(log),
     injectEvent: () => {},
+    tutorial: () => null,
   });
   if (hooks === null) throw new Error('hooks not installed');
   loop.start();
@@ -530,6 +532,80 @@ describe('ShiftScene', () => {
     );
     expect(b.ctx.root.children).toEqual([]);
     expect(b.follows).toEqual([]);
+  });
+});
+
+describe('ShiftScene tutorial (SSP-290)', () => {
+  /** Ticks the scene the way the loop does: fixedUpdate, then the bus drains the tick's sim events. */
+  function tickScene(shift: ShiftScene, ctx: SceneContext, input: ReturnType<typeof createInputFrame>): void {
+    shift.fixedUpdate(input);
+    const events = shift.simEvents;
+    if (events !== null) ctx.events.drain(events);
+  }
+
+  it('runs no tutorial without a TutorialMemory', async () => {
+    const { scene: shift } = scene();
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    expect(shift.tutorial).toBeNull();
+    expect(shift.tutorialState()).toBeNull();
+    expect(shift.hudView?.radio.currentId).toBe(0);
+  });
+
+  it('starts beat 1 at enter, then fires beat 2 once Bessie has driven 10 m', async () => {
+    const memory = new TutorialMemory();
+    const { scene: shift, ctx } = scene({ tutorial: memory });
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    const tutorial = shift.tutorial;
+    if (tutorial === null) throw new Error('no tutorial');
+    expect(tutorial.beats).toHaveLength(13);
+    expect(shift.tutorialState()).toMatchObject({ current: { n: 1, trigger: 'shift_start' }, fired: [1] });
+    expect(shift.hudView?.radio.currentText).toBe(tutorial.beats[0]?.text);
+    const input = createInputFrame();
+    input.throttle = 255;
+    let ticks = 0;
+    while (tutorial.distanceM < 10 && ticks < 600) {
+      expect(tutorial.fired).toEqual([1]);
+      tickScene(shift, ctx, input);
+      ticks += 1;
+    }
+    expect(tutorial.distanceM).toBeGreaterThanOrEqual(10);
+    expect(tutorial.fired).toEqual([1, 2]);
+    // Throttle alone does not teach steering: beat 1 still shows, beat 2 waits behind it.
+    expect(shift.tutorialState()).toMatchObject({ current: { n: 1 }, queued: [2] });
+    shift.exit();
+    expect(shift.tutorial).toBeNull();
+  });
+
+  it('fires beat 12 when the camera rect reaches a pledge frontage (the sim has no camera)', async () => {
+    const { scene: shift, ctx } = scene({ tutorial: new TutorialMemory() });
+    await shift.enter({ seed: 1, district: DEFAULT_DISTRICT });
+    tickScene(shift, ctx, createInputFrame());
+    expect(shift.tutorial?.fired).toEqual([1]);
+    const pledge = level.frontages.find((f) => f.pledge);
+    if (pledge === undefined) throw new Error('no pledge');
+    const rig = ctx.renderer.rig as unknown as { snappedX: number; snappedZ: number };
+    rig.snappedX = pledge.rect[0] * 2;
+    rig.snappedZ = pledge.rect[1] * 2;
+    tickScene(shift, ctx, createInputFrame());
+    expect(shift.tutorial?.fired).toEqual([1, 12]);
+  });
+
+  it('leaves the sim untouched: the World ends in the same state with or without the tutorial', async () => {
+    const runs = await Promise.all(
+      [null, new TutorialMemory()].map(async (memory) => {
+        const { scene: shift, ctx } = scene({ tutorial: memory });
+        await shift.enter({ seed: 3, district: DEFAULT_DISTRICT });
+        const input = createInputFrame();
+        for (let t = 0; t < 900; t++) {
+          input.throttle = t < 600 ? 200 : 0;
+          input.steer = t % 200 < 40 ? 60 : 0;
+          input.pressed = t === 120 ? PRESSED.BRUSH : 0;
+          tickScene(shift, ctx, input);
+        }
+        return JSON.stringify(shift.snapshot());
+      }),
+    );
+    expect(runs[1]).toBe(runs[0]);
   });
 });
 

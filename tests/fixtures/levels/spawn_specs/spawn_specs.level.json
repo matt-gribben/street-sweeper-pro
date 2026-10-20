@@ -60,7 +60,6 @@
   ],
   "events": [
     { "type": "dawn", "at": 0, "durationS": 20 },
-    { "type": "tutorial_beat", "trigger": "shift_start", "text": "Morning, rookie." },
     { "type": "inspection", "at": 60, "route": ["2", "4"], "speed": 1 },
     { "type": "population_wave", "at": 90, "untilS": 150, "npc": "npc.shopper", "delta": 2 }
   ]

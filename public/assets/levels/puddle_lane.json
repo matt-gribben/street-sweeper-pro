@@ -2636,7 +2636,21 @@
       "busEveryS": null
     }
   },
-  "schedules": [],
+  "schedules": [
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"shift_start","params":{"text":"Morning, rookie. That's Bessie. Be gentle with her. {throttle} to go, {steer} to steer."}},
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"moved_10m","params":{"text":"Brush down with {brush}. Takes her a second to spin up."}},
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"first_pickup","params":{"text":"Lovely. Keep it under {cleanSpeed} or you'll fling it everywhere."}},
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"first_fling","params":{"text":"Too quick! Slow down, it's not a race."}},
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"chain_10","params":{"text":"TIDY! Keep picking it up and the bonus keeps growing."}},
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"first_kerb_contact","params":{"text":"Hug the kerb. That's where the real muck is."}},
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"hopper_80","params":{"text":"She's getting full. Back to the depot, the arrow'll show you."}},
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"in_depot_bay","params":{"text":"Stop in the bay and hold {interact}."}},
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"cat_within_10m","params":{"text":"Cat! Give it a toot on the horn."}},
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"doris_encounter","params":{"text":"Ah. Doris. She won't move. Go round. Don't honk. Definitely don't spray her."}},
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"first_complaint","params":{"text":"That's a complaint. Five of those and you're sacked."}},
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"pledge_on_screen","params":{"text":"Green rosette means they've signed the Tidy Pledge. Get theirs spotless and they'll tip."}},
+    {"type":"tutorial_beat","atS":[],"untilS":null,"trigger":"timer_remaining<=60","params":{"text":"One minute! Dump what you've got before knocking-off time."}}
+  ],
   "weather": "clear",
   "timerS": 240,
   "music": "mus.puddle_lane",

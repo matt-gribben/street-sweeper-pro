@@ -296,7 +296,6 @@ function spawnSpecs(spec: Spec): Record<string, unknown> {
     events: [
       { type: 'dawn', at: 0, durationS: 20 },
       { type: 'population_wave', at: t / 4, untilS: t / 2, npc: 'npc.shopper', delta: 2 },
-      { type: 'tutorial_beat', trigger: 'shift_start', text: 'Morning, rookie.' },
     ],
     litter: {
       initial: Math.round(d * 50),
@@ -363,7 +362,7 @@ describe('level compiler round trip (TECHNICAL_DESIGN §18.2)', () => {
         // the §9.3 exclusions (3 tiles round @, zebras, school crossings, depot bays, skips, hydrants, bays).
         for (const kind of [decoded.npc, decoded.traffic, decoded.hazards, decoded.knockables])
           expect(kind === null).toBe(!spec.spawns);
-        expect(decoded.schedules).toHaveLength(spec.spawns ? 3 : 0);
+        expect(decoded.schedules).toHaveLength(spec.spawns ? 2 : 0);
         const candidates = decoded.hazards?.candidates;
         if (candidates !== undefined) {
           const [sx, sy] = spec.start;

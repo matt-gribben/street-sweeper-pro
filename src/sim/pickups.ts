@@ -46,7 +46,14 @@
 // spawnPickups) may allocate.
 
 import { createObb, type Obb, refreshObbAxes } from './collision/obb.ts';
-import { type Circle, type Contact, createCircle, createContact, obbVsCircleShape } from './collision/sat.ts';
+import {
+  type Circle,
+  type Contact,
+  createCircle,
+  createContact,
+  obbMayTouchCircle,
+  obbVsCircleShape,
+} from './collision/sat.ts';
 import { setComboTimerMultiplier } from './combo.ts';
 import { SIM_HZ, TILE_M } from './constants.ts';
 import { type Entities, POWERUP_IDS, type PowerupId } from './entities.ts';
@@ -454,7 +461,9 @@ export function stepPickups(w: World): void {
   while (i < p.count) {
     circle.x = p.x[i] as number;
     circle.y = p.y[i] as number;
-    if (!obbVsCircleShape(obb, circle, p.contact)) {
+    // A far pickup is skipped before the OBB test, whose square root V8 leaves un-inlined here and boxes every
+    // tick (SSP-104: a far-off fixed flask cost ~40 B a tick; TECHNICAL_DESIGN §17).
+    if (!obbMayTouchCircle(obb, circle) || !obbVsCircleShape(obb, circle, p.contact)) {
       i += 1;
       continue;
     }

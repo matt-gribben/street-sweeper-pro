@@ -2,25 +2,28 @@
 // pickup art is a placeholder until SSP-149 and the HUD icon until SSP-156): the frozen frames are written to
 // test-results/ as review captures and opened with Read, while the spec checks what must hold exactly.
 //
-// Puddle Lane on seed 1 places its one power-up, a flask of tea, on the pavement of tile (55, 20), north of
-// Soapsud Terrace just east of Drain Close: (111, 41) m. The route below (planned in Node with the closed-loop
-// route driver, tools/replays/routeDriver.ts, on the same compiled level and seed, then fed to the page through
-// `__ssp.loadInputs`) drives Bessie, brush raised, up Mangle Street and east along Soapsud Terrace, stops 11 m
-// short of the flask (capture 1: `pickup_on_pavement.png`, the flask bobbing on its halo on the slabs ahead),
-// then mounts the kerb and drives over it (capture 2: `powerup_hud.png`, the flask gone, the HUD's power-up slot
-// showing its icon and the m:ss countdown).
+// Puddle Lane places its one power-up, a flask of tea, at a fixed point (SSP-104): the west arm of the Pump Green
+// path cross, tile (30, 11), (61, 23) m, off the kerb-hugging route as a temptation. The route below (planned in
+// Node with the closed-loop route driver, tools/replays/routeDriver.ts, giving way to the street life like a
+// careful player, on the same compiled level and seed, then fed to the page through `__ssp.loadInputs`) drives
+// Bessie, brush raised, up Mangle Street, east along Soapsud Terrace, north up Gutter Row and east along Puddle
+// Lane, turns in at the Green's entrance (x 32–33, clear of the parking bays since SSP-104) and stops on the
+// path 5 m short of the flask (capture 1: `pickup_on_pavement.png`, the flask bobbing on its halo on the slabs
+// ahead), then turns onto the cross's west arm and drives over it (capture 2: `powerup_hud.png`, the flask gone,
+// the HUD's power-up slot showing its icon and the m:ss countdown).
 //
-// Exactly: the browser and Node sims agree tick for tick (the pickup, the collection tick, the countdown); the
-// frame is deterministic; the flask's cell draws over the pavement in capture 1 (it lies in the shadow of the
-// flats to the north, so its halo shows in the shadow ramp) and is gone from the same ground in capture 2; the
-// HUD's power-up slot shows the flask icon's council blue and the countdown's chalk only once it is collected.
+// Exactly: the browser and Node sims agree tick for tick (the pickup, the collection tick, the countdown; poses on
+// the replay hash's 1e-4 grid); the
+// frame is deterministic; the flask's cell draws over the path's slabs in capture 1 and is gone from the same
+// ground in capture 2; the HUD's power-up slot shows the flask icon's council blue and the countdown's chalk only
+// once it is collected.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, type Page, type TestInfo, test } from '@playwright/test';
 import type { ShiftTestState, TestState } from '../../src/debug/testHooks.ts';
 import { EV } from '../../src/sim/eventQueue.ts';
 import { decodeLevel } from '../../src/sim/map.ts';
-import { encodeInputs, runReplay } from '../../src/sim/replay.ts';
+import { encodeInputs, HASH_QUANTUM, runReplay } from '../../src/sim/replay.ts';
 import { DEFAULT_TUNING } from '../../src/sim/tuning.ts';
 import { driveRoute, type Step } from '../../tools/replays/routeDriver.ts';
 import {
@@ -40,43 +43,79 @@ const LEVEL = decodeLevel(
     'utf8',
   ),
 );
-/** Where seed 1 puts the flask: the centre of pavement tile (55, 20). */
-const FLASK = { id: 'pwr.flask_of_tea', x: 111, y: 41 } as const;
+/** Where level.json puts the flask (powerups.at [30.5, 11.5] tiles): the centre of path tile (30, 11). */
+const FLASK = { id: 'pwr.flask_of_tea', x: 61, y: 23 } as const;
 
 /** Soapsud Terrace's north kerb lane (rows 21–23, centre y = 45; 1.0 m in from the kerb at y = 42). */
 const LANE_Y = 43.2;
-const APPROACH: Step = {
-  kind: 'drive',
-  label: 'up Mangle Street and east along Soapsud Terrace',
-  path: [
-    [7, 60],
-    [7, 50],
-    [9, 46],
-    [14, LANE_Y],
-    [100, LANE_Y],
-  ],
-  speedMps: 6,
-  exitMps: 2,
-};
-const OVER_THE_FLASK: Step = {
-  kind: 'drive',
-  label: 'onto the pavement and over the flask',
-  path: [
-    [104, 42.4],
-    [108, 41.2],
-    [111, 41],
-    [113.5, 41],
-  ],
-  speedMps: 2.5,
-  exitMps: 0.5,
-};
+/** Puddle Lane's eastbound kerb lane (rows 4–6, centre y = 11; 1.2 m in from the north kerb at y = 8). */
+const PUDDLE_LANE_Y = 9.2;
+/** The Pump Green entrance path (x 32–33, 64–68 m), Bessie's rear axle 0.5 m west of its middle. */
+const GREEN_X = 65.5;
+const CORNER_MPS = 2.5;
 const ROUTE: readonly Step[] = [
-  APPROACH,
+  {
+    kind: 'drive',
+    label: 'up Mangle Street and east along Soapsud Terrace',
+    path: [
+      [7, 60],
+      [7, 50],
+      [9, 46],
+      [14, LANE_Y],
+      [40, LANE_Y],
+    ],
+    speedMps: 6,
+    exitMps: CORNER_MPS,
+  },
+  {
+    kind: 'drive',
+    label: 'left into Gutter Row and north',
+    path: [
+      [43.5, 41.7],
+      [45, 38.2],
+      [45, 16],
+    ],
+    speedMps: 6,
+    exitMps: CORNER_MPS,
+  },
+  {
+    kind: 'drive',
+    label: 'right into Puddle Lane and east',
+    path: [
+      [46.5, 12.5],
+      [50, 11],
+      [54, PUDDLE_LANE_Y],
+      [60.5, PUDDLE_LANE_Y],
+    ],
+    speedMps: 5,
+    exitMps: CORNER_MPS,
+  },
+  {
+    kind: 'drive',
+    label: 'right over the kerb into the Pump Green entrance',
+    path: [
+      [64, 11],
+      [GREEN_X, 14.5],
+      [GREEN_X, 19.3],
+    ],
+    speedMps: CORNER_MPS,
+    exitMps: 0.5,
+  },
   { kind: 'stop', label: 'stop short of the flask' },
-  OVER_THE_FLASK,
+  {
+    kind: 'drive',
+    label: 'onto the west arm of the path cross and over the flask',
+    path: [
+      [64.33, 22.13],
+      [61.5, 23.3],
+      [56.5, 23.3],
+    ],
+    speedMps: 1.5,
+    exitMps: 0.5,
+  },
   { kind: 'stop', label: 'stop past the flask' },
 ];
-const ROUTE_TICKS = 2400;
+const ROUTE_TICKS = 4800;
 
 /** A Kerbside-32 colour's RGB by name, from assets-src/palette/kerbside32.json (the truth for colour values). */
 const PALETTE = JSON.parse(
@@ -170,14 +209,17 @@ test('a power-up bobs on the pavement, and collecting it shows its icon and m:ss
   test.setTimeout(180_000);
   const errors = collectPageErrors(page);
   // Plan the route in Node on the same level and seed (the sim is f(seed, district, inputs)).
-  const drive = driveRoute(LEVEL, DEFAULT_TUNING, SEED, ROUTE, ROUTE_TICKS);
-  const [approach, stopShort, over, stopPast] = drive.reports;
-  if (approach === undefined || stopShort === undefined || over === undefined || stopPast === undefined) {
+  const drive = driveRoute(LEVEL, DEFAULT_TUNING, SEED, ROUTE, ROUTE_TICKS, { yieldToStreet: true });
+  const report = (label: string) => drive.reports.find((r) => r.label === label);
+  const stopShort = report('stop short of the flask');
+  const over = report('onto the west arm of the path cross and over the flask');
+  const stopPast = report('stop past the flask');
+  if (stopShort === undefined || over === undefined || stopPast === undefined) {
     throw new Error('route did not run every step');
   }
-  expect(stopShort.endTick).toBeLessThan(ROUTE_TICKS);
+  expect(stopPast.endTick).toBeLessThan(ROUTE_TICKS);
   expect(over.events[EV.PowerUp], 'the flask is collected while driving over it').toBe(1);
-  expect(approach.events[EV.PowerUp] ?? 0).toBe(0);
+  for (const r of drive.reports) if (r !== over) expect(r.events[EV.PowerUp] ?? 0, r.label).toBe(0);
 
   await openTestScene(page, SHIFT_URL);
   let state = await shiftState(page);
@@ -192,7 +234,7 @@ test('a power-up bobs on the pavement, and collecting it shows its icon and m:ss
   state = await step(page, stopShort.endTick + 1);
   expect(state.pickups).toEqual([FLASK]);
   expect(Math.abs(state.bessie.speed)).toBeLessThan(0.05);
-  expect(FLASK.x - state.bessie.x).toBeGreaterThan(5);
+  expect(Math.hypot(FLASK.x - state.bessie.x, FLASK.y - state.bessie.y)).toBeGreaterThan(5);
   const before = await readTestFrame(page);
   await saveCapture(testInfo, 'pickup_on_pavement.png', before);
   expect(frameSha256(await readTestFrame(page))).toBe(frameSha256(before));
@@ -210,14 +252,15 @@ test('a power-up bobs on the pavement, and collecting it shows its icon and m:ss
   // 15 s from the pickup tick, so between 0:01 and 0:15 left.
   expect(tea?.ticksLeft ?? 0).toBeGreaterThan(0);
   expect(tea?.ticksLeft ?? 0).toBeLessThanOrEqual(900);
-  // Node agrees exactly with the browser.
+  // Node agrees with the browser tick for tick, on the replay hash's 1e-4 grid: Math.sin in Chromium and Node can
+  // differ in the last bit (TECHNICAL_DESIGN §18.6, the smoke spec), and the longer route through the street
+  // life since SSP-104 meets it (Bessie's y drifted by 7e-15 m).
   expect(state.tick).toBe(stopPast.endTick + 1);
   const node = runReplay(LEVEL, DEFAULT_TUNING, SEED, drive.log, state.tick).world;
-  expect([state.bessie.x, state.bessie.y, state.hp]).toEqual([
-    node.vehicle.xM,
-    node.vehicle.yM,
-    node.vehicle.hp,
-  ]);
+  const q = (v: number): number => Math.round(v * HASH_QUANTUM);
+  expect([state.bessie.x, state.bessie.y, state.hp].map(q)).toEqual(
+    [node.vehicle.xM, node.vehicle.yM, node.vehicle.hp].map(q),
+  );
   expect(state.powerUps).toEqual([
     { id: 'pwr.flask_of_tea', ticksLeft: (node.pickups.untilTick[0] ?? 0) - node.tick },
   ]);

@@ -13,7 +13,10 @@
 // createOldWomanParams):
 //   Walk      she wanders the nav graph like the generic pedestrian (Idle at a goal for 1–3 s, then a new
 //             goal), at her entities.json speed (0.6 m/s), across crossings too: Doris has no Cross state of her
-//             own, her nav state says when she is on one.
+//             own, her nav state says when she is on one. A named Doris with a level.json route (Puddle Lane:
+//             home → zebra → corner shop → zebra → home, SSP-104) walks it node by node instead (`routeAt` is
+//             the node she is bound for), idling 1–3 s at each, and wanders once it is done; a reaction
+//             interrupts the route and she resumes towards the same node.
 //   Glare     from Walk or SlowWalk when Bessie is in her path: the segment from her centre `glareM` (4 m)
 //             along her walking direction (towards her path's next nav node), swept by her radius, touches
 //             Bessie's body OBB. She stops and faces Bessie. Each tick that test fails counts towards `timerB`;
@@ -77,6 +80,7 @@ import {
   FALLEN_TICKS,
   faceBessie,
   GET_UP_TICKS,
+  namedRouteOf,
   PED,
   stand,
   wantsToYield,
@@ -273,28 +277,54 @@ function beyondGiveUp(w: World, i: number): boolean {
   return dx * dx + dy * dy > g * g;
 }
 
-/** Walk and SlowWalk: wander the nav graph (a random goal, Idle on arrival), at her current walkMps. */
+/**
+ * Walk and SlowWalk, at her current walkMps: a named Doris with a route (level.json `npcs.named[].route`, SSP-104)
+ * walks it node by node, idling at each node she reaches (or cannot reach) and setting off for the next once the
+ * idle ends; with no route, or once it is done (and does not loop), she wanders the nav graph (a random goal,
+ * Idle on arrival).
+ */
 function walkStep(w: World, i: number): void {
   const npc = w.npc;
   const ns = npc.navState[i] as number;
+  const named = namedRouteOf(w, i);
   if (ns === NavState.Arrived || ns === NavState.NoPath) {
+    if (named !== null) advanceRoute(w, i, named.route.length, named.loop);
     stand(w, i);
     enterIdle(w, i);
     return;
   }
   if (ns === NavState.Idle) {
-    const nodes = w.level.nav.nodeCount;
-    if (nodes === 0) {
-      stand(w, i);
-      return;
+    let goal: number;
+    if (named !== null) {
+      // The route node she is bound for: the first one before she starts, else the current one (a reaction or
+      // an idle cleared her path on the way).
+      if ((npc.routeAt[i] as number) < 0) npc.routeAt[i] = 0;
+      goal = named.route[npc.routeAt[i] as number] as number;
+    } else {
+      const nodes = w.level.nav.nodeCount;
+      if (nodes === 0) {
+        stand(w, i);
+        return;
+      }
+      goal = nextInt(w.npcAi.rng, nodes);
     }
-    if (!requestNavPath(w, i, nextInt(w.npcAi.rng, nodes))) {
+    if (!requestNavPath(w, i, goal)) {
+      if (named !== null) advanceRoute(w, i, named.route.length, named.loop);
       stand(w, i);
       enterIdle(w, i);
       return;
     }
   }
   walkNpc(w, i, false);
+}
+
+/** On to the next node of her route (of `len` nodes): round again for a loop, else past the end (done). */
+function advanceRoute(w: World, i: number, len: number, loop: boolean): void {
+  const npc = w.npc;
+  let at = (npc.routeAt[i] as number) + 1;
+  if (at < 1) at = 1;
+  if (at >= len) at = loop ? 0 : len;
+  npc.routeAt[i] = at;
 }
 
 /** Chase: whack when in reach, else seek Bessie's body centre round the props. */

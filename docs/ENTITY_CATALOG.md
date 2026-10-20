@@ -328,7 +328,7 @@ stateDiagram-v2
     Knocked --> FistShake: fall ×3, gets up<br/>−500, 2 C, drops 6 spilled shopping
 ```
 
-- **Shuffle:** 0.6 m/s with her trolley.
+- **Shuffle:** 0.6 m/s with her trolley. *As built (SSP-104):* where her district names her route (Puddle Lane: home → the zebra → the corner shop → the zebra → home, LEVEL_DESIGN §5.1), she shuffles it stop by stop, pausing 1–3 s at each, picks it up again after a glare, a chase or a fall, and potters about the street once she is home.
 - **Glare:** she **stops in your path and glares** (idle frames, facing Bessie) when Bessie's body is within 4 m ahead on her path (her own trigger, from TECHNICAL_DESIGN §11.2: she ignores the awareness radius and `upg.led_beacon`), and walks on once her path has been clear for 1.0 s. Only `pwr.hi_vis` makes her part.
 - **Horn while she glares → she shakes her fist for 1.5 s and walks slower.** The reduced speed is 0.4 m/s (chosen in M3 tuning, SSP-075), and she stays slowed for 10 s (chosen in M3 tuning by SSP-083, owner to review). The lesson: the horn makes things worse with Doris.
 - **Spray her → she chases you at 1.2 m/s, whacking with her handbag (2 HP per hit).** At 1.2 m/s she can only catch a stationary or reversing Bessie, which is the joke: she catches you while you are dumping or refilling. She whacks every 1.0 s and gives up at 8 m (both chosen in M3 tuning, SSP-075). Her handbag reaches Bessie's body when it is within 0.6 m of her centre (her 0.3 m radius plus a 0.3 m swing; chosen in M3 tuning by SSP-083, owner to review). Each whack can help get Bessie TOWED.

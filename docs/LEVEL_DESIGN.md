@@ -232,7 +232,7 @@ Each district below lists its layout, density, hazards and NPC mix. The numbers 
 - **Gutter Row** x 22–24, rows 7–41, and **Drain Close** x 50–52, rows 7–41, joined at the back by a road on rows 39–41: with Puddle Lane and Soapsud Terrace they make the figure-of-eight (two loops sharing Soapsud between Gutter Row and Drain Close).
 - **The skip alley**: rows 30–31, 2 tiles of setts off Gutter Row's east pavement (dropped kerbs at x 25). The skip is at (38–39, 31) in its south lane, with the north lane beside it as the stopping tile, 118 m (path) from the bays. The alley ends in a 5×5 yard (`%`, x 40–44, rows 28–32) that is the turning head and holds the Golden Crisp tile (44, 30).
 - **Pump Green east walk**: a 1-tile footway at x 40, rows 8–19, bollarded at both ends, carrying the dog walker's anchor `5`.
-- **Parking:** 24 bay tiles: Puddle Lane south kerb x 28–33 and x 41–46, Drain Close west kerb rows 11–16 and east kerb rows 30–35 (60% fill ≈ 14 parked), each 3+ tiles clear of a junction. *As built (SSP-090):* a parked car takes a 2-tile bay, so the four 6-tile runs are **12 bays**, and 60% fill places ⌈7.2⌉ = 8 cars (12 at most); §5.1's 14 needs more `p` tiles (SSP-104). **Speed bumps:** Puddle Lane x 8 and x 56, Drain Close row 27.
+- **Parking:** 24 bay tiles: Puddle Lane south kerb x 28–33 and x 41–46, Drain Close west kerb rows 11–16 and east kerb rows 30–35 (60% fill ≈ 14 parked), each 3+ tiles clear of a junction. *As built (SSP-090):* a parked car takes a 2-tile bay, so the four 6-tile runs are **12 bays**, and 60% fill places ⌈7.2⌉ = 8 cars (12 at most); §5.1's 14 needs more `p` tiles (SSP-104). *SSP-104:* the first run is now x 28–31 (22 bay tiles, **11 bays**, 7 parked at 60%), because its third bay, x 32–33, stood in front of the Pump Green entrance, the only way onto the Green (see below). **Speed bumps:** Puddle Lane x 8 and x 56, Drain Close row 27.
 - **Heights:** 2-storey slate terraces, plus 3-storey `C` (parade), `D` (corner shop), `F` and `X` (flats).
 - **Compile report:** route area 1,264 tiles, max dump distance 158 m, max water distance 108 m, kerb blob indices used 4, 10, 12, 26, 31, 33, 34, 36, 41, 42, 44, 45.
 - **Deviation:** Puddle Lane's west end (x 0, fixed by the §8.5 excerpt) and the 2-tile alley at x 12–13 (rows 0–2) run off the map edge. L014 treats an edge as "the town goes on", so they pass, but Puddle Lane west of Gutter Row is not part of a loop: driving west, Bessie meets the map edge. What the edge does is the runtime's call (SSP-036/SSP-045).
@@ -256,6 +256,27 @@ Each district below lists its layout, density, hazards and NPC mix. The numbers 
     warnings: none
   ```
 
+*As built (SSP-104, the M3 street life; lead calls, owner to review):* `puddle_lane.level.json` now carries `npcs`, `traffic`, `hazards`, `knockables` and the power-up's fixed point, and the map loses two `p` tiles. Every number here is *(initial)*, for the M6 balance pass (SSP-231) to tune; `tests/unit/puddleLanePopulation.test.ts` holds the level to them.
+
+- **NPCs** (peak 20 of the 22 in §6.1). Population windows 0–60 s **8**, 60–180 s **12**, 180–240 s **8**: a quiet dawn street, the busiest middle and §4.5's "quiet clean-up minute" (the §8.5 example's 12/18/14 sat above the caps' sum, so they could never be reached). Ambient `mix` shopper 70, mum with pushchair 20, old man 10, capped at §5.1's 9, 2 and 1. Three named NPCs: the **postie** at anchor `3` (the corner shop door; the corner shop is the post office) from **10 s**, on his door round (he is named rather than ambient so he is out from 10 s on every play, and is not in the mix, so there is only ever one); **Doris** at anchor `1` from **70 s** with the route `1 → 2 → 3 → 2 → 1` (home, the zebra's south kerb, the corner shop, the zebra, home); the **dog walker** at anchor `4` from **120 s**, looping `4 → 5 → 6 → 7` round Pump Green and the flats. Four cats perch, 2 on the `w` garden walls and 2 on parked car roofs. Shoppers wander door to door (SSP-084) and spawn near Bessie, so §5.1's "concentrated on the parade" is not authorable yet: there is no shopper bias field (SSP-088 left it to the High Street, SSP-105).
+- **Doris's scripted walk** needed sim support: until SSP-104 she wandered the nav graph whatever her route said. A named Doris now walks her `spawns.npc` route node by node (`npc/behaviours/oldWoman.ts`, the dog walker's `routeAt` column, the shared `namedRouteOf`), idling 1–3 s at each node, resuming towards the same node after a glare, a chase or a fall, and wandering once the route is done. On seed 1 with Bessie in the depot she reaches the zebra on tick 4,349, the shop at 8,018, the zebra at 9,062 and home at 10,163.
+- **Traffic** (peak 14 of 30). `densityPerKm` **5.4** over the 1.103 lane-km gives §5.1's **6** moving cars (hatchback 55, saloon 30, white van 15); `parkedFill` **0.6** of the **11** bays parks **7** (`parkedMix` hatchback 50, saloon 35, white van 15; the van never parks here, because no bay has the 2-tile pavement it needs, SSP-091); one mobility scooter on the pavements. *Decision:* §5.1's "14 parked" was 60% of the 24 bay tiles counted as one car each; a car takes 2 tiles (SSP-090), and adding the 20 `p` tiles that 14 needs would cover most of Puddle Lane's and Drain Close's kerbs (the Kerb Hugger and gutter grime lesson) and change the M1/M2-approved layout, so the fill stays 60% and the count follows the bays. The §8.5 excerpt's bay run is x 28–31 since this change.
+- **Hazards.** The 8 `haz.puddle` are **placed** (`hazards.place`), not drawn by the `kerbside_low_points` rule: 69 of that rule's 414 candidate tiles (one in six) are on Mangle Street or Soapsud Terrace west of Gutter Row, so a drawn set of 8 would put a puddle in the rollout on about three seeds in four (Free Sweep and the tests use other seeds; Daily Shift, M9, the date) against §4.1 and §12's hazard-free first 10–15 s. Each placed tile is a `kerbside_low_points` candidate, more than 90 m (15 s at the 6.0 m/s brush-down cap) by road from `@`, near people: Puddle Lane south kerb (12, 6) by the parade, north kerb (30, 4) by the Green's entrance, Gutter Row west kerb (22, 9) by the corner shop door, Drain Close east kerb (52, 14), the east road's west kerb (60, 12), Soapsud Terrace south kerb (44, 23), Drain Close west kerb (50, 33) and the back road's south kerb (36, 41) by the bench. The 3 speed-bump rows are the map's `=`.
+- **Knockables** (no doc gave Puddle Lane's; Monday allows only `prop.wheelie_bin` and `prop.recycling_box`, L005): 3 bins and 3 recycling boxes against house fronts, all past the rollout: a box beside Doris's door (5.5, 3.25), a bin by the corner shop on Gutter Row (21.3, 9.5), a bin on Drain Close (49.3, 9.5), a box on Puddle Lane's north pavement east (54.5, 3.25), a bin on the back road (40.5, 42.75) and a box on Drain Close's east pavement (53.7, 37.5). Their spills (18 items) are most of the `+20 dyn` below.
+- **Power-up:** `pwr.flask_of_tea` fixed at **(30.5, 11.5)**, the west arm of the Pump Green path cross, 4 tiles from the Lost Property: off the kerb-hugging par route, a temptation on the same detour as the false teeth (§9.6). **The Green's entrance:** the only way onto Pump Green is x 32–33 from Puddle Lane's south pavement, and the bay run in front of it (x 28–33) held a third bay at x 32–33; with 60% fill a parked car stood across the entrance on 60% of seeds, shutting the flask and the Lost Property away. The run is x 28–31 now.
+- **Events:** none yet. The `dawn` event is M6 (§13 Q5) and the tutorial beats are SSP-290; the named spawns are not events, and the last of them (120 s) is well before §4.1's 200 s.
+- **Replays** (ROADMAP §5.3): the street life changed all three committed replays. The M2 pair were re-generated with the route driver giving way to traffic, people and zebras and swinging round the bays, the M1 drive with its reverse moved earlier; TECHNICAL_DESIGN §18.3 has the detail.
+- **Compile report** (`npm run levels`; the par lines need M6):
+
+  ```
+  district.puddle_lane  64x48  seed 1001
+    route area      1,264 tiles   grime 9,000 cells (gutter 15.0%)   litter 130 (+20 dyn) ≈ 153 LU
+    dumps: depot 2 bays, skips 1   hydrants 2   max dump dist 158 m   max water dist 108 m
+    frontages 122   pledges 8
+    peak NPC 20/80   peak vehicles 14/30
+    warnings: none
+  ```
+
 **Density and resources.**
 
 | Item | Value |
@@ -266,7 +287,7 @@ Each district below lists its layout, density, hazards and NPC mix. The numbers 
 | Initial grime | 9,000 cells, 15% (1,350) of them gutter grime |
 | Grime zones | Mangle Street's first 30 m, kerb to kerb (x 1–5, rows 24–38) 0.85; litter bins (2 tiles) 0.75; shops (3 tiles) 0.7; the skip alley (x 25–44, rows 30–31) 0.6; speckle 0.03 *(initial)* |
 | Stains | None at start. `stain.splat` can be created by the player. |
-| Hazards | 8 `haz.puddle` (kerb-side, near drains), 3 speed-bump rows (`=`) |
+| Hazards | 8 `haz.puddle` (kerb-side, near drains; placed, SSP-104), 3 speed-bump rows (`=`) |
 | Skips / hydrants | 1 / 2 |
 | Power-ups | 1 (`pwr.flask_of_tea`) |
 | Frontages / pledges | 122 / 8 *(as generated; the pre-build estimate was 46, see below)* |
@@ -285,7 +306,7 @@ Each district below lists its layout, density, hazards and NPC mix. The numbers 
 | `npc.dog_walker` | 1 | From 120 s, loops Pump Green. Teaches dog mess. |
 | `npc.cat` | 4 | 2 on garden walls (`w`), 2 on parked car roofs |
 | Moving traffic | 6 | `veh.hatchback` 55, `veh.saloon` 30, `veh.van_white` 15; plus 1 `veh.mobility_scooter` on pavements |
-| Parked | 14 | Bays on Puddle Lane and Drain Close, 60% filled |
+| Parked | 7 | Bays on Puddle Lane and Drain Close, 60% filled *(SSP-104: 60% of 11 two-tile bays; the 14 planned counted each bay tile as a car)* |
 
 **Design notes.** Every street is a loop. The first 30 m of Mangle Street is dense gutter grime with a straight kerb, so the first 15 s teach both the brush and Kerb Hugger. The skip is placed so that the player's first hopper warning (around 80–100 s) happens within 150 m of it.
 
@@ -992,7 +1013,7 @@ AAAAAAAAAAAA;;BBBBBBBBBBBBBBBBBBBBBBBBBB
 ..l.1.i...l.dd..l.....q...l.....i...l.h.
 ########=########zz#####################
 ########=########zz#####################
-########=########zz#########pppppp######
+########=########zz#########pppp########
 ..l.......l...i..2....###h...n...l......
 CCCCCCCCCCCCCCCCDDDDD3###.eeeeee..eeeeee
 CCCCCCCCCCCCCCCCDDDDD.###.e,t,,,..,,,t,e
@@ -1010,7 +1031,7 @@ EEEEEEEEEEEEEEEEEEEEEl###.FFFFFFFFFFFFFF
 
 Reading it:
 
-- **Rows 4–6: Puddle Lane**, a 3-tile two-way road. A speed bump crosses it at x = 8 and a 2-tile zebra at x = 17–18. Parking bays run along the south kerb at x = 28–33 (westbound side), 3 tiles clear of the Gutter Row junction.
+- **Rows 4–6: Puddle Lane**, a 3-tile two-way road. A speed bump crosses it at x = 8 and a 2-tile zebra at x = 17–18. Parking bays run along the south kerb at x = 28–31 (westbound side), 3 tiles clear of the Gutter Row junction and clear of the Pump Green entrance at x = 32–33 (shortened from x = 28–33 in SSP-104).
 - **Row 3: north pavement.** Lamp posts every 8 tiles (16 m), two litter bins (hotspots), a post box and a hydrant at x = 38. Anchor `1` at x = 4 is Doris's front door. The `dd` at x = 12–13 is a dropped kerb where the 2-tile drivable alley (rows 0–2) meets the street.
 - **Row 7: south pavement.** Anchor `2` at x = 17 is the zebra's south kerb. The gap at x = 22–24 is the mouth of **Gutter Row**, a 3-tile road running south.
 - **Rows 8–12:** terrace `C` and the corner shop `D` front onto row 7. `D` also fronts Gutter Row's west pavement (x = 21), where anchor `3` at (21, 8) is the shop door. A second zebra crosses Gutter Row at rows 11–12.
@@ -1073,11 +1094,24 @@ The matching parts of `puddle_lane.level.json` (an excerpt: the real file also d
     "speckle": 0.03
   },
   "hazards": {
-    "random": [{ "id": "haz.puddle", "count": 8, "rule": "kerbside_low_points" }]
+    "place": [
+      { "id": "haz.puddle", "at": [12.5, 6.5] },
+      { "id": "haz.puddle", "at": [30.5, 4.5] },
+      { "id": "haz.puddle", "at": [22.5, 9.5] },
+      { "id": "haz.puddle", "at": [52.5, 14.5] },
+      { "id": "haz.puddle", "at": [60.5, 12.5] },
+      { "id": "haz.puddle", "at": [44.5, 23.5] },
+      { "id": "haz.puddle", "at": [50.5, 33.5] },
+      { "id": "haz.puddle", "at": [36.5, 41.5] }
+    ]
   },
   "knockables": [
-    { "id": "prop.recycling_box", "at": [5.5, 3.2] },
-    { "id": "prop.wheelie_bin", "at": [21.3, 9.5] }
+    { "id": "prop.recycling_box", "at": [5.5, 3.25] },
+    { "id": "prop.wheelie_bin", "at": [21.3, 9.5] },
+    { "id": "prop.wheelie_bin", "at": [49.3, 9.5] },
+    { "id": "prop.recycling_box", "at": [54.5, 3.25] },
+    { "id": "prop.wheelie_bin", "at": [40.5, 42.75] },
+    { "id": "prop.recycling_box", "at": [53.7, 37.5] }
   ],
   "powerups": { "count": 1, "table": { "pwr.flask_of_tea": 1 }, "at": [[30.5, 11.5]] },
   "collectibles": {
@@ -1086,20 +1120,21 @@ The matching parts of `puddle_lane.level.json` (an excerpt: the real file also d
   },
   "npcs": {
     "population": [
-      { "from": 0, "to": 60, "target": 12 },
-      { "from": 60, "to": 180, "target": 18 },
-      { "from": 180, "to": 240, "target": 14 }
+      { "from": 0, "to": 60, "target": 8 },
+      { "from": 60, "to": 180, "target": 12 },
+      { "from": 180, "to": 240, "target": 8 }
     ],
-    "mix": { "npc.shopper": 70, "npc.mum_pushchair": 15, "npc.old_man_frame": 5, "npc.postie": 10 },
-    "caps": { "npc.shopper": 9, "npc.mum_pushchair": 2, "npc.old_man_frame": 1, "npc.postie": 1 },
+    "mix": { "npc.shopper": 70, "npc.mum_pushchair": 20, "npc.old_man_frame": 10 },
+    "caps": { "npc.shopper": 9, "npc.mum_pushchair": 2, "npc.old_man_frame": 1 },
     "named": [
+      { "id": "npc.postie", "anchor": "3", "spawnAt": 10, "route": ["3"] },
       { "id": "npc.old_woman", "anchor": "1", "spawnAt": 70, "route": ["1", "2", "3", "2", "1"] },
       { "id": "npc.dog_walker", "anchor": "4", "spawnAt": 120, "route": ["4", "5", "6", "7"], "loop": true }
     ],
     "perches": { "id": "npc.cat", "count": 4, "on": ["walls", "carRoofs"] }
   },
   "traffic": {
-    "densityPerKm": 4,
+    "densityPerKm": 5.4,
     "mix": { "veh.hatchback": 55, "veh.saloon": 30, "veh.van_white": 15 },
     "parkedFill": 0.6,
     "parkedMix": { "veh.hatchback_parked": 50, "veh.saloon_parked": 35, "veh.van_white_parked": 15 },
@@ -1116,7 +1151,7 @@ The matching parts of `puddle_lane.level.json` (an excerpt: the real file also d
 
 The mobility scooter, the postie's round, the dog walker's anchors `4`–`7`, the skip, the Golden Crisp and the depot sit in parts of the map outside this excerpt.
 
-*As built (SSP-042):* the committed `assets-src/levels/puddle_lane.map.txt` contains this excerpt byte for byte (`tests/unit/puddleLane.test.ts` reads it from this section). The M1 `puddle_lane.level.json` carries only the fields the M1 compiler reads (identity, timer, seed, time of day, weather, music, ambience, start, depot, buildings `A`–`Z` and anchors `1`–`7`). The spawn-side values above (pledges, litter, grime, hazards, knockables, power-ups, collectibles, NPCs, traffic, events, par) stay here until SSP-056 (M2) and SSP-104 (M3) author them into the file. *As built (SSP-056):* the file now has `pledges`, `litter`, `grime` and `collectibles` exactly as above, `C` as `shop`, and `powerups` as `{ "count": 1, "table": { "pwr.flask_of_tea": 1 } }` (the fixed `at` above is SSP-104's call); the hazards, knockables, NPCs, traffic, events and par above are still M3/M6 ([§5.1](#51-mon-puddle-lane-districtpuddle_lane-tutorial)). Anchors `4`–`7` are the corners of the dog walker's loop around Pump Green and the flats: `4` `pump_green_ne` (40, 7), `5` `pump_green_east_walk` (40, 14) on the bollarded footway east of the hedge, `6` `pump_green_se` (40, 20) and `7` `pump_green_sw` (25, 20).
+*As built (SSP-042):* the committed `assets-src/levels/puddle_lane.map.txt` contains this excerpt byte for byte (`tests/unit/puddleLane.test.ts` reads it from this section). The M1 `puddle_lane.level.json` carries only the fields the M1 compiler reads (identity, timer, seed, time of day, weather, music, ambience, start, depot, buildings `A`–`Z` and anchors `1`–`7`). The spawn-side values above (pledges, litter, grime, hazards, knockables, power-ups, collectibles, NPCs, traffic, events, par) stay here until SSP-056 (M2) and SSP-104 (M3) author them into the file. *As built (SSP-056):* the file now has `pledges`, `litter`, `grime` and `collectibles` exactly as above, `C` as `shop`, and `powerups` as `{ "count": 1, "table": { "pwr.flask_of_tea": 1 } }` (the fixed `at` above is SSP-104's call); the hazards, knockables, NPCs, traffic, events and par above are still M3/M6 ([§5.1](#51-mon-puddle-lane-districtpuddle_lane-tutorial)). *As built (SSP-104):* the file now has the `hazards`, `knockables`, `npcs`, `traffic` and `powerups.at` above exactly; only the `events` (the `dawn` event, M6; the tutorial beats, SSP-290) and `par` (M6) are still to come ([§5.1](#51-mon-puddle-lane-districtpuddle_lane-tutorial) has the reasons for each value). Anchors `4`–`7` are the corners of the dog walker's loop around Pump Green and the flats: `4` `pump_green_ne` (40, 7), `5` `pump_green_east_walk` (40, 14) on the bollarded footway east of the hedge, `6` `pump_green_se` (40, 20) and `7` `pump_green_sw` (25, 20).
 
 ### 8.6 Worked example 2: the Depot Yard (complete)
 
@@ -1284,13 +1319,13 @@ All spawning is a pure function of `(seed, compiled level, elapsed ticks, sim st
 - Buses follow `busRoute` and stop 5 s at each `site.bus_stop`. Taxis use the rank.
 - **Budget:** moving + parked ≤ 30 at any time. The compiler reports the peak.
 
-*As built (SSP-077):* the compiler writes `spawns.traffic` for traffic.ts (SSP-089, SSP-090, SSP-091): `laneKm` (the length of every directed lane edge) and `moving` = ⌈`densityPerKm` × `laneKm`⌉, `parkedBays` (the bays of `lanes.bays`: 2-tile car slots since SSP-090, the `p` cells before) and `parked` = ⌈`parkedBays` × `parkedFill`⌉, the mixes, the pavement vehicles, the taxi rank in metres and the bus route as **lane nodes**. A vehicle anchor resolves to the lane nodes within 6 m of its tile centre (both directions of a two-way road usually qualify), and the route is resolved so every leg can be driven along the directed lane graph without leaving the map; a leg that cannot, or an anchor more than 6 m from every lane, is L080. On Puddle Lane as built, `densityPerKm` 4 over its 1.101 lane-km gives 5 moving cars (not §5.1's 6) and `parkedFill` 0.6 of its 24 bay tiles gave 15 parked (not 14); since SSP-090 they are 12 bays, so 0.6 gives 8 and no fill reaches 14 without more `p` tiles: SSP-104 picks the authored values (for example 5.4 per km) and the bays to land on §5.1's peaks.
+*As built (SSP-077):* the compiler writes `spawns.traffic` for traffic.ts (SSP-089, SSP-090, SSP-091): `laneKm` (the length of every directed lane edge) and `moving` = ⌈`densityPerKm` × `laneKm`⌉, `parkedBays` (the bays of `lanes.bays`: 2-tile car slots since SSP-090, the `p` cells before) and `parked` = ⌈`parkedBays` × `parkedFill`⌉, the mixes, the pavement vehicles, the taxi rank in metres and the bus route as **lane nodes**. A vehicle anchor resolves to the lane nodes within 6 m of its tile centre (both directions of a two-way road usually qualify), and the route is resolved so every leg can be driven along the directed lane graph without leaving the map; a leg that cannot, or an anchor more than 6 m from every lane, is L080. On Puddle Lane as built, `densityPerKm` 4 over its 1.101 lane-km gives 5 moving cars (not §5.1's 6) and `parkedFill` 0.6 of its 24 bay tiles gave 15 parked (not 14); since SSP-090 they are 12 bays, so 0.6 gives 8 and no fill reaches 14 without more `p` tiles: SSP-104 picks the authored values (for example 5.4 per km) and the bays to land on §5.1's peaks. *SSP-104:* 5.4 per km over 1.103 lane-km gives 6 moving; the bays became 11 and 0.6 parks 7 (§5.1 has why 14 was not kept).
 
 *As built (SSP-089), moving traffic in `src/sim/traffic.ts`* (tick phase 8; [TECHNICAL_DESIGN §11.4](TECHNICAL_DESIGN.md#114-traffic-srcsimtrafficts) has the detail). Vehicles enter only at the lane graph's entry portals, with the whole body off the map and off `world.viewRect` and the road ahead clear for their braking distance, at most one a tick, until the ambient moving count reaches `spawns.traffic.moving` (never past 30 minus the parked cars); the kind is drawn by `mix` weight and the portal uniformly among those it fits, on the `traffic` stream. They pick their way uniformly at each node (never a U-turn while another way exists), follow Bessie and each other at 2.5 m, stop at occupied zebras and take junctions one conflicting movement at a time, and leave once past an exit portal and off the view rect. The scheduled bus follows `busRoute` from the entry portal nearest its first anchor to the exit portal nearest its last, is due at `streetLife.traffic.firstBusS` (20 s) and then every `busEveryS`, and dwells 5 s (300 ticks) with its front at the end of each `site.bus_stop` run. Scheduled buses come on top of `moving`.
 
 *As built (SSP-090), parked cars* (`src/sim/parked.ts`; TECHNICAL_DESIGN §9.4 and §11.4 have the detail). A run of n `p` tiles holds ⌊n / 2⌋ bays of 2 tiles (4 m), centred in the run, one car each, standing in the middle of its bay facing the run's lane heading; `parkedFill` fills the bays (0.6 of 10 is exactly 6). At shift start, before any moving vehicle, the `traffic` stream draws which bays are filled, then each car's kind by `parkedMix` weight and a hatchback's or saloon's paint swap slot. They count in the 30-vehicle store (moving spawns stop at 30 − parked), are static OBBs of the collision grid, and each roof is a cat perch (SSP-087). Denting one costs −100 and a flat 5 HP once per contact episode; moving traffic costs impact HP only. Traffic passes parked cars because the lanes beside in-carriageway bays swing clear of them (§7.1).
 
-*As built (SSP-091), the special kinds* (`src/sim/traffic.ts`, `src/sim/parked.ts`; TECHNICAL_DESIGN §11.4 and ENTITY_CATALOG §8.2 have the detail). **White vans half on the pavement:** a parked `veh.van_white_parked` stands with its centre on the kerb line, and only in a bay whose kerb side has at least 2 tiles of pavement (`.` or `d` ground) beside every tile of the bay's 4 m; in any other bay the `parkedMix` draw skips it (so Puddle Lane's 1-tile pavements never get one), and a bay whose mix has nothing else stays empty, making `parked` an upper bound there. **Pavement vehicles:** `traffic.pavement`'s mobility scooters are vehicle-store vehicles (they count in the 30 and in the compiler's peak, as `pavement` already did) that spawn at most once a second at a nav node off the view within 40 m of Bessie and leave beyond 40 m off the view, like ambient pedestrians. They never take a crossing, and never an edge their body would not clear: on a 1-tile pavement a lamp post, bin or bench turns a scooter round, so Puddle Lane's props cut its pavements into 53 usable stretches (the longest 35 tiles; SSP-104 places its scooter with that in mind). **Bicycles** filter only where the road leaves room beside the lane: a 3-tile two-way road without bays (lanes 3 m apart), a one-way road, or wider, at least 4 m from a junction and 8 m from the nearest bay taper, junction or portal. **Taxis** stop for fares on plain lane edges anywhere (no zebra, bus stop, junction, give-way or portal edge); the taxi rank (`traffic.taxiRank`) is not driven yet (Saturday, M6).
+*As built (SSP-091), the special kinds* (`src/sim/traffic.ts`, `src/sim/parked.ts`; TECHNICAL_DESIGN §11.4 and ENTITY_CATALOG §8.2 have the detail). **White vans half on the pavement:** a parked `veh.van_white_parked` stands with its centre on the kerb line, and only in a bay whose kerb side has at least 2 tiles of pavement (`.` or `d` ground) beside every tile of the bay's 4 m; in any other bay the `parkedMix` draw skips it (so Puddle Lane's 1-tile pavements never get one), and a bay whose mix has nothing else stays empty, making `parked` an upper bound there. **Pavement vehicles:** `traffic.pavement`'s mobility scooters are vehicle-store vehicles (they count in the 30 and in the compiler's peak, as `pavement` already did) that spawn at most once a second at a nav node off the view within 40 m of Bessie and leave beyond 40 m off the view, like ambient pedestrians. They never take a crossing, and never an edge their body would not clear: on a 1-tile pavement a lamp post, bin or bench turns a scooter round, so Puddle Lane's props cut its pavements into 53 usable stretches (the longest 35 tiles; SSP-104 places its scooter with that in mind). *SSP-104:* level.json has no place for a scooter (`pavement` gives a count), so Puddle Lane's one spawns where the rule above puts it, near Bessie. **Bicycles** filter only where the road leaves room beside the lane: a 3-tile two-way road without bays (lanes 3 m apart), a one-way road, or wider, at least 4 m from a junction and 8 m from the nearest bay taper, junction or portal. **Taxis** stop for fares on plain lane edges anywhere (no zebra, bus stop, junction, give-way or portal edge); the taxi rank (`traffic.taxiRank`) is not driven yet (Saturday, M6).
 
 ### 9.6 Power-ups and collectibles
 
@@ -1300,7 +1335,7 @@ All spawning is a pure function of `(seed, compiled level, elapsed ticks, sim st
 
 *As built (SSP-077):* `powerups` compiles to `spawns.pickups` (`count`, the table sorted by id, `at` in metres) for the power-up spawner (SSP-096).
 
-*As built (SSP-096, `src/sim/pickups.ts` `spawnPickups`; lead calls, owner to review):* the spawner runs once at shift setup on its own `pickups` stream (§9). `count` is the total; pickup j (j = 0 .. count − 1) draws its kind from `table` by weight (one `nextFloat`), then sits at `at[j]` if there is one, else on a random pavement tile (one `nextInt` over the candidates, each tile used once), at the tile centre. A candidate is a `Ground.Pavement` tile that is not SOLID, holds no fixed point and whose centre is more than the pickup radius (0.375 m) from every static prop footprint (`tuning.json` propFootprints). So a table power-up lands anywhere on the district's pavements and an `at` power-up exactly where the designer put it; the "at least one off the par route" rule is met by `at` (SSP-104 picks Puddle Lane's). The compiler's **L040** now also checks the fixed points: at most `count` of them, each on a pavement tile Bessie's body can reach (the L041 reachability test). A power-up is a 0.75 m circle (its 12 px icon) collected when Bessie's body OBB overlaps it, whatever the brush state. Capacity 16 (TECHNICAL_DESIGN §7.1). Knockables compile to `spawns.knockables` (`{ id, x, y }` in metres); each must be a `collision: knockable` prop (a static prop belongs on the map) on a tile that is not a building, wall or hedge (L000).
+*As built (SSP-096, `src/sim/pickups.ts` `spawnPickups`; lead calls, owner to review):* the spawner runs once at shift setup on its own `pickups` stream (§9). `count` is the total; pickup j (j = 0 .. count − 1) draws its kind from `table` by weight (one `nextFloat`), then sits at `at[j]` if there is one, else on a random pavement tile (one `nextInt` over the candidates, each tile used once), at the tile centre. A candidate is a `Ground.Pavement` tile that is not SOLID, holds no fixed point and whose centre is more than the pickup radius (0.375 m) from every static prop footprint (`tuning.json` propFootprints). So a table power-up lands anywhere on the district's pavements and an `at` power-up exactly where the designer put it; the "at least one off the par route" rule is met by `at` (SSP-104 picks Puddle Lane's: (30.5, 11.5) on the Pump Green path, §5.1). The compiler's **L040** now also checks the fixed points: at most `count` of them, each on a pavement tile Bessie's body can reach (the L041 reachability test). A power-up is a 0.75 m circle (its 12 px icon) collected when Bessie's body OBB overlaps it, whatever the brush state. Capacity 16 (TECHNICAL_DESIGN §7.1). Knockables compile to `spawns.knockables` (`{ id, x, y }` in metres); each must be a `collision: knockable` prop (a static prop belongs on the map) on a tile that is not a building, wall or hedge (L000).
 
 ---
 

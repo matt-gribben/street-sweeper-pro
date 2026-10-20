@@ -58,10 +58,14 @@ const FLAT_OUT_MPS = 12;
 
 /**
  * The route: the north loop of Puddle Lane's figure-of-eight, entered from the depot up Mangle Street.
- * Depot (3, 44) → Mangle Street north (transit) → Soapsud Terrace east (brush down, 6.0 m/s cap) → Gutter Row
- * north (sweeping) → Puddle Lane east (brush up, 11.0 m/s) → Drain Close south → Soapsud Terrace west, then a
- * reverse onto the south pavement until the tail touches the terrace wall (REV beeper, kerb jolts, impact) and
- * off again, west to Mangle Street and into its turn south toward the depot as the 3,600 ticks run out.
+ * Depot (3, 44) → Mangle Street north (transit) → Soapsud Terrace east (brush down, 6.0 m/s cap), a stop and a
+ * reverse onto the south pavement until the tail touches the terrace wall (REV beeper, kerb jolts, impact) and off
+ * again → Gutter Row north (sweeping) → Puddle Lane east (brush up, 11.0 m/s) → Drain Close south → Soapsud
+ * Terrace west → Mangle Street south toward the depot. Since SSP-104 the street is populated and the driver gives
+ * way (driveRoute's yieldToStreet), so the 3,600 ticks end at the turn into Puddle Lane; the reverse moved from
+ * Soapsud Terrace west to east to stay inside them. The brush goes down before the reverse, as it did before, so
+ * the sweeping code runs for about 2,700 of the ticks: lowered only from tick 3,108, it was cold enough in the
+ * heap check's window to run unoptimised and read 78 KB pre-final-GC (TECHNICAL_DESIGN §17 trap (b)).
  * Streets (LEVEL_DESIGN §8.5): Mangle Street x 2–4, Soapsud Terrace rows 21–23, Gutter Row x 22–24, Puddle
  * Lane rows 4–6, Drain Close x 50–52.
  */
@@ -82,6 +86,24 @@ const ROUTE: readonly Step[] = [
     exitMps: CORNER_MPS + 1,
   },
   { kind: 'press', label: 'brush down', pressed: PRESSED.BRUSH },
+  // The reverse to the wall comes first (SSP-104): on the populated street the drive gives way at junctions,
+  // and the manoeuvre must land inside the 3,600 ticks.
+  {
+    kind: 'drive',
+    label: 'Soapsud Terrace east to the terrace, sweeping',
+    path: [tile(17, 22)],
+    speedMps: FLAT_OUT_MPS,
+    exitMps: 0,
+  },
+  { kind: 'stop', label: 'stop outside the terrace' },
+  { kind: 'reverse', label: 'reverse onto the south pavement to the wall', steer: STEER_MAX, maxTicks: 600 },
+  {
+    kind: 'drive',
+    label: 'pull off the pavement',
+    path: [tile(19, 22)],
+    speedMps: CORNER_MPS + 1,
+    exitMps: CORNER_MPS + 1,
+  },
   {
     kind: 'drive',
     label: 'Soapsud Terrace east, sweeping',
@@ -141,23 +163,7 @@ const ROUTE: readonly Step[] = [
   },
   {
     kind: 'drive',
-    label: 'Soapsud Terrace west, transit, over the Gutter Row crossing',
-    path: [tile(15, 22)],
-    speedMps: FLAT_OUT_MPS,
-    exitMps: 0,
-  },
-  { kind: 'stop', label: 'stop outside the terrace' },
-  { kind: 'reverse', label: 'reverse onto the south pavement to the wall', steer: -STEER_MAX, maxTicks: 600 },
-  {
-    kind: 'drive',
-    label: 'pull off the pavement',
-    path: [tile(13, 22)],
-    speedMps: CORNER_MPS + 1,
-    exitMps: CORNER_MPS + 1,
-  },
-  {
-    kind: 'drive',
-    label: 'Soapsud Terrace west to Mangle Street, transit',
+    label: 'Soapsud Terrace west to Mangle Street, transit, over the Gutter Row crossing',
     path: [tile(6, 22)],
     speedMps: FLAT_OUT_MPS,
     exitMps: CORNER_MPS,
@@ -183,7 +189,7 @@ function main(args: readonly string[]): number {
   }
   const check = args.includes('--check');
   const level = decodeLevel(readFileSync(LEVEL_PATH, 'utf8'));
-  const drive = driveRoute(level, DEFAULT_TUNING, SEED, ROUTE, REPLAY_TICKS);
+  const drive = driveRoute(level, DEFAULT_TUNING, SEED, ROUTE, REPLAY_TICKS, { yieldToStreet: true });
   const file = recordReplay(level, DEFAULT_TUNING, DISTRICT, SEED, drive.log, INVARIANTS);
   const text = serialiseReplay(file);
 

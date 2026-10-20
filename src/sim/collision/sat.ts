@@ -331,6 +331,19 @@ export function createCircle(): Circle {
 const circleScratch: Circle = createCircle();
 
 /**
+ * A cheap pre-test for obbVsCircleShape: false when the circle's centre is farther from the box's centre than
+ * the box's half width + half length + the circle's radius, so they cannot touch (true does not mean they do).
+ * Pure arithmetic, no square root, and no double crosses the call (SSP-104, for a per-tick test of a far circle,
+ * TECHNICAL_DESIGN §17).
+ */
+export function obbMayTouchCircle(obb: Obb, circle: Readonly<Circle>): boolean {
+  const dx = circle.x - obb.cx;
+  const dy = circle.y - obb.cy;
+  const reach = obb.halfWidthM + obb.halfLengthM + circle.radiusM;
+  return dx * dx + dy * dy <= reach * reach;
+}
+
+/**
  * obbVsCircle with the circle in an object (SSP-036): the per-tick form, which passes no number arguments, so
  * it never boxes a double when V8 does not inline the call (see eventQueue.ts).
  */

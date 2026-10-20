@@ -20,7 +20,7 @@ import {
   STEER_MAX,
   THROTTLE_MAX,
 } from '../../src/sim/inputFrame.ts';
-import type { Level } from '../../src/sim/map.ts';
+import { Ground, type Level } from '../../src/sim/map.ts';
 import {
   appendInput,
   attachInputLog,
@@ -31,6 +31,7 @@ import {
 import { isShiftEnded, shiftIgnoresInput } from '../../src/sim/shift.ts';
 import type { Tuning } from '../../src/sim/tuning.ts';
 import { Gear } from '../../src/sim/vehicle.ts';
+import { Blocker, VEHICLE_FLAG, VEHICLE_PLAN_EDGES } from '../../src/sim/vehicleStore.ts';
 import { createWorld, type World } from '../../src/sim/world.ts';
 
 // ---------------------------------------------------------------------------------------------------------
@@ -43,7 +44,7 @@ export type Point = readonly [xM: number, yM: number];
  * One route step.
  * - drive: follow `path` (sim metres, from wherever Bessie is) at up to `speedMps`, arriving at its last point
  *   at `exitMps` or less, holding `buttons` (BUTTON bits, default none) throughout; done when Bessie reaches or
- *   passes the last point.
+ *   passes the last point. `predictWindow` is for DriveOptions.yieldToStreet.
  * - press: put these PRESSED bits on the next tick's frame (merged into whatever the next step drives).
  * - stop: brake (no throttle, wheels straight) until Bessie stands still.
  * - reverse: hold the brake with `steer` (−127..127) until REV engages, keep reversing, and finish once an
@@ -60,6 +61,14 @@ export type Step =
       readonly speedMps: number;
       readonly exitMps: number;
       readonly buttons?: number;
+      /**
+       * DriveOptions.yieldToStreet: the stretch of `path`, from point index [0] to point index [1], where
+       * Bessie keeps to a lane of her own and may stop to wait for a vehicle about to cross her path ahead (a
+       * kerb lane before a turn). Before it and once her front is past its end she is committed (turning,
+       * crossing, or moving out to the centre line) and only stops for what is in her way now. Without it she
+       * may wait anywhere.
+       */
+      readonly predictWindow?: readonly [from: number, to: number];
     }
   | { readonly kind: 'press'; readonly label: string; readonly pressed: number }
   | { readonly kind: 'stop'; readonly label: string }
@@ -171,6 +180,8 @@ export type StepReport = {
   /** Events seen during the step, indexed by EV id. */
   readonly events: number[];
   maxSpeedMps: number;
+  /** Ticks the driver gave way to street life (DriveOptions.yieldToStreet). */
+  yieldTicks: number;
 };
 
 function newReport(label: string, tick: number): StepReport {
@@ -180,6 +191,7 @@ function newReport(label: string, tick: number): StepReport {
     endTick: tick,
     events: new Array(EVENT_TYPE_COUNT).fill(0),
     maxSpeedMps: 0,
+    yieldTicks: 0,
   };
 }
 
@@ -199,6 +211,297 @@ export function describeEvents(events: readonly number[], skip: readonly string[
     if (n > 0) parts.push(`${name} ${n}`);
   }
   return parts.join(', ');
+}
+
+/**
+ * Driver options. `yieldToStreet` (SSP-104, for routes on a populated level): on a drive step Bessie gives way
+ * like a careful player (streetBlocked). Off by default, so a route planned for an empty street drives exactly as
+ * before.
+ */
+export type DriveOptions = { readonly yieldToStreet?: boolean };
+
+/** How far along the route past the end of this drive step (the drive steps after it) the street-life checks look, metres. */
+const LOOK_ROUTE_M = 60;
+/** Street-life look-ahead beyond the braking distance, metres. */
+const YIELD_MARGIN_M = 1.5;
+/** Clearance kept round Bessie's half width along the look-ahead, metres. */
+const YIELD_CLEARANCE_M = 0.1;
+/** The clearance she keeps from a vehicle that is waiting for her, metres (she squeezes past it). */
+const SQUEEZE_CLEARANCE_M = 0.02;
+/** Look-ahead sample spacing along the path, metres. */
+/** Her own front is checked this far beyond her stopping distance, in steps of BODY_SAMPLE_M, metres. */
+const BODY_MARGIN_M = 0.3;
+const BODY_SAMPLE_M = 0.1;
+const YIELD_SAMPLE_M = 0.5;
+/** How far ahead of her front she looks for a vehicle that will cross her path, metres. */
+const CONFLICT_AHEAD_M = 20;
+/**
+ * How far ahead along its plan a vehicle is followed: this many seconds at the speed limit of the edge it is on
+ * (or its speed, if faster). About the time she takes from a kerb lane through a turn (20 m at 2.2–3.8 m/s).
+ */
+const CONFLICT_HORIZON_S = 8;
+/** Only a vehicle at least this fast can drive into her path unannounced, m/s. */
+const CONFLICT_MOVING_MPS = 0.5;
+/** Two centre lines closer than this mean two bodies that would touch (her 0.875 m + a car's 0.9 m + 0.125 m). */
+const CONFLICT_GAP_M = 1.9;
+/** Sample spacing along a vehicle's plan, metres. */
+const CONFLICT_SAMPLE_M = 1;
+
+/** Squared distance from (px, py) to vehicle `i`'s OBB; 0 inside. */
+function vehicleDist2(world: World, i: number, px: number, py: number): number {
+  const vs = world.vehicles;
+  const h = vs.heading[i] as number;
+  const fx = sin(h);
+  const fy = -cos(h);
+  const dx = px - (vs.x[i] as number);
+  const dy = py - (vs.y[i] as number);
+  let along = dx * fx + dy * fy;
+  let across = dx * -fy + dy * fx;
+  const hl = vs.halfLength[i] as number;
+  const hw = vs.halfWidth[i] as number;
+  along = Math.abs(along) > hl ? Math.abs(along) - hl : 0;
+  across = Math.abs(across) > hw ? Math.abs(across) - hw : 0;
+  return along * along + across * across;
+}
+
+/**
+ * The point `atM` along `segs`, carried straight on past its end, moved `biasM` to the left of the path (right
+ * when negative; the driver's sideways squeeze past a vehicle that waits for her).
+ */
+function pathPoint(segs: readonly Segment[], totalM: number, atM: number, biasM = 0): Point {
+  let [px, py] = pointAt(segs, atM);
+  const last = segs[segs.length - 1] as Segment;
+  if (atM > totalM) {
+    const k = (atM - totalM) / Math.max(last.lenM, 1e-9);
+    px += (last.bx - last.ax) * k;
+    py += (last.by - last.ay) * k;
+  }
+  if (biasM === 0) return [px, py];
+  // The segment under atM gives the path's direction there.
+  let seg = last;
+  let rest = atM;
+  for (const sg of segs) {
+    if (rest <= sg.lenM) {
+      seg = sg;
+      break;
+    }
+    rest -= sg.lenM;
+  }
+  const ux = (seg.bx - seg.ax) / Math.max(seg.lenM, 1e-9);
+  const uy = (seg.by - seg.ay) / Math.max(seg.lenM, 1e-9);
+  // Left of the travel direction (screen axes, y down): (uy, −ux).
+  return [px + uy * biasM, py - ux * biasM];
+}
+
+/** True when vehicle `i` drives roughly Bessie's way (it follows her, or she follows it: not a crossing path). */
+function sameWay(world: World, i: number): boolean {
+  const d = (world.vehicles.heading[i] as number) - world.vehicle.headingRad;
+  return cos(d) > 0.5;
+}
+
+/**
+ * True when Bessie's body lies across a lane of other traffic (a lane node within a car's reach of it whose lane
+ * runs another way than she does): the start of a turn or a crossing, where she must not stop to wait for a car
+ * that is about to come through, because it would stop for her.
+ */
+function acrossOtherLane(world: World): boolean {
+  const v = world.vehicle;
+  const lanes = world.level.lanes;
+  const fx = sin(v.headingRad);
+  const fy = -cos(v.headingRad);
+  const half = world.tuning.vehicle.sweeper.body.lengthM / 2;
+  const reach = CONFLICT_GAP_M - 0.2;
+  for (let n = 0; n < lanes.nodeCount; n++) {
+    const nx = lanes.nodeX[n] as number;
+    const ny = lanes.nodeY[n] as number;
+    const dx = nx - v.xM;
+    const dy = ny - v.yM;
+    let along = dx * fx + dy * fy;
+    along = Math.abs(along) > half ? Math.abs(along) - half : 0;
+    const across = dx * -fy + dy * fx;
+    if (along * along + across * across > reach * reach) continue;
+    for (let e = lanes.outStart[n] as number; e < (lanes.outStart[n + 1] as number); e++) {
+      const to = lanes.edgeTo[e] as number;
+      const ex = (lanes.nodeX[to] as number) - nx;
+      const ey = (lanes.nodeY[to] as number) - ny;
+      const len = Math.hypot(ex, ey);
+      if (len > 1e-6 && (ex * fx + ey * fy) / len < 0.5) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * True when a moving vehicle that does not drive her way will, within CONFLICT_HORIZON_S along its lane plan,
+ * pass within CONFLICT_GAP_M of her path in the next CONFLICT_AHEAD_M: a car about to come through the junction
+ * she is heading for, or the oncoming lane she must cross to turn right. She waits for it where she is.
+ */
+function conflictAhead(world: World, segs: readonly Segment[], totalM: number, frontAtM: number): boolean {
+  const vs = world.vehicles;
+  const lanes = world.level.lanes;
+  const mine: Point[] = [];
+  for (
+    let d = frontAtM - world.tuning.vehicle.sweeper.body.lengthM;
+    d <= frontAtM + CONFLICT_AHEAD_M;
+    d += 1
+  ) {
+    mine.push(pathPoint(segs, totalM, d));
+  }
+  const near = (x: number, y: number): boolean => {
+    for (const [px, py] of mine) {
+      if ((px - x) * (px - x) + (py - y) * (py - y) < CONFLICT_GAP_M * CONFLICT_GAP_M) return true;
+    }
+    return false;
+  };
+  for (let i = 0; i < vs.count; i++) {
+    if (((vs.flags[i] as number) & VEHICLE_FLAG.PARKED) !== 0 || sameWay(world, i)) continue;
+    // A standing vehicle waits for something (her, a junction, a zebra): when it moves off it brakes for her like
+    // for anyone in its way, so only one under way can drive into her path. (The immediate check still keeps her
+    // off a standing one.)
+    if ((vs.speed[i] as number) < CONFLICT_MOVING_MPS) continue;
+    const n = vs.planLen[i] as number;
+    if (n === 0) continue;
+    const limit = lanes.edgeSpeedMps[vs.plan[i * VEHICLE_PLAN_EDGES] as number] as number;
+    let budget = Math.max(vs.speed[i] as number, limit) * CONFLICT_HORIZON_S;
+    if (near(vs.x[i] as number, vs.y[i] as number)) return true;
+    let skip = Math.max(vs.along[i] as number, 0);
+    for (let k = 0; k < n && budget > 0; k++) {
+      const e = vs.plan[i * VEHICLE_PLAN_EDGES + k] as number;
+      const a = lanes.edgeFrom[e] as number;
+      const b = lanes.edgeTo[e] as number;
+      const ax = lanes.nodeX[a] as number;
+      const ay = lanes.nodeY[a] as number;
+      const ex = (lanes.nodeX[b] as number) - ax;
+      const ey = (lanes.nodeY[b] as number) - ay;
+      const len = Math.hypot(ex, ey);
+      for (let t = skip; t <= len && budget > 0; t += CONFLICT_SAMPLE_M) {
+        if (near(ax + (ex * t) / len, ay + (ey * t) / len)) return true;
+        budget -= CONFLICT_SAMPLE_M;
+      }
+      skip = 0;
+    }
+  }
+  return false;
+}
+
+/**
+ * streetBlocked's answers: the way is clear; something is in her way now; a vehicle is about to cross it; a
+ * standing vehicle that waits for her (Blocker.Bessie) is in her way, on her left (WAITING_LEFT) or right.
+ */
+const CLEAR = 0;
+const BLOCKED_NOW = 1;
+const BLOCKED_AHEAD = 2;
+const WAITING_LEFT = 3;
+const WAITING_RIGHT = 4;
+/**
+ * The sideways squeeze: when a vehicle that waits for her is in her way (it stands in her path because she
+ * stands in its path, so neither can go), she moves her path up to SQUEEZE_MAX_M away from it, SQUEEZE_STEP_M a
+ * tick, and creeps past at SQUEEZE_MPS once that path is clear; back on her own path once it is clear too.
+ */
+const SQUEEZE_MAX_M = 1.2;
+const SQUEEZE_STEP_M = 0.02;
+const SQUEEZE_RETURN_M = 0.01;
+const SQUEEZE_MPS = 1.0;
+
+/** WAITING_RIGHT or WAITING_LEFT: which side of Bessie vehicle `i` stands (her right is (cos h, sin h)). */
+function waitingSide(world: World, i: number): number {
+  const v = world.vehicle;
+  const vs = world.vehicles;
+  const side =
+    ((vs.x[i] as number) - v.xM) * cos(v.headingRad) + ((vs.y[i] as number) - v.yM) * sin(v.headingRad);
+  return side > 0 ? WAITING_RIGHT : WAITING_LEFT;
+}
+
+/**
+ * Whether Bessie should give way now on the drive step along `segs` (rear axle at arc position `sM`):
+ *   - a moving vehicle, a person or animal on the road, or an occupied zebra in her way within her braking
+ *     distance plus YIELD_MARGIN_M (parked cars are not: a route steers round their bays; nor people on the
+ *     pavement);
+ *   - while she is still in a lane of her own (acrossOtherLane false), a vehicle about to cross her path ahead
+ *     (conflictAhead), so she never starts a turn or a crossing into the path of a car that would then stop for
+ *     her and leave the two of them waiting for each other;
+ *   - a vehicle stopped because she holds it up is giving way to her: she goes first, squeezing past with
+ *     SQUEEZE_CLEARANCE_M, or the two of them would wait for each other.
+ * `predict` false leaves out conflictAhead; `biasM` moves the path sideways (pathPoint). Returns CLEAR,
+ * BLOCKED_NOW, BLOCKED_AHEAD, WAITING_LEFT or WAITING_RIGHT.
+ */
+function streetBlocked(
+  world: World,
+  segs: readonly Segment[],
+  sM: number,
+  predict: boolean,
+  biasM: number,
+): number {
+  const v = world.vehicle;
+  const body = world.tuning.vehicle.sweeper.body;
+  const frontM = body.lengthM / 2 - body.rearAxleOffsetM;
+  const speed = Math.max(v.vLongMps, 0);
+  const reachM = (speed * speed) / (2 * PLAN_DECEL_MPS2) + YIELD_MARGIN_M;
+  const r = body.widthM / 2 + YIELD_CLEARANCE_M;
+  const r0 = body.widthM / 2 + SQUEEZE_CLEARANCE_M;
+  const level = world.level;
+  const w = level.size[0];
+  const h = level.size[1];
+  const zebras = world.zebras;
+  const vs = world.vehicles;
+  let total = 0;
+  for (const s of segs) total += s.lenM;
+  const across = acrossOtherLane(world);
+  // Her body as it is, not as the path says it should be (she lags the path coming out of a swing or a turn):
+  // her front corners and the middle of her front, carried a stopping distance along her heading.
+  const fx = sin(v.headingRad);
+  const fy = -cos(v.headingRad);
+  const rx = cos(v.headingRad);
+  const ry = sin(v.headingRad);
+  const half = body.widthM / 2;
+  const bodyReachM = (speed * speed) / (2 * PLAN_DECEL_MPS2) + BODY_MARGIN_M;
+  for (let d = 0; d <= bodyReachM; d += BODY_SAMPLE_M) {
+    for (let c = -1; c <= 1; c++) {
+      const px = v.xM + fx * (body.lengthM / 2 + d) + rx * half * c;
+      const py = v.yM + fy * (body.lengthM / 2 + d) + ry * half * c;
+      for (let i = 0; i < vs.count; i++) {
+        const parked = ((vs.flags[i] as number) & VEHICLE_FLAG.PARKED) !== 0;
+        const waiting = !parked && vs.blocker[i] === Blocker.Bessie && (vs.speed[i] as number) < 0.1;
+        const k = waiting || parked ? SQUEEZE_CLEARANCE_M : YIELD_CLEARANCE_M;
+        if (vehicleDist2(world, i, px, py) > k * k) continue;
+        if (!waiting) return BLOCKED_NOW;
+        return waitingSide(world, i);
+      }
+    }
+  }
+  for (let d = frontM; d <= frontM + reachM; d += YIELD_SAMPLE_M) {
+    const [px, py] = pathPoint(segs, total, sM + d, biasM);
+    for (let i = 0; i < vs.count; i++) {
+      // A parked car is off her path (a route steers round the bays), but not off a squeezed one.
+      const parked = ((vs.flags[i] as number) & VEHICLE_FLAG.PARKED) !== 0;
+      if (parked && biasM === 0) continue;
+      // A vehicle stopped because she holds it up is giving way to her: she squeezes past it if her body
+      // clears it at all, or the two would wait for each other.
+      const waiting = !parked && vs.blocker[i] === Blocker.Bessie && (vs.speed[i] as number) < 0.1;
+      const rv = waiting || parked ? r0 : r;
+      if (vehicleDist2(world, i, px, py) > rv * rv) continue;
+      if (!waiting) return BLOCKED_NOW;
+      return waitingSide(world, i);
+    }
+    for (let i = 0; i < world.npc.count; i++) {
+      const nx = world.npc.x[i] as number;
+      const ny = world.npc.y[i] as number;
+      const tx = Math.floor(nx / 2);
+      const ty = Math.floor(ny / 2);
+      if (tx < 0 || ty < 0 || tx >= w || ty >= h) continue;
+      const g = level.layers.ground[ty * w + tx] as number;
+      if (g < Ground.Road || g > Ground.RoadOneWayS) continue;
+      const rr = r + (world.npc.radius[i] as number);
+      if ((nx - px) * (nx - px) + (ny - py) * (ny - py) <= rr * rr) return BLOCKED_NOW;
+    }
+    for (let z = 0; z < zebras.count; z++) {
+      if ((zebras.occupancy[z] as number) === 0 || (zebras.bessieOn[z] as number) !== 0) continue;
+      const cx = clamp(px, zebras.minX[z] as number, zebras.maxX[z] as number);
+      const cy = clamp(py, zebras.minY[z] as number, zebras.maxY[z] as number);
+      if ((cx - px) * (cx - px) + (cy - py) * (cy - py) <= r * r) return BLOCKED_NOW;
+    }
+  }
+  return predict && !across && conflictAhead(world, segs, total, sM + frontM) ? BLOCKED_AHEAD : CLEAR;
 }
 
 export type DriveResult = {
@@ -222,6 +525,7 @@ export function driveRoute(
   seed: number,
   route: readonly Step[],
   ticks: number,
+  options: DriveOptions = {},
 ): DriveResult {
   const world = createWorld(level, seed, tuning);
   const log = createInputLog(ticks);
@@ -237,6 +541,12 @@ export function driveRoute(
   let segFrom = 0;
   let impactSeen = false;
   let report: StepReport | null = null;
+  // yieldToStreet: how far her path is squeezed sideways (SQUEEZE_MAX_M), and the drive step's predictWindow as
+  // arc positions along its segments.
+  let squeezeM = 0;
+  let aheadSegs: Segment[] = [];
+  let predictFromM = Number.NEGATIVE_INFINITY;
+  let predictToM = Number.POSITIVE_INFINITY;
 
   const finishStep = (): void => {
     if (report !== null) {
@@ -280,7 +590,36 @@ export function driveRoute(
       // Route finished early: coast to a stop and hold still (brake would engage REV, so just roll).
       frame.brake = v.vLongMps > 0.3 ? 80 : 0;
     } else if (step.kind === 'drive') {
-      if (segs === null) segs = segmentsFrom(v.xM, v.yM, step.path);
+      if (segs === null) {
+        segs = segmentsFrom(v.xM, v.yM, step.path);
+        // yieldToStreet looks along the route beyond this step: the paths of the drive steps that follow it.
+        aheadSegs = segs.slice();
+        let aheadM = 0;
+        for (let k = stepIndex + 1; k < route.length && aheadM < LOOK_ROUTE_M; k++) {
+          const next = route[k] as Step;
+          if (next.kind === 'press') continue;
+          if (next.kind !== 'drive') break;
+          const tail = aheadSegs[aheadSegs.length - 1] as Segment;
+          for (const sg of segmentsFrom(tail.bx, tail.by, next.path)) {
+            aheadSegs.push(sg);
+            aheadM += sg.lenM;
+          }
+        }
+        predictFromM = Number.NEGATIVE_INFINITY;
+        predictToM = Number.POSITIVE_INFINITY;
+        if (step.predictWindow !== undefined) {
+          // Arc position of path point k: segment 0 runs from Bessie to path[0]. A window naming no point of
+          // the path (a committed step, [-1, -1]) is empty.
+          predictFromM = Number.POSITIVE_INFINITY;
+          predictToM = Number.NEGATIVE_INFINITY;
+          let arc = 0;
+          for (let k = 0; k < segs.length; k++) {
+            arc += (segs[k] as Segment).lenM;
+            if (k === step.predictWindow[0]) predictFromM = arc;
+            if (k === step.predictWindow[1]) predictToM = arc;
+          }
+        }
+      }
       const sweeper = world.tuning.vehicle.sweeper;
       const ax = v.xM + sin(v.headingRad) * sweeper.body.rearAxleOffsetM;
       const ay = v.yM - cos(v.headingRad) * sweeper.body.rearAxleOffsetM;
@@ -295,14 +634,9 @@ export function driveRoute(
         done = true;
       }
       const lookM = 2.5 + 0.5 * Math.abs(v.vLongMps);
-      const [tx, ty] = pointAt(segs, p.sM + lookM);
-      // Past the end of the polyline, keep aiming straight on along its last segment.
-      const last = segs[segs.length - 1] as Segment;
-      const over = p.sM + lookM - total;
-      const ux = (last.bx - last.ax) / Math.max(last.lenM, 1e-9);
-      const uy = (last.by - last.ay) / Math.max(last.lenM, 1e-9);
-      const aimX = over > 0 ? tx + ux * over : tx;
-      const aimY = over > 0 ? ty + uy * over : ty;
+      // Past the end of the polyline, keep aiming straight on along its last segment (and squeezed sideways
+      // while she edges past a vehicle that waits for her).
+      const [aimX, aimY] = pathPoint(segs, total, p.sM + lookM, squeezeM);
       frame.steer = pursuitSteer(world, aimX, aimY);
       frame.buttons = step.buttons ?? 0;
       const target = Math.min(
@@ -313,7 +647,33 @@ export function driveRoute(
         // Throttle at a standstill returns to FWD; while still rolling back, throttle brakes.
         frame.throttle = THROTTLE_MAX;
       } else {
-        speedControl(v.vLongMps, target, frame);
+        const sweeper = world.tuning.vehicle.sweeper;
+        const frontAtM = p.sM + sweeper.body.lengthM / 2 - sweeper.body.rearAxleOffsetM;
+        const predict = p.sM >= predictFromM && frontAtM <= predictToM;
+        let blocked =
+          options.yieldToStreet === true ? streetBlocked(world, aheadSegs, p.sM, predict, squeezeM) : CLEAR;
+        if (blocked === WAITING_LEFT || blocked === WAITING_RIGHT) {
+          // Squeeze away from it (to the right of a vehicle on her left), then try that path this tick.
+          const away = blocked === WAITING_RIGHT ? SQUEEZE_STEP_M : -SQUEEZE_STEP_M;
+          squeezeM = clamp(squeezeM + away, -SQUEEZE_MAX_M, SQUEEZE_MAX_M);
+          blocked = streetBlocked(world, aheadSegs, p.sM, predict, squeezeM);
+          if (blocked === WAITING_LEFT || blocked === WAITING_RIGHT) blocked = BLOCKED_NOW;
+        } else if (blocked === CLEAR && squeezeM !== 0) {
+          // Back towards her own path once that is clear too.
+          const back =
+            squeezeM > 0
+              ? Math.max(squeezeM - SQUEEZE_RETURN_M, 0)
+              : Math.min(squeezeM + SQUEEZE_RETURN_M, 0);
+          if (streetBlocked(world, aheadSegs, p.sM, predict, back) === CLEAR) squeezeM = back;
+        }
+        if (blocked !== CLEAR) {
+          // Give way: brake towards a stop (speedControl brakes only above 0.3 m/s, so a standstill never
+          // holds the brake long enough to engage REV) and wait until the way ahead is clear.
+          speedControl(v.vLongMps, 0, frame);
+          if (report !== null) report.yieldTicks += 1;
+        } else {
+          speedControl(v.vLongMps, squeezeM !== 0 ? Math.min(target, SQUEEZE_MPS) : target, frame);
+        }
       }
     } else if (step.kind === 'stop') {
       frame.brake = BRAKE_MAX;
@@ -364,7 +724,8 @@ export function formatReports(reports: readonly StepReport[], skipEvents: readon
     const events = describeEvents(r.events, skipEvents);
     out +=
       `${String(r.startTick).padStart(5)}–${String(r.endTick).padEnd(5)} ${r.label}` +
-      `${r.maxSpeedMps > 0 ? ` (max ${r.maxSpeedMps.toFixed(2)} m/s)` : ''}${events ? ` [${events}]` : ''}\n`;
+      `${r.maxSpeedMps > 0 ? ` (max ${r.maxSpeedMps.toFixed(2)} m/s)` : ''}` +
+      `${r.yieldTicks > 0 ? ` gave way ${r.yieldTicks} ticks` : ''}${events ? ` [${events}]` : ''}\n`;
   }
   return out;
 }

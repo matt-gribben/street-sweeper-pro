@@ -1269,6 +1269,6 @@ An asset passes only if every applicable item passes.
 | Swap-slot allocation and key indices | M4 | Proposed in §5.6. |
 | Whether ramp lint ignores index 00 used as outline | M4 (forge lint) | Assumed in §5.4. |
 | Atlas trimming and the actor/item/fx gutter | M4 (forge pack, SSP-113) | Proposed in §14.6. The 1 px extrusion of tiles, facades and roofs is in force from M1 (SSP-039). |
-| Animation timings | M3–M4 | Proposed in §10.2; gameplay timings in the [GDD](GDD.md) win. |
+| Animation timings | M3–M4 | Proposed in §10.2; gameplay timings in the [GDD](GDD.md) win. **M3 half done** (checked at the M3 close, SSP-109): the placeholders are drawn with the §10.2 timings from sim state (SSP-103, `src/render/actorFrames.ts`). The final frame counts and timings are confirmed with the real art in M4. |
 | VFX IDs and HUD layout details | M2 (HUD), M4 (art) | **HUD layout decided for M2** (SSP-070): the as-built table in §12.2, popup timing in §11; confirmed at the M2 close (SSP-074), where it read clearly in a live 240 s shift. VFX IDs and the HUD's final art (Kerbside Bold, icons, panels) stay proposed until M4. |
 | Font metrics, descender treatment and kerning set | M4 | Proposed in §12.5. |

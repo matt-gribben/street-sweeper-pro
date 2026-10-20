@@ -7,8 +7,8 @@
 // withFxPuddle() and plan the drive there. tests/e2e/fx.spec.ts drives through the puddle above 3 m/s and saves the
 // frozen frame just after the splash for review.
 //
-// Puddles are not drawn yet (hazard sprites arrive with SSP-103/SSP-104), so the capture shows the splash
-// particles on the road where the puddle lies. There is no shift flow round it: the shift ends where it ends.
+// Since SSP-103 the puddle's decal is drawn (the items batch's hazard decals), so the capture shows the splash
+// particles round it. There is no shift flow round it: the shift ends where it ends.
 import type { SceneContext } from '../app/Game.ts';
 import { browserLevelSource, type LevelSource } from '../app/levelLoader.ts';
 import type { SceneParams } from '../app/SceneManager.ts';

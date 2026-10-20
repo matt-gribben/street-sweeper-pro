@@ -23,10 +23,16 @@ import {
   pinCameraRig,
 } from '../../src/render/camera.ts';
 import {
+  GLASS_GLINT_TICKS_PER_FRAME,
+  HAZARD_FRAMES,
   HYDRANT_FRAME,
+  hazardFrame,
   ITEMS_CULL_MARGIN_M,
   ITEMS_RENDER_ORDER,
   ItemsBatch,
+  KNOCKABLE_LOOKS,
+  KNOCKABLE_MAX_SLICES,
+  knockableQuarterTurns,
   LITTER_FRAMES,
   LITTER_ROT_DIRS,
   LitterAnim,
@@ -42,11 +48,14 @@ import {
   WOBBLE_TICKS_PER_FRAME,
 } from '../../src/render/itemsBatch.ts';
 import { type AtlasName, loadAtlas, type SpriteAtlas } from '../../src/render/spriteAtlas.ts';
-import { INSTANCE_STRIDE } from '../../src/render/spriteBatch.ts';
+import { DropShadowBatch, INSTANCE_STRIDE, SpriteFlag } from '../../src/render/spriteBatch.ts';
+import { WHEELIE_BIN_STACK } from '../../src/render/spriteStack.ts';
 import { RT_HEIGHT_PX, rtWidthPx } from '../../src/render/upscale.ts';
 import { DepthLayer } from '../../src/render/worldMaterial.ts';
+import { BODY_CAPACITY } from '../../src/sim/bodies.ts';
 import type { Aabb } from '../../src/sim/collision/obb.ts';
-import { LITTER_IDS, POWERUP_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
+import { HAZARD_ENTITY_IDS, LITTER_IDS, POWERUP_IDS, STAIN_IDS } from '../../src/sim/entities.ts';
+import { HAZARD_CAPACITY } from '../../src/sim/hazards.ts';
 import {
   addLitter,
   createLitterField,
@@ -69,6 +78,9 @@ const PUDDLE_LANE: Level = decodeLevel(
 );
 /** An empty pickup store, for the cases about litter, stains and markers. */
 const NO_PICKUPS = createPickups(DEFAULT_ENTITIES);
+/** An empty LitterField and stain store, for the hazard and knockable cases (SSP-103). */
+const NO_LITTER = createLitterField(PUDDLE_LANE, DEFAULT_TUNING, DEFAULT_ENTITIES, 1);
+const NO_STAINS = createStainStore(DEFAULT_ENTITIES, 1);
 /** Frames run before measuring the update path's heap, so it is JIT-optimised (as spriteBatch.test.ts). */
 const RENDER_WARMUP_FRAMES = 20_000;
 
@@ -489,6 +501,92 @@ describe('power-up pickups (SSP-096; ART_BIBLE §8.5, §10.2)', () => {
   });
 });
 
+describe('hazard decals and knockables (SSP-103)', () => {
+  it('picks a stable hashed variant per tile, and cycles the broken glass glint every 24 ticks', () => {
+    const puddle = HAZARD_ENTITY_IDS.indexOf('haz.puddle');
+    const glass = HAZARD_ENTITY_IDS.indexOf('haz.broken_glass');
+    expect(HAZARD_FRAMES[puddle]).toEqual(['haz.puddle:v:-:0', 'haz.puddle:v:-:1']);
+    for (const frames of HAZARD_FRAMES) for (const f of frames) expect(FRAME[f].atlas).toBe('world');
+    expect(hazardFrame(puddle, 12, 6, 0)).toBe(hazardFrame(puddle, 12, 6, 999));
+    const variants = new Set(Array.from({ length: 32 }, (_, c) => hazardFrame(puddle, c, 3, 0)));
+    expect(variants.size).toBe(2);
+    expect(GLASS_GLINT_TICKS_PER_FRAME).toBe(24);
+    expect(hazardFrame(glass, 5, 5, 0)).toBe('haz.broken_glass:v:-:0');
+    expect(hazardFrame(glass, 5, 5, 23)).toBe('haz.broken_glass:v:-:0');
+    expect(hazardFrame(glass, 5, 5, 24)).toBe('haz.broken_glass:v:-:1');
+    expect(hazardFrame(glass, 9, 1, 48)).toBe('haz.broken_glass:v:-:0');
+    expect(() => hazardFrame(99, 0, 0, 0)).toThrow(/hazard kind/);
+  });
+
+  it('draws Puddle Lane’s puddles on the decal layer from the world atlas, leaving the speed-bump sites to the ground', async () => {
+    const world = createWorld(PUDDLE_LANE, 1, DEFAULT_TUNING);
+    const batch = await newBatch(PUDDLE_LANE);
+    const shadows = new DropShadowBatch([await atlas('actors'), await atlas('items')], 512);
+    const all = box(-10, -10, 200, 200);
+    shadows.begin(40);
+    batch.update(NO_LITTER, NO_STAINS, NO_PICKUPS, 0, 1, all, 40, world.hazards, world.bodies, shadows);
+    shadows.end();
+    const bump = HAZARD_ENTITY_IDS.indexOf('haz.speed_bump');
+    let bumps = 0;
+    for (let i = 0; i < world.hazards.count; i++) if (world.hazards.kind[i] === bump) bumps++;
+    expect(bumps).toBe(3); // the three `=` sites
+    expect(batch.hazardsDrawn).toBe(world.hazards.count - bumps);
+    // Decal-layer instances from the world atlas: the hazards (the depot bays' markings are items-atlas decals).
+    const decals = instances(batch).filter((k) => k.layer === DepthLayer.Decal && k.atlas === 1);
+    expect(decals).toHaveLength(world.hazards.count - bumps);
+    const puddleRects = new Set(
+      ['haz.puddle:v:-:0', 'haz.puddle:v:-:1'].map((f) => rectOf(f as FrameId).join()),
+    );
+    expect(decals.every((k) => puddleRects.has(k.rect.join()))).toBe(true);
+    // Six knockables: two recycling boxes and a trolley-free street, so 3 flats + 3 wheelie bins of 4 slices.
+    expect(batch.knockablesDrawn).toBe(world.bodies.count);
+    const d = batch.batch.instanceData;
+    let flats = 0;
+    let slices = 0;
+    for (let i = 0; i < batch.batch.count; i++) {
+      const o = i * INSTANCE_STRIDE;
+      const flags = d[o + 11] as number;
+      if ((flags & SpriteFlag.Upright) === 0) continue;
+      if ((d[o + 1] as number) > 0) slices++;
+      else flats++;
+    }
+    expect(flats).toBe(3);
+    expect(slices).toBe(3 * WHEELIE_BIN_STACK.slices.length);
+    // Shadows: one per flat, two per stack (the lowest and highest slices).
+    expect(shadows.count).toBe(3 + 3 * 2);
+    batch.dispose();
+  });
+
+  it('draws a knockable at its interpolated pose, turned to the nearest quarter of its heading', async () => {
+    const world = createWorld(PUDDLE_LANE, 1, DEFAULT_TUNING);
+    const b = world.bodies;
+    const i = Array.from({ length: b.count }, (_, k) => k).find((k) => b.kind[k] === 4) ?? -1; // a recycling box
+    expect(i).toBeGreaterThanOrEqual(0);
+    b.prevX[i] = (b.x[i] as number) - 1;
+    b.prevHeading[i] = 0;
+    b.heading[i] = 1.2; // 69°: nearest quarter turn 1
+    const batch = await newBatch(PUDDLE_LANE);
+    const x = b.x[i] as number;
+    const y = b.y[i] as number;
+    batch.update(NO_LITTER, NO_STAINS, NO_PICKUPS, 0, 0.5, box(x - 1, y - 1, x + 1, y + 1), y, null, b);
+    const k = instances(batch).find((n) => n.rect.join() === rectOf('prop.recycling_box:flat:-:0').join());
+    expect(k?.x).toBeCloseTo(x - 0.5, 5);
+    expect(k?.turns).toBe(knockableQuarterTurns(0.6));
+    expect(knockableQuarterTurns(0.6)).toBe(0);
+    expect(knockableQuarterTurns(1.2)).toBe(1);
+    expect(knockableQuarterTurns(-Math.PI / 2)).toBe(3);
+    expect(k?.layer).toBe(DepthLayer.Litter);
+    expect(KNOCKABLE_LOOKS.map((l) => (l.flat === null ? l.stack?.asset : l.flat))).toEqual([
+      'prop.wheelie_bin',
+      'prop.traffic_cone',
+      'prop.a_board',
+      'prop.shopping_trolley:flat:-:0',
+      'prop.recycling_box:flat:-:0',
+    ]);
+    batch.dispose();
+  });
+});
+
 describe('the items draw', () => {
   it('is one mesh after the shadows, sampling items and world, keeping the shadow mask under its texels', async () => {
     const batch = await newBatch(PUDDLE_LANE);
@@ -498,10 +596,13 @@ describe('the items draw', () => {
     expect(batch.mesh.frustumCulled).toBe(false);
     expect(batch.batch.receiveShadows).toBe(true);
     expect(batch.batch.secondaryAtlas?.name).toBe('world');
-    // Capacity: every litter slot, every stain slot, every pickup slot and the 5 Puddle Lane markers.
-    expect(batch.batch.capacity).toBe(64 + 16 + 4 + 5);
+    // Capacity: every litter slot, every stain slot, every pickup slot and the 5 Puddle Lane markers, plus every
+    // hazard decal and every knockable's slices (SSP-103).
+    const street = HAZARD_CAPACITY + BODY_CAPACITY * KNOCKABLE_MAX_SLICES;
+    expect(KNOCKABLE_MAX_SLICES).toBe(4);
+    expect(batch.batch.capacity).toBe(64 + 16 + 4 + 5 + street);
     const full = new ItemsBatch(await atlas('items'), await atlas('world'), PUDDLE_LANE);
-    expect(full.batch.capacity).toBe(2000 + 256 + PICKUP_CAPACITY + 5);
+    expect(full.batch.capacity).toBe(2000 + 256 + PICKUP_CAPACITY + 5 + street);
     full.dispose();
     const material = batch.mesh.material as unknown as {
       fragmentShader: string;
@@ -511,8 +612,9 @@ describe('the items draw', () => {
       blendDstAlpha: number;
       uniforms: Record<string, { value: unknown }>;
     };
-    // The mask's alpha carries the write: 0 keeps the shadow, a Lit sprite writes (0, 1).
-    expect(material.fragmentShader).toContain('outMask = vec4(0.0, vLit, 0.0, vLit)');
+    // The mask's alpha carries the write: 0 keeps the shadow, a Lit sprite writes (0, 1), an Upright one (a
+    // knockable, SSP-103) writes (0, 0) like an actor.
+    expect(material.fragmentShader).toContain('outMask = vec4(0.0, vLit, 0.0, max(vLit, vUpright))');
     expect(material.fragmentShader).toContain(
       'vAtlas == 0 ? indexAt(uAtlas, texel) : indexAt(uAtlas1, texel)',
     );
@@ -604,12 +706,28 @@ describe('update path allocates nothing', () => {
     for (let k = 0; k < n; k++) rots.add(world.litter.rot[hits[k] as number] as number);
     expect([...rots].sort()).toEqual([0, 1, 2, 3]);
     // The tick is a small integer (no boxing), the alpha a fixed fraction, as in the spriteBatch heap test.
-    const delta = measureHeapDelta(
-      (tick) => batch.update(world.litter, world.stains, world.pickups, tick, 0.5, camera, camY),
-      {
-        warmupTicks: RENDER_WARMUP_FRAMES,
-      },
-    );
+    // As the shift calls it (SSP-103): with the hazard decals, the knockables and their drop shadows.
+    const shadows = new DropShadowBatch([await atlas('actors'), await atlas('items')], 512);
+    const frame = (tick: number): void => {
+      shadows.begin(camY);
+      batch.update(
+        world.litter,
+        world.stains,
+        world.pickups,
+        tick,
+        0.5,
+        camera,
+        camY,
+        world.hazards,
+        world.bodies,
+        shadows,
+      );
+      shadows.end();
+    };
+    frame(0);
+    expect(batch.hazardsDrawn).toBeGreaterThanOrEqual(1);
+    expect(batch.knockablesDrawn).toBeGreaterThanOrEqual(1);
+    const delta = measureHeapDelta(frame, { warmupTicks: RENDER_WARMUP_FRAMES });
     assertHeapDeltaWithinThresholds(delta);
   });
 });

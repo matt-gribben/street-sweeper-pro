@@ -13,11 +13,15 @@
 //   pivot (vec2)     the frame's pivot in frame pixels (atlas JSON px/py): body centre or feet;
 //   swap             swap-table row 0..7 (a uint8 value): the fragment shader maps the atlas index through that
 //                    row of the atlas's 32×8 swap texture before the palette lookup (identity until M4, SSP-114);
-//   flags            SpriteFlag bits (mirror; lit: the sprite writes G = 1, the light mask, SSP-021);
+//   flags            SpriteFlag bits (mirror; lit: the sprite writes G = 1, the light mask, SSP-021; upright: an
+//                    object standing in a receiveShadows batch, masked like an actor; solid: a rectangle of one
+//                    palette colour with no frame, the dog lead's runs, SSP-103);
 //   layer, sortBias  the depth layer (DepthLayer) and the in-layer bias in [0, 1), computed by the batch from
 //                    the sprite's sim y and the camera y given to begin();
 //   atlas            which atlas to sample (per-instance selector): drop shadows, and sprite batches made with a
-//                    secondary atlas (the items batch samples `items` and the `world` stain decals, SSP-067).
+//                    secondary atlas (the items batch samples `items` and the `world` stain decals, SSP-067);
+//   shadowLift       drop shadows only: extra pixels on both axes beyond the +2, +2 offset (an elevated caster: a
+//                    cat on a wall, a car roof or Bessie's roof casts at +3, +3, ART_BIBLE §8.3; SSP-103).
 // Buffers are sized to capacity once; begin/add/end per frame allocates nothing (the bias is computed inside
 // the batch and written straight to the buffer, so no fresh float crosses a call per sprite).
 //
@@ -62,6 +66,18 @@ export const SpriteFlag = {
   MirrorX: 1,
   /** A light source (lamp head, ART_BIBLE §8.6, §13): writes G = 1 into the mask, so night never remaps it. */
   Lit: 2,
+  /**
+   * An object standing on the ground drawn by a `receiveShadows` batch (a knockable bin or trolley, SSP-103): it
+   * writes mask (0, 0) like an actor instead of keeping the mask under it, so neither its own drop shadow nor a
+   * building shadow darkens it. Ignored by batches that do not receive shadows (they always write (0, 0)).
+   */
+  Upright: 4,
+  /**
+   * A solid rectangle with no frame (SSP-103, the dog lead's 1 px runs): added with addSolid, its frameRect holds
+   * (palette index, 0, width px, height px) and its pivot is (0, 0); every texel is that index (through the swap
+   * row as usual) and none is transparent. Drop shadows of it fill the same rectangle.
+   */
+  Solid: 8,
 } as const;
 export type SpriteFlag = (typeof SpriteFlag)[keyof typeof SpriteFlag];
 
@@ -99,7 +115,8 @@ const O_FLAGS = 11;
 const O_LAYER = 12;
 const O_BIAS = 13;
 const O_ATLAS = 14;
-/** Floats per instance (one spare to keep the stride at 16). */
+const O_SHADOW_LIFT = 15;
+/** Floats per instance. */
 export const INSTANCE_STRIDE = 16;
 
 /** Capacity-sized interleaved instance data plus the geometry that reads it. */
@@ -137,6 +154,7 @@ class InstanceBuffer {
     attribute('layer', 1, O_LAYER);
     attribute('sortBias', 1, O_BIAS);
     attribute('atlas', 1, O_ATLAS);
+    attribute('shadowLift', 1, O_SHADOW_LIFT);
     this.geometry = geometry;
   }
 
@@ -157,12 +175,13 @@ class InstanceBuffer {
     flags: number,
     quarterTurns: number,
     atlasSlot: number,
+    liftPx = 0,
   ): void {
     const a = this.anchor;
     a[0] = xM;
     a[1] = heightM;
     a[2] = yM;
-    this.pushAnchor(frame, layer, swap, flags, quarterTurns, atlasSlot);
+    this.pushAnchor(frame, layer, swap, flags, quarterTurns, atlasSlot, liftPx);
   }
 
   /** Appends one flat instance at (xs[i], ys[i]) metres; positions never leave the typed arrays. */
@@ -176,12 +195,75 @@ class InstanceBuffer {
     flags: number,
     quarterTurns: number,
     atlasSlot: number,
+    liftPx = 0,
   ): void {
     const a = this.anchor;
     a[0] = xs[i] as number;
     a[1] = 0;
     a[2] = ys[i] as number;
-    this.pushAnchor(frame, layer, swap, flags, quarterTurns, atlasSlot);
+    this.pushAnchor(frame, layer, swap, flags, quarterTurns, atlasSlot, liftPx);
+  }
+
+  /**
+   * Appends one instance at (xs[i], hs[k], ys[i]): a sprite-stack slice whose position and height both stay in
+   * typed arrays (the knockables' slices, SSP-103).
+   */
+  pushSliceFrom(
+    frame: FrameId,
+    xs: Float64Array,
+    ys: Float64Array,
+    i: number,
+    hs: Float64Array,
+    k: number,
+    layer: number,
+    flags: number,
+    quarterTurns: number,
+    atlasSlot: number,
+  ): void {
+    const a = this.anchor;
+    a[0] = xs[i] as number;
+    a[1] = hs[k] as number;
+    a[2] = ys[i] as number;
+    this.pushAnchor(frame, layer, 0, flags, quarterTurns, atlasSlot, 0);
+  }
+
+  /**
+   * Appends one SpriteFlag.Solid rectangle of palette index `colour`, `wPx` × `hPx` pixels with its top-left pixel
+   * at (xPx, yPx) on the 1/16 m grid (whole pixels: pixel (x, y) covers sim [x/16, (x+1)/16) m). Only integers
+   * cross the call.
+   */
+  pushSolid(
+    colour: number,
+    xPx: number,
+    yPx: number,
+    wPx: number,
+    hPx: number,
+    layer: number,
+    swap: number,
+  ): void {
+    if (this.count >= this.capacity) throw new Error(`sprite batch full (capacity ${this.capacity})`);
+    const d = this.data;
+    const o = this.count * INSTANCE_STRIDE;
+    const xM = xPx / PX_PER_M;
+    const yM = yPx / PX_PER_M;
+    d[o + O_OFFSET] = xM;
+    d[o + O_OFFSET + 1] = 0;
+    d[o + O_OFFSET + 2] = yM;
+    d[o + O_ROTATION] = 0;
+    d[o + O_RECT] = colour;
+    d[o + O_RECT + 1] = 0;
+    d[o + O_RECT + 2] = wPx;
+    d[o + O_RECT + 3] = hPx;
+    d[o + O_PIVOT] = 0;
+    d[o + O_PIVOT + 1] = 0;
+    d[o + O_SWAP] = swap;
+    d[o + O_FLAGS] = SpriteFlag.Solid;
+    d[o + O_LAYER] = layer;
+    const t = 0.5 + (yM - (this.camY[0] as number)) / SORT_SPAN_M;
+    d[o + O_BIAS] = t > SORT_BIAS_MAX ? SORT_BIAS_MAX : t > 0 ? t : 0;
+    d[o + O_ATLAS] = 0;
+    d[o + O_SHADOW_LIFT] = 0;
+    this.count++;
   }
 
   /** Appends one instance at `anchor`; the sortBias (see sortBias()) is computed here, from its y. */
@@ -192,6 +274,7 @@ class InstanceBuffer {
     flags: number,
     quarterTurns: number,
     atlasSlot: number,
+    liftPx: number,
   ): void {
     if (this.count >= this.capacity) throw new Error(`sprite batch full (capacity ${this.capacity})`);
     const f = FRAME[frame];
@@ -216,6 +299,7 @@ class InstanceBuffer {
     const t = 0.5 + (yM - (this.camY[0] as number)) / SORT_SPAN_M;
     d[o + O_BIAS] = t > SORT_BIAS_MAX ? SORT_BIAS_MAX : t > 0 ? t : 0;
     d[o + O_ATLAS] = atlasSlot;
+    d[o + O_SHADOW_LIFT] = liftPx;
     this.count++;
   }
 
@@ -245,6 +329,7 @@ in float layer;
 in float sortBias;
 out vec2 vTexel;
 flat out vec4 vRect;
+flat out int vSolid;
 
 const float PX_PER_M = ${PX_PER_M}.0;
 
@@ -262,6 +347,8 @@ void placeSprite(vec2 shiftPx) {
   gl_Position = applyDepthLayer(clip, layer, sortBias);
   vTexel = texel;
   vRect = frameRect;
+  // A Solid rectangle (SpriteFlag.Solid) carries its palette index in frameRect.x; -1 samples the atlas.
+  vSolid = (int(flags) & ${SpriteFlag.Solid}) != 0 ? int(frameRect.x + 0.5) : -1;
 }
 `;
 
@@ -299,10 +386,11 @@ uniform highp sampler2D uSwap;
 uniform highp sampler2D uPalette;
 flat in int vSwap;
 flat in float vLit;
+flat in int vSolid;
 ${SPRITE_TEXEL_GLSL}
 ${WORLD_OUTPUTS_GLSL}
 void main() {
-  int idx = indexAt(uAtlas, frameTexel());
+  int idx = vSolid >= 0 ? vSolid : indexAt(uAtlas, frameTexel());
   if (idx == ${TRANSPARENT_INDEX}) discard;
   idx = indexAt(uSwap, ivec2(idx, clamp(vSwap, 0, ${SWAP_ROWS - 1})));
   outColour = vec4(texelFetch(uPalette, ivec2(idx, 0), 0).rgb, 1.0);
@@ -322,17 +410,20 @@ in float swap;
 in float atlas;
 flat out int vSwap;
 flat out float vLit;
+flat out float vUpright;
 flat out int vAtlas;
 void main() {
   placeSprite(vec2(0.0));
   vSwap = int(swap);
   vLit = (int(flags) & ${SpriteFlag.Lit}) != 0 ? 1.0 : 0.0;
+  vUpright = (int(flags) & ${SpriteFlag.Upright}) != 0 ? 1.0 : 0.0;
   vAtlas = int(atlas);
 }
 `;
 
 function spriteFragmentDual(receiveShadows: boolean): string {
-  const mask = receiveShadows ? 'vec4(0.0, vLit, 0.0, vLit)' : 'vec4(0.0, vLit, 0.0, 0.0)';
+  // An Upright sprite (SpriteFlag.Upright) writes its mask like an actor: alpha 1 replaces what lies under it.
+  const mask = receiveShadows ? 'vec4(0.0, vLit, 0.0, max(vLit, vUpright))' : 'vec4(0.0, vLit, 0.0, 0.0)';
   return /* glsl */ `
 precision highp float;
 precision highp int;
@@ -343,12 +434,14 @@ uniform highp sampler2D uSwap1;
 uniform highp sampler2D uPalette;
 flat in int vSwap;
 flat in float vLit;
+flat in float vUpright;
 flat in int vAtlas;
+flat in int vSolid;
 ${SPRITE_TEXEL_GLSL}
 ${WORLD_OUTPUTS_GLSL}
 void main() {
   ivec2 texel = frameTexel();
-  int idx = vAtlas == 0 ? indexAt(uAtlas, texel) : indexAt(uAtlas1, texel);
+  int idx = vSolid >= 0 ? vSolid : vAtlas == 0 ? indexAt(uAtlas, texel) : indexAt(uAtlas1, texel);
   if (idx == ${TRANSPARENT_INDEX}) discard;
   ivec2 swapTexel = ivec2(idx, clamp(vSwap, 0, ${SWAP_ROWS - 1}));
   idx = vAtlas == 0 ? indexAt(uSwap, swapTexel) : indexAt(uSwap1, swapTexel);
@@ -374,9 +467,10 @@ function keepMaskBlending(): ShaderMaterialParameters {
 const SHADOW_VERTEX = /* glsl */ `
 ${SPRITE_VERTEX_COMMON}
 in float atlas;
+in float shadowLift;
 flat out int vAtlas;
 void main() {
-  placeSprite(vec2(${DROP_SHADOW_OFFSET_PX}.0));
+  placeSprite(vec2(${DROP_SHADOW_OFFSET_PX}.0 + shadowLift));
   vAtlas = int(atlas);
 }
 `;
@@ -391,11 +485,12 @@ precision highp int;
 uniform highp sampler2D uAtlas0;
 uniform highp sampler2D uAtlas1;
 flat in int vAtlas;
+flat in int vSolid;
 ${SPRITE_TEXEL_GLSL}
 ${WORLD_OUTPUTS_GLSL}
 void main() {
   ivec2 texel = frameTexel();
-  int idx = vAtlas == 0 ? indexAt(uAtlas0, texel) : indexAt(uAtlas1, texel);
+  int idx = vSolid >= 0 ? vSolid : vAtlas == 0 ? indexAt(uAtlas0, texel) : indexAt(uAtlas1, texel);
   if (idx == ${TRANSPARENT_INDEX}) discard;
   outColour = vec4(0.0);
   outMask = vec4(1.0, 0.0, 0.0, 0.0);
@@ -439,7 +534,8 @@ export class SpriteBatch {
     this.receiveShadows = options.receiveShadows ?? false;
     this.instances = new InstanceBuffer(capacity);
     const palette = createPaletteTexture(options.palette ?? KERBSIDE32);
-    // The single-atlas, mask-writing batch keeps its M0 shader text exactly (every golden draws through it).
+    // The single-atlas, mask-writing batch keeps its M0 behaviour exactly (every golden draws through it); the
+    // SSP-103 Solid branch applies only to instances flagged Solid.
     const dual = secondary !== null || this.receiveShadows;
     const material = new ShaderMaterial({
       ...(this.receiveShadows ? keepMaskBlending() : {}),
@@ -525,6 +621,24 @@ export class SpriteBatch {
     this.instances.pushFrom(frame, xs, ys, i, layer, swap, flags, quarterTurns, this.atlasSlot(frame));
   }
 
+  /**
+   * addAtHeight() with the pivot at sim (xs[i], ys[i]) and the height hs[k] metres (≥ 0, unchecked here: the
+   * caller's table is validated once): a stack slice whose numbers never cross the call as fresh doubles.
+   */
+  addSliceFrom(
+    frame: FrameId,
+    xs: Float64Array,
+    ys: Float64Array,
+    i: number,
+    hs: Float64Array,
+    k: number,
+    layer: DepthLayer,
+    flags = 0,
+    quarterTurns = 0,
+  ): void {
+    this.instances.pushSliceFrom(frame, xs, ys, i, hs, k, layer, flags, quarterTurns, this.atlasSlot(frame));
+  }
+
   /** 0 for a frame of the primary atlas, 1 for the secondary; throws for any other atlas. */
   private atlasSlot(frame: FrameId): number {
     const atlas = FRAME[frame].atlas;
@@ -541,10 +655,41 @@ export class SpriteBatch {
    * 81e-5 in NDC, equals about 0.39 m of height at H = 31.5 m). `flags` are SpriteFlag bits (a lamp head
    * passes `Lit`).
    */
-  addAtHeight(frame: FrameId, xM: number, yM: number, heightM: number, layer: DepthLayer, flags = 0): void {
+  addAtHeight(
+    frame: FrameId,
+    xM: number,
+    yM: number,
+    heightM: number,
+    layer: DepthLayer,
+    flags = 0,
+    quarterTurns = 0,
+  ): void {
     const slot = this.atlasSlot(frame);
     if (!(heightM >= 0)) rejectSpriteHeight(heightM);
-    this.instances.push(frame, xM, yM, heightM, layer, 0, flags, 0, slot);
+    this.instances.push(frame, xM, yM, heightM, layer, 0, flags, quarterTurns, slot);
+  }
+
+  /**
+   * Adds one SpriteFlag.Solid rectangle (no frame): `wPx` × `hPx` pixels of palette index `colour` 0..31 with its
+   * top-left pixel at (xPx, yPx) on the 1/16 m pixel grid, on depth `layer` (its sortBias from its top edge). The
+   * dog lead's 1 px runs (SSP-103). Only integers cross the call; throws for non-integers or a bad colour.
+   */
+  addSolid(
+    colour: number,
+    xPx: number,
+    yPx: number,
+    wPx: number,
+    hPx: number,
+    layer: DepthLayer,
+    swap = 0,
+  ): void {
+    if (!isSolidRect(colour, xPx, yPx, wPx, hPx)) rejectSolid(colour, xPx, yPx, wPx, hPx);
+    this.instances.pushSolid(colour, xPx, yPx, wPx, hPx, layer, swap);
+  }
+
+  /** Room left this frame: capacity − count. */
+  get free(): number {
+    return this.instances.capacity - this.instances.count;
   }
 
   /** Ends the frame: sets the draw count and flags the instance buffer for upload (one needsUpdate). */
@@ -567,6 +712,28 @@ function rejectSpriteAtlas(batch: SpriteBatch, frame: FrameId): never {
       ? `'${batch.atlas.name}'`
       : `'${batch.atlas.name}' or '${batch.secondaryAtlas.name}'`;
   throw new Error(`frame ${frame} is in atlas '${atlas}', not ${names}`);
+}
+
+/** True when (colour, x, y, w, h) is a palette index and a whole-pixel, non-empty rectangle. */
+function isSolidRect(colour: number, xPx: number, yPx: number, wPx: number, hPx: number): boolean {
+  return (
+    Number.isInteger(colour) &&
+    colour >= 0 &&
+    colour < PALETTE_SIZE &&
+    Number.isInteger(xPx) &&
+    Number.isInteger(yPx) &&
+    Number.isInteger(wPx) &&
+    Number.isInteger(hPx) &&
+    wPx >= 1 &&
+    hPx >= 1
+  );
+}
+
+/** Throws for a bad solid rectangle (kept out of the per-frame path). */
+function rejectSolid(colour: number, xPx: number, yPx: number, wPx: number, hPx: number): never {
+  throw new RangeError(
+    `solid rect ${wPx}x${hPx} at (${xPx}, ${yPx}) in colour ${colour} is not whole pixels`,
+  );
 }
 
 /** Throws for a negative or NaN sprite height (kept out of the per-frame path). */
@@ -624,6 +791,11 @@ export class DropShadowBatch {
     return this.instances.count;
   }
 
+  /** The instance data (INSTANCE_STRIDE floats per instance); read-only, for tests. */
+  get instanceData(): Float32Array {
+    return this.instances.data;
+  }
+
   /** Starts a frame (see SpriteBatch.begin). */
   begin(camYSimM: number): void {
     this.instances.count = 0;
@@ -632,25 +804,77 @@ export class DropShadowBatch {
 
   /** Adds the drop shadow of `frame` drawn with its pivot at sim (xM, yM) (same flags and turns as the sprite). */
   add(frame: FrameId, xM: number, yM: number, flags = 0, quarterTurns = 0): void {
-    const slot = this.atlasNames.indexOf(FRAME[frame].atlas);
-    if (slot < 0) throw new Error(`drop shadows cannot sample atlas '${FRAME[frame].atlas}'`);
-    this.instances.push(frame, xM, yM, 0, DepthLayer.DropShadow, 0, flags, quarterTurns, slot);
+    this.instances.push(frame, xM, yM, 0, DepthLayer.DropShadow, 0, flags, quarterTurns, this.slotOf(frame));
+  }
+
+  /**
+   * add() with the caster's pivot at sim (xs[i], ys[i]), so no position crosses the call as a fresh double (as
+   * SpriteBatch.addFrom). `liftPx` moves the shadow that many more pixels south-east on both axes: an elevated
+   * caster (a cat on a wall or a roof casts at +3, +3: liftPx 1, ART_BIBLE §8.3; SSP-103).
+   */
+  addFrom(
+    frame: FrameId,
+    xs: Float64Array,
+    ys: Float64Array,
+    i: number,
+    flags = 0,
+    quarterTurns = 0,
+    liftPx = 0,
+  ): void {
+    const slot = this.slotOf(frame);
+    this.instances.pushFrom(frame, xs, ys, i, DepthLayer.DropShadow, 0, flags, quarterTurns, slot, liftPx);
   }
 
   /**
    * Adds the drop shadow of a sprite drawn at `heightM` (SpriteBatch.addAtHeight): the silhouette offset +2, +2
    * texels at the slice's own height, so it stays beside its slice as the camera leans the stack (ART_BIBLE §6.4).
    */
-  addAtHeight(frame: FrameId, xM: number, yM: number, heightM: number): void {
-    const slot = this.atlasNames.indexOf(FRAME[frame].atlas);
-    if (slot < 0) throw new Error(`drop shadows cannot sample atlas '${FRAME[frame].atlas}'`);
+  addAtHeight(frame: FrameId, xM: number, yM: number, heightM: number, quarterTurns = 0): void {
+    const slot = this.slotOf(frame);
     if (!(heightM >= 0)) throw new RangeError(`sprite height ${heightM} m must be >= 0`);
-    this.instances.push(frame, xM, yM, heightM, DepthLayer.DropShadow, 0, 0, 0, slot);
+    this.instances.push(frame, xM, yM, heightM, DepthLayer.DropShadow, 0, 0, quarterTurns, slot);
+  }
+
+  /** The drop shadow of a SpriteBatch.addSliceFrom slice: its silhouette at +2, +2 at the slice's own height. */
+  addSliceFrom(
+    frame: FrameId,
+    xs: Float64Array,
+    ys: Float64Array,
+    i: number,
+    hs: Float64Array,
+    k: number,
+    quarterTurns = 0,
+  ): void {
+    const slot = this.slotOf(frame);
+    this.instances.pushSliceFrom(frame, xs, ys, i, hs, k, DepthLayer.DropShadow, 0, quarterTurns, slot);
+  }
+
+  /** The drop shadow of a SpriteBatch.addSolid rectangle (the dog lead's runs): the same rectangle at +2, +2. */
+  addSolid(xPx: number, yPx: number, wPx: number, hPx: number): void {
+    if (!isSolidRect(0, xPx, yPx, wPx, hPx)) rejectSolid(0, xPx, yPx, wPx, hPx);
+    this.instances.pushSolid(0, xPx, yPx, wPx, hPx, DepthLayer.DropShadow, 0);
+  }
+
+  /** Room left this frame: capacity − count. */
+  get free(): number {
+    return this.instances.capacity - this.instances.count;
+  }
+
+  /** The selector slot of `frame`'s atlas; throws for an atlas this batch cannot sample. */
+  private slotOf(frame: FrameId): number {
+    const slot = this.atlasNames.indexOf(FRAME[frame].atlas);
+    if (slot < 0) return rejectShadowAtlas(frame);
+    return slot;
   }
 
   end(): void {
     this.instances.publish(this.mesh);
   }
+}
+
+/** Throws for a caster from an atlas the drop-shadow batch cannot sample (kept out of the per-frame path). */
+function rejectShadowAtlas(frame: FrameId): never {
+  throw new Error(`drop shadows cannot sample atlas '${FRAME[frame].atlas}'`);
 }
 
 // ---------------------------------------------------------------------------------------------------------

@@ -17,6 +17,7 @@
 // under them (`skipCells`) rather than whole tiles.
 import { readFileSync } from 'node:fs';
 import { FRAME, type FrameId } from '../../src/gen/assets.ts';
+import { vehicleFrame } from '../../src/render/actorFrames.ts';
 import {
   CELL_M,
   type CityBox,
@@ -129,15 +130,54 @@ function frameCover(frame: FrameId, xM: number, yM: number): Rect {
   return { x0: xM - half, y0: yM - half, x1: xM + half, y1: yM + half };
 }
 
+/** A drop shadow reaches this far beyond its caster's frame (+2, +2 px; +3, +3 for an elevated cat), metres. */
+const SHADOW_REACH_M = 3 / PX_PER_M;
+
+/** The rect an actor's frame centred on (xM, yM) and its drop shadow can cover, widened by a texel. */
+function actorCover(frame: FrameId, xM: number, yM: number): Rect {
+  const r = frameCover(frame, xM, yM);
+  return { x0: r.x0, y0: r.y0, x1: r.x1 + SHADOW_REACH_M, y1: r.y1 + SHADOW_REACH_M };
+}
+
+/**
+ * Rects a person or an animal standing at (x, y) and its drop shadow can cover (SSP-103: the 24×24 cell, pivot at
+ * its feet, the largest NPC frame), metres. Ground checks over shift frames skip them for the NPCs `state().npcs`
+ * lists.
+ */
+export function npcCover(npcs: readonly { readonly x: number; readonly y: number }[]): Rect[] {
+  const m = 1 / PX_PER_M;
+  return npcs.map(({ x, y }) => ({
+    x0: x - 12 * m - m,
+    y0: y - 22 * m - m,
+    x1: x + 12 * m + SHADOW_REACH_M + m,
+    y1: y + 2 * m + SHADOW_REACH_M + m,
+  }));
+}
+
 /**
  * Rects the items batch draws over the ground at shift start for `seed` (SSP-067, itemsBatch.ts): every litter
  * item and stain the World lays, its power-up pickups (SSP-096, either bob frame) and the level's hydrants, skip
- * and depot-bay markings.
+ * and depot-bay markings; since SSP-103 also the street's shift-start draws: the hazard decals and the knockables
+ * (the items batch) and the parked cars with their drop shadows (the actors batch). No NPC or moving vehicle is out
+ * at tick 0.
  */
 export function itemsCover(level: Level, seed: number): Rect[] {
   const world = createWorld(level, seed >>> 0, DEFAULT_TUNING);
   const rects = levelItemMarkers(level).map((m) => frameCover(m.frame, m.xM, m.yM));
-  const { litter, stains, pickups } = world;
+  const { litter, stains, pickups, hazards, bodies, vehicles } = world;
+  for (let i = 0; i < hazards.count; i++) {
+    rects.push(frameCover('haz.puddle:v:-:0', hazards.x[i] ?? 0, hazards.y[i] ?? 0));
+  }
+  for (let i = 0; i < bodies.count; i++) {
+    // Any slice of any knockable, its lean at the frame edge and its shadow: a 32 px cell plus a metre.
+    const x = bodies.x[i] ?? 0;
+    const y = bodies.y[i] ?? 0;
+    rects.push({ x0: x - 2, y0: y - 2, x1: x + 2, y1: y + 2 });
+  }
+  for (let i = 0; i < vehicles.count; i++) {
+    const kind = vehicles.kind[i] ?? 0;
+    rects.push(actorCover(vehicleFrame(kind, 0), vehicles.x[i] ?? 0, vehicles.y[i] ?? 0));
+  }
   for (let i = 0; i < litter.count; i++) {
     const xM = litter.x[i] ?? 0;
     const yM = litter.y[i] ?? 0;

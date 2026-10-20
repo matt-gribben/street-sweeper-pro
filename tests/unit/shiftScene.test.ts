@@ -261,8 +261,21 @@ describe('ShiftScene', () => {
     const items = shift.itemsBatch;
     expect(items?.markersDrawn).toBe(2);
     expect(items?.batch.count).toBe(
-      (items?.markersDrawn ?? 0) + (items?.litterDrawn ?? 0) + (items?.pickupsDrawn ?? 0),
+      (items?.markersDrawn ?? 0) +
+        (items?.litterDrawn ?? 0) +
+        (items?.pickupsDrawn ?? 0) +
+        (items?.hazardsDrawn ?? 0) +
+        (items?.knockablesDrawn ?? 0),
     );
+    // The street (SSP-103) shares Bessie's actors batch: her body plus every NPC, vehicle and lead run drawn.
+    const street = shift.streetActors;
+    expect(street).not.toBeNull();
+    expect(shift.bessieSprite?.sprites.count).toBe(
+      1 + (street?.npcsDrawn ?? 0) + (street?.vehiclesDrawn ?? 0) + (street?.leadRunsDrawn ?? 0),
+    );
+    // At tick 0 the depot view holds parked cars only (no NPC is out yet), each drawn with its drop shadow.
+    expect(street?.npcsDrawn).toBe(0);
+    expect(shift.bessieSprite?.shadows.count).toBe(1 + (street?.vehiclesDrawn ?? 0));
   });
 
   it('steps the World once per fixedUpdate and draws the pose lerped by alpha', async () => {

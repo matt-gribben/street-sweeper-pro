@@ -213,7 +213,7 @@ describe('SpriteBatch and DropShadowBatch instance buffers', () => {
     expect(shadows.mesh.geometry.getAttribute('atlas').getX(0)).toBe(0);
     expect(DROP_SHADOW_OFFSET_PX).toBe(2);
     const material = shadows.mesh.material as unknown as { fragmentShader: string; vertexShader: string };
-    expect(material.vertexShader).toContain('placeSprite(vec2(2.0))');
+    expect(material.vertexShader).toContain('placeSprite(vec2(2.0 + shadowLift))');
     expect(material.fragmentShader).toContain('outMask = vec4(1.0, 0.0, 0.0, 0.0)');
     expect(() => new DropShadowBatch([atlas, atlas, atlas], 1)).toThrow();
   });
@@ -232,6 +232,82 @@ describe('SpriteBatch and DropShadowBatch instance buffers', () => {
     expect(material.vertexShader).toContain(`(int(flags) & ${SpriteFlag.Lit}) != 0 ? 1.0 : 0.0`);
     // R (shadow) is never written by a sprite; G (light) only when lit.
     expect(material.fragmentShader).toContain('outMask = vec4(0.0, vLit, 0.0, 0.0)');
+  });
+
+  it('writes Solid rectangles (SSP-103, the dog lead): palette index in frameRect.x, pivot 0, no atlas read', async () => {
+    const atlas = await loadActors();
+    const batch = new SpriteBatch(atlas, 3);
+    const shadows = new DropShadowBatch([atlas], 2);
+    batch.begin(0);
+    shadows.begin(0);
+    batch.addSolid(18, 32, -16, 5, 1, DepthLayer.Pedestrian);
+    shadows.addSolid(32, -16, 5, 1);
+    expect(batch.free).toBe(2);
+    expect(shadows.free).toBe(1);
+    batch.end();
+    shadows.end();
+    const d = batch.instanceData;
+    // Offset (2, 0, −1) m: pixel (32, −16)'s corner; rect (18, 0, 5, 1); pivot (0, 0); flags Solid.
+    expect(Array.from(d.subarray(0, 12))).toEqual([2, 0, -1, 0, 18, 0, 5, 1, 0, 0, 0, SpriteFlag.Solid]);
+    expect(d[12]).toBe(DepthLayer.Pedestrian);
+    expect(shadows.instanceData[11]).toBe(SpriteFlag.Solid);
+    expect(shadows.instanceData[12]).toBe(DepthLayer.DropShadow);
+    expect(() => batch.addSolid(32, 0, 0, 1, 1, DepthLayer.Pedestrian)).toThrow(/solid rect/);
+    expect(() => batch.addSolid(18, 0.5, 0, 1, 1, DepthLayer.Pedestrian)).toThrow(/whole pixels/);
+    expect(() => shadows.addSolid(0, 0, 0, 1)).toThrow(/whole pixels/);
+    const material = batch.mesh.material as unknown as { fragmentShader: string; vertexShader: string };
+    expect(material.vertexShader).toContain(
+      `(int(flags) & ${SpriteFlag.Solid}) != 0 ? int(frameRect.x + 0.5) : -1`,
+    );
+    expect(material.fragmentShader).toContain(
+      'int idx = vSolid >= 0 ? vSolid : indexAt(uAtlas, frameTexel());',
+    );
+    const shadowMaterial = shadows.mesh.material as unknown as { fragmentShader: string };
+    expect(shadowMaterial.fragmentShader).toContain('vSolid >= 0 ? vSolid :');
+    expect(SpriteFlag.Solid & (SpriteFlag.MirrorX | SpriteFlag.Lit | SpriteFlag.Upright)).toBe(0);
+  });
+
+  it('lifts an elevated caster’s drop shadow and turns stack slices and their shadows (SSP-103)', async () => {
+    const atlas = await loadActors();
+    const shadows = new DropShadowBatch([atlas], 3);
+    const xs = Float64Array.of(1);
+    const ys = Float64Array.of(2);
+    const hs = Float64Array.of(0.4);
+    shadows.begin(0);
+    shadows.addFrom('npc.cat:sit:s:0', xs, ys, 0, 0, 0, 1);
+    shadows.addSliceFrom('npc.cat:sit:s:0', xs, ys, 0, hs, 0, 3);
+    shadows.addAtHeight('npc.cat:sit:s:0', 1, 2, 0.4, 2);
+    shadows.end();
+    const s = shadows.instanceData;
+    expect(s[15]).toBe(1);
+    expect(s[INSTANCE_STRIDE + 15]).toBe(0);
+    expect([s[INSTANCE_STRIDE + 1], s[INSTANCE_STRIDE + 3]]).toEqual([Math.fround(0.4), 3]);
+    expect(s[2 * INSTANCE_STRIDE + 3]).toBe(2);
+    expect((shadows.mesh.material as unknown as { vertexShader: string }).vertexShader).toContain(
+      'placeSprite(vec2(2.0 + shadowLift))',
+    );
+    const batch = new SpriteBatch(atlas, 2);
+    batch.begin(0);
+    batch.addSliceFrom('npc.cat:sit:s:0', xs, ys, 0, hs, 0, DepthLayer.Litter, SpriteFlag.Upright, 1);
+    batch.addAtHeight('npc.cat:sit:s:0', 1, 2, 0.4, DepthLayer.Litter, 0, 3);
+    batch.end();
+    const d = batch.instanceData;
+    expect([d[1], d[3], d[11]]).toEqual([Math.fround(0.4), 1, SpriteFlag.Upright]);
+    expect(d[INSTANCE_STRIDE + 3]).toBe(3);
+  });
+
+  it('keeps the mask under a receiveShadows sprite unless it is Upright (SSP-103, knockables)', async () => {
+    const atlas = await loadActors();
+    const items = await loadAtlas('items', {
+      fetchJson: async (url: string): Promise<unknown> =>
+        JSON.parse(readFileSync(`${REPO_ROOT}public${url}`, 'utf8')),
+      fetchImage: async (url: string): Promise<RgbaImage> =>
+        decodePng(readFileSync(`${REPO_ROOT}public${url}`)),
+    });
+    const batch = new SpriteBatch(items, 1, { secondaryAtlas: atlas, receiveShadows: true });
+    const material = batch.mesh.material as unknown as { fragmentShader: string; vertexShader: string };
+    expect(material.fragmentShader).toContain('outMask = vec4(0.0, vLit, 0.0, max(vLit, vUpright))');
+    expect(material.vertexShader).toContain(`(int(flags) & ${SpriteFlag.Upright}) != 0 ? 1.0 : 0.0`);
   });
 
   it('runs a spike frame (6 instances over two batches) with no per-frame allocation', async () => {

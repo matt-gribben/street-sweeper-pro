@@ -7,24 +7,24 @@
 // walking on the compiled steering town (tests/support/steeringTown.ts), whose north pavement is 1 tile wide
 // with a lamp post, a litter bin and a hydrant on it.
 import { describe, expect, it } from 'vitest';
-import { TILE_M } from '../../src/sim/constants.ts';
-import { NPC_IDS, type NpcId } from '../../src/sim/entities.ts';
-import { createInputFrame } from '../../src/sim/inputFrame.ts';
-import { mumPushchairBehaviour } from '../../src/sim/npc/behaviours/mumPushchair.ts';
-import { PED } from '../../src/sim/npc/behaviours/pedestrian.ts';
-import { largestNpcRadiusM, npcKindRadiusM } from '../../src/sim/npc/footprint.ts';
+import { TILE_M } from '../../../src/sim/constants.ts';
+import { NPC_IDS, type NpcId } from '../../../src/sim/entities.ts';
+import { createInputFrame } from '../../../src/sim/inputFrame.ts';
+import { mumPushchairBehaviour } from '../../../src/sim/npc/behaviours/mumPushchair.ts';
+import { PED } from '../../../src/sim/npc/behaviours/pedestrian.ts';
+import { largestNpcRadiusM, npcKindRadiusM } from '../../../src/sim/npc/footprint.ts';
 import {
   beginSteer,
   desiredVelocity,
   NavState,
   requestNavPath,
   steerSeparate,
-} from '../../src/sim/npc/steering.ts';
-import { addNpcAt, NpcOrigin, setNpcState } from '../../src/sim/npc/store.ts';
-import { DEFAULT_ENTITIES, DEFAULT_TUNING } from '../../src/sim/tuning.ts';
-import { createWorld, type World } from '../../src/sim/world.ts';
-import { npcTown } from '../support/npcTown.ts';
-import { compileTown } from '../support/steeringTown.ts';
+} from '../../../src/sim/npc/steering.ts';
+import { addNpcAt, NpcOrigin, setNpcState } from '../../../src/sim/npc/store.ts';
+import { DEFAULT_ENTITIES, DEFAULT_TUNING } from '../../../src/sim/tuning.ts';
+import { createWorld, type World } from '../../../src/sim/world.ts';
+import { npcTown } from '../../support/npcTown.ts';
+import { compileTown } from '../../support/steeringTown.ts';
 
 const MUM = NPC_IDS.indexOf('npc.mum_pushchair');
 const HUMAN_R = DEFAULT_TUNING.streetLife.npcRadius.humanM;

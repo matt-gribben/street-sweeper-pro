@@ -2,7 +2,7 @@
 id: SSP-108
 title: "Add the table-driven penalty and complaint test against entities.json"
 milestone: M3
-status: todo
+status: done
 type: test
 estimate: S
 labels: [type:test, area:test, area:gameplay, size:S, vertical-slice]
